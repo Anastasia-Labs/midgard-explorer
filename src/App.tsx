@@ -10,7 +10,7 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
-      <Route path="/block/:blockNumber" element={<BlockPage />} />
+      <Route path="/block/:headerHash" element={<BlockPage />} />
       {/* <Route path="/blocks" element={<Navigate to="/blocks/1" replace />} /> */}
       {/* <Route path="/blocks/:page" element={<BlocksPage />} /> */}
       <Route path="/transaction/:txHash" element={<TransactionPage />} />
