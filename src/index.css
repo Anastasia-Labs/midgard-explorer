@@ -1,1 +1,103 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600&display=swap");
+
+:root {
+  color-scheme: dark;
+  font-family: "Space Grotesk", "Manrope", ui-sans-serif, system-ui;
+  background-color: #05070f;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #05070f;
+  color: #e2e8f0;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.glass-panel {
+  position: relative;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(
+      135deg,
+      rgba(15, 23, 42, 0.72),
+      rgba(15, 23, 42, 0.42)
+    ),
+    rgba(15, 23, 42, 0.5);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.55),
+    0 8px 24px rgba(56, 189, 248, 0.15);
+  backdrop-filter: blur(18px) saturate(160%);
+}
+
+.shine::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    120deg,
+    rgba(255, 255, 255, 0.12),
+    transparent 45%,
+    transparent 60%,
+    rgba(56, 189, 248, 0.12)
+  );
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.orb {
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  filter: blur(0px);
+  opacity: 0.55;
+  mix-blend-mode: screen;
+  animation: drift 18s ease-in-out infinite;
+}
+
+.orb-cyan {
+  background: radial-gradient(circle at top, #22d3ee, transparent 60%);
+  top: -120px;
+  left: -60px;
+}
+
+.orb-purple {
+  background: radial-gradient(circle at top, #a855f7, transparent 60%);
+  right: -100px;
+  top: 20%;
+  animation-delay: -4s;
+}
+
+.orb-amber {
+  background: radial-gradient(circle at top, #f59e0b, transparent 60%);
+  bottom: -160px;
+  left: 30%;
+  animation-delay: -8s;
+}
+
+.orb-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+    rgba(148, 163, 184, 0.25) 1px,
+    transparent 1px
+  );
+  background-size: 32px 32px;
+  opacity: 0.08;
+  mask-image: radial-gradient(circle at 20% 20%, black, transparent 65%);
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(30px, -20px, 0) scale(1.05);
+  }
+}
