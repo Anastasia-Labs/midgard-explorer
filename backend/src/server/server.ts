@@ -18,9 +18,7 @@ export const startServer = async () => {
     app.use((req, res, next) => {
       const oldJson = res.json;
 
-      // Override the res.json method
       res.json = (data: any) => {
-        // Apply the bigintStringify to the response data
         return oldJson.call(res, bigintStringify(data));
       };
 

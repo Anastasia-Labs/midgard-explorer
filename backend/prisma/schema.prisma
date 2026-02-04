@@ -1,0 +1,91 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "explorer-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_URL")
+}
+
+model ConfirmedLedger {
+  tx_id        Bytes
+  outref       Bytes    @id
+  output       Bytes
+  address      String
+  time_stamp_tz DateTime @default(now())
+
+  @@index([address], map: "idx_confirmed_ledger_address")
+  @@map("confirmed_ledger")
+}
+
+model LatestLedger {
+  tx_id        Bytes
+  outref       Bytes    @id
+  output       Bytes
+  address      String
+  time_stamp_tz DateTime @default(now())
+
+  @@index([address], map: "idx_latest_ledger_address")
+  @@map("latest_ledger")
+}
+
+model MempoolLedger {
+  tx_id        Bytes
+  outref       Bytes    @id
+  output       Bytes
+  address      String
+  time_stamp_tz DateTime @default(now())
+
+  @@index([address], map: "idx_mempool_ledger_address")
+  @@map("mempool_ledger")
+}
+
+model ImmutableTx {
+  tx_id        Bytes    @id
+  tx           Bytes
+  time_stamp_tz DateTime @default(now())
+
+  @@map("immutable")
+}
+
+model MempoolTx {
+  tx_id        Bytes    @id
+  tx           Bytes
+  time_stamp_tz DateTime @default(now())
+
+  @@map("mempool")
+}
+
+model ProcessedMempoolTx {
+  tx_id        Bytes    @id
+  tx           Bytes
+  time_stamp_tz DateTime @default(now())
+
+  @@map("processed_mempool")
+}
+
+model Blocks {
+  height       Int      @id @default(autoincrement())
+  header_hash  Bytes
+  tx_id        Bytes    @unique
+  time_stamp_tz DateTime @default(now())
+
+  @@index([header_hash], map: "idx_blocks_header_hash")
+  @@index([tx_id], map: "idx_blocks_tx_id")
+  @@map("blocks")
+}
+
+model AddressHistory {
+  tx_id   Bytes
+  address String
+
+  @@unique([tx_id, address], map: "address_history_tx_id_address_key")
+  @@map("address_history")
+}
