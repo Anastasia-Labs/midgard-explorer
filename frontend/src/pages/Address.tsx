@@ -37,8 +37,10 @@ export default function AddressPage() {
 
     fetchAddressTransactions(address)
       .then((data) => {
-        const txs: string[] = data.txs ?? [];
-        const parsed = txs.map((cbor) => parseCbor(cbor));
+        const txs: string[] = (data.history ?? []).map(
+          (row: { tx?: string }) => row.tx ?? "",
+        );
+        const parsed = txs.filter(Boolean).map((cbor) => parseCbor(cbor));
         setTransactions(parsed);
       })
       .catch((error) => {

@@ -38,7 +38,9 @@ export default function BlockPage() {
 
     fetchBlock(headerHash)
       .then(async (data) => {
-        const txIds: string[] = data.hashes;
+        const txIds: string[] = (data.rows ?? []).map(
+          (row: { tx_id: string }) => row.tx_id,
+        );
         setHashes(txIds);
         const fetched = await Promise.all(
           txIds.map((txId) => fetchTransaction(txId)),
