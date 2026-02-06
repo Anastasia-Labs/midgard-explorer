@@ -7,9 +7,9 @@ const env = (
 ).env;
 
 export function getMidgardNodeUrl() {
-  const midgardNode = env?.VITE_MIDGARD_NODE_URL;
+  const midgardNode = env?.VITE_BACKEND_URL;
   if (!midgardNode) {
-    throw new Error("Missing required env: VITE_MIDGARD_NODE_URL");
+    throw new Error("Missing required env: VITE_BACKEND_URL");
   }
   return midgardNode;
 }

@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getTransaction } from "../../db/transaction";
+import { getTotalTransactions, getTransaction } from "../../db/transaction";
 import { toHex } from "../../utils";
 
 export async function getTransactionRoute(req: Request, res: Response) {
@@ -20,4 +20,9 @@ export async function getTransactionRoute(req: Request, res: Response) {
       tx: toHex(tx.tx),
     },
   });
+}
+
+export async function getTotalTransactionsRoute(_req: Request, res: Response) {
+  const total = await getTotalTransactions();
+  return res.json({ total });
 }

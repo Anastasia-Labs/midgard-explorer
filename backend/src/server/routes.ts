@@ -1,11 +1,20 @@
 import { Express } from "express";
-import { getBlockRoute, getRecentBlocksRoute } from "./routes/block";
+import {
+  getBlockRoute,
+  getRecentBlocksRoute,
+  getTotalBlocksRoute,
+} from "./routes/block";
 import { getAddressRoute } from "./routes/address";
-import { getTransactionRoute } from "./routes/transaction";
+import {
+  getTotalTransactionsRoute,
+  getTransactionRoute,
+} from "./routes/transaction";
 
 export function registerRoutes(app: Express) {
   app.get("/api/block", getBlockRoute);
   app.get("/api/transcation", getTransactionRoute);
   app.get("/api/address", getAddressRoute);
-  app.get("/api/block/recent", getRecentBlocksRoute);
+  app.get("/api/blocks/recent", getRecentBlocksRoute);
+  app.get("/api/blocks/total", getTotalBlocksRoute);
+  app.get("/api/transactions/total", getTotalTransactionsRoute);
 }

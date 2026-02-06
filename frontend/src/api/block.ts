@@ -8,3 +8,8 @@ export async function fetchBlock(headerHash: string) {
   const response = await axios.get(url);
   return response.data;
 }
+
+export async function fetchTotalBlocks() {
+  const response = await axios.get("/api/blocks/total");
+  return response.data;
+}

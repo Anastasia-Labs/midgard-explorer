@@ -29,3 +29,8 @@ export async function getLastBlocks(count: number) {
 export async function getLastTxs(count: number) {
   return prisma.blocks.findMany({ orderBy: { height: "desc" }, take: count });
 }
+
+export async function getTotalBlocks() {
+  const rows = await prisma.blocks.groupBy({ by: ["header_hash"] });
+  return rows.length;
+}

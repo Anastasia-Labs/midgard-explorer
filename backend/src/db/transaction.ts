@@ -28,3 +28,7 @@ export async function getTransaction(txId: string) {
   });
   return immutableRow ?? null;
 }
+
+export async function getTotalTransactions() {
+  return prisma.blocks.count();
+}

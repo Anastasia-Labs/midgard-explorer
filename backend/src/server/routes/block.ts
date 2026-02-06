@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { config } from "../../config";
-import { getBlock, getLastBlocks } from "../../db/block";
+import { getBlock, getLastBlocks, getTotalBlocks } from "../../db/block";
 import { toHex } from "../../utils";
 
 export async function getBlockRoute(req: Request, res: Response) {
@@ -30,4 +30,9 @@ export async function getRecentBlocksRoute(_req: Request, res: Response) {
     tx_id: toHex(row.tx_id),
   }));
   return res.json({ rows: payload });
+}
+
+export async function getTotalBlocksRoute(_req: Request, res: Response) {
+  const total = await getTotalBlocks();
+  return res.json({ total });
 }
