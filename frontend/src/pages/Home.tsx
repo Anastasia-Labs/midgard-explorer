@@ -1,17 +1,22 @@
 import { useEffect, useState } from "react";
-import { fetchTotalBlocks } from "../api/block";
-import { fetchTotalTransactions } from "../api/transaction";
+import { fetchRecentBlocks, fetchTotalBlocks } from "../api/block";
+import {
+  fetchRecentTransactions,
+  fetchTotalTransactions,
+} from "../api/transaction";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import SectionHeader from "../components/SectionHeader";
+import { formatHash } from "../utils";
+import { Link } from "react-router-dom";
 
 type RecentTransaction = {
+  header_hash: string;
   tx_id: string;
   time_stamp_tz: string;
 };
 
 type RecentBlock = {
-  height: number;
   header_hash: string;
   time_stamp_tz: string;
 };
@@ -19,6 +24,10 @@ type RecentBlock = {
 export default function HomePage() {
   const [totalTransactions, setTotalTransactions] = useState<string>("—");
   const [totalBlocks, setTotalBlocks] = useState<string>("—");
+  const [recentBlocks, setRecentBlocks] = useState<RecentBlock[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<
+    RecentTransaction[]
+  >([]);
 
   useEffect(() => {
     Promise.all([
@@ -38,13 +47,28 @@ export default function HomePage() {
       });
   }, []);
 
+  useEffect(() => {
+    fetchRecentBlocks()
+      .then((blocks) => setRecentBlocks(blocks))
+      .catch((error) => {
+        console.error(error);
+      });
+  }, []);
+
+  useEffect(() => {
+    fetchRecentTransactions()
+      .then((rows) => setRecentTransactions(rows))
+      .catch((error) => {
+        console.error(error);
+      });
+  }, []);
+
   const stats = [
     { label: "Total Transactions", value: totalTransactions },
     { label: "Total Blocks", value: totalBlocks },
   ];
 
-  const recentTransactions: RecentTransaction[] = [];
-  const recentBlocks: RecentBlock[] = [];
+  const recentBlocksToRender = recentBlocks;
 
   return (
     <PageShell>
@@ -74,7 +98,7 @@ export default function HomePage() {
             </h2>
           </div>
           <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
-            <div className="grid grid-cols-[1.4fr,1fr] gap-0 bg-white/5 text-xs uppercase tracking-[0.22em] text-slate-400">
+            <div className="grid grid-cols-[1.4fr_1fr] gap-0 bg-white/5 text-xs uppercase tracking-[0.22em] text-slate-400">
               <div className="px-4 py-3">Tx Hash</div>
               <div className="px-4 py-3">Timestamp</div>
             </div>
@@ -87,10 +111,16 @@ export default function HomePage() {
                 recentTransactions.map((tx) => (
                   <div
                     key={tx.tx_id}
-                    className="grid grid-cols-[1.4fr,1fr] gap-0 bg-slate-950/40"
+                    className="grid grid-cols-[1.4fr_1fr] gap-0 bg-slate-950/40"
                   >
-                    <div className="px-4 py-4 text-xs text-slate-200">
-                      {tx.tx_id}
+                    <div className="px-4 py-4 text-xs text-slate-200 font-mono">
+                      <Link
+                        to={`/transaction/${tx.tx_id}`}
+                        title={tx.tx_id}
+                        className="hover:text-cyan-200"
+                      >
+                        {formatHash(tx.tx_id)}
+                      </Link>
                     </div>
                     <div className="px-4 py-4 text-xs text-slate-300">
                       {tx.time_stamp_tz}
@@ -109,27 +139,29 @@ export default function HomePage() {
             </h2>
           </div>
           <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
-            <div className="grid grid-cols-[120px,1.4fr,1fr] gap-0 bg-white/5 text-xs uppercase tracking-[0.22em] text-slate-400">
-              <div className="px-4 py-3">Height</div>
+            <div className="grid grid-cols-[1.4fr_1fr] gap-0 bg-white/5 text-xs uppercase tracking-[0.22em] text-slate-400">
               <div className="px-4 py-3">Header Hash</div>
               <div className="px-4 py-3">Timestamp</div>
             </div>
             <div className="divide-y divide-white/10">
-              {recentBlocks.length === 0 ? (
+              {recentBlocksToRender.length === 0 ? (
                 <div className="px-4 py-6 text-sm text-slate-400">
                   No blocks yet.
                 </div>
               ) : (
-                recentBlocks.map((block) => (
+                recentBlocksToRender.map((block) => (
                   <div
-                    key={`${block.height}-${block.header_hash}`}
-                    className="grid grid-cols-[120px,1.4fr,1fr] gap-0 bg-slate-950/40"
+                    key={block.header_hash}
+                    className="grid grid-cols-[1.4fr_1fr] gap-0 bg-slate-950/40"
                   >
-                    <div className="px-4 py-4 text-sm text-slate-200">
-                      {block.height}
-                    </div>
-                    <div className="px-4 py-4 text-xs text-slate-200">
-                      {block.header_hash}
+                    <div className="px-4 py-4 text-xs text-slate-200 font-mono">
+                      <Link
+                        to={`/block/${block.header_hash}`}
+                        title={block.header_hash}
+                        className="hover:text-cyan-200"
+                      >
+                        {formatHash(block.header_hash)}
+                      </Link>
                     </div>
                     <div className="px-4 py-4 text-xs text-slate-300">
                       {block.time_stamp_tz}

@@ -1,26 +1,73 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { fetchBlock } from "../api/block";
 import { fetchTransaction } from "../api/transaction";
 import type { Transaction } from "../cddl";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import SectionHeader from "../components/SectionHeader";
-import { parseCbor } from "../utils";
+import { formatHash, parseCbor } from "../utils";
 
 export default function BlockPage() {
   const { headerHash } = useParams();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [hashes, setHashes] = useState<string[]>([]);
+  const [transactions, setTransactions] = useState<
+    { tx_id: string; timestamp_tz: string; transaction: Transaction }[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const getFee = (tx: Transaction) => {
+    const fee = tx?.[0]?.[2];
+    if (typeof fee === "bigint") return fee;
+    if (typeof fee === "number") return BigInt(fee);
+    return 0n;
+  };
+  const formatAda = (lovelace: bigint) => {
+    const whole = lovelace / 1_000_000n;
+    const fraction = lovelace % 1_000_000n;
+    const wholeStr = whole
+      .toString()
+      .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    const fractionStr = fraction.toString().padStart(6, "0");
+    return `${wholeStr}.${fractionStr} ADA`;
+  };
+  const formatFee = (tx: Transaction) => formatAda(getFee(tx));
+  const getTotalOutput = (tx: Transaction) => {
+    const outputs = tx?.[0]?.[1];
+    if (!Array.isArray(outputs)) return 0n;
+    return outputs.reduce((sum, output) => {
+      const value = output?.[1];
+      const coin =
+        typeof value === "bigint" || typeof value === "number"
+          ? value
+          : Array.isArray(value)
+            ? value[0]
+            : 0;
+      return typeof coin === "bigint"
+        ? sum + coin
+        : sum + BigInt(coin ?? 0);
+    }, 0n);
+  };
+  const formatTotalOutput = (tx: Transaction) =>
+    formatAda(getTotalOutput(tx));
+  const getInputsCount = (tx: Transaction) => {
+    const inputs = tx?.[0]?.[0];
+    return Array.isArray(inputs) ? inputs.length : 0;
+  };
+  const getOutputsCount = (tx: Transaction) => {
+    const outputs = tx?.[0]?.[1];
+    return Array.isArray(outputs) ? outputs.length : 0;
+  };
+  const totalFees = useMemo(
+    () => transactions.reduce((sum, item) => sum + getFee(item.transaction), 0n),
+    [transactions],
+  );
   const stats = useMemo(
     () => [
-      { label: "Tx Count", value: hashes.length.toString() },
-      { label: "Parsed", value: transactions.length.toString() },
+      { label: "Transaction Count", value: transactions.length.toString() },
+      { label: "Total Fees", value: formatAda(totalFees) },
     ],
-    [hashes.length, transactions.length],
+    [transactions.length, totalFees],
   );
   const safeStringify = (value: unknown) =>
     JSON.stringify(
@@ -38,16 +85,18 @@ export default function BlockPage() {
 
     fetchBlock(headerHash)
       .then(async (data) => {
-        const txIds: string[] = (data.rows ?? []).map(
-          (row: { tx_id: string }) => row.tx_id,
-        );
-        setHashes(txIds);
+        const rows = Array.isArray(data?.rows) ? data.rows : [];
         const fetched = await Promise.all(
-          txIds.map((txId) => fetchTransaction(txId)),
+          rows.map((row: { tx_id: string; time_stamp_tz: string }) =>
+            fetchTransaction(row.tx_id).then((tx) => ({
+              tx_id: row.tx_id,
+              timestamp_tz: row.time_stamp_tz,
+              transaction: parseCbor(tx.tx),
+            })),
+          ),
         );
-        const parsed = fetched.map((tx) => parseCbor(tx.tx));
-        setTransactions(parsed);
-        console.log(parsed);
+        setTransactions(fetched);
+        console.log(fetched);
       })
       .catch((error) => {
         console.error(error);
@@ -63,7 +112,7 @@ export default function BlockPage() {
         subtitle="Inspect the transaction hashes returned by Midgard and decode each CBOR payload."
       />
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[2fr,1fr]">
+      <div className="mt-8 grid gap-6">
         <GlassCard className="p-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -100,37 +149,70 @@ export default function BlockPage() {
           </div>
         </GlassCard>
 
-        <GlassCard className="p-6">
+      </div>
+
+      <GlassCard className="mt-8 p-6">
+        <div className="flex items-center justify-between">
           <h2 className="text-sm uppercase tracking-[0.32em] text-slate-400">
-            Transaction Hashes
+            Transactions
           </h2>
-          <div className="mt-4 space-y-3">
-            {hashes.length === 0 ? (
-              <p className="text-sm text-slate-400">
-                {isLoading ? "Loading hashes..." : "No hashes found."}
-              </p>
+        </div>
+        <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
+          <div className="grid grid-cols-[1.4fr_110px_110px_140px_160px_1fr] gap-0 bg-white/5 text-xs uppercase tracking-[0.22em] text-slate-400">
+            <div className="px-4 py-3">Tx Hash</div>
+            <div className="px-4 py-3">Inputs</div>
+            <div className="px-4 py-3">Outputs</div>
+            <div className="px-4 py-3">Fee</div>
+            <div className="px-4 py-3">Total Output</div>
+            <div className="px-4 py-3">Timestamp</div>
+          </div>
+          <div className="divide-y divide-white/10">
+            {transactions.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-slate-400">
+                {isLoading ? "Loading transactions..." : "No transactions yet."}
+              </div>
             ) : (
-              hashes.map((hash, index) => (
+              transactions.map((tx) => (
                 <div
-                  key={`${hash}-${index}`}
-                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-200"
+                  key={tx.tx_id}
+                  className="grid grid-cols-[1.4fr_110px_110px_140px_160px_1fr] gap-0 bg-slate-950/40"
                 >
-                  {hash}
+                  <div className="px-4 py-4 text-xs text-slate-200 font-mono">
+                    <Link
+                      to={`/transaction/${tx.tx_id}`}
+                      title={tx.tx_id}
+                      className="hover:text-cyan-200"
+                    >
+                      {formatHash(tx.tx_id)}
+                    </Link>
+                  </div>
+                  <div className="px-4 py-4 text-xs text-slate-200">
+                    {getInputsCount(tx.transaction)}
+                  </div>
+                  <div className="px-4 py-4 text-xs text-slate-200">
+                    {getOutputsCount(tx.transaction)}
+                  </div>
+                  <div className="px-4 py-4 text-xs text-slate-200 font-mono">
+                    {formatFee(tx.transaction)}
+                  </div>
+                  <div className="px-4 py-4 text-xs text-slate-200 font-mono">
+                    {formatTotalOutput(tx.transaction)}
+                  </div>
+                  <div className="px-4 py-4 text-xs text-slate-300">
+                    {tx.timestamp_tz}
+                  </div>
                 </div>
               ))
             )}
           </div>
-        </GlassCard>
-      </div>
+        </div>
+      </GlassCard>
 
       <GlassCard className="mt-8 p-6">
         <div className="flex items-center justify-between">
           <h2 className="text-sm uppercase tracking-[0.32em] text-slate-400">
             Parsed Transactions
           </h2>
-          <span className="text-xs text-slate-400">
-            {transactions.length} decoded
-          </span>
         </div>
         <div className="mt-4 space-y-4">
           {transactions.length === 0 ? (
@@ -147,7 +229,7 @@ export default function BlockPage() {
                   Transaction {index + 1}
                 </p>
                 <pre className="mt-3 max-h-72 overflow-auto text-xs text-slate-200">
-                  {safeStringify(tx)}
+                  {safeStringify(tx.transaction)}
                 </pre>
               </div>
             ))

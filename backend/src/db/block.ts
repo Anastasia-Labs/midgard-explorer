@@ -26,7 +26,7 @@ export async function getLastBlocks(count: number) {
   });
 }
 
-export async function getLastTxs(count: number) {
+export async function getLastTransactions(count: number) {
   return prisma.blocks.findMany({ orderBy: { height: "desc" }, take: count });
 }
 

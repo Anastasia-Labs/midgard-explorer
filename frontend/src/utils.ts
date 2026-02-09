@@ -17,3 +17,9 @@ export function parseCbor(cborHex: string): Transaction {
 
   return decode(bytes) as Transaction;
 }
+
+export function formatHash(hash: string, head = 8, tail = 6) {
+  if (!hash) return "";
+  if (hash.length <= head + tail + 3) return hash;
+  return `${hash.slice(0, head)}...${hash.slice(-tail)}`;
+}

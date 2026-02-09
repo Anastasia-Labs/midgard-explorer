@@ -36,13 +36,13 @@ export default function NavBar() {
           to="/block/demo"
           className="rounded-full px-3 py-2 hover:bg-white/5"
         >
-          Block
+          Blocks
         </Link>
         <Link
           to="/transaction/demo"
           className="rounded-full px-3 py-2 hover:bg-white/5"
         >
-          Transaction
+          Transactions
         </Link>
       </nav>
     </header>

@@ -100,7 +100,7 @@ export default function AddressPage() {
           </span>
         </div>
         <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
-          <div className="grid grid-cols-[120px,1fr] gap-0 bg-white/5 text-xs uppercase tracking-[0.22em] text-slate-400">
+          <div className="grid grid-cols-[120px_1fr] gap-0 bg-white/5 text-xs uppercase tracking-[0.22em] text-slate-400">
             <div className="px-4 py-3">Index</div>
             <div className="px-4 py-3">Decoded</div>
           </div>
@@ -113,7 +113,7 @@ export default function AddressPage() {
               transactions.map((tx, index) => (
                 <div
                   key={`address-tx-${index}`}
-                  className="grid grid-cols-[120px,1fr] gap-0 bg-slate-950/40"
+                  className="grid grid-cols-[120px_1fr] gap-0 bg-slate-950/40"
                 >
                   <div className="px-4 py-4 text-sm text-slate-300">
                     #{index + 1}
