@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { fetchTransaction } from "../api/transaction";
 import type { Transaction } from "../cddl";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import SectionHeader from "../components/SectionHeader";
-import { parseCbor } from "../utils";
+import {
+  addressToBech32,
+  formatAda,
+  formatHash,
+  parseCbor,
+  toHex,
+} from "../utils";
 
 export default function TransactionPage() {
   const { txHash } = useParams();
@@ -18,6 +24,27 @@ export default function TransactionPage() {
       (_key, v) => (typeof v === "bigint" ? v.toString() : v),
       2,
     );
+  const formatBytes = (value: Uint8Array | string | undefined) => {
+    if (!value) return "";
+    return typeof value === "string" ? value : toHex(value);
+  };
+  const formatValue = (value: unknown) => {
+    if (value == null) return "0";
+    if (typeof value === "bigint") return formatAda(value);
+    if (typeof value === "number") return formatAda(BigInt(value));
+    if (Array.isArray(value)) {
+      const coin = value[0];
+      const assets = value[1] ?? {};
+      const assetCount =
+        assets && typeof assets === "object" ? Object.keys(assets).length : 0;
+      const coinValue =
+        typeof coin === "bigint" || typeof coin === "number"
+          ? formatAda(BigInt(coin))
+          : "0";
+      return assetCount > 0 ? `${coinValue} + ${assetCount} assets` : coinValue;
+    }
+    return "0";
+  };
 
   const metrics = useMemo(() => {
     if (!transaction) return [];
@@ -125,22 +152,87 @@ export default function TransactionPage() {
             Inspect the raw inputs and outputs from the decoded transaction
             body.
           </p>
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="mt-4 grid gap-4">
             <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
               <p className="text-xs uppercase tracking-[0.28em] text-cyan-200">
                 Inputs
               </p>
-              <pre className="mt-3 max-h-72 overflow-auto text-xs text-slate-200">
-                {transaction ? safeStringify(transaction[0]?.[0]) : "No data"}
-              </pre>
+              <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
+                <div className="grid grid-cols-[1.6fr_120px] gap-0 bg-white/5 text-xs uppercase tracking-[0.22em] text-slate-400">
+                  <div className="px-3 py-2">TxID</div>
+                  <div className="px-3 py-2">Index</div>
+                </div>
+                <div className="divide-y divide-white/10">
+                  {Array.isArray(transaction?.[0]?.[0]) &&
+                  transaction[0][0].length > 0 ? (
+                    transaction[0][0].map((input, index) => {
+                      const txId = formatBytes(input?.[0]);
+                      const outIndex =
+                        typeof input?.[1] === "number" ? input[1] : 0;
+                      return (
+                        <div
+                          key={`${txId}-${outIndex}-${index}`}
+                          className="grid grid-cols-[1.6fr_120px] gap-0 bg-slate-950/40"
+                        >
+                          <div className="px-3 py-2 text-xs text-slate-200 font-mono">
+                            <span title={txId}>{formatHash(txId)}</span>
+                          </div>
+                          <div className="px-3 py-2 text-xs text-slate-200">
+                            {outIndex}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="px-3 py-4 text-sm text-slate-400">
+                      {isLoading ? "Loading inputs..." : "No inputs found."}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
               <p className="text-xs uppercase tracking-[0.28em] text-cyan-200">
                 Outputs
               </p>
-              <pre className="mt-3 max-h-72 overflow-auto text-xs text-slate-200">
-                {transaction ? safeStringify(transaction[0]?.[1]) : "No data"}
-              </pre>
+              <div className="mt-3 overflow-hidden rounded-2xl border border-white/10">
+                <div className="grid grid-cols-[1.6fr_1fr] gap-0 bg-white/5 text-xs uppercase tracking-[0.22em] text-slate-400">
+                  <div className="px-3 py-2">Address</div>
+                  <div className="px-3 py-2">Value</div>
+                </div>
+                <div className="divide-y divide-white/10">
+                  {Array.isArray(transaction?.[0]?.[1]) &&
+                  transaction[0][1].length > 0 ? (
+                    transaction[0][1].map((output, index) => {
+                      const address = addressToBech32(output?.[0]);
+                      const value = output?.[1];
+                      return (
+                        <div
+                          key={`${address}-${index}`}
+                          className="grid grid-cols-[1.6fr_1fr] gap-0 bg-slate-950/40"
+                        >
+                          <div className="px-3 py-2 text-xs text-slate-200 font-mono">
+                            <Link
+                              to={`/address/${address}`}
+                              title={address}
+                              className="hover:text-cyan-200"
+                            >
+                              {address}
+                            </Link>
+                          </div>
+                          <div className="px-3 py-2 text-xs text-slate-200 font-mono">
+                            {formatValue(value)}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="px-3 py-4 text-sm text-slate-400">
+                      {isLoading ? "Loading outputs..." : "No outputs found."}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </GlassCard>

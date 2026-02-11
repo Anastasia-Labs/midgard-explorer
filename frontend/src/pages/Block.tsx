@@ -6,7 +6,7 @@ import type { Transaction } from "../cddl";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import SectionHeader from "../components/SectionHeader";
-import { formatHash, parseCbor } from "../utils";
+import { formatAda, formatHash, parseCbor } from "../utils";
 
 export default function BlockPage() {
   const { headerHash } = useParams();
@@ -21,15 +21,6 @@ export default function BlockPage() {
     if (typeof fee === "bigint") return fee;
     if (typeof fee === "number") return BigInt(fee);
     return 0n;
-  };
-  const formatAda = (lovelace: bigint) => {
-    const whole = lovelace / 1_000_000n;
-    const fraction = lovelace % 1_000_000n;
-    const wholeStr = whole
-      .toString()
-      .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-    const fractionStr = fraction.toString().padStart(6, "0");
-    return `${wholeStr}.${fractionStr} ADA`;
   };
   const formatFee = (tx: Transaction) => formatAda(getFee(tx));
   const getTotalOutput = (tx: Transaction) => {
