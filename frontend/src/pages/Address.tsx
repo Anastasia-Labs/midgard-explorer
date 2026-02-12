@@ -1,32 +1,110 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { fetchAddressTransactions } from "../api/address";
 import type { Transaction } from "../cddl";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import SectionHeader from "../components/SectionHeader";
-import { parseCbor } from "../utils";
+import {
+  addressToBech32,
+  formatAda,
+  formatHash,
+  parseCbor,
+  toHex,
+} from "../utils";
 
 export default function AddressPage() {
   const { address } = useParams();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<
+    { tx_id: string; transaction: Transaction }[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const safeStringify = (value: unknown) =>
-    JSON.stringify(
-      value,
-      (_key, v) => (typeof v === "bigint" ? v.toString() : v),
-      2,
-    );
-
+  const normalizeTxId = (value: Uint8Array | string | undefined) => {
+    if (!value) return "";
+    return typeof value === "string" ? value : toHex(value);
+  };
+  const getCoin = (value: unknown) => {
+    if (typeof value === "bigint") return value;
+    if (typeof value === "number") return BigInt(value);
+    if (Array.isArray(value)) {
+      const coin = value[0];
+      if (typeof coin === "bigint") return coin;
+      if (typeof coin === "number") return BigInt(coin);
+    }
+    return 0n;
+  };
+  const balance = useMemo(() => {
+    if (!address) return 0n;
+    const utxos = new Map<string, bigint>();
+    for (const { tx_id, transaction } of transactions) {
+      const outputs = transaction?.[0]?.[1];
+      if (!Array.isArray(outputs)) continue;
+      outputs.forEach((output, index) => {
+        const outputAddress = addressToBech32(output?.[0]);
+        if (outputAddress !== address) return;
+        const value = getCoin(output?.[1]);
+        utxos.set(`${tx_id}:${index}`, value);
+      });
+    }
+    for (const { transaction } of transactions) {
+      const inputs = transaction?.[0]?.[0];
+      if (!Array.isArray(inputs)) continue;
+      inputs.forEach((input) => {
+        const inputTxId = normalizeTxId(input?.[0]);
+        if (!inputTxId) return;
+        const index =
+          typeof input?.[1] === "number" ? input[1] : Number(input?.[1] ?? 0);
+        const key = `${inputTxId}:${index}`;
+        if (utxos.has(key)) {
+          utxos.delete(key);
+        }
+      });
+    }
+    let total = 0n;
+    for (const value of utxos.values()) {
+      total += value;
+    }
+    return total;
+  }, [address, transactions]);
   const stats = useMemo(
     () => [
-      { label: "Balance", value: "1,234.56 ADA" },
+      { label: "Balance", value: formatAda(balance) },
       { label: "Transactions", value: transactions.length.toString() },
     ],
-    [transactions.length],
+    [balance, transactions.length],
   );
+  const getFee = (tx: Transaction) => {
+    const fee = tx?.[0]?.[2];
+    if (typeof fee === "bigint") return fee;
+    if (typeof fee === "number") return BigInt(fee);
+    return 0n;
+  };
+  const getTotalOutput = (tx: Transaction) => {
+    const outputs = tx?.[0]?.[1];
+    if (!Array.isArray(outputs)) return 0n;
+    return outputs.reduce((sum, output) => {
+      const value = output?.[1];
+      const coin =
+        typeof value === "bigint" || typeof value === "number"
+          ? value
+          : Array.isArray(value)
+            ? value[0]
+            : 0;
+      return typeof coin === "bigint"
+        ? sum + coin
+        : sum + BigInt(coin ?? 0);
+    }, 0n);
+  };
+  const getInputsCount = (tx: Transaction) => {
+    const inputs = tx?.[0]?.[0];
+    return Array.isArray(inputs) ? inputs.length : 0;
+  };
+  const getOutputsCount = (tx: Transaction) => {
+    const outputs = tx?.[0]?.[1];
+    return Array.isArray(outputs) ? outputs.length : 0;
+  };
 
   useEffect(() => {
     if (!address) return;
@@ -37,10 +115,13 @@ export default function AddressPage() {
 
     fetchAddressTransactions(address)
       .then((data) => {
-        const txs: string[] = (data.history ?? []).map(
-          (row: { tx?: string }) => row.tx ?? "",
-        );
-        const parsed = txs.filter(Boolean).map((cbor) => parseCbor(cbor));
+        const rows = Array.isArray(data?.history) ? data.history : [];
+        const parsed = rows
+          .filter((row: { tx?: string }) => Boolean(row?.tx))
+          .map((row: { tx_id: string; tx: string }) => ({
+            tx_id: row.tx_id,
+            transaction: parseCbor(row.tx),
+          }));
         setTransactions(parsed);
       })
       .catch((error) => {
@@ -91,18 +172,18 @@ export default function AddressPage() {
       </div>
 
       <GlassCard className="mt-8 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center justify-between">
           <h2 className="text-sm uppercase tracking-[0.32em] text-slate-400">
             Transactions
           </h2>
-          <span className="text-xs text-slate-400">
-            {transactions.length} rows
-          </span>
         </div>
         <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
-          <div className="grid grid-cols-[120px_1fr] gap-0 bg-white/5 text-xs uppercase tracking-[0.22em] text-slate-400">
-            <div className="px-4 py-3">Index</div>
-            <div className="px-4 py-3">Decoded</div>
+          <div className="grid grid-cols-[1.4fr_110px_110px_140px_160px] gap-0 bg-white/5 text-xs uppercase tracking-[0.22em] text-slate-400">
+            <div className="px-4 py-3">Tx Hash</div>
+            <div className="px-4 py-3">Inputs</div>
+            <div className="px-4 py-3">Outputs</div>
+            <div className="px-4 py-3">Fee</div>
+            <div className="px-4 py-3">Total Output</div>
           </div>
           <div className="divide-y divide-white/10">
             {transactions.length === 0 ? (
@@ -110,18 +191,31 @@ export default function AddressPage() {
                 {isLoading ? "Decoding CBOR..." : "No transactions found."}
               </div>
             ) : (
-              transactions.map((tx, index) => (
+              transactions.map((tx) => (
                 <div
-                  key={`address-tx-${index}`}
-                  className="grid grid-cols-[120px_1fr] gap-0 bg-slate-950/40"
+                  key={tx.tx_id}
+                  className="grid grid-cols-[1.4fr_110px_110px_140px_160px] gap-0 bg-slate-950/40"
                 >
-                  <div className="px-4 py-4 text-sm text-slate-300">
-                    #{index + 1}
+                  <div className="px-4 py-4 text-xs text-slate-200 font-mono">
+                    <Link
+                      to={`/transaction/${tx.tx_id}`}
+                      title={tx.tx_id}
+                      className="hover:text-cyan-200"
+                    >
+                      {formatHash(tx.tx_id)}
+                    </Link>
                   </div>
-                  <div className="px-4 py-4">
-                    <pre className="max-h-40 overflow-auto text-xs text-slate-200">
-                      {safeStringify(tx)}
-                    </pre>
+                  <div className="px-4 py-4 text-xs text-slate-200">
+                    {getInputsCount(tx.transaction)}
+                  </div>
+                  <div className="px-4 py-4 text-xs text-slate-200">
+                    {getOutputsCount(tx.transaction)}
+                  </div>
+                  <div className="px-4 py-4 text-xs text-slate-200 font-mono">
+                    {formatAda(getFee(tx.transaction))}
+                  </div>
+                  <div className="px-4 py-4 text-xs text-slate-200 font-mono">
+                    {formatAda(getTotalOutput(tx.transaction))}
                   </div>
                 </div>
               ))
