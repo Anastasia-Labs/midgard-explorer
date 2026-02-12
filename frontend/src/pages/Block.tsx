@@ -6,7 +6,15 @@ import type { Transaction } from "../cddl";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import SectionHeader from "../components/SectionHeader";
-import { formatAda, formatHash, parseCbor } from "../utils";
+import {
+  formatAda,
+  formatHash,
+  getInputsCount,
+  getOutputsCount,
+  getTotalOutput,
+  parseCbor,
+  safeStringify,
+} from "../utils";
 
 export default function BlockPage() {
   const { headerHash } = useParams();
@@ -23,34 +31,10 @@ export default function BlockPage() {
     return 0n;
   };
   const formatFee = (tx: Transaction) => formatAda(getFee(tx));
-  const getTotalOutput = (tx: Transaction) => {
-    const outputs = tx?.[0]?.[1];
-    if (!Array.isArray(outputs)) return 0n;
-    return outputs.reduce((sum, output) => {
-      const value = output?.[1];
-      const coin =
-        typeof value === "bigint" || typeof value === "number"
-          ? value
-          : Array.isArray(value)
-            ? value[0]
-            : 0;
-      return typeof coin === "bigint"
-        ? sum + coin
-        : sum + BigInt(coin ?? 0);
-    }, 0n);
-  };
-  const formatTotalOutput = (tx: Transaction) =>
-    formatAda(getTotalOutput(tx));
-  const getInputsCount = (tx: Transaction) => {
-    const inputs = tx?.[0]?.[0];
-    return Array.isArray(inputs) ? inputs.length : 0;
-  };
-  const getOutputsCount = (tx: Transaction) => {
-    const outputs = tx?.[0]?.[1];
-    return Array.isArray(outputs) ? outputs.length : 0;
-  };
+  const formatTotalOutput = (tx: Transaction) => formatAda(getTotalOutput(tx));
   const totalFees = useMemo(
-    () => transactions.reduce((sum, item) => sum + getFee(item.transaction), 0n),
+    () =>
+      transactions.reduce((sum, item) => sum + getFee(item.transaction), 0n),
     [transactions],
   );
   const stats = useMemo(
@@ -60,12 +44,6 @@ export default function BlockPage() {
     ],
     [transactions.length, totalFees],
   );
-  const safeStringify = (value: unknown) =>
-    JSON.stringify(
-      value,
-      (_key, v) => (typeof v === "bigint" ? v.toString() : v),
-      2,
-    );
 
   useEffect(() => {
     if (!headerHash) return;
@@ -139,7 +117,6 @@ export default function BlockPage() {
             ))}
           </div>
         </GlassCard>
-
       </div>
 
       <GlassCard className="mt-8 p-6">

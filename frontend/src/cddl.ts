@@ -1,6 +1,6 @@
 export type Hash28 = Uint8Array | string;
 export type Hash32 = Uint8Array | string;
-export type Address = Uint8Array | string;
+export type Address = Uint8Array;
 export type Coin = number | bigint;
 export type UInt = number;
 

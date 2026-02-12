@@ -9,6 +9,9 @@ import {
   addressToBech32,
   formatAda,
   formatHash,
+  getInputsCount,
+  getOutputsCount,
+  getTotalOutput,
   parseCbor,
   toHex,
 } from "../utils";
@@ -42,7 +45,8 @@ export default function AddressPage() {
       const outputs = transaction?.[0]?.[1];
       if (!Array.isArray(outputs)) continue;
       outputs.forEach((output, index) => {
-        const outputAddress = addressToBech32(output?.[0]);
+        if (!output?.[0]) return;
+        const outputAddress = addressToBech32(output[0]);
         if (outputAddress !== address) return;
         const value = getCoin(output?.[1]);
         utxos.set(`${tx_id}:${index}`, value);
@@ -80,30 +84,6 @@ export default function AddressPage() {
     if (typeof fee === "bigint") return fee;
     if (typeof fee === "number") return BigInt(fee);
     return 0n;
-  };
-  const getTotalOutput = (tx: Transaction) => {
-    const outputs = tx?.[0]?.[1];
-    if (!Array.isArray(outputs)) return 0n;
-    return outputs.reduce((sum, output) => {
-      const value = output?.[1];
-      const coin =
-        typeof value === "bigint" || typeof value === "number"
-          ? value
-          : Array.isArray(value)
-            ? value[0]
-            : 0;
-      return typeof coin === "bigint"
-        ? sum + coin
-        : sum + BigInt(coin ?? 0);
-    }, 0n);
-  };
-  const getInputsCount = (tx: Transaction) => {
-    const inputs = tx?.[0]?.[0];
-    return Array.isArray(inputs) ? inputs.length : 0;
-  };
-  const getOutputsCount = (tx: Transaction) => {
-    const outputs = tx?.[0]?.[1];
-    return Array.isArray(outputs) ? outputs.length : 0;
   };
 
   useEffect(() => {

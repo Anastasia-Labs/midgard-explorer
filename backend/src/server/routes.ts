@@ -9,6 +9,7 @@ import {
   getTotalTransactionsRoute,
   getTransactionRoute,
   getRecentTransactionsRoute,
+  getTransactionsPageRoute,
 } from "./routes/transaction";
 
 export function registerRoutes(app: Express) {
@@ -19,4 +20,5 @@ export function registerRoutes(app: Express) {
   app.get("/api/blocks/total", getTotalBlocksRoute);
   app.get("/api/transactions/total", getTotalTransactionsRoute);
   app.get("/api/transactions/recent", getRecentTransactionsRoute);
+  app.get("/api/transactions/:page", getTransactionsPageRoute);
 }

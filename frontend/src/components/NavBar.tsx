@@ -39,7 +39,7 @@ export default function NavBar() {
           Blocks
         </Link>
         <Link
-          to="/transaction/demo"
+          to="/transactions/1"
           className="rounded-full px-3 py-2 hover:bg-white/5"
         >
           Transactions

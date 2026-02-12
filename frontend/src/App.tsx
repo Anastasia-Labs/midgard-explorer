@@ -5,7 +5,7 @@ import BlockPage from "./pages/Block";
 import TransactionPage from "./pages/Transaction";
 import AddressPage from "./pages/Address";
 // import BlocksPage from "./pages/Blocks";
-// import TransactionsPage from "./pages/Transactions";
+import TransactionsPage from "./pages/Transactions";
 
 function App() {
   return (
@@ -16,11 +16,7 @@ function App() {
       {/* <Route path="/blocks/:page" element={<BlocksPage />} /> */}
       <Route path="/transaction/:txHash" element={<TransactionPage />} />
       <Route path="/address/:address" element={<AddressPage />} />
-      {/* <Route
-        path="/transactions"
-        element={<Navigate to="/transactions/1" replace />}
-      /> */}
-      {/* <Route path="/transactions/:page" element={<TransactionsPage />} /> */}
+      <Route path="/transactions/:page" element={<TransactionsPage />} />
     </Routes>
   );
 }

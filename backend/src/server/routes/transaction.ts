@@ -1,7 +1,11 @@
 import { Request, Response } from "express";
 import { config } from "../../config";
 import { getLastTransactions } from "../../db/block";
-import { getTotalTransactions, getTransaction } from "../../db/transaction";
+import {
+  getTotalTransactions,
+  getTransaction,
+  getTransactionsPage,
+} from "../../db/transaction";
 import { toHex } from "../../utils";
 
 export async function getTransactionRoute(req: Request, res: Response) {
@@ -40,4 +44,19 @@ export async function getRecentTransactionsRoute(
     tx_id: toHex(row.tx_id),
   }));
   return res.json({ rows: payload });
+}
+
+export async function getTransactionsPageRoute(req: Request, res: Response) {
+  const page = Number(req.params.page);
+  if (!Number.isFinite(page) || page < 1) {
+    return res.status(400).json({ error: "Invalid page." });
+  }
+
+  const { rows, hasNextPage, total, limit } = await getTransactionsPage(page);
+  const payload = rows.map((row) => ({
+    ...row,
+    header_hash: toHex(row.header_hash),
+    tx_id: toHex(row.tx_id),
+  }));
+  return res.json({ rows: payload, hasNextPage, total, limit });
 }

@@ -10,6 +10,7 @@ import {
   formatAda,
   formatHash,
   parseCbor,
+  safeStringify,
   toHex,
 } from "../utils";
 
@@ -18,12 +19,6 @@ export default function TransactionPage() {
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const safeStringify = (value: unknown) =>
-    JSON.stringify(
-      value,
-      (_key, v) => (typeof v === "bigint" ? v.toString() : v),
-      2,
-    );
   const formatBytes = (value: Uint8Array | string | undefined) => {
     if (!value) return "";
     return typeof value === "string" ? value : toHex(value);
@@ -149,8 +144,7 @@ export default function TransactionPage() {
             Inputs / Outputs
           </h2>
           <p className="mt-3 text-sm text-slate-300">
-            Inspect the raw inputs and outputs from the decoded transaction
-            body.
+            Inspect the inputs and outputs from the decoded transaction body.
           </p>
           <div className="mt-4 grid gap-4">
             <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
@@ -204,7 +198,9 @@ export default function TransactionPage() {
                   {Array.isArray(transaction?.[0]?.[1]) &&
                   transaction[0][1].length > 0 ? (
                     transaction[0][1].map((output, index) => {
-                      const address = addressToBech32(output?.[0]);
+                      const address = output?.[0]
+                        ? addressToBech32(output[0])
+                        : "";
                       const value = output?.[1];
                       return (
                         <div

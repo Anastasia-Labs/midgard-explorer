@@ -21,6 +21,13 @@ type RecentTransaction = {
   time_stamp_tz: string;
 };
 
+type TransactionsPageResponse = {
+  rows: RecentTransaction[];
+  total: number;
+  limit: number;
+  hasNextPage: boolean;
+};
+
 export async function fetchRecentTransactions() {
   const response = await axios.get("/api/transactions/recent");
   const rows: RecentTransaction[] = Array.isArray(response.data?.rows)
@@ -31,4 +38,18 @@ export async function fetchRecentTransactions() {
     tx_id: row.tx_id,
     time_stamp_tz: row.time_stamp_tz,
   }));
+}
+
+export async function fetchTransactionsPage(page: number) {
+  const response = await axios.get(`/api/transactions/${page}`);
+  const data = response.data ?? {};
+  const rows: RecentTransaction[] = Array.isArray(data?.rows)
+    ? data.rows
+    : [];
+  return {
+    rows,
+    total: typeof data.total === "number" ? data.total : 0,
+    limit: typeof data.limit === "number" ? data.limit : rows.length,
+    hasNextPage: Boolean(data.hasNextPage),
+  } as TransactionsPageResponse;
 }
