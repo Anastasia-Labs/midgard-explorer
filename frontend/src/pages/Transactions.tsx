@@ -149,7 +149,7 @@ export default function TransactionsPage() {
             </div>
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-2">
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
             {pagination.map((value, index) => {
               const isActive = value === currentPage;
               const showEllipsis =
