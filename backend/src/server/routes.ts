@@ -3,6 +3,7 @@ import {
   getBlockRoute,
   getRecentBlocksRoute,
   getTotalBlocksRoute,
+  getBlocksPageRoute,
 } from "./routes/block";
 import { getAddressRoute } from "./routes/address";
 import {
@@ -18,6 +19,7 @@ export function registerRoutes(app: Express) {
   app.get("/api/address", getAddressRoute);
   app.get("/api/blocks/recent", getRecentBlocksRoute);
   app.get("/api/blocks/total", getTotalBlocksRoute);
+  app.get("/api/blocks/:page", getBlocksPageRoute);
   app.get("/api/transactions/total", getTotalTransactionsRoute);
   app.get("/api/transactions/recent", getRecentTransactionsRoute);
   app.get("/api/transactions/:page", getTransactionsPageRoute);

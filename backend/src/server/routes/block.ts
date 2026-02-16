@@ -1,6 +1,11 @@
 import { Request, Response } from "express";
 import { config } from "../../config";
-import { getBlock, getLastBlocks, getTotalBlocks } from "../../db/block";
+import {
+  getBlock,
+  getBlocksPage,
+  getLastBlocks,
+  getTotalBlocks,
+} from "../../db/block";
 import { toHex } from "../../utils";
 
 export async function getBlockRoute(req: Request, res: Response) {
@@ -35,4 +40,18 @@ export async function getRecentBlocksRoute(_req: Request, res: Response) {
 export async function getTotalBlocksRoute(_req: Request, res: Response) {
   const total = await getTotalBlocks();
   return res.json({ total });
+}
+
+export async function getBlocksPageRoute(req: Request, res: Response) {
+  const page = Number(req.params.page);
+  if (!Number.isFinite(page) || page < 1) {
+    return res.status(400).json({ error: "Invalid page." });
+  }
+
+  const { rows, hasNextPage, total, limit } = await getBlocksPage(page);
+  const payload = rows.map((row) => ({
+    ...row,
+    header_hash: toHex(row.header_hash),
+  }));
+  return res.json({ rows: payload, hasNextPage, total, limit });
 }
