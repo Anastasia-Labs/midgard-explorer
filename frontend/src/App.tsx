@@ -4,7 +4,7 @@ import HomePage from "./pages/Home";
 import BlockPage from "./pages/Block";
 import TransactionPage from "./pages/Transaction";
 import AddressPage from "./pages/Address";
-// import BlocksPage from "./pages/Blocks";
+import BlocksPage from "./pages/Blocks";
 import TransactionsPage from "./pages/Transactions";
 
 function App() {
@@ -12,8 +12,7 @@ function App() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/block/:headerHash" element={<BlockPage />} />
-      {/* <Route path="/blocks" element={<Navigate to="/blocks/1" replace />} /> */}
-      {/* <Route path="/blocks/:page" element={<BlocksPage />} /> */}
+      <Route path="/blocks/:page" element={<BlocksPage />} />
       <Route path="/transaction/:txHash" element={<TransactionPage />} />
       <Route path="/address/:address" element={<AddressPage />} />
       <Route path="/transactions/:page" element={<TransactionsPage />} />

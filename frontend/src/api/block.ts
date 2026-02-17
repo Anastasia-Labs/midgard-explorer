@@ -5,6 +5,13 @@ type RecentBlock = {
   time_stamp_tz: string;
 };
 
+type BlocksPageResponse = {
+  rows: RecentBlock[];
+  total: number;
+  limit: number;
+  hasNextPage: boolean;
+};
+
 export async function fetchBlock(headerHash: string) {
   if (!headerHash) {
     throw new Error("Missing headerHash");
@@ -36,4 +43,16 @@ export async function fetchRecentBlocks() {
     }
   }
   return Array.from(unique.values());
+}
+
+export async function fetchBlocksPage(page: number) {
+  const response = await axios.get(`/api/blocks/${page}`);
+  const data = response.data ?? {};
+  const rows: RecentBlock[] = Array.isArray(data?.rows) ? data.rows : [];
+  return {
+    rows,
+    total: typeof data.total === "number" ? data.total : 0,
+    limit: typeof data.limit === "number" ? data.limit : rows.length,
+    hasNextPage: Boolean(data.hasNextPage),
+  } as BlocksPageResponse;
 }

@@ -33,7 +33,7 @@ export default function NavBar() {
       </div>
       <nav className="hidden items-center gap-3 text-sm text-slate-300 sm:flex">
         <Link
-          to="/block/demo"
+          to="/blocks/1"
           className="rounded-full px-3 py-2 hover:bg-white/5"
         >
           Blocks
