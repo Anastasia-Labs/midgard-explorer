@@ -21,8 +21,12 @@ type RecentTransaction = {
   time_stamp_tz: string;
 };
 
+type TransactionsPageRow = RecentTransaction & {
+  tx: string | null;
+};
+
 type TransactionsPageResponse = {
-  rows: RecentTransaction[];
+  rows: TransactionsPageRow[];
   total: number;
   limit: number;
   hasNextPage: boolean;
@@ -43,7 +47,7 @@ export async function fetchRecentTransactions() {
 export async function fetchTransactionsPage(page: number) {
   const response = await axios.get(`/api/transactions/${page}`);
   const data = response.data ?? {};
-  const rows: RecentTransaction[] = Array.isArray(data?.rows)
+  const rows: TransactionsPageRow[] = Array.isArray(data?.rows)
     ? data.rows
     : [];
   return {

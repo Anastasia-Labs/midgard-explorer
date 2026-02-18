@@ -5,6 +5,18 @@ type RecentBlock = {
   time_stamp_tz: string;
 };
 
+type BlockTransactionRow = {
+  height: number;
+  header_hash: string;
+  tx_id: string;
+  time_stamp_tz: string;
+  tx: string | null;
+};
+
+type BlockResponse = {
+  rows: BlockTransactionRow[];
+};
+
 type BlocksPageResponse = {
   rows: RecentBlock[];
   total: number;
@@ -19,7 +31,10 @@ export async function fetchBlock(headerHash: string) {
 
   const url = `/api/block?header_hash=${encodeURIComponent(headerHash)}`;
   const response = await axios.get(url);
-  return response.data;
+  const data = response.data ?? {};
+  return {
+    rows: Array.isArray(data?.rows) ? data.rows : [],
+  } as BlockResponse;
 }
 
 export async function fetchTotalBlocks() {

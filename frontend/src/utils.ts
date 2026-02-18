@@ -68,12 +68,11 @@ export function getTotalOutput(tx: Transaction) {
   }, 0n);
 }
 
-export function getFee(tx: Transaction) {
+export function getFee(tx: Transaction | null) {
   const fee = tx?.[0]?.[2];
-  console.log("fee");
-  console.log(fee);
-  console.log(typeof fee);
-  return typeof fee === "bigint" ? fee : 0n;
+  if (typeof fee === "bigint") return fee;
+  if (typeof fee === "number") return BigInt(fee);
+  return 0n;
 }
 
 export function addressToBech32(address: Uint8Array) {
@@ -82,5 +81,15 @@ export function addressToBech32(address: Uint8Array) {
     return Address.from_bytes(address).to_bech32();
   } catch {
     return toHex(address);
+  }
+}
+
+export function isValidAddress(address: string) {
+  if (!address) return false;
+  try {
+    Address.from_bech32(address);
+    return true;
+  } catch {
+    return false;
   }
 }

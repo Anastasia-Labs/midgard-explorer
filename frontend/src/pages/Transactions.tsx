@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchTransaction, fetchTransactionsPage } from "../api/transaction";
+import { fetchTransactionsPage } from "../api/transaction";
 import type { Transaction } from "../cddl";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
@@ -19,7 +19,7 @@ type TransactionRow = {
   header_hash: string;
   tx_id: string;
   time_stamp_tz: string;
-  transaction: Transaction;
+  transaction: Transaction | null;
 };
 
 export default function TransactionsPage() {
@@ -40,17 +40,13 @@ export default function TransactionsPage() {
     });
 
     fetchTransactionsPage(currentPage)
-      .then(async (data) => {
+      .then((data) => {
         setTotal(data.total);
         setLimit(data.limit);
-        const fetched = await Promise.all(
-          data.rows.map((row) =>
-            fetchTransaction(row.tx_id).then((tx) => ({
-              ...row,
-              transaction: parseCbor(tx.tx),
-            })),
-          ),
-        );
+        const fetched = data.rows.map((row) => ({
+          ...row,
+          transaction: row.tx ? parseCbor(row.tx) : null,
+        }));
         setRows(fetched);
       })
       .catch((error) => {
@@ -129,16 +125,18 @@ export default function TransactionsPage() {
                       </Link>
                     </div>
                     <div className="px-4 py-4 text-xs text-slate-200">
-                      {getInputsCount(row.transaction)}
+                      {row.transaction ? getInputsCount(row.transaction) : "—"}
                     </div>
                     <div className="px-4 py-4 text-xs text-slate-200">
-                      {getOutputsCount(row.transaction)}
+                      {row.transaction ? getOutputsCount(row.transaction) : "—"}
                     </div>
                     <div className="px-4 py-4 text-xs text-slate-200 font-mono">
-                      {formatAda(getFee(row.transaction))}
+                      {row.transaction ? formatAda(getFee(row.transaction)) : "—"}
                     </div>
                     <div className="px-4 py-4 text-xs text-slate-200 font-mono">
-                      {formatAda(getTotalOutput(row.transaction))}
+                      {row.transaction
+                        ? formatAda(getTotalOutput(row.transaction))
+                        : "—"}
                     </div>
                     <div className="px-4 py-4 text-xs text-slate-300">
                       {row.time_stamp_tz}

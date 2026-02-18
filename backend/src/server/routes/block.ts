@@ -23,6 +23,7 @@ export async function getBlockRoute(req: Request, res: Response) {
     ...row,
     header_hash: toHex(row.header_hash),
     tx_id: toHex(row.tx_id),
+    tx: row.tx ? toHex(row.tx) : null,
   }));
   return res.json({ rows: payload });
 }

@@ -73,7 +73,6 @@ export default function TransactionPage() {
       .then((data) => {
         const parsed: Transaction = parseCbor(data.tx);
         setTransaction(parsed);
-        console.log(parsed);
       })
       .catch((error) => {
         console.error(error);

@@ -7,7 +7,26 @@ export async function getAllBlocks() {
 
 export async function getBlock(headerHash: string) {
   const bytes = Buffer.from(headerHash, "hex");
-  return prisma.blocks.findMany({ where: { header_hash: bytes } });
+  return prisma.$queryRaw<
+    Array<{
+      height: number;
+      header_hash: Uint8Array;
+      tx_id: Uint8Array;
+      time_stamp_tz: Date;
+      tx: Uint8Array | null;
+    }>
+  >`SELECT b.height,
+      b.header_hash,
+      b.tx_id,
+      b.time_stamp_tz,
+      COALESCE(i.tx, m.tx) AS tx
+    FROM blocks AS b
+    LEFT JOIN immutable AS i
+      ON b.tx_id = i.tx_id
+    LEFT JOIN mempool AS m
+      ON b.tx_id = m.tx_id
+    WHERE b.header_hash = ${bytes}
+    ORDER BY b.height DESC;`;
 }
 
 export async function getLastBlocks(count: number) {

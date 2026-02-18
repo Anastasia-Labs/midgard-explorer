@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchBlock } from "../api/block";
-import { fetchTransaction } from "../api/transaction";
 import type { Transaction } from "../cddl";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
@@ -9,6 +8,7 @@ import SectionHeader from "../components/SectionHeader";
 import {
   formatAda,
   formatHash,
+  getFee,
   getInputsCount,
   getOutputsCount,
   getTotalOutput,
@@ -19,19 +19,15 @@ import {
 export default function BlockPage() {
   const { headerHash } = useParams();
   const [transactions, setTransactions] = useState<
-    { tx_id: string; timestamp_tz: string; transaction: Transaction }[]
+    { tx_id: string; timestamp_tz: string; transaction: Transaction | null }[]
   >([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const getFee = (tx: Transaction) => {
-    const fee = tx?.[0]?.[2];
-    if (typeof fee === "bigint") return fee;
-    if (typeof fee === "number") return BigInt(fee);
-    return 0n;
-  };
-  const formatFee = (tx: Transaction) => formatAda(getFee(tx));
-  const formatTotalOutput = (tx: Transaction) => formatAda(getTotalOutput(tx));
+  const formatFee = (tx: Transaction | null) =>
+    tx ? formatAda(getFee(tx)) : "0.000000 ADA";
+  const formatTotalOutput = (tx: Transaction | null) =>
+    tx ? formatAda(getTotalOutput(tx)) : "0.000000 ADA";
   const totalFees = useMemo(
     () =>
       transactions.reduce((sum, item) => sum + getFee(item.transaction), 0n),
@@ -53,19 +49,13 @@ export default function BlockPage() {
     });
 
     fetchBlock(headerHash)
-      .then(async (data) => {
-        const rows = Array.isArray(data?.rows) ? data.rows : [];
-        const fetched = await Promise.all(
-          rows.map((row: { tx_id: string; time_stamp_tz: string }) =>
-            fetchTransaction(row.tx_id).then((tx) => ({
-              tx_id: row.tx_id,
-              timestamp_tz: row.time_stamp_tz,
-              transaction: parseCbor(tx.tx),
-            })),
-          ),
-        );
+      .then((data) => {
+        const fetched = data.rows.map((row) => ({
+          tx_id: row.tx_id,
+          timestamp_tz: row.time_stamp_tz,
+          transaction: row.tx ? parseCbor(row.tx) : null,
+        }));
         setTransactions(fetched);
-        console.log(fetched);
       })
       .catch((error) => {
         console.error(error);
@@ -155,16 +145,16 @@ export default function BlockPage() {
                     </Link>
                   </div>
                   <div className="px-4 py-4 text-xs text-slate-200">
-                    {getInputsCount(tx.transaction)}
+                    {tx.transaction ? getInputsCount(tx.transaction) : "—"}
                   </div>
                   <div className="px-4 py-4 text-xs text-slate-200">
-                    {getOutputsCount(tx.transaction)}
+                    {tx.transaction ? getOutputsCount(tx.transaction) : "—"}
                   </div>
                   <div className="px-4 py-4 text-xs text-slate-200 font-mono">
-                    {formatFee(tx.transaction)}
+                    {tx.transaction ? formatFee(tx.transaction) : "—"}
                   </div>
                   <div className="px-4 py-4 text-xs text-slate-200 font-mono">
-                    {formatTotalOutput(tx.transaction)}
+                    {tx.transaction ? formatTotalOutput(tx.transaction) : "—"}
                   </div>
                   <div className="px-4 py-4 text-xs text-slate-300">
                     {tx.timestamp_tz}
@@ -197,7 +187,7 @@ export default function BlockPage() {
                   Transaction {index + 1}
                 </p>
                 <pre className="mt-3 max-h-72 overflow-auto text-xs text-slate-200">
-                  {safeStringify(tx.transaction)}
+                  {tx.transaction ? safeStringify(tx.transaction) : "—"}
                 </pre>
               </div>
             ))
