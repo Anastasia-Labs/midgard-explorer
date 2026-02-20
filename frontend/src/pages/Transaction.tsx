@@ -11,6 +11,7 @@ import {
   formatHash,
   parseCbor,
   safeStringify,
+  isHexOfLength,
   toHex,
 } from "../utils";
 
@@ -64,6 +65,13 @@ export default function TransactionPage() {
 
   useEffect(() => {
     if (!txHash) return;
+    if (!isHexOfLength(txHash, 64)) {
+      Promise.resolve().then(() => {
+        setError("Invalid transaction hash.");
+        setTransaction(null);
+      });
+      return;
+    }
     Promise.resolve().then(() => {
       setIsLoading(true);
       setError(null);
@@ -76,10 +84,26 @@ export default function TransactionPage() {
       })
       .catch((error) => {
         console.error(error);
+        const apiMessage = error?.response?.data?.error;
+        if (apiMessage === "Transaction not found.") {
+          setError(apiMessage);
+          setTransaction(null);
+          return;
+        }
         setError(error?.message ?? "Failed to load transaction");
       })
       .finally(() => setIsLoading(false));
   }, [txHash]);
+
+  if (error === "Invalid transaction hash." || error === "Transaction not found.") {
+    return (
+      <PageShell>
+        <div className="mx-auto mt-20 max-w-3xl px-4 text-center text-lg text-slate-200">
+          {error}
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell>

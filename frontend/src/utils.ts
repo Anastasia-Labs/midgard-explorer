@@ -47,6 +47,10 @@ export function safeStringify(value: unknown) {
   );
 }
 
+export function isHexOfLength(value: string, length: number) {
+  return value.length === length && /^[0-9a-fA-F]+$/.test(value);
+}
+
 export function getInputsCount(tx: Transaction) {
   const inputs = tx?.[0]?.[0];
   return Array.isArray(inputs) ? inputs.length : 0;

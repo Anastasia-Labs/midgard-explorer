@@ -12,6 +12,7 @@ import {
   getInputsCount,
   getOutputsCount,
   getTotalOutput,
+  isValidAddress,
   parseCbor,
   toHex,
 } from "../utils";
@@ -88,6 +89,13 @@ export default function AddressPage() {
 
   useEffect(() => {
     if (!address) return;
+    if (!isValidAddress(address)) {
+      Promise.resolve().then(() => {
+        setError("Address is not valid.");
+        setTransactions([]);
+      });
+      return;
+    }
     Promise.resolve().then(() => {
       setIsLoading(true);
       setError(null);
@@ -110,6 +118,16 @@ export default function AddressPage() {
       })
       .finally(() => setIsLoading(false));
   }, [address]);
+
+  if (error === "Address is not valid.") {
+    return (
+      <PageShell>
+        <div className="mx-auto mt-20 max-w-3xl px-4 text-center text-lg text-slate-200">
+          Address is not valid.
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell>

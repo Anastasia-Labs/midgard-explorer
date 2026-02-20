@@ -12,6 +12,7 @@ import {
   getInputsCount,
   getOutputsCount,
   getTotalOutput,
+  isHexOfLength,
   parseCbor,
   safeStringify,
 } from "../utils";
@@ -43,6 +44,13 @@ export default function BlockPage() {
 
   useEffect(() => {
     if (!headerHash) return;
+    if (!isHexOfLength(headerHash, 56)) {
+      Promise.resolve().then(() => {
+        setError("Invalid block hash.");
+        setTransactions([]);
+      });
+      return;
+    }
     Promise.resolve().then(() => {
       setIsLoading(true);
       setError(null);
@@ -59,10 +67,26 @@ export default function BlockPage() {
       })
       .catch((error) => {
         console.error(error);
+        const apiMessage = error?.response?.data?.error;
+        if (apiMessage === "Block not found.") {
+          setError(apiMessage);
+          setTransactions([]);
+          return;
+        }
         setError(error?.message ?? "Failed to load block");
       })
       .finally(() => setIsLoading(false));
   }, [headerHash]);
+
+  if (error === "Invalid block hash." || error === "Block not found.") {
+    return (
+      <PageShell>
+        <div className="mx-auto mt-20 max-w-3xl px-4 text-center text-lg text-slate-200">
+          {error}
+        </div>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell>
