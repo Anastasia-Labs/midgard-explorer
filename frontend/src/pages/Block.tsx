@@ -8,6 +8,7 @@ import SectionHeader from "../components/SectionHeader";
 import {
   formatAda,
   formatHash,
+  formatTimestamp,
   getFee,
   getInputsCount,
   getOutputsCount,
@@ -181,7 +182,7 @@ export default function BlockPage() {
                     {tx.transaction ? formatTotalOutput(tx.transaction) : "—"}
                   </div>
                   <div className="px-4 py-4 text-xs text-slate-300">
-                    {tx.timestamp_tz}
+                    {formatTimestamp(tx.timestamp_tz)}
                   </div>
                 </div>
               ))

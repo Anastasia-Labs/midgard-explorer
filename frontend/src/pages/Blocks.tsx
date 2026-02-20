@@ -4,7 +4,7 @@ import { fetchBlocksPage } from "../api/block";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import SectionHeader from "../components/SectionHeader";
-import { formatHash } from "../utils";
+import { formatHash, formatTimestamp } from "../utils";
 
 type BlockRow = {
   header_hash: string;
@@ -103,7 +103,7 @@ export default function BlocksPage() {
                       </Link>
                     </div>
                     <div className="px-4 py-4 text-xs text-slate-300">
-                      {row.time_stamp_tz}
+                      {formatTimestamp(row.time_stamp_tz)}
                     </div>
                   </div>
                 ))

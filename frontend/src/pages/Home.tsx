@@ -7,7 +7,7 @@ import {
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import SectionHeader from "../components/SectionHeader";
-import { formatHash } from "../utils";
+import { formatHash, formatTimestamp } from "../utils";
 import { Link } from "react-router-dom";
 
 type RecentTransaction = {
@@ -123,7 +123,7 @@ export default function HomePage() {
                       </Link>
                     </div>
                     <div className="px-4 py-4 text-xs text-slate-300">
-                      {tx.time_stamp_tz}
+                      {formatTimestamp(tx.time_stamp_tz)}
                     </div>
                   </div>
                 ))
@@ -164,7 +164,7 @@ export default function HomePage() {
                       </Link>
                     </div>
                     <div className="px-4 py-4 text-xs text-slate-300">
-                      {block.time_stamp_tz}
+                      {formatTimestamp(block.time_stamp_tz)}
                     </div>
                   </div>
                 ))

@@ -8,6 +8,7 @@ import SectionHeader from "../components/SectionHeader";
 import {
   formatAda,
   formatHash,
+  formatTimestamp,
   getFee,
   getInputsCount,
   getOutputsCount,
@@ -139,7 +140,7 @@ export default function TransactionsPage() {
                         : "—"}
                     </div>
                     <div className="px-4 py-4 text-xs text-slate-300">
-                      {row.time_stamp_tz}
+                      {formatTimestamp(row.time_stamp_tz)}
                     </div>
                   </div>
                 ))
