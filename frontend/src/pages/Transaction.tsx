@@ -25,7 +25,7 @@ export default function TransactionPage() {
     return typeof value === "string" ? value : toHex(value);
   };
   const formatValue = (value: unknown) => {
-    if (value == null) return "0";
+    if (value == null) return formatAda(0n);
     if (typeof value === "bigint") return formatAda(value);
     if (typeof value === "number") return formatAda(BigInt(value));
     if (Array.isArray(value)) {
@@ -36,10 +36,10 @@ export default function TransactionPage() {
       const coinValue =
         typeof coin === "bigint" || typeof coin === "number"
           ? formatAda(BigInt(coin))
-          : "0";
+          : formatAda(0n);
       return assetCount > 0 ? `${coinValue} + ${assetCount} assets` : coinValue;
     }
-    return "0";
+    return formatAda(0n);
   };
 
   const metrics = useMemo(() => {
@@ -57,8 +57,8 @@ export default function TransactionPage() {
         label: "Fee",
         value:
           typeof fee === "bigint" || typeof fee === "number"
-            ? fee.toString()
-            : "0",
+            ? formatAda(BigInt(fee))
+            : formatAda(0n),
       },
     ];
   }, [transaction]);
