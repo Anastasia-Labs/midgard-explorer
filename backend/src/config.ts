@@ -1,10 +1,16 @@
 import { Config } from "./types";
 import * as dotenv from "dotenv";
+import { expand } from "dotenv-expand";
 
-dotenv.config();
+// expand() resolves ${VAR} references in .env (e.g. POSTGRES_URL is built from the
+// discrete POSTGRES_* vars). Prisma 6's engine did this internally; the v7 driver
+// adapter reads process.env directly, so we own the expansion here.
+expand(dotenv.config());
 
 export const config: Config = {
   BACKEND_PORT: Number(process.env.BACKEND_PORT),
+  CORS_ORIGIN: process.env.CORS_ORIGIN ?? "*",
+  POSTGRES_URL: process.env.POSTGRES_URL as string,
   LOG_LOCATION: process.env.LOG_LOCATION as string,
   NODE_RPC_HOST: process.env.NODE_RPC_HOST as string,
   NODE_RPC_PORT: Number(process.env.NODE_RPC_PORT),

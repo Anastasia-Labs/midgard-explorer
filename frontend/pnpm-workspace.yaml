@@ -1,0 +1,4 @@
+# pnpm v11 build-script policy (allowBuilds map). esbuild (used by Vite)
+# legitimately builds/links its platform binary.
+allowBuilds:
+  esbuild: true

@@ -4,6 +4,10 @@
   "version": "0.1.0",
   "description": "Block explorer for Midgard L2",
   "type": "module",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -11,15 +15,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@emurgo/cardano-serialization-lib-browser": "^15.0.3",
     "@tailwindcss/vite": "^4.1.18",
     "axios": "^1.13.4",
-    "cbor-x": "^1.6.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.12.0",
-    "tailwindcss": "^4.1.18",
-    "vite-plugin-wasm": "^3.5.0"
+    "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

@@ -5,14 +5,22 @@
   "main": "index.js",
   "scripts": {
     "dev": "ts-node src/index.ts",
+    "typecheck": "tsc --noEmit",
     "test": "echo \"Error: no test specified\" && exit 1",
     "prisma:generate": "prisma generate"
   },
   "author": "",
   "license": "ISC",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "dependencies": {
-    "@prisma/client": "^6.16.3",
+    "@al-ft/midgard-core": "file:vendor/al-ft-midgard-core.tgz",
+    "@prisma/adapter-pg": "^7.6.0",
+    "@prisma/client": "^7.6.0",
     "dotenv": "^17.2.3",
+    "dotenv-expand": "^12.0.0",
     "express": "^5.2.1",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"
@@ -20,7 +28,7 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^25.2.0",
-    "prisma": "^6.16.3",
+    "prisma": "^7.6.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }

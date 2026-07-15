@@ -4,6 +4,8 @@
 // Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
+// Schema mirrors the node's tx-validation SQL migrations for tables read by the explorer
+
 generator client {
   provider = "prisma-client-js"
   output   = "explorer-client"
@@ -11,7 +13,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("POSTGRES_URL")
 }
 
 model ConfirmedLedger {
@@ -25,22 +26,12 @@ model ConfirmedLedger {
   @@map("confirmed_ledger")
 }
 
-model LatestLedger {
-  tx_id        Bytes
-  outref       Bytes    @id
-  output       Bytes
-  address      String
-  time_stamp_tz DateTime @default(now())
-
-  @@index([address], map: "idx_latest_ledger_address")
-  @@map("latest_ledger")
-}
-
 model MempoolLedger {
   tx_id        Bytes
   outref       Bytes    @id
   output       Bytes
   address      String
+  source_event_id Bytes?
   time_stamp_tz DateTime @default(now())
 
   @@index([address], map: "idx_mempool_ledger_address")

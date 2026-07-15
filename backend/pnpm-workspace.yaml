@@ -1,0 +1,8 @@
+# pnpm v11 build-script policy (allowBuilds map; replaces the deprecated
+# onlyBuiltDependencies/ignoredBuiltDependencies fields). Prisma runs via the
+# PrismaPg driver adapter, so its query-engine build is not needed; cbor-extract
+# is an optional native accelerator for cbor-x that falls back to pure JS.
+allowBuilds:
+  '@prisma/engines': false
+  prisma: false
+  cbor-extract: false
