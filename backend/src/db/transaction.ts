@@ -14,20 +14,75 @@ export async function getAllProcessedMempoolTxs() {
   return prisma.processedMempoolTx.findMany();
 }
 
-// Note: Perhaps we should not fetch from mempool, given mempool is not yet committed
+// Checks tiers in priority order: immutable (committed), processed_mempool
+// (pending_commit), mempool (accepted). A tx may exist in multiple tiers
+// transiently. `pending` flags unconfirmed txs; `source` records the tier found.
 export async function getTransaction(txId: string) {
   const txBytes = toBytes(txId);
-  const mempoolRow = await prisma.mempoolTx.findUnique({
-    where: { tx_id: txBytes },
-  });
-  if (mempoolRow) {
-    return mempoolRow;
-  }
-
   const immutableRow = await prisma.immutableTx.findUnique({
     where: { tx_id: txBytes },
   });
-  return immutableRow ?? null;
+  if (immutableRow) {
+    return { ...immutableRow, pending: false, source: "immutable" as const };
+  }
+
+  const processedRow = await prisma.processedMempoolTx.findUnique({
+    where: { tx_id: txBytes },
+  });
+  if (processedRow) {
+    return {
+      ...processedRow,
+      pending: true,
+      source: "processed_mempool" as const,
+    };
+  }
+
+  const mempoolRow = await prisma.mempoolTx.findUnique({
+    where: { tx_id: txBytes },
+  });
+  return mempoolRow
+    ? { ...mempoolRow, pending: true, source: "mempool" as const }
+    : null;
+}
+
+export type TxLifecycle =
+  | {
+      status: "rejected";
+      reasonCode: string;
+      reasonDetail: string | null;
+      rejectedAt: Date;
+    }
+  | { status: "queued" | "validating" }
+  | null;
+
+/** Lifecycle for txs not present in any tx table: rejected, or still in admission. */
+export async function getTxLifecycle(txId: string): Promise<TxLifecycle> {
+  const txBytes = toBytes(txId);
+  const rejections = await prisma.$queryRaw<
+    Array<{
+      reject_code: string;
+      reject_detail: string | null;
+      created_at: Date;
+    }>
+  >`SELECT reject_code, reject_detail, created_at FROM tx_rejections
+    WHERE tx_id = ${txBytes} ORDER BY created_at DESC LIMIT 1;`;
+  if (rejections.length > 0) {
+    return {
+      status: "rejected",
+      reasonCode: rejections[0].reject_code,
+      reasonDetail: rejections[0].reject_detail,
+      rejectedAt: rejections[0].created_at,
+    };
+  }
+
+  const admissions = await prisma.$queryRaw<Array<{ status: string }>>`
+    SELECT status FROM tx_admissions WHERE tx_id = ${txBytes};`;
+  const admissionStatus = admissions[0]?.status;
+  if (admissionStatus === "queued" || admissionStatus === "validating") {
+    return { status: admissionStatus };
+  }
+
+  return null;
 }
 
 export async function getTotalTransactions() {

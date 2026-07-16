@@ -1,5 +1,7 @@
 export type Config = {
   BACKEND_PORT: number;
+  CORS_ORIGIN: string;
+  POSTGRES_URL: string;
   LOG_LOCATION: string;
   NODE_RPC_HOST: string;
   NODE_RPC_PORT: number;

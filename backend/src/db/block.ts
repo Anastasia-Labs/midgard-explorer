@@ -1,5 +1,6 @@
 import { prisma } from "../db";
 import { config } from "../config";
+import { toHex } from "../utils";
 
 export async function getAllBlocks() {
   return prisma.blocks.findMany();
@@ -53,6 +54,61 @@ export async function getLastTransactions(count: number) {
 export async function getTotalBlocks() {
   const rows = await prisma.blocks.groupBy({ by: ["header_hash"] });
   return rows.length;
+}
+
+export async function getBlockDaMetadata(headerHash: string) {
+  const key = Buffer.from(headerHash, "hex");
+  const rows = await prisma.$queryRaw<
+    Array<{
+      utxos_root: string;
+      transactions_root: string;
+      deposits_root: string;
+      withdrawals_root: string;
+      forced_transactions_root: string;
+      transition_trace_root: string;
+      event_to_step_root: string;
+      l2_transaction_count: bigint;
+      deposit_count: bigint;
+      withdrawal_count: bigint;
+      forced_transaction_count: bigint;
+      total_event_count: bigint;
+      transition_step_count: bigint;
+      block_start_time: Date;
+      block_end_time: Date;
+    }>
+  >`SELECT utxos_root, transactions_root, deposits_root, withdrawals_root,
+       forced_transactions_root, transition_trace_root, event_to_step_root,
+       l2_transaction_count, deposit_count, withdrawal_count,
+       forced_transaction_count, total_event_count, transition_step_count,
+       block_start_time, block_end_time
+     FROM da_payloads WHERE header_hash = ${key};`;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ...row,
+    l2_transaction_count: Number(row.l2_transaction_count),
+    deposit_count: Number(row.deposit_count),
+    withdrawal_count: Number(row.withdrawal_count),
+    forced_transaction_count: Number(row.forced_transaction_count),
+    total_event_count: Number(row.total_event_count),
+    transition_step_count: Number(row.transition_step_count),
+  };
+}
+
+export async function getBlockFinalization(headerHash: string) {
+  const key = Buffer.from(headerHash, "hex");
+  const rows = await prisma.$queryRaw<
+    Array<{ status: string; submitted_tx_hash: Uint8Array | null }>
+  >`SELECT status, submitted_tx_hash FROM pending_block_finalizations
+    WHERE header_hash = ${key};`;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    status: row.status,
+    submitted_tx_hash: row.submitted_tx_hash
+      ? toHex(row.submitted_tx_hash)
+      : null,
+  };
 }
 
 export async function getBlocksPage(page: number) {
