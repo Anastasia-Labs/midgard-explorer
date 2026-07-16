@@ -6,6 +6,10 @@ import TransactionPage from "./pages/Transaction";
 import AddressPage from "./pages/Address";
 import BlocksPage from "./pages/Blocks";
 import TransactionsPage from "./pages/Transactions";
+import DepositsPage from "./pages/Deposits";
+import WithdrawalsPage from "./pages/Withdrawals";
+import ForcedTransactionsPage from "./pages/ForcedTransactions";
+import NotFoundPage from "./pages/NotFound";
 
 function App() {
   return (
@@ -16,6 +20,13 @@ function App() {
       <Route path="/transaction/:txHash" element={<TransactionPage />} />
       <Route path="/address/:address" element={<AddressPage />} />
       <Route path="/transactions/:page" element={<TransactionsPage />} />
+      <Route path="/deposits/:page" element={<DepositsPage />} />
+      <Route path="/withdrawals/:page" element={<WithdrawalsPage />} />
+      <Route
+        path="/forced-transactions/:page"
+        element={<ForcedTransactionsPage />}
+      />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

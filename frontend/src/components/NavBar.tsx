@@ -36,6 +36,24 @@ export default function NavBar() {
         >
           Transactions
         </Link>
+        <Link
+          to="/deposits/1"
+          className="rounded-full px-3 py-2 hover:bg-white/5"
+        >
+          Deposits
+        </Link>
+        <Link
+          to="/withdrawals/1"
+          className="rounded-full px-3 py-2 hover:bg-white/5"
+        >
+          Withdrawals
+        </Link>
+        <Link
+          to="/forced-transactions/1"
+          className="rounded-full px-3 py-2 hover:bg-white/5"
+        >
+          Forced Txs
+        </Link>
       </nav>
     </header>
   );
