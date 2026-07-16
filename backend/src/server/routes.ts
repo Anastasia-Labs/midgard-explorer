@@ -12,10 +12,13 @@ import {
   getRecentTransactionsRoute,
   getTransactionsPageRoute,
 } from "./routes/transaction";
+import { getDepositsPageRoute } from "./routes/deposits";
+import { getWithdrawalsPageRoute } from "./routes/withdrawals";
+import { getForcedTransactionsPageRoute } from "./routes/forcedTransactions";
 
 export function registerRoutes(app: Express) {
   app.get("/api/block", getBlockRoute);
-  app.get("/api/transcation", getTransactionRoute);
+  app.get("/api/transaction", getTransactionRoute);
   app.get("/api/address", getAddressRoute);
   app.get("/api/blocks/recent", getRecentBlocksRoute);
   app.get("/api/blocks/total", getTotalBlocksRoute);
@@ -23,4 +26,7 @@ export function registerRoutes(app: Express) {
   app.get("/api/transactions/total", getTotalTransactionsRoute);
   app.get("/api/transactions/recent", getRecentTransactionsRoute);
   app.get("/api/transactions/:page", getTransactionsPageRoute);
+  app.get("/api/deposits/:page", getDepositsPageRoute);
+  app.get("/api/withdrawals/:page", getWithdrawalsPageRoute);
+  app.get("/api/forced-transactions/:page", getForcedTransactionsPageRoute);
 }

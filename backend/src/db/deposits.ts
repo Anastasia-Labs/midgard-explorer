@@ -1,0 +1,34 @@
+import { prisma } from "../db";
+
+const LIMIT = 25;
+
+export async function getDepositsPage(page: number) {
+  const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
+  const offset = (safePage - 1) * LIMIT;
+  const [rows, totalRows] = await Promise.all([
+    prisma.$queryRaw<
+      Array<{
+        event_id: Uint8Array;
+        deposit_l1_tx_hash: Uint8Array;
+        ledger_tx_id: Uint8Array;
+        ledger_address: string;
+        ledger_output: Uint8Array;
+        status: string;
+        inclusion_time: Date;
+        projected_header_hash: Uint8Array | null;
+      }>
+    >`SELECT event_id, deposit_l1_tx_hash, ledger_tx_id, ledger_address,
+         ledger_output, status, inclusion_time, projected_header_hash
+       FROM deposits_utxos
+       ORDER BY inclusion_time DESC, event_id DESC
+       LIMIT ${LIMIT + 1} OFFSET ${offset};`,
+    prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*) AS count FROM deposits_utxos;`,
+  ]);
+  return {
+    rows: rows.slice(0, LIMIT),
+    hasNextPage: rows.length > LIMIT,
+    total: Number(totalRows[0].count),
+    limit: LIMIT,
+  };
+}

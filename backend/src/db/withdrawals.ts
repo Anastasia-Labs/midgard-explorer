@@ -1,0 +1,37 @@
+import { prisma } from "../db";
+
+const LIMIT = 25;
+
+export async function getWithdrawalsPage(page: number) {
+  const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
+  const offset = (safePage - 1) * LIMIT;
+  const [rows, totalRows] = await Promise.all([
+    prisma.$queryRaw<
+      Array<{
+        event_id: Uint8Array;
+        withdrawal_l1_tx_hash: Uint8Array;
+        withdrawal_l1_output_index: number;
+        l2_outref: Uint8Array;
+        l2_value: Uint8Array;
+        l1_address: Uint8Array;
+        validity: string | null;
+        status: string;
+        inclusion_time: Date;
+        projected_header_hash: Uint8Array | null;
+      }>
+    >`SELECT event_id, withdrawal_l1_tx_hash, withdrawal_l1_output_index,
+         l2_outref, l2_value, l1_address, validity, status, inclusion_time,
+         projected_header_hash
+       FROM withdrawal_utxos
+       ORDER BY inclusion_time DESC, event_id DESC
+       LIMIT ${LIMIT + 1} OFFSET ${offset};`,
+    prisma.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*) AS count FROM withdrawal_utxos;`,
+  ]);
+  return {
+    rows: rows.slice(0, LIMIT),
+    hasNextPage: rows.length > LIMIT,
+    total: Number(totalRows[0].count),
+    limit: LIMIT,
+  };
+}
