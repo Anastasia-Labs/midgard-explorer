@@ -1,65 +1,57 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchTransaction } from "../api/transaction";
-import type { Transaction } from "../cddl";
+import { fetchTransaction, type TxRejection } from "../api/transaction";
+import type { TransactionView, TxStatus } from "../cddl";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
 import SectionHeader from "../components/SectionHeader";
 import {
-  addressToBech32,
   formatAda,
   formatHash,
-  parseCbor,
-  safeStringify,
+  formatValueView,
   isHexOfLength,
-  toHex,
+  safeStringify,
 } from "../utils";
+
+const STATUS_LABELS: Record<TxStatus, string> = {
+  committed: "Committed",
+  pending_commit: "Pending commit",
+  accepted: "Accepted (mempool)",
+  rejected: "Rejected",
+  validating: "Validating",
+  queued: "Queued",
+};
+
+const STATUS_BADGE_CLASSNAMES: Record<TxStatus, string> = {
+  committed:
+    "rounded-full bg-emerald-400/15 px-2.5 py-1 text-emerald-200 ring-1 ring-emerald-400/30",
+  pending_commit:
+    "rounded-full bg-amber-400/15 px-2.5 py-1 text-amber-200 ring-1 ring-amber-400/30",
+  accepted:
+    "rounded-full bg-amber-400/15 px-2.5 py-1 text-amber-200 ring-1 ring-amber-400/30",
+  validating:
+    "rounded-full bg-amber-400/15 px-2.5 py-1 text-amber-200 ring-1 ring-amber-400/30",
+  queued:
+    "rounded-full bg-amber-400/15 px-2.5 py-1 text-amber-200 ring-1 ring-amber-400/30",
+  rejected:
+    "rounded-full bg-rose-400/15 px-2.5 py-1 text-rose-200 ring-1 ring-rose-400/30",
+};
 
 export default function TransactionPage() {
   const { txHash } = useParams();
-  const [transaction, setTransaction] = useState<Transaction | null>(null);
+  const [transaction, setTransaction] = useState<TransactionView | null>(null);
+  const [status, setStatus] = useState<TxStatus | undefined>(undefined);
+  const [rejection, setRejection] = useState<TxRejection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const formatBytes = (value: Uint8Array | string | undefined) => {
-    if (!value) return "";
-    return typeof value === "string" ? value : toHex(value);
-  };
-  const formatValue = (value: unknown) => {
-    if (value == null) return formatAda(0n);
-    if (typeof value === "bigint") return formatAda(value);
-    if (typeof value === "number") return formatAda(BigInt(value));
-    if (Array.isArray(value)) {
-      const coin = value[0];
-      const assets = value[1] ?? {};
-      const assetCount =
-        assets && typeof assets === "object" ? Object.keys(assets).length : 0;
-      const coinValue =
-        typeof coin === "bigint" || typeof coin === "number"
-          ? formatAda(BigInt(coin))
-          : formatAda(0n);
-      return assetCount > 0 ? `${coinValue} + ${assetCount} assets` : coinValue;
-    }
-    return formatAda(0n);
-  };
 
   const metrics = useMemo(() => {
     if (!transaction) return [];
-    const [body, witnessSet] = transaction;
-    const inputs = Array.isArray(body?.[0]) ? body[0].length : 0;
-    const outputs = Array.isArray(body?.[1]) ? body[1].length : 0;
-    const witnesses = Array.isArray(witnessSet?.[0]) ? witnessSet[0].length : 0;
-    const fee = body?.[2];
     return [
-      { label: "Inputs", value: inputs.toString() },
-      { label: "Outputs", value: outputs.toString() },
-      { label: "Witnesses", value: witnesses.toString() },
-      {
-        label: "Fee",
-        value:
-          typeof fee === "bigint" || typeof fee === "number"
-            ? formatAda(BigInt(fee))
-            : formatAda(0n),
-      },
+      { label: "Inputs", value: transaction.inputs.length.toString() },
+      { label: "Outputs", value: transaction.outputs.length.toString() },
+      { label: "Witnesses", value: transaction.witnesses.vkeyCount.toString() },
+      { label: "Fee", value: formatAda(transaction.fee) },
     ];
   }, [transaction]);
 
@@ -69,6 +61,8 @@ export default function TransactionPage() {
       Promise.resolve().then(() => {
         setError("Invalid transaction hash.");
         setTransaction(null);
+        setStatus(undefined);
+        setRejection(null);
       });
       return;
     }
@@ -79,23 +73,34 @@ export default function TransactionPage() {
 
     fetchTransaction(txHash)
       .then((data) => {
-        const parsed: Transaction = parseCbor(data.tx);
-        setTransaction(parsed);
+        setTransaction(data.transaction);
+        setStatus(data.status);
+        setRejection(data.rejection ?? null);
+        // Legacy fallback: no status means an older backend that only ever
+        // returns `transaction: null` when nothing was found.
+        if (!data.transaction && !data.status) {
+          setError("Transaction not found.");
+        }
       })
-      .catch((error) => {
-        console.error(error);
-        const apiMessage = error?.response?.data?.error;
+      .catch((err) => {
+        console.error(err);
+        const apiMessage = err?.response?.data?.error;
         if (apiMessage === "Transaction not found.") {
           setError(apiMessage);
           setTransaction(null);
+          setStatus(undefined);
+          setRejection(null);
           return;
         }
-        setError(error?.message ?? "Failed to load transaction");
+        setError(err?.message ?? "Failed to load transaction");
       })
       .finally(() => setIsLoading(false));
   }, [txHash]);
 
-  if (error === "Invalid transaction hash." || error === "Transaction not found.") {
+  if (
+    error === "Invalid transaction hash." ||
+    (error === "Transaction not found." && !status)
+  ) {
     return (
       <PageShell>
         <div className="mx-auto mt-20 max-w-3xl px-4 text-center text-lg text-slate-200">
@@ -105,11 +110,13 @@ export default function TransactionPage() {
     );
   }
 
+  const isValid = transaction?.validity === "TxIsValid";
+
   return (
     <PageShell>
       <SectionHeader
         title="Transaction"
-        subtitle="Decode CBOR payloads into readable structures and inspect their inputs, outputs, and witnesses."
+        subtitle="Inspect a Midgard transaction's inputs, outputs, and witnesses."
       />
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.6fr,1fr]">
@@ -121,14 +128,28 @@ export default function TransactionPage() {
               </p>
               <p className="mt-2 break-all text-sm text-slate-200">{txHash}</p>
             </div>
-            {transaction ? (
-              <div className="flex items-center gap-2 text-xs text-slate-300">
-                <span
-                  className={`h-2.5 w-2.5 rounded-full ${
-                    transaction[2] ? "bg-emerald-400" : "bg-rose-400"
-                  }`}
-                />
-                {transaction[2] ? "Transaction Valid" : "Transaction Invalid"}
+            {status || transaction ? (
+              <div className="flex items-center gap-3 text-xs text-slate-300">
+                {status ? (
+                  <span className={STATUS_BADGE_CLASSNAMES[status]}>
+                    {STATUS_LABELS[status]}
+                  </span>
+                ) : transaction?.pending ? (
+                  // Legacy fallback: older backend response with no `status`.
+                  <span className="rounded-full bg-amber-400/15 px-2.5 py-1 text-amber-200 ring-1 ring-amber-400/30">
+                    Pending (mempool)
+                  </span>
+                ) : null}
+                {transaction ? (
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        isValid ? "bg-emerald-400" : "bg-rose-400"
+                      }`}
+                    />
+                    {isValid ? "Transaction Valid" : "Transaction Invalid"}
+                  </span>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -162,12 +183,29 @@ export default function TransactionPage() {
           </div>
         </GlassCard>
 
+        {status === "rejected" ? (
+          <GlassCard className="p-6">
+            <h2 className="text-sm uppercase tracking-[0.32em] text-slate-400">
+              Rejection Reason
+            </h2>
+            <div className="mt-4 rounded-2xl border border-rose-400/30 bg-rose-500/10 p-4">
+              <p className="text-xs uppercase tracking-[0.28em] text-rose-300">
+                {rejection?.reasonCode ?? "Unknown reason"}
+              </p>
+              {rejection?.reasonDetail ? (
+                <p className="mt-2 text-sm text-rose-200">
+                  {rejection.reasonDetail}
+                </p>
+              ) : null}
+            </div>
+          </GlassCard>
+        ) : (
         <GlassCard className="p-6">
           <h2 className="text-sm uppercase tracking-[0.32em] text-slate-400">
             Inputs / Outputs
           </h2>
           <p className="mt-3 text-sm text-slate-300">
-            Inspect the inputs and outputs from the decoded transaction body.
+            Inputs and outputs from the decoded transaction.
           </p>
           <div className="mt-4 grid gap-4">
             <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
@@ -180,26 +218,35 @@ export default function TransactionPage() {
                   <div className="px-3 py-2">Index</div>
                 </div>
                 <div className="divide-y divide-white/10">
-                  {Array.isArray(transaction?.[0]?.[0]) &&
-                  transaction[0][0].length > 0 ? (
-                    transaction[0][0].map((input, index) => {
-                      const txId = formatBytes(input?.[0]);
-                      const outIndex =
-                        typeof input?.[1] === "number" ? input[1] : 0;
-                      return (
-                        <div
-                          key={`${txId}-${outIndex}-${index}`}
-                          className="grid grid-cols-[1.6fr_120px] gap-0 bg-slate-950/40"
-                        >
-                          <div className="px-3 py-2 text-xs text-slate-200 font-mono">
-                            <span title={txId}>{formatHash(txId)}</span>
-                          </div>
-                          <div className="px-3 py-2 text-xs text-slate-200">
-                            {outIndex}
-                          </div>
+                  {transaction && transaction.inputs.length > 0 ? (
+                    transaction.inputs.map((input, index) => (
+                      <div
+                        key={`${input.txId}-${input.index}-${index}`}
+                        className="grid grid-cols-[1.6fr_120px] gap-0 bg-slate-950/40"
+                      >
+                        <div className="px-3 py-2 text-xs text-slate-200 font-mono">
+                          <Link
+                            to={`/transaction/${input.txId}`}
+                            title={input.txId}
+                            className="hover:text-cyan-200"
+                          >
+                            {formatHash(input.txId)}
+                          </Link>
+                          {input.resolved ? (
+                            <Link
+                              to={`/address/${input.resolved.address}`}
+                              title={input.resolved.address}
+                              className="block text-[10px] text-slate-400 hover:text-cyan-200"
+                            >
+                              {formatHash(input.resolved.address, 10, 6)}
+                            </Link>
+                          ) : null}
                         </div>
-                      );
-                    })
+                        <div className="px-3 py-2 text-xs text-slate-200">
+                          {input.index}
+                        </div>
+                      </div>
+                    ))
                   ) : (
                     <div className="px-3 py-4 text-sm text-slate-400">
                       {isLoading ? "Loading inputs..." : "No inputs found."}
@@ -218,33 +265,26 @@ export default function TransactionPage() {
                   <div className="px-3 py-2">Value</div>
                 </div>
                 <div className="divide-y divide-white/10">
-                  {Array.isArray(transaction?.[0]?.[1]) &&
-                  transaction[0][1].length > 0 ? (
-                    transaction[0][1].map((output, index) => {
-                      const address = output?.[0]
-                        ? addressToBech32(output[0])
-                        : "";
-                      const value = output?.[1];
-                      return (
-                        <div
-                          key={`${address}-${index}`}
-                          className="grid grid-cols-[1.6fr_1fr] gap-0 bg-slate-950/40"
-                        >
-                          <div className="px-3 py-2 text-xs text-slate-200 font-mono">
-                            <Link
-                              to={`/address/${address}`}
-                              title={address}
-                              className="hover:text-cyan-200"
-                            >
-                              {address}
-                            </Link>
-                          </div>
-                          <div className="px-3 py-2 text-xs text-slate-200 font-mono">
-                            {formatValue(value)}
-                          </div>
+                  {transaction && transaction.outputs.length > 0 ? (
+                    transaction.outputs.map((output, index) => (
+                      <div
+                        key={`${output.address}-${index}`}
+                        className="grid grid-cols-[1.6fr_1fr] gap-0 bg-slate-950/40"
+                      >
+                        <div className="px-3 py-2 text-xs text-slate-200 font-mono">
+                          <Link
+                            to={`/address/${output.address}`}
+                            title={output.address}
+                            className="hover:text-cyan-200"
+                          >
+                            {output.address}
+                          </Link>
                         </div>
-                      );
-                    })
+                        <div className="px-3 py-2 text-xs text-slate-200 font-mono">
+                          {formatValueView(output.value)}
+                        </div>
+                      </div>
+                    ))
                   ) : (
                     <div className="px-3 py-4 text-sm text-slate-400">
                       {isLoading ? "Loading outputs..." : "No outputs found."}
@@ -255,18 +295,21 @@ export default function TransactionPage() {
             </div>
           </div>
         </GlassCard>
+        )}
       </div>
 
-      <GlassCard className="mt-8 p-6">
-        <h2 className="text-sm uppercase tracking-[0.32em] text-slate-400">
-          Raw Body
-        </h2>
-        <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
-          <pre className="max-h-96 overflow-auto text-xs text-slate-200">
-            {transaction ? safeStringify(transaction[0]) : "No data"}
-          </pre>
-        </div>
-      </GlassCard>
+      {status === "rejected" ? null : (
+        <GlassCard className="mt-8 p-6">
+          <h2 className="text-sm uppercase tracking-[0.32em] text-slate-400">
+            Decoded Transaction
+          </h2>
+          <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+            <pre className="max-h-96 overflow-auto text-xs text-slate-200">
+              {transaction ? safeStringify(transaction) : "No data"}
+            </pre>
+          </div>
+        </GlassCard>
+      )}
     </PageShell>
   );
 }

@@ -1,4 +1,5 @@
-import axios from "axios";
+import { api } from "./client";
+import type { TransactionView } from "../cddl";
 
 type RecentBlock = {
   header_hash: string;
@@ -10,11 +11,37 @@ type BlockTransactionRow = {
   header_hash: string;
   tx_id: string;
   time_stamp_tz: string;
-  tx: string | null;
+  transaction: TransactionView | null;
+  decodeError: string | null;
+};
+
+export type BlockDaMetadata = {
+  utxos_root: string;
+  transactions_root: string;
+  deposits_root: string;
+  withdrawals_root: string;
+  forced_transactions_root: string;
+  transition_trace_root: string;
+  event_to_step_root: string;
+  l2_transaction_count: number;
+  deposit_count: number;
+  withdrawal_count: number;
+  forced_transaction_count: number;
+  total_event_count: number;
+  transition_step_count: number;
+  block_start_time: string;
+  block_end_time: string;
+};
+
+export type BlockFinalization = {
+  status: string;
+  submitted_tx_hash: string | null;
 };
 
 type BlockResponse = {
   rows: BlockTransactionRow[];
+  da: BlockDaMetadata | null;
+  finalization: BlockFinalization | null;
 };
 
 type BlocksPageResponse = {
@@ -30,20 +57,22 @@ export async function fetchBlock(headerHash: string) {
   }
 
   const url = `/api/block?header_hash=${encodeURIComponent(headerHash)}`;
-  const response = await axios.get(url);
+  const response = await api.get(url);
   const data = response.data ?? {};
   return {
     rows: Array.isArray(data?.rows) ? data.rows : [],
+    da: data?.da ?? null,
+    finalization: data?.finalization ?? null,
   } as BlockResponse;
 }
 
 export async function fetchTotalBlocks() {
-  const response = await axios.get("/api/blocks/total");
+  const response = await api.get("/api/blocks/total");
   return response.data;
 }
 
 export async function fetchRecentBlocks() {
-  const response = await axios.get("/api/blocks/recent");
+  const response = await api.get("/api/blocks/recent");
   const rows: RecentBlock[] = Array.isArray(response.data?.rows)
     ? response.data.rows
     : [];
@@ -61,7 +90,7 @@ export async function fetchRecentBlocks() {
 }
 
 export async function fetchBlocksPage(page: number) {
-  const response = await axios.get(`/api/blocks/${page}`);
+  const response = await api.get(`/api/blocks/${page}`);
   const data = response.data ?? {};
   const rows: RecentBlock[] = Array.isArray(data?.rows) ? data.rows : [];
   return {

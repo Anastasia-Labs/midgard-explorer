@@ -1,17 +1,28 @@
-import axios from "axios";
+import { api } from "./client";
+import type { TransactionView, TxStatus } from "../cddl";
+
+export type TxRejection = {
+  reasonCode: string;
+  reasonDetail: string | null;
+  rejectedAt: string;
+};
+
 export async function fetchTransaction(txId: string) {
   if (!txId) {
     throw new Error("Missing txId");
   }
 
-  const url = `/api/transcation?tx_hash=${encodeURIComponent(txId)}`;
-  const response = await axios.get(url);
-  const data = response.data ?? {};
-  return { tx: data.tx?.tx ?? data.tx };
+  const url = `/api/transaction?tx_hash=${encodeURIComponent(txId)}`;
+  const response = await api.get(url);
+  return {
+    transaction: (response.data?.transaction ?? null) as TransactionView | null,
+    status: response.data?.status as TxStatus | undefined,
+    rejection: response.data?.rejection as TxRejection | undefined,
+  };
 }
 
 export async function fetchTotalTransactions() {
-  const response = await axios.get("/api/transactions/total");
+  const response = await api.get("/api/transactions/total");
   return response.data;
 }
 
@@ -22,7 +33,8 @@ type RecentTransaction = {
 };
 
 type TransactionsPageRow = RecentTransaction & {
-  tx: string | null;
+  transaction: TransactionView | null;
+  decodeError: string | null;
 };
 
 type TransactionsPageResponse = {
@@ -33,7 +45,7 @@ type TransactionsPageResponse = {
 };
 
 export async function fetchRecentTransactions() {
-  const response = await axios.get("/api/transactions/recent");
+  const response = await api.get("/api/transactions/recent");
   const rows: RecentTransaction[] = Array.isArray(response.data?.rows)
     ? response.data.rows
     : [];
@@ -45,7 +57,7 @@ export async function fetchRecentTransactions() {
 }
 
 export async function fetchTransactionsPage(page: number) {
-  const response = await axios.get(`/api/transactions/${page}`);
+  const response = await api.get(`/api/transactions/${page}`);
   const data = response.data ?? {};
   const rows: TransactionsPageRow[] = Array.isArray(data?.rows)
     ? data.rows

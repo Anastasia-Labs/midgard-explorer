@@ -1,23 +1,4 @@
-import { decode } from "cbor-x/decode";
-import { Address } from "@emurgo/cardano-serialization-lib-browser";
-import type { Transaction } from "./cddl";
-
-export function parseCbor(cborHex: string): Transaction {
-  if (!cborHex) {
-    throw new Error("Missing CBOR payload");
-  }
-
-  if (!/^[0-9a-fA-F]+$/.test(cborHex)) {
-    throw new Error("Invalid CBOR hex: non-hex characters found");
-  }
-
-  const bytes = new Uint8Array(cborHex.length / 2);
-  for (let i = 0; i < cborHex.length; i += 2) {
-    bytes[i / 2] = parseInt(cborHex.slice(i, i + 2), 16);
-  }
-
-  return decode(bytes) as Transaction;
-}
+import type { TransactionView, ValueView } from "./cddl";
 
 export function formatHash(hash: string, head = 8, tail = 6) {
   if (!hash) return "";
@@ -25,12 +6,22 @@ export function formatHash(hash: string, head = 8, tail = 6) {
   return `${hash.slice(0, head)}...${hash.slice(-tail)}`;
 }
 
-export function formatAda(lovelace: bigint) {
-  const whole = lovelace / 1_000_000n;
-  const fraction = lovelace % 1_000_000n;
+export function formatAda(lovelace: bigint | string | number) {
+  const value = typeof lovelace === "bigint" ? lovelace : BigInt(lovelace || 0);
+  const whole = value / 1_000_000n;
+  const fraction = value % 1_000_000n;
   const wholeStr = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const fractionStr = fraction.toString().padStart(6, "0");
   return `${wholeStr}.${fractionStr} ADA`;
+}
+
+export function formatValueView(value: ValueView) {
+  const ada = formatAda(value.lovelace);
+  const assetCount = Object.values(value.assets).reduce(
+    (count, names) => count + Object.keys(names).length,
+    0,
+  );
+  return assetCount > 0 ? `${ada} + ${assetCount} assets` : ada;
 }
 
 export function toHex(bytes: Uint8Array) {
@@ -51,51 +42,14 @@ export function isHexOfLength(value: string, length: number) {
   return value.length === length && /^[0-9a-fA-F]+$/.test(value);
 }
 
-export function getInputsCount(tx: Transaction) {
-  const inputs = tx?.[0]?.[0];
-  return Array.isArray(inputs) ? inputs.length : 0;
-}
-
-export function getOutputsCount(tx: Transaction) {
-  const outputs = tx?.[0]?.[1];
-  return Array.isArray(outputs) ? outputs.length : 0;
-}
-
-export function getTotalOutput(tx: Transaction) {
-  const outputs = tx?.[0]?.[1];
-  if (!Array.isArray(outputs)) return 0n;
-  return outputs.reduce((sum, output) => {
-    const value = output?.[1];
-    const coin =
-      typeof value === "bigint" ? value : Array.isArray(value) ? value[0] : 0n;
-    return typeof coin === "bigint" ? sum + coin : sum;
-  }, 0n);
-}
-
-export function getFee(tx: Transaction | null) {
-  const fee = tx?.[0]?.[2];
-  if (typeof fee === "bigint") return fee;
-  if (typeof fee === "number") return BigInt(fee);
-  return 0n;
-}
-
-export function addressToBech32(address: Uint8Array) {
-  if (!address) return "";
-  try {
-    return Address.from_bytes(address).to_bech32();
-  } catch {
-    return toHex(address);
-  }
-}
-
+/**
+ * Lightweight bech32 address check (no @emurgo CSL — which can't parse Midgard's
+ * protected-header addresses anyway). Validates the shape only; the backend is the
+ * source of truth for decoding.
+ */
 export function isValidAddress(address: string) {
   if (!address) return false;
-  try {
-    Address.from_bech32(address);
-    return true;
-  } catch {
-    return false;
-  }
+  return /^addr(_test)?1[02-9ac-hj-np-z]{8,}$/.test(address);
 }
 
 export function formatTimestamp(value: string) {
@@ -103,4 +57,25 @@ export function formatTimestamp(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+// --- TransactionView accessors (the backend already decoded; these are trivial) ---
+
+export function getInputsCount(tx: TransactionView) {
+  return tx.inputs.length;
+}
+
+export function getOutputsCount(tx: TransactionView) {
+  return tx.outputs.length;
+}
+
+export function getFee(tx: TransactionView | null) {
+  return tx ? BigInt(tx.fee) : 0n;
+}
+
+export function getTotalOutput(tx: TransactionView) {
+  return tx.outputs.reduce(
+    (sum, output) => sum + BigInt(output.value.lovelace),
+    0n,
+  );
 }

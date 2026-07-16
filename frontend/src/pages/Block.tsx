@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchBlock } from "../api/block";
+import type { BlockDaMetadata, BlockFinalization } from "../api/block";
 import type { Transaction } from "../cddl";
 import GlassCard from "../components/GlassCard";
 import PageShell from "../components/PageShell";
@@ -14,15 +15,55 @@ import {
   getOutputsCount,
   getTotalOutput,
   isHexOfLength,
-  parseCbor,
   safeStringify,
 } from "../utils";
+
+const FINALIZATION_LABELS: Record<string, string> = {
+  pending_submission: "Pending submission",
+  submitted_local_finalization_pending: "Submitted (local finalization pending)",
+  submitted_unconfirmed: "Submitted (unconfirmed)",
+  observed_waiting_stability: "Awaiting L1 stability",
+  finalized: "Finalized",
+  abandoned: "Abandoned",
+};
+
+const FINALIZATION_BADGE_CLASSNAMES: Record<string, string> = {
+  pending_submission:
+    "rounded-full bg-amber-400/15 px-2.5 py-1 text-amber-200 ring-1 ring-amber-400/30",
+  submitted_local_finalization_pending:
+    "rounded-full bg-amber-400/15 px-2.5 py-1 text-amber-200 ring-1 ring-amber-400/30",
+  submitted_unconfirmed:
+    "rounded-full bg-amber-400/15 px-2.5 py-1 text-amber-200 ring-1 ring-amber-400/30",
+  observed_waiting_stability:
+    "rounded-full bg-cyan-400/15 px-2.5 py-1 text-cyan-200 ring-1 ring-cyan-400/30",
+  finalized:
+    "rounded-full bg-emerald-400/15 px-2.5 py-1 text-emerald-200 ring-1 ring-emerald-400/30",
+  abandoned:
+    "rounded-full bg-rose-400/15 px-2.5 py-1 text-rose-200 ring-1 ring-rose-400/30",
+};
+
+const DEFAULT_BADGE_CLASSNAME =
+  "rounded-full bg-slate-400/15 px-2.5 py-1 text-slate-200 ring-1 ring-slate-400/30";
+
+const DA_ROOT_FIELDS: Array<{ key: keyof BlockDaMetadata; label: string }> = [
+  { key: "utxos_root", label: "UTxOs Root" },
+  { key: "transactions_root", label: "Transactions Root" },
+  { key: "deposits_root", label: "Deposits Root" },
+  { key: "withdrawals_root", label: "Withdrawals Root" },
+  { key: "forced_transactions_root", label: "Forced Transactions Root" },
+  { key: "transition_trace_root", label: "Transition Trace Root" },
+  { key: "event_to_step_root", label: "Event to Step Root" },
+];
 
 export default function BlockPage() {
   const { headerHash } = useParams();
   const [transactions, setTransactions] = useState<
     { tx_id: string; timestamp_tz: string; transaction: Transaction | null }[]
   >([]);
+  const [da, setDa] = useState<BlockDaMetadata | null>(null);
+  const [finalization, setFinalization] = useState<BlockFinalization | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -49,6 +90,8 @@ export default function BlockPage() {
       Promise.resolve().then(() => {
         setError("Invalid block hash.");
         setTransactions([]);
+        setDa(null);
+        setFinalization(null);
       });
       return;
     }
@@ -62,9 +105,11 @@ export default function BlockPage() {
         const fetched = data.rows.map((row) => ({
           tx_id: row.tx_id,
           timestamp_tz: row.time_stamp_tz,
-          transaction: row.tx ? parseCbor(row.tx) : null,
+          transaction: row.transaction,
         }));
         setTransactions(fetched);
+        setDa(data.da);
+        setFinalization(data.finalization);
       })
       .catch((error) => {
         console.error(error);
@@ -72,6 +117,8 @@ export default function BlockPage() {
         if (apiMessage === "Block not found.") {
           setError(apiMessage);
           setTransactions([]);
+          setDa(null);
+          setFinalization(null);
           return;
         }
         setError(error?.message ?? "Failed to load block");
@@ -131,8 +178,96 @@ export default function BlockPage() {
               </div>
             ))}
           </div>
+
+          {finalization || da ? (
+            <div className="mt-6 flex flex-wrap items-center gap-3 text-xs text-slate-300">
+              <span className="text-xs uppercase tracking-[0.28em] text-slate-400">
+                Finalization
+              </span>
+              {finalization ? (
+                <>
+                  <span
+                    className={
+                      FINALIZATION_BADGE_CLASSNAMES[finalization.status] ??
+                      DEFAULT_BADGE_CLASSNAME
+                    }
+                  >
+                    {FINALIZATION_LABELS[finalization.status] ??
+                      finalization.status}
+                  </span>
+                  {finalization.submitted_tx_hash ? (
+                    <span
+                      className="font-mono text-slate-200"
+                      title={finalization.submitted_tx_hash}
+                    >
+                      {formatHash(finalization.submitted_tx_hash)}
+                    </span>
+                  ) : null}
+                </>
+              ) : (
+                <span className="rounded-full bg-cyan-400/15 px-2.5 py-1 text-cyan-200 ring-1 ring-cyan-400/30">
+                  Merged
+                </span>
+              )}
+            </div>
+          ) : null}
         </GlassCard>
       </div>
+
+      {da ? (
+        <GlassCard className="mt-8 p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm uppercase tracking-[0.32em] text-slate-400">
+              Data Availability
+            </h2>
+          </div>
+          <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+            {DA_ROOT_FIELDS.map((field) => {
+              const value = String(da[field.key]);
+              return (
+                <div
+                  key={field.key}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+                >
+                  <dt className="text-xs uppercase tracking-[0.28em] text-slate-400">
+                    {field.label}
+                  </dt>
+                  <dd
+                    className="mt-2 break-all font-mono text-xs text-slate-200"
+                    title={value}
+                  >
+                    {formatHash(value)}
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+          <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-200">
+            {da.l2_transaction_count} L2 txs · {da.deposit_count} deposits ·{" "}
+            {da.withdrawal_count} withdrawals · {da.forced_transaction_count}{" "}
+            forced txs · {da.total_event_count} total events ·{" "}
+            {da.transition_step_count} trace steps
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.28em] text-slate-400">
+                Block Start
+              </p>
+              <p className="mt-2 text-sm text-slate-200">
+                {formatTimestamp(da.block_start_time)}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.28em] text-slate-400">
+                Block End
+              </p>
+              <p className="mt-2 text-sm text-slate-200">
+                {formatTimestamp(da.block_end_time)}
+              </p>
+            </div>
+          </div>
+        </GlassCard>
+      ) : null}
 
       <GlassCard className="mt-8 p-6">
         <div className="flex items-center justify-between">

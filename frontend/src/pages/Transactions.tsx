@@ -13,7 +13,6 @@ import {
   getInputsCount,
   getOutputsCount,
   getTotalOutput,
-  parseCbor,
 } from "../utils";
 
 type TransactionRow = {
@@ -44,11 +43,7 @@ export default function TransactionsPage() {
       .then((data) => {
         setTotal(data.total);
         setLimit(data.limit);
-        const fetched = data.rows.map((row) => ({
-          ...row,
-          transaction: row.tx ? parseCbor(row.tx) : null,
-        }));
-        setRows(fetched);
+        setRows(data.rows);
       })
       .catch((error) => {
         console.error(error);

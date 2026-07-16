@@ -1,73 +1,56 @@
-export type Hash28 = Uint8Array | string;
-export type Hash32 = Uint8Array | string;
-export type Address = Uint8Array;
-export type Coin = number | bigint;
-export type UInt = number;
+// Frontend mirror of the backend decode JSON contract (backend/src/decode/types.ts).
+// The backend now decodes Midgard-native transactions and returns this shape; the
+// frontend no longer parses CBOR. All bigint amounts arrive as decimal STRINGS.
 
-export type TransactionId = Hash32;
-export type OutputReference = [TransactionId, UInt];
-export type TransactionInput = OutputReference;
+export type OutRef = { txId: string; index: number };
 
-export type PolicyId = Hash28;
-export type AssetName = Uint8Array | string;
-export type Multiasset<T> = Record<string, Record<string, T>>;
+/** policyIdHex -> assetNameHex -> quantity (decimal string) */
+export type AssetMap = Record<string, Record<string, string>>;
 
-export type Value = Coin | [Coin, Multiasset<Coin>];
+export type ValueView = { lovelace: string; assets: AssetMap };
 
-export type PlutusData = unknown;
-export type Data = PlutusData;
-export type ScriptRef = Uint8Array | string;
-
-export type TransactionOutput = {
-  0: Address;
-  1: Value;
-  2?: Data;
-  3?: ScriptRef;
+export type OutputView = {
+  address: string; // bech32
+  value: ValueView;
+  hasDatum: boolean;
+  hasScriptRef: boolean;
 };
 
-export type Mint = Multiasset<Coin>;
-
-export type RequiredSigners = Hash28[];
-export type RequiredObservers = Hash28[];
-export type AuxiliaryDataHash = Hash32;
-export type ScriptDataHash = Hash32;
-
-export type TransactionBody = {
-  0: TransactionInput[];
-  1: TransactionOutput[];
-  2: Coin;
-  3?: UInt;
-  7?: AuxiliaryDataHash;
-  8?: UInt;
-  9?: Mint;
-  11?: ScriptDataHash;
-  14?: RequiredSigners;
-  15?: UInt;
-  18?: TransactionInput[];
-  23?: RequiredObservers;
+export type InputView = OutRef & {
+  /** Resolved spend side; null when not resolvable (spent/pruned). */
+  resolved: { address: string; value: ValueView } | null;
 };
 
-export type VKeyWitness = {
-  0: Uint8Array | string; // vkey
-  1: Uint8Array | string; // signature
+export type WitnessSummary = {
+  vkeyCount: number;
+  scriptCount: number;
+  redeemerCount: number;
 };
 
-export type NativeScript = unknown;
-export type Redeemers = unknown;
-export type PlutusV3Script = Uint8Array | string;
-
-export type TransactionWitnessSet = {
-  0?: VKeyWitness[];
-  1?: NativeScript[];
-  5?: Redeemers;
-  7?: PlutusV3Script[];
+export type TransactionView = {
+  txId: string;
+  formatVersion: number;
+  validity: string; // "TxIsValid" | "TxIsInvalid"
+  fee: string;
+  validityInterval: { start: string | null; end: string | null };
+  networkId: number | null;
+  inputs: InputView[];
+  referenceInputs: OutRef[];
+  outputs: OutputView[];
+  mint: { policyIds: string[] } | null;
+  witnesses: WitnessSummary;
+  /** True when the tx is still in the mempool (not yet merged into a block). */
+  pending?: boolean;
 };
 
-export type AuxiliaryData = null;
+/** Back-compat alias: pages historically import `Transaction`. */
+export type Transaction = TransactionView;
 
-export type Transaction = [
-  TransactionBody,
-  TransactionWitnessSet,
-  boolean,
-  AuxiliaryData | null,
-];
+/** Canonical tx lifecycle status, mirrors the node's `resolveTxStatus` priority. */
+export type TxStatus =
+  | "committed"
+  | "pending_commit"
+  | "accepted"
+  | "rejected"
+  | "validating"
+  | "queued";
