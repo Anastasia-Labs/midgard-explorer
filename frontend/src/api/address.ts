@@ -10,6 +10,7 @@ export type AddressHistoryRow = {
 
 export type AddressResponse = {
   balance: ValueView;
+  undecodedOutputs: number;
   history: AddressHistoryRow[];
 };
 
@@ -25,6 +26,11 @@ export async function fetchAddressTransactions(
   const data = response.data ?? {};
   return {
     balance: data.balance ?? { lovelace: "0", assets: {} },
+    undecodedOutputs:
+      typeof data.undecodedOutputs === "number" &&
+      Number.isFinite(data.undecodedOutputs)
+        ? Math.max(0, Math.floor(data.undecodedOutputs))
+        : 0,
     history: Array.isArray(data.history) ? data.history : [],
   };
 }

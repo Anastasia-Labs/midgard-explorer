@@ -23,15 +23,20 @@ export default function AddressPage() {
   // Balance is the ledger-derived lovelace total from the backend (decimal string),
   // not a client-side replay of the returned history.
   const [balance, setBalance] = useState<string>("0");
+  const [undecodedOutputs, setUndecodedOutputs] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const balanceIncomplete = undecodedOutputs > 0;
 
   const stats = useMemo(
     () => [
-      { label: "Balance", value: formatAda(balance) },
+      {
+        label: "Balance",
+        value: balanceIncomplete ? "Incomplete" : formatAda(balance),
+      },
       { label: "Transactions", value: transactions.length.toString() },
     ],
-    [balance, transactions.length],
+    [balance, balanceIncomplete, transactions.length],
   );
 
   useEffect(() => {
@@ -40,17 +45,20 @@ export default function AddressPage() {
       Promise.resolve().then(() => {
         setError("Address is not valid.");
         setTransactions([]);
+        setUndecodedOutputs(0);
       });
       return;
     }
     Promise.resolve().then(() => {
       setIsLoading(true);
       setError(null);
+      setUndecodedOutputs(0);
     });
 
     fetchAddressTransactions(address)
       .then((data) => {
         setBalance(data.balance?.lovelace ?? "0");
+        setUndecodedOutputs(data.undecodedOutputs);
         const parsed: AddressTx[] = data.history
           .filter((row) => Boolean(row.transaction))
           .map((row) => ({ tx_id: row.tx_id, transaction: row.transaction! }));
@@ -92,6 +100,18 @@ export default function AddressPage() {
           {error ? (
             <div className="mt-6 rounded-2xl bg-rose-500/10 p-4 text-sm text-rose-200 ring-1 ring-rose-400/30">
               {error}
+            </div>
+          ) : null}
+
+          {balanceIncomplete ? (
+            <div
+              className="mt-6 rounded-2xl bg-amber-400/10 p-4 text-sm text-amber-200 ring-1 ring-amber-400/30"
+              role="status"
+            >
+              Balance is incomplete because {undecodedOutputs} spendable
+              {undecodedOutputs === 1 ? " output could" : " outputs could"} not
+              be decoded. The decoded subtotal is {formatAda(balance)}; do not
+              treat it as the total balance.
             </div>
           ) : null}
 
