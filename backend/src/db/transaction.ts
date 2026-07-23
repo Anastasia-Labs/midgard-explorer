@@ -52,7 +52,7 @@ export type TxLifecycle =
       reasonDetail: string | null;
       rejectedAt: Date;
     }
-  | { status: "queued" | "validating" }
+  | { status: "queued" | "validating" | "accepted" }
   | null;
 
 /** Lifecycle for txs not present in any tx table: rejected, or still in admission. */
@@ -78,7 +78,11 @@ export async function getTxLifecycle(txId: string): Promise<TxLifecycle> {
   const admissions = await prisma.$queryRaw<Array<{ status: string }>>`
     SELECT status FROM tx_admissions WHERE tx_id = ${txBytes};`;
   const admissionStatus = admissions[0]?.status;
-  if (admissionStatus === "queued" || admissionStatus === "validating") {
+  if (
+    admissionStatus === "queued" ||
+    admissionStatus === "validating" ||
+    admissionStatus === "accepted"
+  ) {
     return { status: admissionStatus };
   }
 
