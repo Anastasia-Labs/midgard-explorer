@@ -33,6 +33,9 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0(winston@3.19.0)
     devDependencies:
+      '@lucid-evolution/lucid':
+        specifier: 0.4.31
+        version: 0.4.31(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.6)(@harmoniclabs/crypto@0.2.5)(@harmoniclabs/pair@1.0.0)(fast-check@3.23.2)
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
@@ -1347,11 +1350,6 @@ packages:
   nanoassert@2.0.0:
     resolution: {integrity: sha512-7vO7n28+aYO4J+8w96AzhmU8G+Y/xpPDJz/se19ICsqj/momRbb9mh9ZUtkoJ5X3nTnPdhEJyc0qnM6yAsHBaA==}
 
-  nanoid@3.3.12:
-    resolution: {integrity: sha512-ZB9RH/39qpq5Vu6Y+NmUaFhQR6pp+M2Xt76XBnEwDaGcVAqhlvxrl3B2bKS5D3NH3QR76v3aSrKaF/Kiy7lEtQ==}
-    engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
-    hasBin: true
-
   nanoid@3.3.16:
     resolution: {integrity: sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
@@ -2031,7 +2029,7 @@ snapshots:
       cross-fetch: 3.2.0
       fastq: 1.20.1
       isomorphic-ws: 4.0.1(ws@7.5.11)
-      nanoid: 3.3.12
+      nanoid: 3.3.16
       ts-custom-error: 3.3.1
       ws: 7.5.11
     transitivePeerDependencies:
@@ -3405,8 +3403,6 @@ snapshots:
       lru.min: 1.1.4
 
   nanoassert@2.0.0: {}
-
-  nanoid@3.3.12: {}
 
   nanoid@3.3.16: {}
 
