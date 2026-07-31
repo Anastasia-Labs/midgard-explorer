@@ -49,14 +49,24 @@ export function bech32ChecksumValid(s: string): boolean {
 export type Classification =
   | { kind: "transaction"; value: string }
   | { kind: "block"; value: string }
+  | { kind: "blockHeight"; value: string }
   | { kind: "address"; value: string }
   | { kind: "invalid"; reason: string };
+
+/** Heights are what a block page shows and what people type back in. Accepts a
+ * bare integer or the "#40" form the UI displays, with optional grouping. */
+const HEIGHT = /^#?\d{1,3}(?:,\d{3})*$|^#?\d+$/;
 
 export function classify(raw: string): Classification {
   const input = raw.trim();
   if (input.length === 0) return { kind: "invalid", reason: "Enter a search term." };
   if (/^[0-9a-fA-F]{64}$/.test(input)) return { kind: "transaction", value: input.toLowerCase() };
   if (/^[0-9a-fA-F]{56}$/.test(input)) return { kind: "block", value: input.toLowerCase() };
+  if (HEIGHT.test(input)) {
+    const digits = input.replace(/[#,]/g, "");
+    // A 56- or 64-digit run is a hash typed without letters, not a height.
+    if (digits.length <= 15) return { kind: "blockHeight", value: String(Number(digits)) };
+  }
 
   const prefix = ADDRESS_PREFIXES.find((p) => input.startsWith(p));
   if (prefix) {
@@ -84,7 +94,7 @@ export function classify(raw: string): Classification {
   return {
     kind: "invalid",
     reason:
-      "Not a recognized identifier. Expected a 64-hex transaction hash, a 56-hex block header hash, or a bech32 address (addr…/stake…).",
+      "Not a recognized identifier. Expected a 64-hex transaction hash, a 56-hex block header hash, a block height, or a bech32 address (addr…/stake…).",
   };
 }
 
@@ -94,6 +104,8 @@ export function hrefFor(c: Classification): string | null {
       return `/transaction/${c.value}`;
     case "block":
       return `/block/${c.value}`;
+    case "blockHeight":
+      return `/block/height/${c.value}`;
     case "address":
       return `/address/${c.value}`;
     case "invalid":

@@ -131,10 +131,31 @@ describe("classify", () => {
   });
 });
 
+describe("block height", () => {
+  it.each([
+    ["40", "40"],
+    ["#40", "40"],
+    ["1,234", "1234"],
+    ["0", "0"],
+  ])("classifies %s as height %s", (input, value) => {
+    expect(classify(input)).toEqual({ kind: "blockHeight", value });
+  });
+
+  it("does not treat an all-digit hash as a height", () => {
+    expect(classify("1".repeat(64)).kind).toBe("transaction");
+    expect(classify("1".repeat(56)).kind).toBe("block");
+  });
+
+  it("rejects a digit run too long to be a height", () => {
+    expect(classify("1".repeat(20)).kind).toBe("invalid");
+  });
+});
+
 describe("hrefFor", () => {
   it.each([
     [{ kind: "transaction", value: "abc" } as const, "/transaction/abc"],
     [{ kind: "block", value: "def" } as const, "/block/def"],
+    [{ kind: "blockHeight", value: "40" } as const, "/block/height/40"],
     [{ kind: "address", value: "addr1x" } as const, "/address/addr1x"],
   ])("routes %o to %s", (c, expected) => {
     expect(hrefFor(c)).toBe(expected);

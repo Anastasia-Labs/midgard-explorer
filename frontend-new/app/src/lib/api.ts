@@ -1,5 +1,6 @@
 import { decodeAddressResponse } from "@midgard-explorer/contracts";
 import {
+  decodeBlockByHeight,
   decodeBlockResponse,
   decodeBlocksPage,
   decodeRecentBlocks,
@@ -139,6 +140,8 @@ export const api = {
     ),
   address: (address: string, init?: FetchInit) =>
     fetchJson(`/api/address?address=${encodeURIComponent(address)}`, decodeAddressResponse, init),
+  blockByHeight: (height: number, init?: FetchInit) =>
+    fetchJson(`/api/blocks/by-height/${height}`, decodeBlockByHeight, init),
   recentBlocks: (init?: FetchInit) => fetchJson("/api/blocks/recent", decodeRecentBlocks, init),
   totalBlocks: (init?: FetchInit) => fetchJson("/api/blocks/total", decodeTotal, init),
   blocksPage: (page: number, init?: FetchInit) =>

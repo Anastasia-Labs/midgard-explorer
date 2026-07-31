@@ -51,6 +51,17 @@ export async function getLastTransactions(count: number) {
   return prisma.blocks.findMany({ orderBy: { height: "desc" }, take: count });
 }
 
+/** Height is what people read off a block page and type back into search, so it
+ * resolves to the canonical header hash. `blocks` holds one row per block-tx
+ * pair; every row for a height carries the same header hash. */
+export async function getBlockHashByHeight(height: number) {
+  const row = await prisma.blocks.findFirst({
+    where: { height },
+    select: { header_hash: true },
+  });
+  return row?.header_hash ?? null;
+}
+
 export async function getTotalBlocks() {
   const rows = await prisma.blocks.groupBy({ by: ["header_hash"] });
   return rows.length;
@@ -98,8 +109,17 @@ export async function getBlockDaMetadata(headerHash: string) {
 export async function getBlockFinalization(headerHash: string) {
   const key = Buffer.from(headerHash, "hex");
   const rows = await prisma.$queryRaw<
-    Array<{ status: string; submitted_tx_hash: Uint8Array | null }>
-  >`SELECT status, submitted_tx_hash FROM pending_block_finalizations
+    Array<{
+      status: string;
+      submitted_tx_hash: Uint8Array | null;
+      block_end_time: Date;
+      created_at: Date;
+      updated_at: Date;
+      observed_confirmed_at_ms: bigint | null;
+    }>
+  >`SELECT status, submitted_tx_hash, block_end_time, created_at, updated_at,
+      observed_confirmed_at_ms
+    FROM pending_block_finalizations
     WHERE header_hash = ${key};`;
   const row = rows[0];
   if (!row) return null;
@@ -108,6 +128,13 @@ export async function getBlockFinalization(headerHash: string) {
     submitted_tx_hash: row.submitted_tx_hash
       ? toHex(row.submitted_tx_hash)
       : null,
+    blockEndTime: row.block_end_time,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    observedConfirmedAt:
+      row.observed_confirmed_at_ms === null
+        ? null
+        : new Date(Number(row.observed_confirmed_at_ms)),
   };
 }
 

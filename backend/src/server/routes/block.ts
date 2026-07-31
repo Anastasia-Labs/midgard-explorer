@@ -3,6 +3,7 @@ import { config } from "../../config";
 import {
   getBlock,
   getBlockDaMetadata,
+  getBlockHashByHeight,
   getBlockFinalization,
   getBlocksPage,
   getLastBlocks,
@@ -10,6 +11,18 @@ import {
 } from "../../db/block";
 import { decodeTransactionSafe } from "../../decode/transaction";
 import { isHexOfLength, toHex } from "../../utils";
+
+export async function getBlockByHeightRoute(req: Request, res: Response) {
+  const height = Number(req.params.height);
+  if (!Number.isSafeInteger(height) || height < 0) {
+    return res.status(400).json({ error: "Invalid height." });
+  }
+  const hash = await getBlockHashByHeight(height);
+  if (hash === null) {
+    return res.status(404).json({ error: "Block not found." });
+  }
+  return res.json({ header_hash: toHex(hash) });
+}
 
 export async function getBlockRoute(req: Request, res: Response) {
   const headerHash = req.query.header_hash;

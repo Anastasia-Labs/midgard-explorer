@@ -1,6 +1,7 @@
 import { Express } from "express";
 import {
   getBlockRoute,
+  getBlockByHeightRoute,
   getRecentBlocksRoute,
   getTotalBlocksRoute,
   getBlocksPageRoute,
@@ -20,6 +21,7 @@ export function registerRoutes(app: Express) {
   app.get("/api/block", getBlockRoute);
   app.get("/api/transaction", getTransactionRoute);
   app.get("/api/address", getAddressRoute);
+  app.get("/api/blocks/by-height/:height", getBlockByHeightRoute);
   app.get("/api/blocks/recent", getRecentBlocksRoute);
   app.get("/api/blocks/total", getTotalBlocksRoute);
   app.get("/api/blocks/:page", getBlocksPageRoute);

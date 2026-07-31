@@ -57,6 +57,15 @@ const fail = (res, status, error, detail) => json(res, { error, detail }, status
 const routes = [
   ["healthz", /^\/healthz$/, () => ({ status: "ok", now: new Date().toISOString() })],
 
+  [
+    "blocks/by-height",
+    /^\/api\/blocks\/by-height\/(\d+)$/,
+    (m, res) => {
+      const block = BLOCKS.find((b) => b.height === Number(m[1]));
+      if (!block) return fail(res, 404, "Block not found.");
+      return { header_hash: block.header_hash };
+    },
+  ],
   ["blocks/recent", /^\/api\/blocks\/recent$/, () => ({ rows: BLOCKS.slice(0, 7) })],
   ["blocks/total", /^\/api\/blocks\/total$/, () => ({ total: BLOCKS.length })],
   [
@@ -126,6 +135,7 @@ const handleTransaction = (url, res) => {
     return json(res, {
       transaction: null,
       status: found.status,
+      admission: found.admission,
       ...(found.status === "rejected"
         ? {
             rejection: {
@@ -140,6 +150,7 @@ const handleTransaction = (url, res) => {
   return json(res, {
     transaction: { ...found.transaction, timestamp: found.time_stamp_tz },
     status: found.status,
+    admission: found.admission,
   });
 };
 
@@ -167,7 +178,9 @@ const server = createServer(async (req, res) => {
     if (state.fail === "all" || state.fail === name) {
       return fail(res, 500, "internal_error", `injected failure for ${name}`);
     }
-    return json(res, handler(m));
+    // A handler that writes its own response (a 404, say) returns undefined.
+    const out = handler(m, res);
+    return out === undefined ? undefined : json(res, out);
   }
 
   if (url.pathname === "/api/block") {

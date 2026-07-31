@@ -36,6 +36,10 @@ export type BlockDa = Schema.Schema.Type<typeof BlockDa>;
 export const BlockFinalization = Schema.Struct({
   status: Schema.String,
   submitted_tx_hash: Schema.NullOr(HexString),
+  blockEndTime: IsoTimestamp,
+  createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+  observedConfirmedAt: Schema.NullOr(IsoTimestamp),
 });
 export type BlockFinalization = Schema.Schema.Type<typeof BlockFinalization>;
 
@@ -59,6 +63,12 @@ export const RecentBlocksResponse = Schema.Struct({
 });
 export type RecentBlocksResponse = Schema.Schema.Type<typeof RecentBlocksResponse>;
 
+/** Height-to-hash resolution for search; the hash is the canonical block key. */
+export const BlockByHeightResponse = Schema.Struct({
+  header_hash: HexString,
+});
+export type BlockByHeightResponse = Schema.Schema.Type<typeof BlockByHeightResponse>;
+
 export const TotalResponse = Schema.Struct({
   total: Schema.Number,
 });
@@ -75,5 +85,6 @@ export type BlocksPageResponse = Schema.Schema.Type<typeof BlocksPageResponse>;
 
 export const decodeBlockResponse = Schema.decodeUnknownSync(BlockResponse);
 export const decodeRecentBlocks = Schema.decodeUnknownSync(RecentBlocksResponse);
+export const decodeBlockByHeight = Schema.decodeUnknownSync(BlockByHeightResponse);
 export const decodeTotal = Schema.decodeUnknownSync(TotalResponse);
 export const decodeBlocksPage = Schema.decodeUnknownSync(BlocksPageResponse);
