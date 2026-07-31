@@ -12,11 +12,12 @@ import { LifecycleStepper } from "../../../components/ui/lifecycle";
 import { PageError } from "../../../components/ui/pageerror";
 import { Callout, Card, PageHeader } from "../../../components/ui/primitives";
 import { RawData } from "../../../components/ui/rawdata";
+import { SettlementBand } from "../../../components/ui/settlement";
 import { StatusBadge } from "../../../components/ui/status";
 import { SummaryBand } from "../../../components/ui/summary";
 import { Tabs } from "../../../components/ui/tabs";
 import { AdmissionTimeline } from "../../../components/ui/timeline";
-import { ApiError, api } from "../../../lib/api";
+import { api } from "../../../lib/api";
 import { formatTimestamp, truncateId } from "../../../lib/format";
 import { TERMINAL_TX_STATUSES } from "../../../lib/queryKeys";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
@@ -53,19 +54,6 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
   try {
     data = await orNotFound(api.transaction(hash));
   } catch (e) {
-    if (e instanceof ApiError && e.category === "http_422") {
-      return (
-        <>
-          <Breadcrumbs items={CRUMBS} />
-          <PageHeader title="Transaction" />
-          <IdentityBar overline="Transaction hash" value={hash} />
-          <Callout tone="warning" title="This transaction could not be decoded.">
-            The transaction is on the chain. The explorer&apos;s codec could not parse its bytes, so
-            its contents are unavailable here.
-          </Callout>
-        </>
-      );
-    }
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
@@ -78,6 +66,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
 
   const status = data.status;
   const terminal = TERMINAL_TX_STATUSES.has(status);
+  const settlement = <SettlementBand inclusion={data.inclusion} finalization={data.finalization} />;
 
   if (data.transaction === null) {
     return (
@@ -92,7 +81,21 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
         <div className="mb-4">
           <LifecycleStepper status={status} />
         </div>
+        {settlement}
         {data.admission ? <AdmissionTimeline admission={data.admission} outcome={status} /> : null}
+        {data.decodeError ? (
+          <Callout tone="warning" title="This transaction's body could not be decoded.">
+            <p>
+              Everything above comes from the node&apos;s own records and is unaffected. Only the
+              transaction body is unavailable.
+            </p>
+            {data.decodeError.detail ? (
+              <p className="mt-1.5 font-mono text-[12.5px] wrap-break-word text-text-2">
+                {data.decodeError.detail}
+              </p>
+            ) : null}
+          </Callout>
+        ) : null}
         {"rejection" in data && data.rejection ? (
           <Callout tone="danger" title="Rejected by the node">
             {data.rejection.reasonCode ? (
@@ -113,7 +116,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
               <p className="mt-1.5">At: {formatTimestamp(data.rejection.rejectedAt)}</p>
             ) : null}
           </Callout>
-        ) : (
+        ) : data.decodeError ? null : (
           <Callout tone={statusOf(status).tone} title={statusOf(status).explain}>
             The transaction is known to the node but its bytes are not yet in a block or the
             mempool.
@@ -276,20 +279,23 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
         badges={<StatusBadge status={tx.validity} />}
       />
 
-      <SummaryBand
-        items={[
-          { label: "Fee", value: <AdaAmount lovelace={tx.fee} />, emphasis: true },
-          { label: "Inputs", value: tx.inputs.length },
-          { label: "Outputs", value: tx.outputs.length },
-          { label: "Status", value: <StatusBadge status={status} /> },
-        ]}
-      />
-
+      {/* Lifecycle, inclusion and settlement lead: they answer where the
+          transaction is and whether it can still change. Fee is a detail and
+          sits below them, no longer the largest number on the page. */}
       <div className="mb-4">
         <LifecycleStepper status={status} />
       </div>
       {data.admission ? <AdmissionTimeline admission={data.admission} outcome={status} /> : null}
+      {settlement}
       {!terminal ? <LifecyclePoller /> : null}
+
+      <SummaryBand
+        items={[
+          { label: "Inputs", value: tx.inputs.length },
+          { label: "Outputs", value: tx.outputs.length },
+          { label: "Fee", value: <AdaAmount lovelace={tx.fee} /> },
+        ]}
+      />
 
       <Tabs
         tabs={[
