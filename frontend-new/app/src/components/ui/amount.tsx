@@ -1,10 +1,12 @@
 import type { AssetMap, ValueView } from "@midgard-explorer/contracts";
 import { assetCount, formatAda } from "../../lib/format";
 
+/** The ada symbol leads the amount everywhere, the way a currency symbol does.
+ * Summary bands used to render it leading and tables trailing. */
 export function AdaAmount({ lovelace }: { lovelace: string }) {
   return (
     <span className="font-mono tabular-nums" title={`${lovelace} lovelace`}>
-      {formatAda(lovelace)} <span className="text-text-3">₳</span>
+      <span className="text-text-3">₳</span> {formatAda(lovelace)}
     </span>
   );
 }

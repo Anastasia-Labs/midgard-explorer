@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { ValueCell } from "../../../components/ui/amount";
+import { AdaAmount, ValueCell } from "../../../components/ui/amount";
 import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
 import { Identifier } from "../../../components/ui/identifier";
 import { IdentityBar } from "../../../components/ui/identitybar";
@@ -14,8 +14,9 @@ import { SummaryBand } from "../../../components/ui/summary";
 import { DataTable, DecodeWarn } from "../../../components/ui/table";
 import { Tabs } from "../../../components/ui/tabs";
 import { Timestamp } from "../../../components/ui/timestamp";
+import { FinalizationTimeline } from "../../../components/ui/timeline";
 import { api } from "../../../lib/api";
-import { formatAda, formatDuration, truncateId } from "../../../lib/format";
+import { formatDuration, truncateId } from "../../../lib/format";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
 import { statusOf } from "../../../lib/status-registry";
 
@@ -199,12 +200,13 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
           { label: "Inputs", value: inputCount },
           {
             label: "Output total",
-            value: `₳ ${formatAda(outputLovelace.toString())}`,
+            value: <AdaAmount lovelace={outputLovelace.toString()} />,
             ...(decodable.length < data.rows.length ? { sub: "Decoded transactions only" } : {}),
           },
           {
             label: "Fees",
-            value: decodable.length > 0 ? `₳ ${formatAda(feeSum.toString())}` : "Unknown",
+            value:
+              decodable.length > 0 ? <AdaAmount lovelace={feeSum.toString()} /> : "Unknown",
           },
           {
             label: "Duration",
@@ -219,20 +221,23 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
       />
 
       {finalization ? (
-        <div className="mb-4">
-          <Callout
-            tone={statusOf(finalization.status).tone}
-            title={statusOf(finalization.status).explain}
-          >
-            {finalization.submitted_tx_hash ? (
-              <>
-                L1 settlement tx: <L1TxLink hash={finalization.submitted_tx_hash} />
-              </>
-            ) : (
-              "No L1 settlement transaction recorded yet."
-            )}
-          </Callout>
-        </div>
+        <>
+          <FinalizationTimeline finalization={finalization} />
+          <div className="mb-4">
+            <Callout
+              tone={statusOf(finalization.status).tone}
+              title={statusOf(finalization.status).explain}
+            >
+              {finalization.submitted_tx_hash ? (
+                <>
+                  L1 settlement tx: <L1TxLink hash={finalization.submitted_tx_hash} />
+                </>
+              ) : (
+                "No L1 settlement transaction recorded yet."
+              )}
+            </Callout>
+          </div>
+        </>
       ) : null}
 
       <Tabs
