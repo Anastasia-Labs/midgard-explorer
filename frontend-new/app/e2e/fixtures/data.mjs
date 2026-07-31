@@ -88,7 +88,17 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
       index: 0,
       resolved: { address: ADDRESSES[n % ADDRESSES.length], value: value(9_500_000 + n * 1000) },
     },
-    { txId: txId(n + 900), index: 1, resolved: null },
+    // Most transactions keep one unresolvable input, the common case once a
+    // transaction is applied. Every fourth resolves fully so the exact-spend
+    // path is exercised too.
+    {
+      txId: txId(n + 900),
+      index: 1,
+      resolved:
+        n % 4 === 0
+          ? { address: ADDRESSES[(n + 1) % ADDRESSES.length], value: value(3_400_000 + n * 500) }
+          : null,
+    },
   ],
   referenceInputs: n % 4 === 0 ? [{ txId: txId(n + 77), index: 0 }] : [],
   outputs: Array.from({ length: outputs }, (_, i) => ({
@@ -299,14 +309,44 @@ export const FORCED = Array.from({ length: 28 }, (_, i) => ({
 export const addressResponse = (address) => {
   const history = TXS.filter((t) => t.transaction).slice(0, 9);
   const undecodedOutputs = address === ADDRESSES[1] ? 3 : 0;
+  const rows = history.map((t, i) => {
+    const block = BLOCKS.find((b) => b.header_hash === t.header_hash) ?? null;
+    // Received reads this transaction's own outputs, so it is always exact.
+    const received = t.transaction.outputs
+      .filter((o) => o.address === address)
+      .reduce((sum, o) => sum + BigInt(o.value.lovelace), 0n)
+      .toString();
+    // Every third row keeps an unresolved input, the common real case once a
+    // transaction has been applied and its inputs have left the ledger.
+    const spentComplete = i % 3 !== 0 && t.transaction.inputs.every((x) => x.resolved !== null);
+    const spent = spentComplete
+      ? t.transaction.inputs
+          .filter((x) => x.resolved?.address === address)
+          .reduce((sum, x) => sum + BigInt(x.resolved.value.lovelace), 0n)
+          .toString()
+      : null;
+    return {
+      tx_id: t.tx_id,
+      address,
+      height: block?.height ?? null,
+      header_hash: block?.header_hash ?? null,
+      time_stamp_tz: t.time_stamp_tz,
+      status: t.status === "pending_commit" ? "pending_commit" : "committed",
+      received,
+      spent,
+      spentComplete,
+      transaction: t.transaction,
+      decodeError: t.decodeError,
+    };
+  });
+  const times = rows.map((r) => new Date(r.time_stamp_tz).getTime());
   return {
     balance: value(184_250_000, MULTI_ASSET),
     undecodedOutputs,
-    history: history.map((t) => ({
-      tx_id: t.tx_id,
-      address,
-      transaction: t.transaction,
-      decodeError: t.decodeError,
-    })),
+    utxoCount: 6,
+    txCount: rows.length,
+    firstActivity: new Date(Math.min(...times)).toISOString(),
+    latestActivity: new Date(Math.max(...times)).toISOString(),
+    history: rows,
   };
 };

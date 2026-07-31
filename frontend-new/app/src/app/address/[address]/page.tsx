@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdaAmount, AssetHierarchy } from "../../../components/ui/amount";
 import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
@@ -6,7 +7,9 @@ import { Identifier } from "../../../components/ui/identifier";
 import { IdentityBar } from "../../../components/ui/identitybar";
 import { PageError } from "../../../components/ui/pageerror";
 import { Callout, Card, PageHeader } from "../../../components/ui/primitives";
+import { StatusBadge } from "../../../components/ui/status";
 import { SummaryBand } from "../../../components/ui/summary";
+import { Timestamp } from "../../../components/ui/timestamp";
 import { DataTable, DecodeWarn } from "../../../components/ui/table";
 import { api } from "../../../lib/api";
 import { classify } from "../../../lib/classify";
@@ -77,7 +80,16 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
               : {}),
           },
           { label: "Native assets", value: assetCount(data.balance.assets) },
-          { label: "Transactions", value: data.history.length },
+          { label: "UTxOs", value: data.utxoCount },
+          { label: "Transactions", value: data.txCount },
+          {
+            label: "First activity",
+            value: data.firstActivity ? <Timestamp iso={data.firstActivity} /> : "Not recorded",
+          },
+          {
+            label: "Latest activity",
+            value: data.latestActivity ? <Timestamp iso={data.latestActivity} /> : "Not recorded",
+          },
         ]}
       />
 
@@ -91,13 +103,14 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
       ) : null}
 
       <p className="mb-6 text-xs text-text-3">
-        This view shows only what the address endpoint returns: the current spendable ledger state
-        and transactions touching this address.
+        Received is exact: it reads each transaction&apos;s own outputs. Spent is shown only when
+        every input of a transaction could be resolved, because a transaction&apos;s inputs leave
+        the ledger once it is applied. An unresolved input is reported as unknown, never as zero.
       </p>
 
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
         <h2 className="border-b border-border px-4 py-3 font-display text-[15px] font-semibold">
-          History ({data.history.length})
+          History ({data.txCount})
         </h2>
         <DataTable
           caption="Transactions involving this address"
@@ -112,8 +125,55 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
               ),
             },
             {
-              header: "Outputs",
-              cell: (r) => r.transaction?.outputs.length ?? "Unknown",
+              header: "Status",
+              cell: (r) => <StatusBadge status={r.status} />,
+              hideBelow: "sm",
+            },
+            {
+              header: "Block",
+              cell: (r) =>
+                r.header_hash === null || r.height === null ? (
+                  <span className="text-text-3">Not in a block</span>
+                ) : (
+                  <Link
+                    href={`/block/${r.header_hash}`}
+                    className="font-display font-semibold tabular-nums text-accent hover:underline"
+                  >
+                    #{r.height}
+                  </Link>
+                ),
+              hideBelow: "md",
+            },
+            {
+              header: "Received",
+              cell: (r) =>
+                r.received === null ? (
+                  <span className="text-text-3">Unknown</span>
+                ) : (
+                  <AdaAmount lovelace={r.received} />
+                ),
+              align: "right",
+            },
+            {
+              header: "Spent",
+              cell: (r) =>
+                r.spentComplete && r.spent !== null ? (
+                  <AdaAmount lovelace={r.spent} />
+                ) : (
+                  <span
+                    className="text-text-3"
+                    title="Some inputs of this transaction are no longer in the ledger, so the amount spent from this address cannot be determined."
+                  >
+                    Inputs pruned
+                  </span>
+                ),
+              hideBelow: "lg",
+              align: "right",
+            },
+            {
+              header: "Time",
+              cell: (r) =>
+                r.time_stamp_tz ? <Timestamp iso={r.time_stamp_tz} /> : <span>Not recorded</span>,
               hideBelow: "sm",
               align: "right",
             },
@@ -122,8 +182,30 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
             primary: (
               <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={6} />
             ),
-            status: r.decodeError ? <DecodeWarn error={r.decodeError} /> : null,
-            meta: `${r.transaction?.outputs.length ?? 0} outputs`,
+            status: (
+              <span className="inline-flex items-center gap-1.5">
+                <StatusBadge status={r.status} />
+                {r.decodeError ? <DecodeWarn error={r.decodeError} /> : null}
+              </span>
+            ),
+            meta: r.time_stamp_tz ? <Timestamp iso={r.time_stamp_tz} /> : "Not recorded",
+            secondary:
+              r.received === null ? null : (
+                <span>
+                  Received <AdaAmount lovelace={r.received} />
+                </span>
+              ),
+            details: [
+              {
+                label: "Spent",
+                value:
+                  r.spentComplete && r.spent !== null ? (
+                    <AdaAmount lovelace={r.spent} />
+                  ) : (
+                    <span className="text-text-3">Inputs pruned</span>
+                  ),
+              },
+            ],
           })}
           rows={data.history}
           keyOf={(r) => r.tx_id}
