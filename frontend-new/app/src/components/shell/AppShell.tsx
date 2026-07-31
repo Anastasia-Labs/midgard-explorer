@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { SearchBox } from "../search/SearchOverlay";
+import { HeaderSearchBox, SearchBox } from "../search/SearchOverlay";
 import { HealthIndicator } from "./HealthIndicator";
 import { MobileNav, NavLinks } from "./NavLinks";
 import { ThemeToggle } from "./ThemeToggle";
@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Brand />
           <NavLinks />
           <div className="mx-auto hidden w-full max-w-md lg:block">
-            <SearchBox variant="header" />
+            <HeaderSearchBox />
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2 lg:ml-0">
             {NETWORK_LABEL === null ? (

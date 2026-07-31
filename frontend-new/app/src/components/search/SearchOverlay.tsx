@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "../ui/icons";
 import { classify, hrefFor } from "../../lib/classify";
@@ -21,6 +21,14 @@ function readRecent(): string[] {
 
 export type SearchVariant = "header" | "hero" | "icon";
 
+/** The overview leads with the hero search, so the header's copy of the same
+ * control is suppressed there rather than shown twice on one screen. */
+export function HeaderSearchBox() {
+  const pathname = usePathname();
+  if (pathname === "/") return null;
+  return <SearchBox variant="header" />;
+}
+
 export function SearchBox({ variant }: { variant: SearchVariant }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -37,8 +45,11 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
     inputRef.current?.focus();
   }, []);
 
+  // The shortcut binds to whichever variant is the page's primary search box:
+  // the hero on the overview, the header everywhere else. HeaderSearchBox keeps
+  // those mutually exclusive, so only one listener is ever mounted.
   useEffect(() => {
-    if (variant !== "header") return;
+    if (variant === "icon") return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const typing =
