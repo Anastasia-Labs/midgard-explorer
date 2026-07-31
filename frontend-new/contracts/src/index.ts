@@ -6,3 +6,4 @@ export * from "./address";
 export * from "./bridge";
 export * from "./health";
 export * from "./metrics";
+export * from "./asset";

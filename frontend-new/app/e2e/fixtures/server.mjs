@@ -24,6 +24,8 @@ import {
   blockFinalization,
   blockRows,
   metrics,
+  asset,
+  assets,
 } from "./data.mjs";
 
 const PORT = Number(process.env.FIXTURE_PORT ?? 3101);
@@ -58,6 +60,7 @@ const fail = (res, status, error, detail) => json(res, { error, detail }, status
 const routes = [
   ["healthz", /^\/healthz$/, () => ({ status: "ok", now: new Date().toISOString() })],
   ["metrics", /^\/api\/metrics$/, () => metrics()],
+  ["assets", /^\/api\/assets$/, () => assets()],
 
   [
     "blocks/by-height",
@@ -246,6 +249,16 @@ const server = createServer(async (req, res) => {
     if (state.fail === "all" || state.fail === "transaction")
       return fail(res, 500, "internal_error");
     return handleTransaction(url, res);
+  }
+  if (url.pathname === "/api/asset") {
+    if (state.fail === "all" || state.fail === "asset") return fail(res, 500, "internal_error");
+    const policyId = url.searchParams.get("policy_id");
+    const assetName = url.searchParams.get("asset_name") ?? "";
+    if (!policyId || !/^[0-9a-f]{56}$/i.test(policyId)) {
+      return fail(res, 400, "bad_request", "policy_id");
+    }
+    const found = asset(policyId.toLowerCase(), assetName.toLowerCase());
+    return found === null ? fail(res, 404, "not_found") : json(res, found);
   }
   if (url.pathname === "/api/address") {
     if (state.fail === "all" || state.fail === "address") return fail(res, 500, "internal_error");

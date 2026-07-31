@@ -70,9 +70,42 @@ export const ADDRESSES = [
 
 const value = (lovelace, assets = {}) => ({ lovelace: String(lovelace), assets });
 
+const utf8Hex = (s) => Buffer.from(s, "utf8").toString("hex");
+
+/** Asset names an explorer has to survive, not just the pleasant ones. A name
+ * is bytes chosen by whoever minted the asset, so the set below includes the
+ * two that matter for safety: bytes that are not valid UTF-8, and valid UTF-8
+ * carrying a right-to-left override, which renders as a different name from
+ * the one the ledger holds. Both must fall back to hex. */
+export const ASSET_POLICIES = {
+  plain: hex(101, 56),
+  noName: hex(102, 56),
+  hostile: hex(103, 56),
+};
+
+export const ASSET_NAMES = {
+  /** "MIDGARD" */
+  plain: utf8Hex("MIDGARD"),
+  /** "PATATE", the CIP-14 spec's own example name. */
+  patate: "504154415445",
+  /** No name at all, which is different from an unreadable one. */
+  empty: "",
+  /** Not valid UTF-8. */
+  binary: "fffe0102",
+  /** "USD" + U+202E + "C": reads reversed, impersonating another token. */
+  bidi: utf8Hex("USD‮C"),
+};
+
 const MULTI_ASSET = {
-  [hex(101, 56)]: { [hex(201, 16)]: "1", [hex(202, 20)]: "4500000000" },
-  [hex(102, 56)]: { "": "7" },
+  [ASSET_POLICIES.plain]: {
+    [ASSET_NAMES.plain]: "1",
+    [ASSET_NAMES.patate]: "4500000000",
+  },
+  [ASSET_POLICIES.noName]: { [ASSET_NAMES.empty]: "7" },
+  [ASSET_POLICIES.hostile]: {
+    [ASSET_NAMES.binary]: "18446744073709551615",
+    [ASSET_NAMES.bidi]: "42",
+  },
 };
 
 const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) => ({
@@ -489,5 +522,50 @@ export const metrics = () => {
       ),
     },
     series,
+  };
+};
+
+/** The asset roster and per-asset holdings, derived from MULTI_ASSET so the
+ * asset pages and the values shown on transactions cannot disagree. Coverage
+ * is reported complete here: the fixture ledger is small enough to scan whole,
+ * which is the case the UI must handle without warning about a partial answer. */
+const ASSET_ROWS = Object.entries(MULTI_ASSET).flatMap(([policyId, names]) =>
+  Object.entries(names).map(([assetName, quantity], i) => ({
+    policyId,
+    assetName,
+    ledgerQuantity: quantity,
+    holderCount: (i % ADDRESSES.length) + 1,
+    utxoCount: (i % 3) + 1,
+  })),
+);
+
+const COVERAGE = { scanned: 128, total: 128, truncated: false, undecoded: 0 };
+
+export const assets = () => ({
+  rows: ASSET_ROWS.slice().sort((a, b) => b.holderCount - a.holderCount),
+  total: ASSET_ROWS.length,
+  coverage: COVERAGE,
+});
+
+export const asset = (policyId, assetName) => {
+  const row = ASSET_ROWS.find(
+    (r) => r.policyId === policyId && r.assetName === (assetName ?? ""),
+  );
+  if (!row) return null;
+  return {
+    policyId: row.policyId,
+    assetName: row.assetName,
+    ledgerQuantity: row.ledgerQuantity,
+    holderCount: row.holderCount,
+    holders: ADDRESSES.slice(0, row.holderCount).map((address, i) => ({
+      address,
+      // Split the quantity so the largest-first ordering is exercised rather
+      // than assumed; BigInt because a supply can exceed 2^53.
+      quantity: (BigInt(row.ledgerQuantity) / BigInt(row.holderCount) + BigInt(i === 0 ? 1 : 0))
+        .toString(),
+      utxoCount: (i % 2) + 1,
+    })),
+    holdersTruncated: false,
+    coverage: COVERAGE,
   };
 };

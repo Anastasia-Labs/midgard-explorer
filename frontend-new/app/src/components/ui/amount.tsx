@@ -1,4 +1,5 @@
-import type { AssetMap, ValueView } from "@midgard-explorer/contracts";
+import type { ValueView } from "@midgard-explorer/contracts";
+import { assetLabel } from "../../lib/asset";
 import { assetCount, formatAda } from "../../lib/format";
 
 /** The ada symbol leads the amount everywhere, the way a currency symbol does.
@@ -11,44 +12,38 @@ export function AdaAmount({ lovelace }: { lovelace: string }) {
   );
 }
 
+/** Names the assets a value carries rather than only counting them, because
+ * "+3 assets" tells a reader scanning a list nothing about what moved. The
+ * names are decoded under the same rule as everywhere else: only shown when
+ * they round-trip to their own bytes and carry nothing that can reorder text. */
+function assetSummary(value: ValueView): string {
+  const names: string[] = [];
+  for (const entries of Object.values(value.assets)) {
+    for (const nameHex of Object.keys(entries)) names.push(assetLabel(nameHex).label);
+  }
+  if (names.length === 0) return "";
+  if (names.length <= 2) return names.join(", ");
+  return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+}
+
 export function ValueCell({ value }: { value: ValueView }) {
   const count = assetCount(value.assets);
   return (
     <span className="inline-flex items-center gap-2">
       <AdaAmount lovelace={value.lovelace} />
       {count > 0 ? (
-        <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs text-text-2">
-          +{count} asset{count === 1 ? "" : "s"}
+        <span
+          className="max-w-[16ch] truncate rounded-full bg-surface-2 px-2 py-0.5 text-xs text-text-2"
+          title={`${count} native asset${count === 1 ? "" : "s"}`}
+        >
+          {assetSummary(value)}
         </span>
       ) : null}
     </span>
   );
 }
 
-export function AssetHierarchy({ assets }: { assets: AssetMap }) {
-  const policies = Object.entries(assets);
-  if (policies.length === 0) return null;
-  return (
-    <ul className="space-y-2">
-      {policies.map(([policyId, names]) => (
-        <li key={policyId}>
-          <p className="mg-overline">Policy ID</p>
-          <p className="font-mono text-xs text-text-2 break-all">{policyId}</p>
-          <ul className="mt-1.5 space-y-1 border-l border-border pl-3">
-            {Object.entries(names).map(([nameHex, qty]) => (
-              <li key={nameHex} className="flex items-baseline justify-between gap-4">
-                <span className="min-w-0">
-                  <span className="mg-overline">Asset name (hex)</span>
-                  <span className="block font-mono text-sm break-all">
-                    {nameHex === "" ? "(no name)" : nameHex}
-                  </span>
-                </span>
-                <span className="shrink-0 font-mono tabular-nums text-sm">{qty}</span>
-              </li>
-            ))}
-          </ul>
-        </li>
-      ))}
-    </ul>
-  );
-}
+/** Asset rendering moved to ./asset, where the name-decoding and fingerprint
+ * rules live. Re-exported here so the many call sites that reach for it
+ * alongside `ValueCell` keep working. */
+export { AssetHierarchy } from "./asset";

@@ -1,4 +1,9 @@
-import { decodeAddressResponse, decodeMetrics } from "@midgard-explorer/contracts";
+import {
+  decodeAddressResponse,
+  decodeAsset,
+  decodeAssets,
+  decodeMetrics,
+} from "@midgard-explorer/contracts";
 import {
   decodeBlockByHeight,
   decodeBlockResponse,
@@ -130,6 +135,13 @@ export const api = {
   // Never cached: an operations panel showing a stale tip age is worse than
   // one that is briefly unavailable.
   metrics: (init?: FetchInit) => fetchJson("/api/metrics", decodeMetrics, init),
+  assets: (init?: FetchInit) => fetchJson("/api/assets", decodeAssets, init),
+  asset: (policyId: string, assetName: string, init?: FetchInit) =>
+    fetchJson(
+      `/api/asset?policy_id=${encodeURIComponent(policyId)}&asset_name=${encodeURIComponent(assetName)}`,
+      decodeAsset,
+      init,
+    ),
   block: (headerHash: string, init?: FetchInit) =>
     fetchJson(`/api/block?header_hash=${encodeURIComponent(headerHash)}`, decodeBlockResponse, {
       ...init,

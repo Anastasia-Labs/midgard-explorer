@@ -13,6 +13,7 @@ const TOP = [
   { href: "/", label: "Overview" },
   { href: "/blocks", label: "Blocks" },
   { href: "/transactions", label: "Transactions" },
+  { href: "/assets", label: "Assets" },
 ];
 
 export const BRIDGE = [

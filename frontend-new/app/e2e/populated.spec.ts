@@ -138,6 +138,87 @@ test.describe("operational metrics", () => {
   });
 });
 
+test.describe("native assets", () => {
+  const roster = async (page: Page) =>
+    page.request.get(`${FIXTURE}/api/assets`).then(async (r) => {
+      const body = await r.json();
+      return body.rows as Array<{ policyId: string; assetName: string }>;
+    });
+
+  test("the roster lists every asset on the ledger with its fingerprint", async ({ page }) => {
+    await page.goto("/assets");
+    await expect(page.getByRole("heading", { level: 1, name: "Native assets" })).toBeVisible();
+    // The fingerprint is the identifier worth comparing; a display name is not
+    // unique and a policy ID is 56 characters of noise.
+    await expect(rowRegion(page).getByText(/^asset1/).first()).toBeVisible();
+  });
+
+  test("a readable name is shown as text, with its bytes alongside", async ({ page }) => {
+    await page.goto("/assets");
+    await expect(rowRegion(page).getByText("MIDGARD").first()).toBeVisible();
+    await expect(rowRegion(page).getByText("PATATE").first()).toBeVisible();
+  });
+
+  test("bytes that are not text stay hex rather than becoming a guess", async ({ page }) => {
+    await page.goto("/assets");
+    await expect(rowRegion(page).getByText("fffe0102").first()).toBeVisible();
+  });
+
+  test("a name carrying a bidi override is never rendered as text", async ({ page }) => {
+    // "USD" + U+202E + "C" renders as "USDC" reversed, which is how one token
+    // is made to read as another. It must appear as its bytes.
+    await page.goto("/assets");
+    await expect(rowRegion(page).getByText("555344e280ae43").first()).toBeVisible();
+    await expect(page.getByText("USD‮C")).toHaveCount(0);
+  });
+
+  test("an asset page names the asset, its policy and its holders", async ({ page }) => {
+    const rows = await roster(page);
+    const row = rows.find((r) => r.assetName === "504154415445");
+    test.skip(!row, "no PATATE asset in the fixture roster");
+    await page.goto(`/asset/${row!.policyId}${row!.assetName}`);
+    await expect(page.getByRole("heading", { level: 1, name: "PATATE" })).toBeVisible();
+    await expect(page.getByText("Fingerprint (CIP-14)")).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Holders/ })).toBeVisible();
+    await expect(page.getByText(/^asset1/).first()).toBeVisible();
+  });
+
+  test("the asset page says its total describes the ledger now, not history", async ({ page }) => {
+    const rows = await roster(page);
+    await page.goto(`/asset/${rows[0]!.policyId}${rows[0]!.assetName}`);
+    await expect(page.getByText(/describes the ledger now rather than its history/)).toBeVisible();
+  });
+
+  test("a quantity past the safe integer range is not rounded", async ({ page }) => {
+    const rows = await roster(page);
+    const row = rows.find((r) => r.assetName === "fffe0102");
+    test.skip(!row, "no large-supply asset in the fixture roster");
+    await page.goto(`/asset/${row!.policyId}${row!.assetName}`);
+    // Number("18446744073709551615") is 18446744073709552000.
+    await expect(page.getByText("18,446,744,073,709,551,615").first()).toBeVisible();
+  });
+
+  test("a malformed asset unit renders the not-found page", async ({ page }) => {
+    await page.goto("/asset/nothex");
+    await expect(page.getByRole("heading", { level: 1, name: "Page not found" })).toBeVisible();
+  });
+
+  // Same open defect as /block and /transaction: notFound() inside a dynamic
+  // route renders the not-found page but answers HTTP 200.
+  test.fixme("a malformed asset unit responds with HTTP 404", async ({ page }) => {
+    const res = await page.goto("/asset/nothex");
+    expect(res?.status()).toBe(404);
+  });
+
+  test("each holder links to its address page", async ({ page }) => {
+    const rows = await roster(page);
+    await page.goto(`/asset/${rows[0]!.policyId}${rows[0]!.assetName}`);
+    const link = rowRegion(page).getByRole("link").first();
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", /^\/address\/addr_test/);
+  });
+});
+
 test.describe("block detail", () => {
   test("shows height, settlement evidence and the DA tab", async ({ page }) => {
     const hash = await firstBlockHash(page);
@@ -290,7 +371,7 @@ test.describe("address detail", () => {
   test("lists native assets held", async ({ page }) => {
     await page.goto(`/address/${await fixtureAddress(page, 1)}`);
     await expect(page.getByRole("heading", { name: "Native assets held" })).toBeVisible();
-    await expect(page.getByText("Policy ID").first()).toBeVisible();
+    await expect(page.getByText("Policy").first()).toBeVisible();
   });
 
   test("does not warn when every output decoded", async ({ page }) => {
@@ -307,6 +388,7 @@ test.describe("accessibility on populated pages", () => {
       "/deposits",
       "/withdrawals",
       "/forced-transactions",
+      "/assets",
       `/block/${await firstBlockHash(page)}`,
       `/transaction/${await txWithStatus(page, "committed")}`,
       `/address/${await fixtureAddress(page, 1)}`,

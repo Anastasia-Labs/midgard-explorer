@@ -260,12 +260,27 @@ describe("ValueCell", () => {
     expect(screen.queryByText(/asset/)).toBeNull();
   });
 
-  it("pluralises the native asset count", () => {
-    const one = render(<ValueCell value={value("1", { p: { a: "1" } })} />);
-    expect(within(one.container).getByText("+1 asset")).toBeDefined();
-    cleanup();
-    render(<ValueCell value={value("1", { p: { a: "1", b: "2" } })} />);
-    expect(screen.getByText("+2 assets")).toBeDefined();
+  it("names the assets rather than only counting them", () => {
+    // "+3 assets" tells a reader scanning a list nothing about what moved.
+    const { container } = render(
+      <ValueCell value={value("1", { p: { "4d494447415244": "1" } })} />,
+    );
+    expect(within(container).getByText("MIDGARD")).toBeDefined();
+  });
+
+  it("keeps the exact count in the title once the names are elided", () => {
+    const { container } = render(
+      <ValueCell
+        value={value("1", { p: { "41": "1", "42": "2", "43": "3", "44": "4" } })}
+      />,
+    );
+    const chip = within(container).getByText(/\+2$/);
+    expect(chip.getAttribute("title")).toBe("4 native assets");
+  });
+
+  it("shows an unreadable name as its bytes, never as a guess", () => {
+    const { container } = render(<ValueCell value={value("1", { p: { fffe: "1" } })} />);
+    expect(within(container).getByText("fffe")).toBeDefined();
   });
 });
 
