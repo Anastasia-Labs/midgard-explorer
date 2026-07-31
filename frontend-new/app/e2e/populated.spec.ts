@@ -6,6 +6,8 @@ import {
   isNarrow,
   rowRegion,
   settle,
+  txAwaitingFinality,
+  txInAbandonedBlock,
   txWithStatus,
 } from "./helpers";
 
@@ -81,6 +83,61 @@ test.describe("populated lists", () => {
   });
 });
 
+test.describe("operational metrics", () => {
+  test("answers whether the chain is healthy before anything else", async ({ page }) => {
+    await page.goto("/");
+    const metrics = page.locator('[data-region="metrics"]');
+    await expect(metrics).toBeVisible();
+    await expect(metrics.getByText("Chain tip")).toBeVisible();
+    await expect(metrics.getByText("Admission", { exact: true })).toBeVisible();
+    await expect(metrics.getByText("L1 settlement")).toBeVisible();
+  });
+
+  test("labels a percentile drawn from too few records", async ({ page }) => {
+    await page.goto("/");
+    // The fixture settles only a handful of blocks, which is exactly the case
+    // where a p95 must not be presented as a measurement.
+    await expect(page.getByText(/thin sample/)).toBeVisible();
+  });
+
+  test("says when the window covers less history than its label", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText(/the node holds history only from/)).toBeVisible();
+  });
+
+  test("marks an hour that produced no blocks instead of smoothing over it", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText(/with no blocks/)).toBeVisible();
+  });
+
+  test("names the node column behind every figure", async ({ page }) => {
+    await page.goto("/");
+    await page.getByText("Status breakdown and where each figure comes from").click();
+    await expect(page.getByText("tx_admissions.terminal_at - tx_admissions.first_seen_at")).toBeVisible();
+    await expect(page.getByText("blocks.height, blocks.time_stamp_tz")).toBeVisible();
+  });
+
+  test("links the oldest block still waiting on L1", async ({ page }) => {
+    await page.goto("/");
+    const oldest = page.getByText("Oldest block awaiting L1").locator("..");
+    await expect(oldest.getByRole("link")).toBeVisible();
+    await oldest.getByRole("link").click();
+    await expect(page).toHaveURL(/\/block\/[0-9a-f]{56}/);
+  });
+
+  test("the panel survives a metrics failure without blanking the page", async ({ page }) => {
+    await page.request.post(`${FIXTURE}/__control?fail=metrics`);
+    try {
+      await page.goto("/");
+      await expect(page.getByText("Metrics are unavailable.")).toBeVisible();
+      // The rest of the overview still has to work.
+      await expect(page.getByText("Latest blocks")).toBeVisible();
+    } finally {
+      await page.request.post(`${FIXTURE}/__control`);
+    }
+  });
+});
+
 test.describe("block detail", () => {
   test("shows height, settlement evidence and the DA tab", async ({ page }) => {
     const hash = await firstBlockHash(page);
@@ -135,7 +192,7 @@ test.describe("block detail", () => {
 
 test.describe("transaction lifecycle", () => {
   test("a committed transaction shows the completed lifecycle and UTxO flow", async ({ page }) => {
-    const hash = await txWithStatus(page, "committed");
+    const hash = await txAwaitingFinality(page);
     await page.goto(`/transaction/${hash}`);
     // One journey replaces the lifecycle chips, admission timeline and
     // settlement band; per-stage timings live behind its disclosure.
@@ -149,6 +206,19 @@ test.describe("transaction lifecycle", () => {
     await page.getByRole("tab", { name: /UTxO flow/ }).click();
     await expect(page.getByRole("heading", { name: /^Inputs \(/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /^Outputs \(/ })).toBeVisible();
+  });
+
+  test("a committed transaction in an abandoned block does not claim finality", async ({
+    page,
+  }) => {
+    // Inclusion in an L2 block is not the end of the story: if the block's
+    // finalization was abandoned, the transaction is committed and unsettled,
+    // and calling that success would be the worst lie the page could tell.
+    await page.goto(`/transaction/${await txInAbandonedBlock(page)}`);
+    const journey = page.getByRole("region", { name: "Protocol journey" });
+    await expect(journey.getByText("Finalization abandoned")).toBeVisible();
+    await expect(journey.getByRole("list").getByText("Abandoned")).toBeVisible();
+    await expect(journey.getByRole("list").getByText("Final on L1")).toHaveCount(0);
   });
 
   test("a non-terminal transaction announces that it is being watched", async ({ page }) => {

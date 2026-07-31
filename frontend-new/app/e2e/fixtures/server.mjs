@@ -23,6 +23,7 @@ import {
   blockDa,
   blockFinalization,
   blockRows,
+  metrics,
 } from "./data.mjs";
 
 const PORT = Number(process.env.FIXTURE_PORT ?? 3101);
@@ -56,6 +57,7 @@ const fail = (res, status, error, detail) => json(res, { error, detail }, status
 
 const routes = [
   ["healthz", /^\/healthz$/, () => ({ status: "ok", now: new Date().toISOString() })],
+  ["metrics", /^\/api\/metrics$/, () => metrics()],
 
   [
     "blocks/by-height",

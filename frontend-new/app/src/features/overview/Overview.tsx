@@ -3,23 +3,22 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import type { RecentBlockRow, RecentTxRow } from "@midgard-explorer/contracts";
+import type { MetricsResponse, RecentBlockRow, RecentTxRow } from "@midgard-explorer/contracts";
 import { SearchBox } from "../../components/search/SearchOverlay";
 import { BRIDGE } from "../../components/shell/NavLinks";
 import { Icon, type IconName } from "../../components/ui/icons";
 import { Identifier } from "../../components/ui/identifier";
+import { NetworkMetrics } from "../../components/ui/metrics";
 import { StatusCell } from "../../components/ui/status";
 import {
   EmptyState,
   ErrorState,
   L1L2Badge,
-  MetricStrip,
-  MetricTile,
   PageHeader,
   Panel,
 } from "../../components/ui/primitives";
 import { Timestamp } from "../../components/ui/timestamp";
-import { cn, groupThousands } from "../../lib/format";
+import { cn } from "../../lib/format";
 
 const POLL_MS = 10_000;
 // Five rows per panel keeps the overview scannable on a phone; the list pages
@@ -31,6 +30,7 @@ export type OverviewData = {
   recentTxs: readonly RecentTxRow[] | null;
   totalBlocks: number | null;
   totalTxs: number | null;
+  metrics: MetricsResponse | null;
 };
 
 /** The three Midgard-specific concepts. Keeps the overview composed and
@@ -196,22 +196,14 @@ export function Overview({ initial }: { initial: OverviewData }) {
         <SearchBox variant="hero" />
       </div>
 
-      <MetricStrip>
-        <MetricTile
-          label="L2 blocks"
-          value={
-            data.totalBlocks === null ? "Unavailable" : groupThousands(String(data.totalBlocks))
-          }
-          sub="Total produced"
-          icon="layers"
-        />
-        <MetricTile
-          label="L2 transactions"
-          value={data.totalTxs === null ? "Unavailable" : groupThousands(String(data.totalTxs))}
-          sub="Total processed"
-          icon="activity"
-        />
-      </MetricStrip>
+      {/* The operations panel leads the page: an explorer's first question is
+          whether the chain is healthy right now, which two all-time totals in
+          a strip could never answer. Those totals moved into its header. */}
+      <NetworkMetrics
+        metrics={data.metrics}
+        totalBlocks={data.totalBlocks}
+        totalTxs={data.totalTxs}
+      />
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <Panel title="Latest blocks" actions={<ViewAll href="/blocks" label="View all" />}>

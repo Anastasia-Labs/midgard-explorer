@@ -165,7 +165,15 @@ export const blockDa = (height) =>
 /** Every finalization status the registry knows, cycled across blocks, plus one
  * the registry does not know. Transactions already exercise an unrecognized
  * lifecycle status via TX_STATUSES; blocks had no equivalent, so the
- * unknown-settlement-stage path had never rendered. */
+ * unknown-settlement-stage path had never rendered.
+ *
+ * The length matters. Transaction n sits in block (40 - n), so a cycle the same
+ * length as TX_STATUSES phase-locks the two: with seven entries, every single
+ * committed transaction landed in an abandoned block, and "committed, awaiting
+ * L1 finality" (the most common real state there is) could not be produced at
+ * all. Eight entries are co-prime with the seven lifecycle statuses, so every
+ * pairing occurs. `finalized` appears twice, which is both what makes the
+ * length eight and a fair weighting: most blocks do settle. */
 const FINALIZATION_STATUSES = [
   "finalized",
   "observed_waiting_stability",
@@ -174,6 +182,7 @@ const FINALIZATION_STATUSES = [
   "pending_submission",
   "abandoned",
   "some_future_finalization_stage",
+  "finalized",
 ];
 
 export const blockFinalization = (height) => {
@@ -352,5 +361,133 @@ export const addressResponse = (address) => {
     firstActivity: new Date(Math.min(...times)).toISOString(),
     latestActivity: new Date(Math.max(...times)).toISOString(),
     history: rows,
+  };
+};
+
+/** Operational metrics, shaped exactly like GET /api/metrics.
+ *
+ * Counts are derived from the fixture rows above, so the panel and the list
+ * pages cannot disagree. Two things are deliberately arranged rather than
+ * derived, because they are UI states that need exercising and the fixture's
+ * fourteen minutes of history would never produce them:
+ *
+ *   - the hourly series spans a full day and contains one empty hour, so the
+ *     chart's treatment of an outage is under test rather than assumed;
+ *   - the settlement-latency sample is small, which is the case where a p95
+ *     must be presented as too thin to trust rather than as a measurement.
+ *
+ * `partial` is true and honest: the fixture's blocks cover minutes, not a day.
+ */
+export const metrics = () => {
+  const end = new Date(Date.UTC(2026, 6, 28, 12, 0, 0));
+  const start = new Date(end.getTime() - 24 * 3_600_000);
+  const observedFrom = new Date(end.getTime() - (BLOCKS.length - 1) * 21_000);
+
+  const txTotal = BLOCKS.reduce((n, b) => n + txCountForBlock(b.height), 0);
+  const terminal = TXS.filter((t) => t.admission?.terminalAt);
+  const accepted = terminal.filter((t) => t.admission.status === "accepted").length;
+  const rejected = terminal.filter((t) => t.admission.status === "rejected").length;
+  const queueDepth = TXS.filter((t) =>
+    ["queued", "validating"].includes(t.admission?.status),
+  ).length;
+
+  const finalizations = BLOCKS.map((b) => blockFinalization(b.height)).filter((f) => f !== null);
+  const byStatus = (s) => finalizations.filter((f) => f.status === s).length;
+  const unsettled = finalizations.filter(
+    (f) => !["finalized", "abandoned"].includes(f.status),
+  );
+  const oldest = unsettled
+    .slice()
+    .sort((a, b) => new Date(a.blockEndTime) - new Date(b.blockEndTime))[0];
+  const oldestBlock = BLOCKS.find(
+    (b) => blockFinalization(b.height)?.blockEndTime === oldest?.blockEndTime,
+  );
+
+  const statusCounts = (list, key) => {
+    const seen = new Map();
+    for (const item of list) seen.set(item[key], (seen.get(item[key]) ?? 0) + 1);
+    return [...seen.entries()]
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => b.count - a.count);
+  };
+
+  const series = Array.from({ length: 25 }, (_, i) => {
+    const hour = new Date(start.getTime() + i * 3_600_000);
+    // Hour 9 is an outage: no blocks produced. A chart that silently bridges
+    // this gap is hiding the one thing an operator opened the page for.
+    const blocks = i === 9 ? 0 : 6 + ((i * 5) % 7);
+    return {
+      hour: hour.toISOString(),
+      blocks,
+      transactions: blocks * 2 + (i % 3),
+    };
+  });
+
+  return {
+    window: {
+      hours: 24,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      observedFrom: observedFrom.toISOString(),
+      partial: true,
+    },
+    tip: {
+      height: BLOCKS[0].height,
+      at: BLOCKS[0].time_stamp_tz,
+      ageSeconds: 12,
+      source: "blocks.height, blocks.time_stamp_tz",
+    },
+    throughput: {
+      transactions: txTotal,
+      blocks: BLOCKS.length,
+      transactionsPerBlock: txTotal / BLOCKS.length,
+      blockIntervalSeconds: { p50: 21, p95: 21, sampleCount: BLOCKS.length - 1 },
+      source: "blocks.time_stamp_tz, blocks.header_hash",
+    },
+    admission: {
+      latency: {
+        p50Ms: 5900,
+        p95Ms: 5900,
+        sampleCount: terminal.length,
+        source: "tx_admissions.terminal_at - tx_admissions.first_seen_at",
+      },
+      accepted,
+      rejected,
+      rejectionRate: terminal.length === 0 ? null : rejected / terminal.length,
+      queueDepth,
+      source: "tx_admissions.status, tx_admissions.terminal_at",
+    },
+    finality: {
+      settlementLatency: {
+        p50Ms: 43_400,
+        p95Ms: 61_200,
+        sampleCount: byStatus("finalized"),
+        source:
+          "pending_block_finalizations.updated_at - pending_block_finalizations.block_end_time",
+      },
+      finalized: byStatus("finalized"),
+      pending: unsettled.length,
+      abandoned: byStatus("abandoned"),
+      oldestUnsettled:
+        oldest === undefined
+          ? null
+          : {
+              headerHash: oldestBlock?.header_hash ?? blockHash(1),
+              status: oldest.status,
+              blockEndTime: oldest.blockEndTime,
+              waitingSeconds: Math.round(
+                (end.getTime() - new Date(oldest.blockEndTime).getTime()) / 1000,
+              ),
+            },
+      source: "pending_block_finalizations.status, pending_block_finalizations.block_end_time",
+    },
+    statusBreakdown: {
+      finalization: statusCounts(finalizations, "status"),
+      admission: statusCounts(
+        TXS.filter((t) => t.admission).map((t) => t.admission),
+        "status",
+      ),
+    },
+    series,
   };
 };

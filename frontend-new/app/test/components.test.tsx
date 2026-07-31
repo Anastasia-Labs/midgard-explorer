@@ -2,12 +2,18 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { AdaAmount, ValueCell } from "../src/components/ui/amount";
 import { Journey } from "../src/components/ui/journey";
+import { NetworkMetrics } from "../src/components/ui/metrics";
 import { EmptyState, ErrorState, L1L2Badge } from "../src/components/ui/primitives";
 import { StatusBadge } from "../src/components/ui/status";
 import { SummaryBand } from "../src/components/ui/summary";
 import { DecodeWarn } from "../src/components/ui/table";
 import { blockJourney, transactionJourney } from "../src/lib/journey";
-import type { BlockFinalization, TxAdmission, ValueView } from "@midgard-explorer/contracts";
+import type {
+  BlockFinalization,
+  MetricsResponse,
+  TxAdmission,
+  ValueView,
+} from "@midgard-explorer/contracts";
 
 /** DecimalString is branded; fixtures build the branded shape without decoding. */
 const value = (lovelace: string, assets: Record<string, Record<string, string>> = {}) =>
@@ -104,6 +110,81 @@ describe("Journey", () => {
   it("names the stage a block is waiting on rather than restating its code", () => {
     render(<Journey model={blockJourney(finalization, 40)} />);
     expect(screen.getByText("Committed, awaiting L1 finality")).toBeDefined();
+  });
+});
+
+describe("NetworkMetrics", () => {
+  const base: MetricsResponse = {
+    window: {
+      hours: 24,
+      start: "2026-07-27T12:00:00.000Z",
+      end: "2026-07-28T12:00:00.000Z",
+      observedFrom: "2026-07-20T12:00:00.000Z",
+      partial: false,
+    },
+    tip: { height: 40, at: "2026-07-28T12:00:00.000Z", ageSeconds: 12, source: "blocks.height" },
+    throughput: {
+      transactions: 88,
+      blocks: 40,
+      transactionsPerBlock: 2.2,
+      blockIntervalSeconds: { p50: 21, p95: 24, sampleCount: 39 },
+      source: "blocks.time_stamp_tz",
+    },
+    admission: {
+      latency: { p50Ms: 5900, p95Ms: 7100, sampleCount: 43, source: "tx_admissions.terminal_at" },
+      accepted: 35,
+      rejected: 8,
+      rejectionRate: 8 / 43,
+      queueDepth: 17,
+      source: "tx_admissions.status",
+    },
+    finality: {
+      settlementLatency: { p50Ms: null, p95Ms: null, sampleCount: 0, source: "pbf.updated_at" },
+      finalized: 0,
+      pending: 0,
+      abandoned: 0,
+      oldestUnsettled: null,
+      source: "pbf.status",
+    },
+    statusBreakdown: { finalization: [], admission: [] },
+    series: [],
+  } as unknown as MetricsResponse;
+
+  it("degrades to a message rather than blanking when metrics are unavailable", () => {
+    render(<NetworkMetrics metrics={null} totalBlocks={40} totalTxs={60} />);
+    expect(screen.getByText("Metrics are unavailable. Everything else on this page is unaffected."))
+      .toBeDefined();
+    // All-time counts survive a metrics failure: they come from another call.
+    expect(screen.getByText("40")).toBeDefined();
+  });
+
+  it("says nothing completed rather than showing a zero latency", () => {
+    render(<NetworkMetrics metrics={base} totalBlocks={40} totalTxs={60} />);
+    expect(screen.getByText("Nothing completed in this window")).toBeDefined();
+    // A p50 with no sample must read as absent, never as instant.
+    expect(screen.queryByText("0s")).toBeNull();
+  });
+
+  it("judges tip lateness against the observed cadence, not a fixed threshold", () => {
+    const late = {
+      ...base,
+      tip: { ...base.tip, ageSeconds: 300 },
+    } as MetricsResponse;
+    const { container } = render(<NetworkMetrics metrics={late} totalBlocks={40} totalTxs={60} />);
+    // 300s against a 21s p50 is 14x: danger, not merely warning.
+    expect(container.querySelector(".text-danger")).not.toBeNull();
+  });
+
+  it("marks a thin percentile sample instead of presenting it as a measurement", () => {
+    const thin = {
+      ...base,
+      finality: {
+        ...base.finality,
+        settlementLatency: { p50Ms: 43_400, p95Ms: 61_200, sampleCount: 5, source: "pbf" },
+      },
+    } as MetricsResponse;
+    render(<NetworkMetrics metrics={thin} totalBlocks={40} totalTxs={60} />);
+    expect(screen.getByText(/thin sample/)).toBeDefined();
   });
 });
 

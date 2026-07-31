@@ -16,8 +16,10 @@ import {
 import { getDepositsPageRoute } from "./routes/deposits";
 import { getWithdrawalsPageRoute } from "./routes/withdrawals";
 import { getForcedTransactionsPageRoute } from "./routes/forcedTransactions";
+import { getMetricsRoute } from "./routes/metrics";
 
 export function registerRoutes(app: Express) {
+  app.get("/api/metrics", getMetricsRoute);
   app.get("/api/block", getBlockRoute);
   app.get("/api/transaction", getTransactionRoute);
   app.get("/api/address", getAddressRoute);
