@@ -1,11 +1,12 @@
 import { Request, Response } from "express";
 import { config } from "../../config";
-import { getLastTransactions } from "../../db/block";
+import { getBlockFinalization, getLastTransactions } from "../../db/block";
 import {
   getTotalTransactions,
   getTransaction,
   getTransactionsPage,
   getTxAdmission,
+  getTxInclusion,
   getTxLifecycle,
 } from "../../db/transaction";
 import { findOutRef } from "../../db/ledger";
@@ -40,13 +41,29 @@ export async function getTransactionRoute(req: Request, res: Response) {
         submitSource: admissionRecord.submitSource,
       }
     : null;
+  // Inclusion is what makes settlement reachable from a transaction, so it is
+  // resolved for every outcome below, decodable or not.
+  const inclusionRow = await getTxInclusion(txHash);
+  const inclusion = inclusionRow
+    ? {
+        height: inclusionRow.height,
+        header_hash: toHex(inclusionRow.header_hash),
+        time_stamp_tz: inclusionRow.time_stamp_tz,
+      }
+    : null;
+  const finalization = inclusionRow
+    ? await getBlockFinalization(toHex(inclusionRow.header_hash))
+    : null;
+
+  const envelope = { txId: txHash, admission, inclusion, finalization };
+
   if (!tx) {
     const lifecycle = await getTxLifecycle(txHash, admissionRecord);
     if (lifecycle?.status === "rejected") {
       return res.json({
+        ...envelope,
         transaction: null,
         status: "rejected",
-        admission,
         rejection: {
           reasonCode: lifecycle.reasonCode,
           reasonDetail: lifecycle.reasonDetail,
@@ -55,11 +72,7 @@ export async function getTransactionRoute(req: Request, res: Response) {
       });
     }
     if (lifecycle) {
-      return res.json({
-        transaction: null,
-        status: lifecycle.status,
-        admission,
-      });
+      return res.json({ ...envelope, transaction: null, status: lifecycle.status });
     }
     return res.status(404).json({ error: "Transaction not found." });
   }
@@ -74,18 +87,25 @@ export async function getTransactionRoute(req: Request, res: Response) {
   try {
     const transaction = await decodeTransaction(tx.tx, findOutRef);
     return res.json({
+      ...envelope,
       transaction: {
         ...transaction,
         timestamp: tx.time_stamp_tz,
         pending: tx.pending,
       },
       status,
-      admission,
     });
   } catch (err) {
-    return res.status(422).json({
-      error: "Failed to decode transaction.",
-      detail: err instanceof Error ? err.message : String(err),
+    // The transaction exists and everything outside its body is known. Losing
+    // the body is not a failed request, so the rest is still returned.
+    return res.json({
+      ...envelope,
+      transaction: null,
+      status,
+      decodeError: {
+        code: "undecodable_body",
+        detail: err instanceof Error ? err.message : String(err),
+      },
     });
   }
 }

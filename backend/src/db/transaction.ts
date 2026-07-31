@@ -150,6 +150,25 @@ export async function getTxLifecycle(
   return null;
 }
 
+export type TxInclusion = {
+  height: number;
+  header_hash: Uint8Array;
+  time_stamp_tz: Date;
+};
+
+/** The L2 block carrying this transaction. `blocks` holds one row per
+ * block-tx pair, so this is the transaction's side of that join and the only
+ * path from a transaction to its L1 settlement state. */
+export async function getTxInclusion(txId: string): Promise<TxInclusion | null> {
+  const rows = await prisma.blocks.findMany({
+    where: { tx_id: toBytes(txId) },
+    orderBy: { height: "desc" },
+    take: 1,
+    select: { height: true, header_hash: true, time_stamp_tz: true },
+  });
+  return rows[0] ?? null;
+}
+
 export async function getTotalTransactions() {
   return prisma.blocks.count();
 }
