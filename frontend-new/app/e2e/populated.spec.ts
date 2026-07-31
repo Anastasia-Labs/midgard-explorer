@@ -131,9 +131,15 @@ test.describe("transaction lifecycle", () => {
   test("a committed transaction shows the completed lifecycle and UTxO flow", async ({ page }) => {
     const hash = await txWithStatus(page, "committed");
     await page.goto(`/transaction/${hash}`);
-    await expect(page.getByLabel("Transaction lifecycle")).toBeVisible();
-    await expect(page.getByLabel("Node admission timeline")).toBeVisible();
-    await expect(page.getByText("Validation started")).toBeVisible();
+    // One journey replaces the lifecycle chips, admission timeline and
+    // settlement band; per-stage timings live behind its disclosure.
+    const journey = page.getByRole("region", { name: "Protocol journey" });
+    await expect(journey).toBeVisible();
+    await expect(journey.getByText("Committed, awaiting L1 finality")).toBeVisible();
+    await journey.getByText("Stage timings and evidence").click();
+    // The label appears on the rail and again in the details grid; the details
+    // entry is the one that carries the recorded timestamp.
+    await expect(journey.getByRole("group").getByText("Validated")).toBeVisible();
     await page.getByRole("tab", { name: /UTxO flow/ }).click();
     await expect(page.getByRole("heading", { name: /^Inputs \(/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /^Outputs \(/ })).toBeVisible();
@@ -154,9 +160,13 @@ test.describe("transaction lifecycle", () => {
   test("a rejected transaction shows the reason and the failure path", async ({ page }) => {
     const hash = await txWithStatus(page, "rejected");
     await page.goto(`/transaction/${hash}`);
-    await expect(page.getByText("Rejected by the node")).toBeVisible();
+    await expect(page.getByText("Rejected by the node").first()).toBeVisible();
     await expect(page.getByText(/below minimum/)).toBeVisible();
-    await expect(page.getByLabel("Node admission timeline").getByText("Rejected")).toBeVisible();
+    // The failure must read as a failure on the rail, not as a reached stage.
+    const journey = page.getByRole("region", { name: "Protocol journey" });
+    await expect(journey.getByRole("list").getByText("Rejected")).toBeVisible();
+    // A rejected transaction never entered a block, so no settlement stage.
+    await expect(journey.getByText("Final on L1")).toHaveCount(0);
   });
 
   test("an undecodable transaction keeps everything that does not need the body", async ({
@@ -171,11 +181,12 @@ test.describe("transaction lifecycle", () => {
     test.skip(!undecodable, "no undecodable fixture on page 1");
     await page.goto(`/transaction/${undecodable!.tx_id}`);
     await expect(page.getByText("This transaction's body could not be decoded.")).toBeVisible();
-    // The failure is scoped to the body: lifecycle, timings and settlement
-    // state come from the node's own records and must survive it.
-    await expect(page.getByText("L2 inclusion")).toBeVisible();
-    await expect(page.getByText("Cardano L1 settlement")).toBeVisible();
-    await expect(page.getByText("Node admission record", { exact: false })).toBeVisible();
+    // The failure is scoped to the body: the journey comes from the node's own
+    // records and must survive it.
+    const journey = page.getByRole("region", { name: "Protocol journey" });
+    await expect(journey).toBeVisible();
+    await journey.getByText("Stage timings and evidence").click();
+    await expect(journey.getByText("Node admission record", { exact: false })).toBeVisible();
   });
 
   test("a committed transaction links to its block and its L1 settlement state", async ({
@@ -185,8 +196,11 @@ test.describe("transaction lifecycle", () => {
       .get(`${FIXTURE}/api/transactions/1`)
       .then(async (r) => (await r.json()).rows as Array<{ tx_id: string }>);
     await page.goto(`/transaction/${rows[0]!.tx_id}`);
-    await expect(page.getByRole("link", { name: /^Block #\d+$/ })).toBeVisible();
-    await expect(page.getByText("Cardano L1 settlement")).toBeVisible();
+    const journey = page.getByRole("region", { name: "Protocol journey" });
+    // Inclusion is on the rail; the block link is evidence behind the details.
+    await expect(journey.getByRole("list").getByText(/^Block #\d+$/)).toBeVisible();
+    await journey.getByText("Stage timings and evidence").click();
+    await expect(journey.getByRole("link", { name: /^Block #\d+$/ })).toBeVisible();
   });
 });
 

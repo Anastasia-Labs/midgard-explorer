@@ -26,8 +26,18 @@ export function IdentityBar({
         <p className="mg-overline">{overline}</p>
         {badges ? <div className="flex flex-wrap items-center gap-2">{badges}</div> : null}
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <code className="break-all font-mono text-[14.5px] font-medium leading-normal text-text">
+      {/* A 64-character hash wraps to three lines on a phone and costs more
+          height than the answer below it. Small viewports get a single
+          truncated line; the copy button still yields the full value, and it is
+          shown in full from `sm` up. */}
+      <div className="mt-2 flex items-center gap-1.5">
+        <code
+          title={value}
+          className="min-w-0 truncate font-mono text-[14.5px] font-medium leading-normal text-text sm:hidden"
+        >
+          {value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-10)}` : value}
+        </code>
+        <code className="hidden min-w-0 break-all font-mono text-[14.5px] font-medium leading-normal text-text sm:inline">
           {value}
         </code>
         <span className="inline-flex shrink-0 gap-0.5">

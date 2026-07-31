@@ -8,16 +8,15 @@ import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
 import { Icon } from "../../../components/ui/icons";
 import { Identifier } from "../../../components/ui/identifier";
 import { IdentityBar } from "../../../components/ui/identitybar";
-import { LifecycleStepper } from "../../../components/ui/lifecycle";
 import { PageError } from "../../../components/ui/pageerror";
 import { Callout, Card, PageHeader } from "../../../components/ui/primitives";
 import { RawData } from "../../../components/ui/rawdata";
-import { SettlementBand } from "../../../components/ui/settlement";
+import { Journey } from "../../../components/ui/journey";
 import { StatusBadge } from "../../../components/ui/status";
 import { SummaryBand } from "../../../components/ui/summary";
 import { Tabs } from "../../../components/ui/tabs";
-import { AdmissionTimeline } from "../../../components/ui/timeline";
 import { api } from "../../../lib/api";
+import { transactionJourney } from "../../../lib/journey";
 import { formatTimestamp, truncateId } from "../../../lib/format";
 import { TERMINAL_TX_STATUSES } from "../../../lib/queryKeys";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
@@ -66,7 +65,24 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
 
   const status = data.status;
   const terminal = TERMINAL_TX_STATUSES.has(status);
-  const settlement = <SettlementBand inclusion={data.inclusion} finalization={data.finalization} />;
+  const journey = (
+    <Journey
+      model={transactionJourney({
+        status,
+        admission: data.admission,
+        inclusion: data.inclusion,
+        finalization: data.finalization,
+      })}
+    >
+      {data.admission ? (
+        <p className="font-mono text-[12px] text-text-3">
+          Node admission record · {data.admission.attemptCount} validation attempt
+          {data.admission.attemptCount === 1 ? "" : "s"} · {data.admission.requestCount} request
+          {data.admission.requestCount === 1 ? "" : "s"} · source: {data.admission.submitSource}
+        </p>
+      ) : null}
+    </Journey>
+  );
 
   if (data.transaction === null) {
     return (
@@ -78,13 +94,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
         {/* Status is on the page header and in the stepper; a third copy here
             adds no information. */}
         <IdentityBar overline="Transaction hash" value={hash} />
-        <div data-region="journey">
-          <div className="mb-4">
-            <LifecycleStepper status={status} />
-          </div>
-          {settlement}
-          {data.admission ? <AdmissionTimeline admission={data.admission} outcome={status} /> : null}
-        </div>
+        {journey}
         {data.decodeError ? (
           <Callout tone="warning" title="This transaction's body could not be decoded.">
             <p>
@@ -245,7 +255,10 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
           {tx.outputs.map((output, i) => (
             <li
               key={i}
-              className="rounded-lg border border-border border-l-2 border-l-accent/50 bg-surface-2/40 p-3"
+              // Neutral by default: an accent on every output encodes nothing.
+              // Accent is reserved for something provable (belongs to the
+              // viewed address, carries a mint, holds a datum or script ref).
+              className="rounded-lg border border-border bg-surface-2/40 p-3"
             >
               <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                 <Identifier value={output.address} href={`/address/${output.address}`} />
@@ -281,18 +294,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
         badges={<StatusBadge status={tx.validity} />}
       />
 
-      {/* Lifecycle, inclusion and settlement lead: they answer where the
-          transaction is and whether it can still change. Fee is a detail and
-          sits below them, no longer the largest number on the page.
-          `data-region` is the layout harness's measurement seam: it survives
-          the journey redesign, so before and after are the same measurement. */}
-      <div data-region="journey">
-        <div className="mb-4">
-          <LifecycleStepper status={status} />
-        </div>
-        {data.admission ? <AdmissionTimeline admission={data.admission} outcome={status} /> : null}
-        {settlement}
-      </div>
+      {journey}
       {!terminal ? <LifecyclePoller /> : null}
 
       <SummaryBand

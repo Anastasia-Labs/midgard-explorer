@@ -29,6 +29,10 @@ export type JourneySource =
 export type JourneyStage = {
   key: string;
   label: string;
+  /** False for stages that are evidence rather than milestones. They stay in
+   * the details grid; keeping them on the rail pushed it past a phone's width,
+   * and a clipped rail reads as a broken journey. */
+  rail?: boolean;
   state: JourneyStageState;
   occurredAt: string | null;
   timestampKind: TimestampKind;
@@ -64,15 +68,21 @@ const stage = (
   occurredAt: string | null,
   timestampKind: TimestampKind,
   evidence?: JourneyStage["evidence"],
+  rail = true,
 ): JourneyStage => ({
   key,
   label,
   state,
+  rail,
   occurredAt,
   timestampKind,
   source,
   ...(evidence ? { evidence } : {}),
 });
+
+/** The rail carries milestones only; everything else remains in the details. */
+export const railStages = (stages: JourneyStage[]): JourneyStage[] =>
+  stages.filter((s) => s.rail !== false);
 
 /** A recorded value becomes a timestamp; anything else is explicitly absent, so
  * the renderer can say which kind of absent it is rather than printing nothing. */
@@ -124,6 +134,8 @@ function admissionStages(
     "tx_admissions",
     terminal,
     terminalKind,
+    undefined,
+    false,
   );
   return [received, validating, accepted];
 }
@@ -172,6 +184,7 @@ function l1Stages(finalization: BlockFinalization | null): JourneyStage[] {
     observed,
     observedKind,
     evidence,
+    false,
   );
 
   const final = stage(

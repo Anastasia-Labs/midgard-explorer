@@ -85,7 +85,10 @@
   }
 }
 
-main > * {
+/* Motion marks state changes, not navigation. A blanket fade on every child of
+   every page animated things that had not changed and delayed first paint of
+   things that had. */
+.mg-enter {
   animation: mg-fade 0.24s ease-out both;
 }
 
@@ -107,8 +110,10 @@ main > * {
   }
 }
 
+/* Runs three times, not forever: a stable page should come to rest, and an
+   endless animation also blocks any tool that waits for animations to finish. */
 .mg-pulse {
-  animation: mg-pulse 1.6s ease-in-out infinite;
+  animation: mg-pulse 1.6s ease-in-out 3;
 }
 
 @keyframes mg-pop {
