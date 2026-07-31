@@ -18,7 +18,10 @@ export function IdentityBar({
   externalLabel?: string;
 }) {
   return (
-    <div className="mb-4 rounded-xl border border-border bg-surface px-4 py-3.5 shadow-(--mg-shadow)">
+    <div
+      data-region="identity"
+      className="mb-4 rounded-xl border border-border bg-surface px-4 py-3.5 shadow-(--mg-shadow)"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="mg-overline">{overline}</p>
         {badges ? <div className="flex flex-wrap items-center gap-2">{badges}</div> : null}

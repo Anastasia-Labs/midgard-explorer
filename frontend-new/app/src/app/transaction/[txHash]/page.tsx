@@ -78,11 +78,13 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
         {/* Status is on the page header and in the stepper; a third copy here
             adds no information. */}
         <IdentityBar overline="Transaction hash" value={hash} />
-        <div className="mb-4">
-          <LifecycleStepper status={status} />
+        <div data-region="journey">
+          <div className="mb-4">
+            <LifecycleStepper status={status} />
+          </div>
+          {settlement}
+          {data.admission ? <AdmissionTimeline admission={data.admission} outcome={status} /> : null}
         </div>
-        {settlement}
-        {data.admission ? <AdmissionTimeline admission={data.admission} outcome={status} /> : null}
         {data.decodeError ? (
           <Callout tone="warning" title="This transaction's body could not be decoded.">
             <p>
@@ -281,12 +283,16 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
 
       {/* Lifecycle, inclusion and settlement lead: they answer where the
           transaction is and whether it can still change. Fee is a detail and
-          sits below them, no longer the largest number on the page. */}
-      <div className="mb-4">
-        <LifecycleStepper status={status} />
+          sits below them, no longer the largest number on the page.
+          `data-region` is the layout harness's measurement seam: it survives
+          the journey redesign, so before and after are the same measurement. */}
+      <div data-region="journey">
+        <div className="mb-4">
+          <LifecycleStepper status={status} />
+        </div>
+        {data.admission ? <AdmissionTimeline admission={data.admission} outcome={status} /> : null}
+        {settlement}
       </div>
-      {data.admission ? <AdmissionTimeline admission={data.admission} outcome={status} /> : null}
-      {settlement}
       {!terminal ? <LifecyclePoller /> : null}
 
       <SummaryBand

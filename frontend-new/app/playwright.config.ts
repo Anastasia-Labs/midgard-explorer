@@ -1,7 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 3000;
-const FIXTURE_PORT = 3101;
+// Overridable so the harness can run against its own production build while a
+// dev server holds the default port.
+const PORT = Number(process.env.E2E_PORT ?? 3000);
+const FIXTURE_PORT = Number(process.env.FIXTURE_PORT ?? 3101);
 
 export default defineConfig({
   testDir: "./e2e",
@@ -32,7 +34,7 @@ export default defineConfig({
       // Test what ships. The dev server injects an overlay and a build
       // indicator that shift layout, break axe runs, and change hydration
       // timing, so e2e results from `next dev` do not describe production.
-      command: "pnpm build && pnpm start",
+      command: `pnpm build && pnpm start --port ${PORT}`,
       port: PORT,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
