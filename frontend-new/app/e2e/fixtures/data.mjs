@@ -162,7 +162,10 @@ export const blockDa = (height) =>
         block_end_time: new Date(Date.UTC(2026, 6, 28, 12, 0, 0)).toISOString(),
       };
 
-/** Every finalization status the registry knows, cycled across blocks. */
+/** Every finalization status the registry knows, cycled across blocks, plus one
+ * the registry does not know. Transactions already exercise an unrecognized
+ * lifecycle status via TX_STATUSES; blocks had no equivalent, so the
+ * unknown-settlement-stage path had never rendered. */
 const FINALIZATION_STATUSES = [
   "finalized",
   "observed_waiting_stability",
@@ -170,6 +173,7 @@ const FINALIZATION_STATUSES = [
   "submitted_local_finalization_pending",
   "pending_submission",
   "abandoned",
+  "some_future_finalization_stage",
 ];
 
 export const blockFinalization = (height) => {
