@@ -1,0 +1,75 @@
+/* Midgard design tokens.
+ *
+ * Dark is the resting default: it applies when the OS expresses no preference.
+ * Light applies when the OS asks for it, unless the user has pinned dark.
+ * `[data-theme]` is set by the pre-paint script in the root layout and always
+ * wins over the media query, so an explicit choice beats the OS in both
+ * directions. Both themes are first-class. */
+
+:root {
+  --mg-bg: #0a0d0b;
+  --mg-surface: #111512;
+  --mg-surface-2: #171c18;
+  --mg-surface-3: #1d231e;
+  --mg-border: #2a312b;
+  --mg-border-strong: #39423a;
+  --mg-text: #f1f3ed;
+  --mg-text-2: #a5aea2;
+  --mg-text-3: #7e877d;
+  --mg-accent: #18c95b;
+  --mg-accent-hover: #31db70;
+  --mg-on-accent: #04120a;
+  --mg-info: #65a8ff;
+  --mg-success: #18c95b;
+  --mg-warning: #f2b84b;
+  --mg-danger: #f36b6b;
+  --mg-focus: #18c95b;
+  --mg-shadow: 0 1px 2px rgb(0 0 0 / 28%);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --mg-bg: #f7f6f2;
+    --mg-surface: #ffffff;
+    --mg-surface-2: #efeee9;
+    --mg-surface-3: #e8e7e1;
+    --mg-border: rgb(46 40 30 / 16%);
+    --mg-border-strong: rgb(46 40 30 / 28%);
+    --mg-text: #1b1a16;
+    --mg-text-2: #4f4b43;
+    --mg-text-3: #6a655c;
+    --mg-accent: #03654a;
+    --mg-accent-hover: #047857;
+    --mg-on-accent: #ffffff;
+    --mg-info: #1d5dc5;
+    --mg-success: #03654a;
+    --mg-warning: #8a5d06;
+    --mg-danger: #b42323;
+    --mg-focus: #1d5dc5;
+    --mg-shadow: 0 1px 2px rgb(46 40 30 / 10%);
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --mg-bg: #f7f6f2;
+  --mg-surface: #ffffff;
+  --mg-surface-2: #efeee9;
+  --mg-surface-3: #e8e7e1;
+  --mg-border: rgb(46 40 30 / 16%);
+  --mg-border-strong: rgb(46 40 30 / 28%);
+  --mg-text: #1b1a16;
+  --mg-text-2: #4f4b43;
+  --mg-text-3: #6a655c;
+  --mg-accent: #03654a;
+  --mg-accent-hover: #047857;
+  --mg-on-accent: #ffffff;
+  --mg-info: #1d5dc5;
+  --mg-success: #03654a;
+  --mg-warning: #8a5d06;
+  --mg-danger: #b42323;
+  --mg-focus: #1d5dc5;
+  --mg-shadow: 0 1px 2px rgb(46 40 30 / 10%);
+  color-scheme: light;
+}

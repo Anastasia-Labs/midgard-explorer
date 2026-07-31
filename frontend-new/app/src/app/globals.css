@@ -1,0 +1,170 @@
+@import "tailwindcss";
+@import "@midgard-explorer/ui/src/tokens.css";
+
+/* Tailwind reads its palette from these; the values live in tokens.css so the
+ * theme can switch without regenerating utilities. */
+@theme inline {
+  --color-bg: var(--mg-bg);
+  --color-surface: var(--mg-surface);
+  --color-surface-2: var(--mg-surface-2);
+  --color-surface-3: var(--mg-surface-3);
+  --color-border: var(--mg-border);
+  --color-border-strong: var(--mg-border-strong);
+  --color-text: var(--mg-text);
+  --color-text-2: var(--mg-text-2);
+  --color-text-3: var(--mg-text-3);
+  --color-accent: var(--mg-accent);
+  --color-accent-hover: var(--mg-accent-hover);
+  --color-on-accent: var(--mg-on-accent);
+  --color-info: var(--mg-info);
+  --color-success: var(--mg-success);
+  --color-warning: var(--mg-warning);
+  --color-danger: var(--mg-danger);
+
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-space-grotesk);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+@layer base {
+  body {
+    background: var(--mg-bg);
+    color: var(--mg-text);
+    font-family: var(--font-inter), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--mg-accent) 32%, transparent);
+    color: var(--mg-text);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--mg-focus);
+    outline-offset: 2px;
+    border-radius: 5px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--mg-border-strong);
+    border: 3px solid var(--mg-bg);
+    border-radius: 7px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* Motion is only used to explain state: page entry, live status, new rows,
+ * popovers, and loading. All of it is disabled under reduced-motion. */
+
+@keyframes mg-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+main > * {
+  animation: mg-fade 0.24s ease-out both;
+}
+
+.mg-overline {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mg-text-3);
+}
+
+@keyframes mg-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.mg-pulse {
+  animation: mg-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes mg-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.mg-pop {
+  animation: mg-pop 0.13s ease-out both;
+}
+
+@keyframes mg-tint {
+  from {
+    background-color: color-mix(in oklab, var(--mg-accent) 14%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.mg-tint {
+  animation: mg-tint 1.6s ease-out both;
+}
+
+@keyframes mg-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.mg-shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--mg-surface-2) 40%,
+    var(--mg-surface-3) 50%,
+    var(--mg-surface-2) 60%
+  );
+  background-size: 200% 100%;
+  animation: mg-shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

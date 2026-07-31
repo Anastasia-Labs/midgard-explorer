@@ -1,0 +1,9 @@
+packages:
+  - app
+  - contracts
+  - ui
+
+# pnpm 11 gates postinstall scripts; sharp powers next/image optimization.
+allowBuilds:
+  sharp: true
+  unrs-resolver: true
