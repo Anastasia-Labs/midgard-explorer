@@ -71,8 +71,7 @@ export function watchForErrors(page: Page): string[] {
     if (!sameOrigin) return;
     // Next cancels in-flight RSC prefetches when the router moves on. An
     // aborted prefetch is the framework working, not a broken request.
-    const abortedPrefetch =
-      url.includes("_rsc=") && r.failure()?.errorText === "net::ERR_ABORTED";
+    const abortedPrefetch = url.includes("_rsc=") && r.failure()?.errorText === "net::ERR_ABORTED";
     if (abortedPrefetch) return;
     errors.push(`requestfailed: ${url} ${r.failure()?.errorText ?? ""}`);
   });

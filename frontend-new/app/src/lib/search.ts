@@ -16,13 +16,7 @@ import { l1TxUrl } from "./network";
  */
 
 export type CandidateKind =
-  | "transaction"
-  | "block"
-  | "blockHeight"
-  | "address"
-  | "asset"
-  | "policy"
-  | "l1Transaction";
+  "transaction" | "block" | "blockHeight" | "address" | "asset" | "policy" | "l1Transaction";
 
 export type Candidate = {
   kind: CandidateKind;
@@ -36,8 +30,7 @@ export type Candidate = {
 };
 
 export type SearchResult =
-  | { ok: true; candidates: Candidate[]; ambiguous: boolean }
-  | { ok: false; reason: string };
+  { ok: true; candidates: Candidate[]; ambiguous: boolean } | { ok: false; reason: string };
 
 const ADDRESS_PREFIXES = ["addr1", "addr_test1", "stake1", "stake_test1"];
 const BECH32_CHARSET = /^[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$/;
@@ -92,7 +85,12 @@ export function searchCandidates(raw: string): SearchResult {
         ok: true,
         ambiguous: false,
         candidates: [
-          { kind: "address", label: "Address", detail: "L2 ledger address", href: `/address/${input}` },
+          {
+            kind: "address",
+            label: "Address",
+            detail: "L2 ledger address",
+            href: `/address/${input}`,
+          },
         ],
       };
     }

@@ -270,7 +270,8 @@ export function NetworkMetrics({
 
   const { window: w, tip, throughput, admission, finality } = metrics;
   const tipState = tipTone(tip.ageSeconds, throughput.blockIntervalSeconds.p50);
-  const backlogTone = finality.pending === 0 ? "success" : finality.pending > 50 ? "warning" : "neutral";
+  const backlogTone =
+    finality.pending === 0 ? "success" : finality.pending > 50 ? "warning" : "neutral";
 
   return (
     <Panel

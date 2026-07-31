@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { AssetFingerprint, AssetName, AssetQuantity, CoverageNote } from "../../../components/ui/asset";
+import {
+  AssetFingerprint,
+  AssetName,
+  AssetQuantity,
+  CoverageNote,
+} from "../../../components/ui/asset";
 import { ApiExample } from "../../../components/ui/apiexample";
 import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
 import { Identifier } from "../../../components/ui/identifier";
@@ -180,9 +185,7 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
             content: (
               <>
                 <div className="mb-4">
-                  <ApiExample
-                    path={`/api/asset?policy_id=${policyId}&asset_name=${nameHex}`}
-                  />
+                  <ApiExample path={`/api/asset?policy_id=${policyId}&asset_name=${nameHex}`} />
                 </div>
                 <RawData data={data} filename={`asset-${unit}.json`} />
               </>

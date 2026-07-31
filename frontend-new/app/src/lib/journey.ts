@@ -20,11 +20,7 @@ export type JourneyStageState = "reached" | "current" | "future" | "failed" | "u
 
 export type TimestampKind = "recorded" | "not_recorded" | "not_applicable";
 
-export type JourneySource =
-  | "tx_admissions"
-  | "blocks"
-  | "pending_block_finalizations"
-  | "bridge";
+export type JourneySource = "tx_admissions" | "blocks" | "pending_block_finalizations" | "bridge";
 
 export type JourneyStage = {
   key: string;
@@ -97,7 +93,14 @@ function admissionStages(
   if (admission === null) {
     // No admission record at all: say so rather than inventing a start.
     return [
-      stage("received", "Received", pastAdmission ? "reached" : "unknown", "tx_admissions", null, "not_recorded"),
+      stage(
+        "received",
+        "Received",
+        pastAdmission ? "reached" : "unknown",
+        "tx_admissions",
+        null,
+        "not_recorded",
+      ),
     ];
   }
 
@@ -248,7 +251,14 @@ function settlementStages(
   if (inclusion === null) {
     return [
       stage("included", "In a block", "future", "blocks", null, "not_applicable"),
-      stage("final", "Final on L1", "future", "pending_block_finalizations", null, "not_applicable"),
+      stage(
+        "final",
+        "Final on L1",
+        "future",
+        "pending_block_finalizations",
+        null,
+        "not_applicable",
+      ),
     ];
   }
   return [

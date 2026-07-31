@@ -200,9 +200,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
       {tx.referenceInputs.length > 0 ? (
         <Card>
           <h2 className="mg-overline px-4 pt-4">Reference inputs ({tx.referenceInputs.length})</h2>
-          <p className="px-4 pt-1 mg-caption text-text-3">
-            Read by scripts without being spent.
-          </p>
+          <p className="px-4 pt-1 mg-caption text-text-3">Read by scripts without being spent.</p>
           <ul className="space-y-1 p-4">
             {tx.referenceInputs.map((r) => (
               <li key={`${r.txId}-${r.index}`}>
@@ -221,70 +219,70 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
           contains, and inputs = outputs + fee shows what it did. */}
       <LedgerEquation tx={tx} />
       <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
-      <Card>
-        <h2 className="mg-overline px-4 pt-4">Inputs ({tx.inputs.length})</h2>
-        <ul className="space-y-3 p-4">
-          {tx.inputs.map((input) => (
-            <li
-              key={`${input.txId}-${input.index}`}
-              className="rounded-lg border border-border bg-surface-2/40 p-3"
-            >
-              <Identifier
-                value={`${input.txId}#${input.index}`}
-                href={`/transaction/${input.txId}`}
-              />
-              {input.resolved ? (
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <Identifier
-                    value={input.resolved.address}
-                    href={`/address/${input.resolved.address}`}
-                  />
-                  <ValueCell value={input.resolved.value} />
-                </div>
-              ) : (
-                <p className="mt-2 text-sm text-text-3">
-                  Spend side not resolvable (already spent or pruned).
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      </Card>
+        <Card>
+          <h2 className="mg-overline px-4 pt-4">Inputs ({tx.inputs.length})</h2>
+          <ul className="space-y-3 p-4">
+            {tx.inputs.map((input) => (
+              <li
+                key={`${input.txId}-${input.index}`}
+                className="rounded-lg border border-border bg-surface-2/40 p-3"
+              >
+                <Identifier
+                  value={`${input.txId}#${input.index}`}
+                  href={`/transaction/${input.txId}`}
+                />
+                {input.resolved ? (
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <Identifier
+                      value={input.resolved.address}
+                      href={`/address/${input.resolved.address}`}
+                    />
+                    <ValueCell value={input.resolved.value} />
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-text-3">
+                    Spend side not resolvable (already spent or pruned).
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
 
-      <div className="hidden items-center text-text-3 lg:flex">
-        <Icon name="arrowRight" size={20} />
-      </div>
+        <div className="hidden items-center text-text-3 lg:flex">
+          <Icon name="arrowRight" size={20} />
+        </div>
 
-      <Card>
-        <h2 className="mg-overline px-4 pt-4">Outputs ({tx.outputs.length})</h2>
-        <ul className="space-y-3 p-4">
-          {tx.outputs.map((output, i) => (
-            <li
-              key={i}
-              // Neutral by default: an accent on every output encodes nothing.
-              // Accent is reserved for something provable (belongs to the
-              // viewed address, carries a mint, holds a datum or script ref).
-              className="rounded-lg border border-border bg-surface-2/40 p-3"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <Identifier value={output.address} href={`/address/${output.address}`} />
-                <ValueCell value={output.value} />
-              </div>
-              {output.hasDatum || output.hasScriptRef ? (
-                <div className="mt-1.5 flex gap-1.5">
-                  {output.hasDatum ? <Chip>datum</Chip> : null}
-                  {output.hasScriptRef ? <Chip>script ref</Chip> : null}
+        <Card>
+          <h2 className="mg-overline px-4 pt-4">Outputs ({tx.outputs.length})</h2>
+          <ul className="space-y-3 p-4">
+            {tx.outputs.map((output, i) => (
+              <li
+                key={i}
+                // Neutral by default: an accent on every output encodes nothing.
+                // Accent is reserved for something provable (belongs to the
+                // viewed address, carries a mint, holds a datum or script ref).
+                className="rounded-lg border border-border bg-surface-2/40 p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <Identifier value={output.address} href={`/address/${output.address}`} />
+                  <ValueCell value={output.value} />
                 </div>
-              ) : null}
-              {Object.keys(output.value.assets).length > 0 ? (
-                <div className="mt-2 border-t border-border pt-2">
-                  <AssetHierarchy assets={output.value.assets} />
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      </Card>
+                {output.hasDatum || output.hasScriptRef ? (
+                  <div className="mt-1.5 flex gap-1.5">
+                    {output.hasDatum ? <Chip>datum</Chip> : null}
+                    {output.hasScriptRef ? <Chip>script ref</Chip> : null}
+                  </div>
+                ) : null}
+                {Object.keys(output.value.assets).length > 0 ? (
+                  <div className="mt-2 border-t border-border pt-2">
+                    <AssetHierarchy assets={output.value.assets} />
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </Card>
       </div>
     </>
   );

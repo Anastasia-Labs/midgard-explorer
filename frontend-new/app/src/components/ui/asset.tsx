@@ -28,7 +28,9 @@ export function AssetName({ nameHex, className }: { nameHex: string; className?:
         {label}
       </span>
       {canonical ? null : (
-        <span className="ml-1.5 font-mono text-[11px] text-text-3">{truncateId(nameHex, 8, 4)}</span>
+        <span className="ml-1.5 font-mono text-[11px] text-text-3">
+          {truncateId(nameHex, 8, 4)}
+        </span>
       )}
     </span>
   );

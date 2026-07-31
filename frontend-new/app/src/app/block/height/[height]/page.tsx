@@ -42,9 +42,18 @@ export default async function BlockByHeightPage({
 
   return (
     <>
-      <Breadcrumbs items={[{ label: "Overview", href: "/" }, { label: "Blocks", href: "/blocks" }]} />
+      <Breadcrumbs
+        items={[
+          { label: "Overview", href: "/" },
+          { label: "Blocks", href: "/blocks" },
+        ]}
+      />
       <PageHeader title="Block not found" />
-      <PageError message={valid ? (failure ?? `No block at height ${height}.`) : `"${raw}" is not a block height.`} />
+      <PageError
+        message={
+          valid ? (failure ?? `No block at height ${height}.`) : `"${raw}" is not a block height.`
+        }
+      />
     </>
   );
 }

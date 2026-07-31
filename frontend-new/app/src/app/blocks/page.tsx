@@ -126,9 +126,7 @@ export default async function BlocksPage({
               </Link>
             ),
             status:
-              r.finalization_status === null ? null : (
-                <StatusCell status={r.finalization_status} />
-              ),
+              r.finalization_status === null ? null : <StatusCell status={r.finalization_status} />,
             meta: <Timestamp iso={r.time_stamp_tz} />,
             secondary: (
               <span className="tabular-nums">
@@ -159,7 +157,9 @@ export default async function BlocksPage({
           hasNextPage={data.hasNextPage}
           total={data.total}
           limit={data.limit}
-          hrefFor={(p) => `/blocks?page=${p}${status ? `&status=${encodeURIComponent(status)}` : ""}`}
+          hrefFor={(p) =>
+            `/blocks?page=${p}${status ? `&status=${encodeURIComponent(status)}` : ""}`
+          }
         />
       </section>
     </>

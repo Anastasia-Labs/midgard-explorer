@@ -57,10 +57,7 @@ export function ledgerEquation(tx: TransactionView): LedgerEquation {
 
   const resolved = tx.inputs.filter((i) => i.resolved !== null);
   const unresolvedCount = tx.inputs.length - resolved.length;
-  const resolvedInputs = resolved.reduce(
-    (sum, i) => sum + BigInt(i.resolved!.value.lovelace),
-    0n,
-  );
+  const resolvedInputs = resolved.reduce((sum, i) => sum + BigInt(i.resolved!.value.lovelace), 0n);
 
   if (unresolvedCount > 0) {
     return {

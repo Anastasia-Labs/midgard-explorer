@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
-import { AssetFingerprint, AssetName, AssetQuantity, CoverageNote } from "../../components/ui/asset";
+import {
+  AssetFingerprint,
+  AssetName,
+  AssetQuantity,
+  CoverageNote,
+} from "../../components/ui/asset";
 import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Identifier } from "../../components/ui/identifier";
 import { PageError } from "../../components/ui/pageerror";

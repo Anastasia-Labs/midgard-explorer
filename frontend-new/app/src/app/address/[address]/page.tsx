@@ -66,9 +66,8 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
           element and the text that follows it on the same line here, and
           "Receivedis exact" shipped once already. */}
       <p className="border-b border-border px-4 py-2.5 mg-micro leading-relaxed text-text-3">
-        <strong className="font-semibold text-text-2">Received</strong>{" "}
-        is exact: it reads each transaction&apos;s own outputs.{" "}
-        <strong className="font-semibold text-text-2">Spent</strong>{" "}
+        <strong className="font-semibold text-text-2">Received</strong> is exact: it reads each
+        transaction&apos;s own outputs. <strong className="font-semibold text-text-2">Spent</strong>{" "}
         appears only when every input of a transaction resolved, because a transaction&apos;s inputs
         leave the ledger once it is applied. An unresolved input reads as unknown, never as zero.
       </p>
@@ -139,7 +138,9 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
           },
         ]}
         mobileRow={(r) => ({
-          primary: <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={6} />,
+          primary: (
+            <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={6} />
+          ),
           status: (
             <span className="inline-flex items-center gap-1.5">
               <StatusCell status={r.status} />

@@ -136,37 +136,37 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
     : Array.from({ length: outputs }, (_, i) => 2_100_000 + i * 500_000);
 
   return {
-  txId: txId(n),
-  formatVersion: 1,
-  validity,
-  fee: String(fee),
-  validityInterval: { start: n % 3 === 0 ? String(1000 + n) : null, end: null },
-  networkId: 0,
-  inputs: [
-    {
-      txId: txId(n + 500),
-      index: 0,
-      resolved: { address: ADDRESSES[n % ADDRESSES.length], value: value(inputA) },
-    },
-    {
-      txId: txId(n + 900),
-      index: 1,
-      resolved:
-        inputB === null
-          ? null
-          : { address: ADDRESSES[(n + 1) % ADDRESSES.length], value: value(inputB) },
-    },
-  ],
-  referenceInputs: n % 4 === 0 ? [{ txId: txId(n + 77), index: 0 }] : [],
-  outputs: amounts.map((lovelace, i) => ({
-    address: ADDRESSES[(n + i) % ADDRESSES.length],
-    value: i === 0 && n % 3 === 0 ? value(lovelace, MULTI_ASSET) : value(lovelace),
-    hasDatum: i === 1,
-    hasScriptRef: n % 5 === 0 && i === 0,
-  })),
-  mint: n % 6 === 0 ? { policyIds: [hex(303, 56), hex(304, 56)] } : null,
-  witnesses: { vkeyCount: 1 + (n % 3), scriptCount: n % 2, redeemerCount: n % 2 },
-  ...(pending ? { pending: true } : {}),
+    txId: txId(n),
+    formatVersion: 1,
+    validity,
+    fee: String(fee),
+    validityInterval: { start: n % 3 === 0 ? String(1000 + n) : null, end: null },
+    networkId: 0,
+    inputs: [
+      {
+        txId: txId(n + 500),
+        index: 0,
+        resolved: { address: ADDRESSES[n % ADDRESSES.length], value: value(inputA) },
+      },
+      {
+        txId: txId(n + 900),
+        index: 1,
+        resolved:
+          inputB === null
+            ? null
+            : { address: ADDRESSES[(n + 1) % ADDRESSES.length], value: value(inputB) },
+      },
+    ],
+    referenceInputs: n % 4 === 0 ? [{ txId: txId(n + 77), index: 0 }] : [],
+    outputs: amounts.map((lovelace, i) => ({
+      address: ADDRESSES[(n + i) % ADDRESSES.length],
+      value: i === 0 && n % 3 === 0 ? value(lovelace, MULTI_ASSET) : value(lovelace),
+      hasDatum: i === 1,
+      hasScriptRef: n % 5 === 0 && i === 0,
+    })),
+    mint: n % 6 === 0 ? { policyIds: [hex(303, 56), hex(304, 56)] } : null,
+    witnesses: { vkeyCount: 1 + (n % 3), scriptCount: n % 2, redeemerCount: n % 2 },
+    ...(pending ? { pending: true } : {}),
   };
 };
 
@@ -468,9 +468,7 @@ export const metrics = () => {
 
   const finalizations = BLOCKS.map((b) => blockFinalization(b.height)).filter((f) => f !== null);
   const byStatus = (s) => finalizations.filter((f) => f.status === s).length;
-  const unsettled = finalizations.filter(
-    (f) => !["finalized", "abandoned"].includes(f.status),
-  );
+  const unsettled = finalizations.filter((f) => !["finalized", "abandoned"].includes(f.status));
   const oldest = unsettled
     .slice()
     .sort((a, b) => new Date(a.blockEndTime) - new Date(b.blockEndTime))[0];
@@ -590,9 +588,7 @@ export const assets = () => ({
 });
 
 export const asset = (policyId, assetName) => {
-  const row = ASSET_ROWS.find(
-    (r) => r.policyId === policyId && r.assetName === (assetName ?? ""),
-  );
+  const row = ASSET_ROWS.find((r) => r.policyId === policyId && r.assetName === (assetName ?? ""));
   if (!row) return null;
   return {
     policyId: row.policyId,
@@ -603,8 +599,10 @@ export const asset = (policyId, assetName) => {
       address,
       // Split the quantity so the largest-first ordering is exercised rather
       // than assumed; BigInt because a supply can exceed 2^53.
-      quantity: (BigInt(row.ledgerQuantity) / BigInt(row.holderCount) + BigInt(i === 0 ? 1 : 0))
-        .toString(),
+      quantity: (
+        BigInt(row.ledgerQuantity) / BigInt(row.holderCount) +
+        BigInt(i === 0 ? 1 : 0)
+      ).toString(),
       utxoCount: (i % 2) + 1,
     })),
     holdersTruncated: false,

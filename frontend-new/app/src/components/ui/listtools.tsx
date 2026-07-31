@@ -65,8 +65,7 @@ export function ListTools<Row>({
   };
 
   const csv = () => {
-    const escape = (v: string): string =>
-      /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    const escape = (v: string): string => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     return [
       columns.map((c) => escape(c.header)).join(","),
       ...rows.map((r) => columns.map((c) => escape(at(r, c.path))).join(",")),

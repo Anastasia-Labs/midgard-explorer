@@ -331,9 +331,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
                         >
                           <span className="min-w-0">
                             <span className="block text-sm font-medium text-text">{c.label}</span>
-                            <span className="block font-mono mg-micro text-text-3">
-                              {c.detail}
-                            </span>
+                            <span className="block font-mono mg-micro text-text-3">{c.detail}</span>
                           </span>
                           <Icon name="arrowRight" size={14} className="shrink-0 text-text-3" />
                         </button>

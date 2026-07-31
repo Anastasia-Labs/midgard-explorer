@@ -172,7 +172,9 @@ export default async function TransactionsPage({
           hasNextPage={data.hasNextPage}
           total={data.total}
           limit={data.limit}
-          hrefFor={(p) => `/transactions?page=${p}${status ? `&status=${encodeURIComponent(status)}` : ""}`}
+          hrefFor={(p) =>
+            `/transactions?page=${p}${status ? `&status=${encodeURIComponent(status)}` : ""}`
+          }
         />
       </section>
     </>

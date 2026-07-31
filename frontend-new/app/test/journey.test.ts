@@ -48,9 +48,24 @@ describe("no timestamp is invented", () => {
    * never recorded. */
   it("never carries a timestamp without a recorded source field", () => {
     const cases: JourneyModel[] = [
-      transactionJourney({ status: "queued", admission: admission({ validationStartedAt: null, terminalAt: null }), inclusion: null, finalization: null }),
-      transactionJourney({ status: "committed", admission: admission(), inclusion: inclusion(), finalization: finalization({ observedConfirmedAt: null, status: "submitted_unconfirmed" }) }),
-      transactionJourney({ status: "accepted", admission: null, inclusion: null, finalization: null }),
+      transactionJourney({
+        status: "queued",
+        admission: admission({ validationStartedAt: null, terminalAt: null }),
+        inclusion: null,
+        finalization: null,
+      }),
+      transactionJourney({
+        status: "committed",
+        admission: admission(),
+        inclusion: inclusion(),
+        finalization: finalization({ observedConfirmedAt: null, status: "submitted_unconfirmed" }),
+      }),
+      transactionJourney({
+        status: "accepted",
+        admission: null,
+        inclusion: null,
+        finalization: null,
+      }),
     ];
     for (const m of cases) {
       for (const s of m.stages) {
@@ -61,14 +76,24 @@ describe("no timestamp is invented", () => {
   });
 
   it("marks settlement timestamps not applicable when nothing was included", () => {
-    const m = transactionJourney({ status: "accepted", admission: admission(), inclusion: null, finalization: null });
+    const m = transactionJourney({
+      status: "accepted",
+      admission: admission(),
+      inclusion: null,
+      finalization: null,
+    });
     expect(stageBy(m, "final")!.timestampKind).toBe("not_applicable");
   });
 });
 
 describe("failure never renders as success", () => {
   it("marks a rejected transaction failed and stops the journey", () => {
-    const m = transactionJourney({ status: "rejected", admission: admission({ status: "rejected" }), inclusion: null, finalization: null });
+    const m = transactionJourney({
+      status: "rejected",
+      admission: admission({ status: "rejected" }),
+      inclusion: null,
+      finalization: null,
+    });
     expect(m.outcome).toBe("failed");
     expect(stageBy(m, "validated")!.state).toBe("failed");
     // A rejected transaction was never in a block, so no settlement stage may
@@ -79,7 +104,12 @@ describe("failure never renders as success", () => {
   });
 
   it("marks an abandoned finalization failed, not final", () => {
-    const m = transactionJourney({ status: "committed", admission: admission(), inclusion: inclusion(), finalization: finalization({ status: "abandoned" }) });
+    const m = transactionJourney({
+      status: "committed",
+      admission: admission(),
+      inclusion: inclusion(),
+      finalization: finalization({ status: "abandoned" }),
+    });
     expect(m.outcome).toBe("failed");
     expect(stageBy(m, "final")!.state).toBe("failed");
     expect(stageBy(m, "final")!.label).toBe("Abandoned");
@@ -88,7 +118,12 @@ describe("failure never renders as success", () => {
 
 describe("settlement never precedes inclusion", () => {
   it("orders inclusion before every settlement stage", () => {
-    const m = transactionJourney({ status: "committed", admission: admission(), inclusion: inclusion(), finalization: finalization() });
+    const m = transactionJourney({
+      status: "committed",
+      admission: admission(),
+      inclusion: inclusion(),
+      finalization: finalization(),
+    });
     const keys = m.stages.map((s) => s.key);
     const included = keys.indexOf("included");
     for (const settlementKey of ["seen_on_l1", "final"]) {
@@ -98,7 +133,12 @@ describe("settlement never precedes inclusion", () => {
   });
 
   it("never reaches a settlement stage without an inclusion", () => {
-    const m = transactionJourney({ status: "pending_commit", admission: admission(), inclusion: null, finalization: null });
+    const m = transactionJourney({
+      status: "pending_commit",
+      admission: admission(),
+      inclusion: null,
+      finalization: null,
+    });
     expect(stageBy(m, "included")!.state).not.toBe("reached");
     expect(stageBy(m, "final")!.state).not.toBe("reached");
   });
@@ -108,11 +148,21 @@ describe("final means the protocol's terminal success state", () => {
   it("reaches the final stage only when finalization says finalized", () => {
     const nonFinal = ["pending_submission", "submitted_unconfirmed", "observed_waiting_stability"];
     for (const status of nonFinal) {
-      const m = transactionJourney({ status: "committed", admission: admission(), inclusion: inclusion(), finalization: finalization({ status }) });
+      const m = transactionJourney({
+        status: "committed",
+        admission: admission(),
+        inclusion: inclusion(),
+        finalization: finalization({ status }),
+      });
       expect(stageBy(m, "final")!.state, `${status} must not reach final`).not.toBe("reached");
       expect(m.outcome).toBe("active");
     }
-    const settled = transactionJourney({ status: "committed", admission: admission(), inclusion: inclusion(), finalization: finalization() });
+    const settled = transactionJourney({
+      status: "committed",
+      admission: admission(),
+      inclusion: inclusion(),
+      finalization: finalization(),
+    });
     expect(stageBy(settled, "final")!.state).toBe("reached");
     expect(settled.outcome).toBe("complete");
   });
@@ -120,7 +170,12 @@ describe("final means the protocol's terminal success state", () => {
 
 describe("unknown statuses stay visible", () => {
   it("appends an unrecognized settlement stage verbatim", () => {
-    const m = transactionJourney({ status: "committed", admission: admission(), inclusion: inclusion(), finalization: finalization({ status: "some_future_finalization_stage" }) });
+    const m = transactionJourney({
+      status: "committed",
+      admission: admission(),
+      inclusion: inclusion(),
+      finalization: finalization({ status: "some_future_finalization_stage" }),
+    });
     const unknown = stageBy(m, "unknown_settlement");
     expect(unknown).toBeDefined();
     expect(unknown!.label).toBe("some_future_finalization_stage");
@@ -131,14 +186,24 @@ describe("unknown statuses stay visible", () => {
   });
 
   it("reports an unrecognized lifecycle status as an unknown outcome", () => {
-    const m = transactionJourney({ status: "some_future_status", admission: admission(), inclusion: null, finalization: null });
+    const m = transactionJourney({
+      status: "some_future_status",
+      admission: admission(),
+      inclusion: null,
+      finalization: null,
+    });
     expect(m.outcome).toBe("unknown");
     expect(m.rawStatus).toBe("some_future_status");
   });
 
   it("keeps the raw status on every model", () => {
     for (const status of ["committed", "rejected", "some_future_status"]) {
-      const m = transactionJourney({ status, admission: admission(), inclusion: null, finalization: null });
+      const m = transactionJourney({
+        status,
+        admission: admission(),
+        inclusion: null,
+        finalization: null,
+      });
       expect(m.rawStatus).toBe(status);
     }
   });
@@ -203,8 +268,12 @@ describe("the list-row indicator cannot outrun the record", () => {
     for (const status of ["committed", "pending_commit", "rejected"]) {
       const rowComplete = journeyProgress(status).state === "complete";
       const journeyComplete =
-        transactionJourney({ status, admission: admission(), inclusion: inclusion(), finalization: finalization() })
-          .outcome === "complete";
+        transactionJourney({
+          status,
+          admission: admission(),
+          inclusion: inclusion(),
+          finalization: finalization(),
+        }).outcome === "complete";
       if (rowComplete) expect(journeyComplete).toBe(true);
     }
   });
@@ -217,7 +286,12 @@ describe("every known status is handled", () => {
       .map(([code]) => code);
     expect(lifecycle.length).toBeGreaterThan(0);
     for (const status of lifecycle) {
-      const m = transactionJourney({ status, admission: admission(), inclusion: null, finalization: null });
+      const m = transactionJourney({
+        status,
+        admission: admission(),
+        inclusion: null,
+        finalization: null,
+      });
       expect(m.stages.length, `${status} produced no stages`).toBeGreaterThan(0);
       expect(m.headline.length).toBeGreaterThan(0);
     }
