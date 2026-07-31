@@ -5,10 +5,14 @@ import {
   getTotalTransactions,
   getTransaction,
   getTransactionsPage,
+  getTxAdmission,
   getTxLifecycle,
 } from "../../db/transaction";
 import { findOutRef } from "../../db/ledger";
-import { decodeTransaction, decodeTransactionSafe } from "../../decode/transaction";
+import {
+  decodeTransaction,
+  decodeTransactionSafe,
+} from "../../decode/transaction";
 import { isHexOfLength, toHex } from "../../utils";
 
 export async function getTransactionRoute(req: Request, res: Response) {
@@ -20,13 +24,29 @@ export async function getTransactionRoute(req: Request, res: Response) {
     return res.status(400).json({ error: "Invalid tx_hash." });
   }
 
-  const tx = await getTransaction(txHash);
+  const [tx, admissionRecord] = await Promise.all([
+    getTransaction(txHash),
+    getTxAdmission(txHash),
+  ]);
+  const admission = admissionRecord
+    ? {
+        status: admissionRecord.status,
+        firstSeenAt: admissionRecord.firstSeenAt,
+        validationStartedAt: admissionRecord.validationStartedAt,
+        terminalAt: admissionRecord.terminalAt,
+        updatedAt: admissionRecord.updatedAt,
+        attemptCount: admissionRecord.attemptCount,
+        requestCount: admissionRecord.requestCount,
+        submitSource: admissionRecord.submitSource,
+      }
+    : null;
   if (!tx) {
-    const lifecycle = await getTxLifecycle(txHash);
+    const lifecycle = await getTxLifecycle(txHash, admissionRecord);
     if (lifecycle?.status === "rejected") {
       return res.json({
         transaction: null,
         status: "rejected",
+        admission,
         rejection: {
           reasonCode: lifecycle.reasonCode,
           reasonDetail: lifecycle.reasonDetail,
@@ -35,7 +55,11 @@ export async function getTransactionRoute(req: Request, res: Response) {
       });
     }
     if (lifecycle) {
-      return res.json({ transaction: null, status: lifecycle.status });
+      return res.json({
+        transaction: null,
+        status: lifecycle.status,
+        admission,
+      });
     }
     return res.status(404).json({ error: "Transaction not found." });
   }
@@ -56,6 +80,7 @@ export async function getTransactionRoute(req: Request, res: Response) {
         pending: tx.pending,
       },
       status,
+      admission,
     });
   } catch (err) {
     return res.status(422).json({
@@ -70,10 +95,7 @@ export async function getTotalTransactionsRoute(_req: Request, res: Response) {
   return res.json({ total });
 }
 
-export async function getRecentTransactionsRoute(
-  _req: Request,
-  res: Response,
-) {
+export async function getRecentTransactionsRoute(_req: Request, res: Response) {
   const rows = await getLastTransactions(config.RECENT_TRANSACTIONS_LIMIT);
   const payload = rows.map((row) => ({
     ...row,

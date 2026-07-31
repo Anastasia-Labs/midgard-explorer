@@ -87,6 +87,8 @@ test.describe("block detail", () => {
     await page.goto(`/block/${hash}`);
     await expect(page.getByRole("heading", { level: 1, name: /Block #/ })).toBeVisible();
     await expect(page.getByRole("tab", { name: /Transactions/ })).toBeVisible();
+    await expect(page.getByLabel("Block finalization timeline")).toBeVisible();
+    await expect(page.getByText("Observed on L1")).toBeVisible();
 
     await page.getByRole("tab", { name: "Data availability" }).click();
     await expect(page).toHaveURL(/tab=da/);
@@ -130,6 +132,8 @@ test.describe("transaction lifecycle", () => {
     const hash = await txWithStatus(page, "committed");
     await page.goto(`/transaction/${hash}`);
     await expect(page.getByLabel("Transaction lifecycle")).toBeVisible();
+    await expect(page.getByLabel("Node admission timeline")).toBeVisible();
+    await expect(page.getByText("Validation started")).toBeVisible();
     await page.getByRole("tab", { name: /UTxO flow/ }).click();
     await expect(page.getByRole("heading", { name: /^Inputs \(/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /^Outputs \(/ })).toBeVisible();
@@ -152,6 +156,7 @@ test.describe("transaction lifecycle", () => {
     await page.goto(`/transaction/${hash}`);
     await expect(page.getByText("Rejected by the node")).toBeVisible();
     await expect(page.getByText(/below minimum/)).toBeVisible();
+    await expect(page.getByLabel("Node admission timeline").getByText("Rejected")).toBeVisible();
   });
 
   test("an undecodable transaction says so without claiming it is missing", async ({ page }) => {

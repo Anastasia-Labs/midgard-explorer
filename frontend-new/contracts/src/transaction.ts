@@ -2,12 +2,26 @@ import { Schema } from "effect";
 import { HexString, IsoTimestamp, StatusString, paged } from "./primitives";
 import { TransactionView, TransactionWithMeta } from "./transaction-view";
 
+/** Admission metadata recorded by the node before a transaction reaches a ledger tier. */
+export const TxAdmission = Schema.Struct({
+  status: StatusString,
+  firstSeenAt: IsoTimestamp,
+  validationStartedAt: Schema.NullOr(IsoTimestamp),
+  terminalAt: Schema.NullOr(IsoTimestamp),
+  updatedAt: IsoTimestamp,
+  attemptCount: Schema.Number,
+  requestCount: Schema.Number,
+  submitSource: Schema.String,
+});
+export type TxAdmission = Schema.Schema.Type<typeof TxAdmission>;
+
 export const TransactionFound = Schema.Struct({
   transaction: Schema.Struct({
     ...TransactionWithMeta.fields,
     pending: Schema.optional(Schema.Boolean),
   }),
   status: StatusString,
+  admission: Schema.NullOr(TxAdmission),
 });
 export type TransactionFound = Schema.Schema.Type<typeof TransactionFound>;
 
@@ -15,6 +29,7 @@ export type TransactionFound = Schema.Schema.Type<typeof TransactionFound>;
 export const TransactionLifecycleOnly = Schema.Struct({
   transaction: Schema.Null,
   status: StatusString,
+  admission: Schema.NullOr(TxAdmission),
   rejection: Schema.optional(
     Schema.Struct({
       reasonCode: Schema.NullOr(Schema.String),

@@ -48,15 +48,68 @@ export async function getTransaction(txId: string) {
 export type TxLifecycle =
   | {
       status: "rejected";
-      reasonCode: string;
+      reasonCode: string | null;
       reasonDetail: string | null;
-      rejectedAt: Date;
+      rejectedAt: Date | null;
     }
   | { status: "queued" | "validating" | "accepted" }
   | null;
 
+export type TxAdmission = {
+  status: string;
+  firstSeenAt: Date;
+  validationStartedAt: Date | null;
+  terminalAt: Date | null;
+  updatedAt: Date;
+  attemptCount: number;
+  requestCount: number;
+  submitSource: string;
+  rejectCode: string | null;
+  rejectDetail: string | null;
+};
+
+/** Admission timing and retry metadata remains available after ledger inclusion. */
+export async function getTxAdmission(
+  txId: string,
+): Promise<TxAdmission | null> {
+  const txBytes = toBytes(txId);
+  const admissions = await prisma.$queryRaw<
+    Array<{
+      status: string;
+      first_seen_at: Date;
+      validation_started_at: Date | null;
+      terminal_at: Date | null;
+      updated_at: Date;
+      attempt_count: number;
+      request_count: bigint;
+      submit_source: string;
+      reject_code: string | null;
+      reject_detail: string | null;
+    }>
+  >`SELECT status, first_seen_at, validation_started_at, terminal_at, updated_at,
+      attempt_count, request_count, submit_source, reject_code, reject_detail
+    FROM tx_admissions WHERE tx_id = ${txBytes};`;
+  const row = admissions[0];
+  if (!row) return null;
+  return {
+    status: row.status,
+    firstSeenAt: row.first_seen_at,
+    validationStartedAt: row.validation_started_at,
+    terminalAt: row.terminal_at,
+    updatedAt: row.updated_at,
+    attemptCount: row.attempt_count,
+    requestCount: Number(row.request_count),
+    submitSource: row.submit_source,
+    rejectCode: row.reject_code,
+    rejectDetail: row.reject_detail,
+  };
+}
+
 /** Lifecycle for txs not present in any tx table: rejected, or still in admission. */
-export async function getTxLifecycle(txId: string): Promise<TxLifecycle> {
+export async function getTxLifecycle(
+  txId: string,
+  knownAdmission?: TxAdmission | null,
+): Promise<TxLifecycle> {
   const txBytes = toBytes(txId);
   const rejections = await prisma.$queryRaw<
     Array<{
@@ -75,9 +128,17 @@ export async function getTxLifecycle(txId: string): Promise<TxLifecycle> {
     };
   }
 
-  const admissions = await prisma.$queryRaw<Array<{ status: string }>>`
-    SELECT status FROM tx_admissions WHERE tx_id = ${txBytes};`;
-  const admissionStatus = admissions[0]?.status;
+  const admission =
+    knownAdmission === undefined ? await getTxAdmission(txId) : knownAdmission;
+  const admissionStatus = admission?.status;
+  if (admission?.status === "rejected") {
+    return {
+      status: "rejected",
+      reasonCode: admission.rejectCode,
+      reasonDetail: admission.rejectDetail,
+      rejectedAt: admission.terminalAt,
+    };
+  }
   if (
     admissionStatus === "queued" ||
     admissionStatus === "validating" ||

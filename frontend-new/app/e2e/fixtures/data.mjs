@@ -165,9 +165,27 @@ const FINALIZATION_STATUSES = [
 export const blockFinalization = (height) => {
   if (height === 11) return null;
   const status = FINALIZATION_STATUSES[height % FINALIZATION_STATUSES.length];
+  const blockEndMs = Date.UTC(2026, 6, 28, 12, 0, 0) - (40 - height) * 21_000;
+  const createdMs = blockEndMs + 1_400;
+  const observed =
+    status === "observed_waiting_stability" || status === "finalized"
+      ? new Date(createdMs + 18_000).toISOString()
+      : null;
+  const updatedMs =
+    status === "finalized"
+      ? createdMs + 42_000
+      : status === "abandoned"
+        ? createdMs + 35_000
+        : observed
+          ? new Date(observed).getTime()
+          : createdMs + 4_000;
   return {
     status,
     submitted_tx_hash: status === "pending_submission" ? null : l1TxHash(height),
+    blockEndTime: new Date(blockEndMs).toISOString(),
+    createdAt: new Date(createdMs).toISOString(),
+    updatedAt: new Date(updatedMs).toISOString(),
+    observedConfirmedAt: observed,
   };
 };
 
@@ -187,12 +205,33 @@ export const TXS = Array.from({ length: 60 }, (_, i) => {
   const n = i + 1;
   const status = TX_STATUSES[i % TX_STATUSES.length];
   const undecodable = i % 17 === 5;
+  const txTimeMs = Date.UTC(2026, 6, 28, 12, 0, 0) - i * 37_000;
+  const firstSeenMs = txTimeMs - 24_000;
+  const admissionStatus =
+    status === "queued" || status === "validating" || status === "rejected" ? status : "accepted";
+  const validationStartedAt =
+    admissionStatus === "queued" ? null : new Date(firstSeenMs + 1_700).toISOString();
+  const terminalAt =
+    admissionStatus === "accepted" || admissionStatus === "rejected"
+      ? new Date(firstSeenMs + 5_900).toISOString()
+      : null;
+  const updatedAt = terminalAt ?? validationStartedAt ?? new Date(firstSeenMs).toISOString();
   return {
     n,
     status,
     header_hash: blockHash(40 - (i % 40)),
     tx_id: txId(n),
-    time_stamp_tz: new Date(Date.UTC(2026, 6, 28, 12, 0, 0) - i * 37_000).toISOString(),
+    time_stamp_tz: new Date(txTimeMs).toISOString(),
+    admission: {
+      status: admissionStatus,
+      firstSeenAt: new Date(firstSeenMs).toISOString(),
+      validationStartedAt,
+      terminalAt,
+      updatedAt,
+      attemptCount: admissionStatus === "queued" ? 0 : 1,
+      requestCount: n % 5 === 0 ? 2 : 1,
+      submitSource: n % 9 === 0 ? "backfill" : "native",
+    },
     transaction: undecodable ? null : view(n, { pending: status !== "committed" }),
     decodeError: undecodable ? "unsupported output encoding (legacy CML)" : null,
   };
