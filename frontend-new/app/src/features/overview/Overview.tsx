@@ -8,6 +8,7 @@ import { SearchBox } from "../../components/search/SearchOverlay";
 import { BRIDGE } from "../../components/shell/NavLinks";
 import { Icon, type IconName } from "../../components/ui/icons";
 import { Identifier } from "../../components/ui/identifier";
+import { StatusBadge } from "../../components/ui/status";
 import {
   EmptyState,
   ErrorState,
@@ -21,7 +22,9 @@ import { Timestamp } from "../../components/ui/timestamp";
 import { cn, groupThousands } from "../../lib/format";
 
 const POLL_MS = 10_000;
-const RECENT_ROWS = 7;
+// Five rows per panel keeps the overview scannable on a phone; the list pages
+// carry depth.
+const RECENT_ROWS = 5;
 
 export type OverviewData = {
   recentBlocks: readonly RecentBlockRow[] | null;
@@ -222,12 +225,22 @@ export function Overview({ initial }: { initial: OverviewData }) {
             emptyHint="Blocks appear once the node's operator starts committing."
             render={(r) => (
               <>
-                <Identifier
-                  value={r.header_hash}
-                  href={`/block/${r.header_hash}`}
-                  head={10}
-                  tail={8}
-                />
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="flex items-center gap-2">
+                    <Link
+                      href={`/block/${r.header_hash}`}
+                      className="font-display text-[15px] font-semibold tabular-nums text-accent hover:underline"
+                    >
+                      #{r.height}
+                    </Link>
+                    {r.finalization_status === null ? null : (
+                      <StatusBadge status={r.finalization_status} />
+                    )}
+                  </span>
+                  <span className="text-[12.5px] text-text-3">
+                    {r.tx_count} {r.tx_count === 1 ? "transaction" : "transactions"}
+                  </span>
+                </span>
                 <Timestamp iso={r.time_stamp_tz} />
               </>
             )}
@@ -248,7 +261,15 @@ export function Overview({ initial }: { initial: OverviewData }) {
             emptyHint="Submitted transactions appear here as the node processes them."
             render={(r) => (
               <>
-                <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={8} />
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={8} />
+                  <span className="flex items-center gap-2 text-[12.5px] text-text-3">
+                    <StatusBadge status={r.status} />
+                    <Link href={`/block/${r.header_hash}`} className="tabular-nums hover:underline">
+                      #{r.height}
+                    </Link>
+                  </span>
+                </span>
                 <Timestamp iso={r.time_stamp_tz} />
               </>
             )}

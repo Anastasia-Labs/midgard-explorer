@@ -30,25 +30,51 @@ export async function getBlock(headerHash: string) {
     ORDER BY b.height DESC;`;
 }
 
+/** One row per block, same shape as the blocks list so the overview panel and
+ * the list page say the same things about a block. */
 export async function getLastBlocks(count: number) {
-  const latestHeights = await prisma.blocks.findMany({
-    distinct: ["header_hash"],
-    orderBy: { height: "desc" },
-    take: count,
-    select: { header_hash: true },
-  });
-  const headerHashes = latestHeights.map((row) => row.header_hash);
-  if (headerHashes.length === 0) {
-    return [];
-  }
-  return prisma.blocks.findMany({
-    where: { header_hash: { in: headerHashes } },
-    orderBy: { height: "desc" },
-  });
+  return prisma.$queryRaw<
+    Array<{
+      height: number;
+      header_hash: Uint8Array;
+      tx_id: Uint8Array;
+      time_stamp_tz: Date;
+      tx_count: bigint;
+      finalization_status: string | null;
+    }>
+  >`SELECT b.height,
+      b.header_hash,
+      MIN(b.tx_id) AS tx_id,
+      MAX(b.time_stamp_tz) AS time_stamp_tz,
+      COUNT(*)::bigint AS tx_count,
+      MAX(f.status) AS finalization_status
+    FROM blocks AS b
+    LEFT JOIN pending_block_finalizations AS f
+      ON f.header_hash = b.header_hash
+    GROUP BY b.height, b.header_hash
+    ORDER BY b.height DESC
+    LIMIT ${count};`;
 }
 
 export async function getLastTransactions(count: number) {
-  return prisma.blocks.findMany({ orderBy: { height: "desc" }, take: count });
+  return prisma.$queryRaw<
+    Array<{
+      height: number;
+      header_hash: Uint8Array;
+      tx_id: Uint8Array;
+      time_stamp_tz: Date;
+      in_immutable: boolean;
+    }>
+  >`SELECT b.height,
+      b.header_hash,
+      b.tx_id,
+      b.time_stamp_tz,
+      (i.tx_id IS NOT NULL) AS in_immutable
+    FROM blocks AS b
+    LEFT JOIN immutable AS i
+      ON i.tx_id = b.tx_id
+    ORDER BY b.height DESC
+    LIMIT ${count};`;
 }
 
 /** Height is what people read off a block page and type back into search, so it

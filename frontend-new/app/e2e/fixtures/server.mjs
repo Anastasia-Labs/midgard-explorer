@@ -66,7 +66,17 @@ const routes = [
       return { header_hash: block.header_hash };
     },
   ],
-  ["blocks/recent", /^\/api\/blocks\/recent$/, () => ({ rows: BLOCKS.slice(0, 7) })],
+  [
+    "blocks/recent",
+    /^\/api\/blocks\/recent$/,
+    () => ({
+      rows: BLOCKS.slice(0, 7).map((b) => ({
+        ...b,
+        tx_count: blockRows(b.height).length,
+        finalization_status: blockFinalization(b.height)?.status ?? null,
+      })),
+    }),
+  ],
   ["blocks/total", /^\/api\/blocks\/total$/, () => ({ total: BLOCKS.length })],
   [
     "blocks/page",
@@ -89,10 +99,11 @@ const routes = [
     /^\/api\/transactions\/recent$/,
     () => ({
       rows: TXS.slice(0, 7).map((t) => ({
-        height: 40,
+        height: BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? 0,
         header_hash: t.header_hash,
         tx_id: t.tx_id,
         time_stamp_tz: t.time_stamp_tz,
+        status: t.status === "pending_commit" ? "pending_commit" : "committed",
       })),
     }),
   ],

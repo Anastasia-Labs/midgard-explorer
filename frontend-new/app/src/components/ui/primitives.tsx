@@ -119,7 +119,9 @@ export function MetricTile({
 }
 
 export function MetricStrip({ children }: { children: ReactNode }) {
-  return <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">{children}</div>;
+  // Two columns from the smallest viewport: stacked full-width tiles pushed the
+  // first recent row off a phone screen.
+  return <div className="mb-4 grid grid-cols-2 gap-3">{children}</div>;
 }
 
 export function PageHeader({

@@ -118,9 +118,11 @@ export async function getTotalTransactionsRoute(_req: Request, res: Response) {
 export async function getRecentTransactionsRoute(_req: Request, res: Response) {
   const rows = await getLastTransactions(config.RECENT_TRANSACTIONS_LIMIT);
   const payload = rows.map((row) => ({
-    ...row,
+    height: row.height,
     header_hash: toHex(row.header_hash),
     tx_id: toHex(row.tx_id),
+    time_stamp_tz: row.time_stamp_tz,
+    status: row.in_immutable ? "committed" : "pending_commit",
   }));
   return res.json({ rows: payload });
 }

@@ -55,6 +55,8 @@ export const RecentBlockRow = Schema.Struct({
   header_hash: HexString,
   tx_id: HexString,
   time_stamp_tz: IsoTimestamp,
+  tx_count: Schema.Number,
+  finalization_status: Schema.NullOr(Schema.String),
 });
 export type RecentBlockRow = Schema.Schema.Type<typeof RecentBlockRow>;
 

@@ -63,9 +63,12 @@ export async function getBlockRoute(req: Request, res: Response) {
 export async function getRecentBlocksRoute(_req: Request, res: Response) {
   const rows = await getLastBlocks(config.RECENT_BLOCKS_LIMIT);
   const payload = rows.map((row) => ({
-    ...row,
+    height: row.height,
     header_hash: toHex(row.header_hash),
     tx_id: toHex(row.tx_id),
+    time_stamp_tz: row.time_stamp_tz,
+    tx_count: Number(row.tx_count),
+    finalization_status: row.finalization_status,
   }));
   return res.json({ rows: payload });
 }
