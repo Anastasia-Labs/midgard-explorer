@@ -15,6 +15,7 @@ import { RawData } from "../../../components/ui/rawdata";
 import { StatusBadge } from "../../../components/ui/status";
 import { SummaryBand } from "../../../components/ui/summary";
 import { Tabs } from "../../../components/ui/tabs";
+import { AdmissionTimeline } from "../../../components/ui/timeline";
 import { ApiError, api } from "../../../lib/api";
 import { formatTimestamp, truncateId } from "../../../lib/format";
 import { TERMINAL_TX_STATUSES } from "../../../lib/queryKeys";
@@ -85,14 +86,13 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
         <PageHeader title="Transaction">
           <StatusBadge status={status} />
         </PageHeader>
-        <IdentityBar
-          overline="Transaction hash"
-          value={hash}
-          badges={<StatusBadge status={status} />}
-        />
+        {/* Status is on the page header and in the stepper; a third copy here
+            adds no information. */}
+        <IdentityBar overline="Transaction hash" value={hash} />
         <div className="mb-4">
           <LifecycleStepper status={status} />
         </div>
+        {data.admission ? <AdmissionTimeline admission={data.admission} outcome={status} /> : null}
         {"rejection" in data && data.rejection ? (
           <Callout tone="danger" title="Rejected by the node">
             {data.rejection.reasonCode ? (
@@ -105,7 +105,11 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
                 {data.rejection.reasonDetail}
               </p>
             ) : null}
-            {data.rejection.rejectedAt ? (
+            {/* The timeline's terminal entry already carries the rejection
+                time from the admission record. Only fall back to the rejection
+                row's own timestamp when there is no timeline to carry it, so
+                the page never shows two different rejection times. */}
+            {data.rejection.rejectedAt && !data.admission ? (
               <p className="mt-1.5">At: {formatTimestamp(data.rejection.rejectedAt)}</p>
             ) : null}
           </Callout>
@@ -284,6 +288,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
       <div className="mb-4">
         <LifecycleStepper status={status} />
       </div>
+      {data.admission ? <AdmissionTimeline admission={data.admission} outcome={status} /> : null}
       {!terminal ? <LifecyclePoller /> : null}
 
       <Tabs
