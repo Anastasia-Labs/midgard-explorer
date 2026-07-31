@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ValueCell } from "../../components/ui/amount";
 import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Identifier } from "../../components/ui/identifier";
 import { PageError } from "../../components/ui/pageerror";
+import { StatusBadge } from "../../components/ui/status";
 import { PageHeader } from "../../components/ui/primitives";
 import { DataTable, DecodeWarn, Pagination } from "../../components/ui/table";
 import { Timestamp } from "../../components/ui/timestamp";
@@ -69,9 +71,33 @@ export default async function TransactionsPage({
               ),
             },
             {
+              header: "Status",
+              cell: (r) => <StatusBadge status={r.status} />,
+            },
+            {
               header: "Block",
-              cell: (r) => <Identifier value={r.header_hash} href={`/block/${r.header_hash}`} />,
+              cell: (r) => (
+                <Link
+                  href={`/block/${r.header_hash}`}
+                  className="font-display font-semibold tabular-nums text-accent hover:underline"
+                >
+                  #{r.height}
+                </Link>
+              ),
               hideBelow: "sm",
+            },
+            {
+              header: "In / out",
+              cell: (r) =>
+                r.transaction ? (
+                  <span className="tabular-nums text-text-2">
+                    {r.transaction.inputs.length} → {r.transaction.outputs.length}
+                  </span>
+                ) : (
+                  <span className="text-text-3">Unknown</span>
+                ),
+              hideBelow: "lg",
+              align: "right",
             },
             {
               header: "Fee",
@@ -95,7 +121,12 @@ export default async function TransactionsPage({
             primary: (
               <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={6} />
             ),
-            status: r.decodeError ? <DecodeWarn error={r.decodeError} /> : null,
+            status: (
+              <span className="inline-flex items-center gap-1.5">
+                <StatusBadge status={r.status} />
+                {r.decodeError ? <DecodeWarn error={r.decodeError} /> : null}
+              </span>
+            ),
             meta: <Timestamp iso={r.time_stamp_tz} />,
             secondary: r.transaction ? (
               <ValueCell value={{ lovelace: r.transaction.fee, assets: {} }} />
@@ -104,12 +135,9 @@ export default async function TransactionsPage({
               {
                 label: "Block",
                 value: (
-                  <Identifier
-                    value={r.header_hash}
-                    href={`/block/${r.header_hash}`}
-                    head={8}
-                    tail={6}
-                  />
+                  <Link href={`/block/${r.header_hash}`} className="tabular-nums text-accent">
+                    #{r.height}
+                  </Link>
                 ),
               },
             ],

@@ -138,9 +138,14 @@ export async function getTransactionsPageRoute(req: Request, res: Response) {
         ? await decodeTransactionSafe(row.tx)
         : { transaction: null, error: null as string | null };
       return {
+        height: row.height,
         header_hash: toHex(row.header_hash),
         tx_id: toHex(row.tx_id),
         time_stamp_tz: row.time_stamp_tz,
+        // Rows come from `blocks`, so every one is in a block; which tier holds
+        // its bytes is what separates committed from still-pending.
+        status: row.in_immutable ? "committed" : "pending_commit",
+        finalization_status: row.finalization_status,
         transaction: decoded.transaction,
         decodeError: decoded.error,
       };

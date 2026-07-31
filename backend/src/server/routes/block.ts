@@ -83,8 +83,11 @@ export async function getBlocksPageRoute(req: Request, res: Response) {
 
   const { rows, hasNextPage, total, limit } = await getBlocksPage(page);
   const payload = rows.map((row) => ({
-    ...row,
+    height: row.height,
     header_hash: toHex(row.header_hash),
+    time_stamp_tz: row.time_stamp_tz,
+    tx_count: Number(row.tx_count),
+    finalization_status: row.finalization_status,
   }));
   return res.json({ rows: payload, hasNextPage, total, limit });
 }

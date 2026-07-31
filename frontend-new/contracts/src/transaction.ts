@@ -97,9 +97,12 @@ export const RecentTxsResponse = Schema.Struct({
 export type RecentTxsResponse = Schema.Schema.Type<typeof RecentTxsResponse>;
 
 export const TxPageRow = Schema.Struct({
+  height: Schema.Number,
   header_hash: HexString,
   tx_id: HexString,
   time_stamp_tz: IsoTimestamp,
+  status: StatusString,
+  finalization_status: Schema.NullOr(Schema.String),
   transaction: Schema.NullOr(TransactionView),
   decodeError: Schema.NullOr(Schema.String),
 });

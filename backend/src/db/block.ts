@@ -138,20 +138,34 @@ export async function getBlockFinalization(headerHash: string) {
   };
 }
 
+/** One row per block, carrying what a reader needs to choose which block to
+ * open: its height, how much it holds, and where it stands on L1. The counts
+ * come from `blocks` itself, which holds one row per block-tx pair. */
 export async function getBlocksPage(page: number) {
   const limit = config.BLOCKS_PER_PAGE;
   const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
+  const offset = (safePage - 1) * limit;
   const [rows, total] = await Promise.all([
-    prisma.blocks.findMany({
-      distinct: ["header_hash"],
-      orderBy: { height: "desc" },
-      skip: (safePage - 1) * limit,
-      take: limit,
-      select: {
-        header_hash: true,
-        time_stamp_tz: true,
-      },
-    }),
+    prisma.$queryRaw<
+      Array<{
+        height: number;
+        header_hash: Uint8Array;
+        time_stamp_tz: Date;
+        tx_count: bigint;
+        finalization_status: string | null;
+      }>
+    >`SELECT b.height,
+        b.header_hash,
+        MAX(b.time_stamp_tz) AS time_stamp_tz,
+        COUNT(*)::bigint AS tx_count,
+        MAX(f.status) AS finalization_status
+      FROM blocks AS b
+      LEFT JOIN pending_block_finalizations AS f
+        ON f.header_hash = b.header_hash
+      GROUP BY b.height, b.header_hash
+      ORDER BY b.height DESC
+      OFFSET ${offset}
+      LIMIT ${limit};`,
     prisma.blocks.groupBy({ by: ["header_hash"] }).then((res) => res.length),
   ]);
   const hasNextPage = safePage * limit < total;

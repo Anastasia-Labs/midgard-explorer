@@ -185,17 +185,23 @@ export async function getTransactionsPage(page: number) {
         tx_id: Uint8Array;
         time_stamp_tz: Date;
         tx: Uint8Array | null;
+        in_immutable: boolean;
+        finalization_status: string | null;
       }>
     >`SELECT b.height,
         b.header_hash,
         b.tx_id,
         b.time_stamp_tz,
-        COALESCE(i.tx, m.tx) AS tx
+        COALESCE(i.tx, m.tx) AS tx,
+        (i.tx IS NOT NULL) AS in_immutable,
+        f.status AS finalization_status
       FROM blocks AS b
       LEFT JOIN immutable AS i
         ON b.tx_id = i.tx_id
       LEFT JOIN mempool AS m
         ON b.tx_id = m.tx_id
+      LEFT JOIN pending_block_finalizations AS f
+        ON f.header_hash = b.header_hash
       ORDER BY b.height DESC
       OFFSET ${offset}
       LIMIT ${limit};`,

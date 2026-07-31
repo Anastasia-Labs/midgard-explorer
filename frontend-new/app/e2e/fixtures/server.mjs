@@ -73,7 +73,13 @@ const routes = [
     /^\/api\/blocks\/(\d+)$/,
     (m) =>
       page(
-        BLOCKS.map(({ header_hash, time_stamp_tz }) => ({ header_hash, time_stamp_tz })),
+        BLOCKS.map(({ height, header_hash, time_stamp_tz }) => ({
+          height,
+          header_hash,
+          time_stamp_tz,
+          tx_count: blockRows(height).length,
+          finalization_status: blockFinalization(height)?.status ?? null,
+        })),
         Number(m[1]),
       ),
   ],
@@ -96,13 +102,21 @@ const routes = [
     /^\/api\/transactions\/(\d+)$/,
     (m) =>
       page(
-        TXS.map((t) => ({
-          header_hash: t.header_hash,
-          tx_id: t.tx_id,
-          time_stamp_tz: t.time_stamp_tz,
-          transaction: t.transaction,
-          decodeError: t.decodeError,
-        })),
+        TXS.map((t) => {
+          const height = BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? 0;
+          return {
+            height,
+            header_hash: t.header_hash,
+            tx_id: t.tx_id,
+            time_stamp_tz: t.time_stamp_tz,
+            // List rows come from the block table, so they are always in a
+            // block; only which tier holds the bytes varies.
+            status: t.status === "pending_commit" ? "pending_commit" : "committed",
+            finalization_status: blockFinalization(height)?.status ?? null,
+            transaction: t.transaction,
+            decodeError: t.decodeError,
+          };
+        }),
         Number(m[1]),
       ),
   ],

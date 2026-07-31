@@ -75,8 +75,12 @@ export const TotalResponse = Schema.Struct({
 export type TotalResponse = Schema.Schema.Type<typeof TotalResponse>;
 
 export const BlocksPageRow = Schema.Struct({
+  height: Schema.Number,
   header_hash: HexString,
   time_stamp_tz: IsoTimestamp,
+  tx_count: Schema.Number,
+  /** Null when the node has no finalization record for the block yet. */
+  finalization_status: Schema.NullOr(Schema.String),
 });
 export type BlocksPageRow = Schema.Schema.Type<typeof BlocksPageRow>;
 

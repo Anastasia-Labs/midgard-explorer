@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Identifier } from "../../components/ui/identifier";
+import { StatusBadge } from "../../components/ui/status";
 import { PageError } from "../../components/ui/pageerror";
 import { PageHeader } from "../../components/ui/primitives";
 import { DataTable, Pagination } from "../../components/ui/table";
@@ -59,8 +61,35 @@ export default async function BlocksPage({
           caption="Midgard blocks, newest first"
           columns={[
             {
+              header: "Height",
+              cell: (r) => (
+                <Link
+                  href={`/block/${r.header_hash}`}
+                  className="font-display font-semibold tabular-nums text-accent hover:underline"
+                >
+                  #{r.height}
+                </Link>
+              ),
+            },
+            {
               header: "Header hash",
               cell: (r) => <Identifier value={r.header_hash} href={`/block/${r.header_hash}`} />,
+              hideBelow: "md",
+            },
+            {
+              header: "Txs",
+              cell: (r) => <span className="tabular-nums">{r.tx_count}</span>,
+              align: "right",
+            },
+            {
+              header: "L1 settlement",
+              cell: (r) =>
+                r.finalization_status === null ? (
+                  <span className="text-text-3">Not yet recorded</span>
+                ) : (
+                  <StatusBadge status={r.finalization_status} />
+                ),
+              hideBelow: "sm",
             },
             {
               header: "Time",
@@ -70,14 +99,36 @@ export default async function BlocksPage({
           ]}
           mobileRow={(r) => ({
             primary: (
-              <Identifier
-                value={r.header_hash}
+              <Link
                 href={`/block/${r.header_hash}`}
-                head={10}
-                tail={6}
-              />
+                className="font-display font-semibold tabular-nums text-accent"
+              >
+                #{r.height}
+              </Link>
             ),
+            status:
+              r.finalization_status === null ? null : (
+                <StatusBadge status={r.finalization_status} />
+              ),
             meta: <Timestamp iso={r.time_stamp_tz} />,
+            secondary: (
+              <span className="tabular-nums">
+                {r.tx_count} {r.tx_count === 1 ? "transaction" : "transactions"}
+              </span>
+            ),
+            details: [
+              {
+                label: "Header hash",
+                value: (
+                  <Identifier
+                    value={r.header_hash}
+                    href={`/block/${r.header_hash}`}
+                    head={8}
+                    tail={6}
+                  />
+                ),
+              },
+            ],
           })}
           rows={data.rows}
           keyOf={(r) => r.header_hash}
