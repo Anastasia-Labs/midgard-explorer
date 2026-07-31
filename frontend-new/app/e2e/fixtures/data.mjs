@@ -108,42 +108,67 @@ const MULTI_ASSET = {
   },
 };
 
-const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) => ({
+/** A transaction view whose arithmetic is real.
+ *
+ * Fixture amounts used to be arbitrary, so inputs never equalled outputs plus
+ * fee and the balanced case, which every genuine transaction satisfies, could
+ * not be rendered at all. When every input resolves, the first output now
+ * absorbs whatever the others and the fee leave over, so the equation holds.
+ * When an input is unresolvable the amounts stay arbitrary, which is correct:
+ * nothing can be checked in that case anyway. */
+const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) => {
+  const fee = 170000 + n * 1013;
+  const inputA = 9_500_000 + n * 1000;
+  // Most transactions keep one unresolvable input, the common case once a
+  // transaction is applied. Every fourth resolves fully so the exact-spend
+  // path, and with it the checkable equation, is exercised too.
+  const allResolved = n % 4 === 0;
+  const inputB = allResolved ? 3_400_000 + n * 500 : null;
+
+  const tail = Array.from({ length: Math.max(0, outputs - 1) }, (_, i) => 2_100_000 + i * 500_000);
+  const tailSum = tail.reduce((a, b) => a + b, 0);
+  const remainder = inputA + (inputB ?? 0) - fee - tailSum;
+  // A remainder that would be non-positive means the fixture cannot balance
+  // this shape; fall back rather than emit a negative output.
+  const balanced = allResolved && remainder > 0;
+  const amounts = balanced
+    ? [remainder, ...tail]
+    : Array.from({ length: outputs }, (_, i) => 2_100_000 + i * 500_000);
+
+  return {
   txId: txId(n),
   formatVersion: 1,
   validity,
-  fee: String(170000 + n * 1013),
+  fee: String(fee),
   validityInterval: { start: n % 3 === 0 ? String(1000 + n) : null, end: null },
   networkId: 0,
   inputs: [
     {
       txId: txId(n + 500),
       index: 0,
-      resolved: { address: ADDRESSES[n % ADDRESSES.length], value: value(9_500_000 + n * 1000) },
+      resolved: { address: ADDRESSES[n % ADDRESSES.length], value: value(inputA) },
     },
-    // Most transactions keep one unresolvable input, the common case once a
-    // transaction is applied. Every fourth resolves fully so the exact-spend
-    // path is exercised too.
     {
       txId: txId(n + 900),
       index: 1,
       resolved:
-        n % 4 === 0
-          ? { address: ADDRESSES[(n + 1) % ADDRESSES.length], value: value(3_400_000 + n * 500) }
-          : null,
+        inputB === null
+          ? null
+          : { address: ADDRESSES[(n + 1) % ADDRESSES.length], value: value(inputB) },
     },
   ],
   referenceInputs: n % 4 === 0 ? [{ txId: txId(n + 77), index: 0 }] : [],
-  outputs: Array.from({ length: outputs }, (_, i) => ({
+  outputs: amounts.map((lovelace, i) => ({
     address: ADDRESSES[(n + i) % ADDRESSES.length],
-    value: i === 0 && n % 3 === 0 ? value(4_250_000, MULTI_ASSET) : value(2_100_000 + i * 500_000),
+    value: i === 0 && n % 3 === 0 ? value(lovelace, MULTI_ASSET) : value(lovelace),
     hasDatum: i === 1,
     hasScriptRef: n % 5 === 0 && i === 0,
   })),
   mint: n % 6 === 0 ? { policyIds: [hex(303, 56), hex(304, 56)] } : null,
   witnesses: { vkeyCount: 1 + (n % 3), scriptCount: n % 2, redeemerCount: n % 2 },
   ...(pending ? { pending: true } : {}),
-});
+  };
+};
 
 /** Blocks 1..40; block 3 is empty, block 5 carries many transactions. */
 export const BLOCKS = Array.from({ length: 40 }, (_, i) => {
@@ -386,10 +411,27 @@ export const addressResponse = (address) => {
     };
   });
   const times = rows.map((r) => new Date(r.time_stamp_tz).getTime());
+  // The UTxOs behind the balance, including one the codec cannot read: an
+  // address holding six entries of which one is unreadable must show six rows
+  // and a warning, not five rows and a quietly smaller total.
+  const utxos = Array.from({ length: 6 }, (_, i) => {
+    const broken = undecodedOutputs > 0 && i === 4;
+    return {
+      txId: broken ? null : txId(700 + i),
+      index: broken ? null : i % 3,
+      outRefHex: hex(900 + i, 72),
+      value: broken ? null : value(20_000_000 + i * 1_500_000, i === 1 ? MULTI_ASSET : {}),
+      hasDatum: i === 2,
+      hasScriptRef: i === 5,
+      decodeError: broken ? "unsupported output encoding (legacy CML)" : null,
+    };
+  });
+
   return {
     balance: value(184_250_000, MULTI_ASSET),
     undecodedOutputs,
-    utxoCount: 6,
+    utxoCount: utxos.length,
+    utxos,
     txCount: rows.length,
     firstActivity: new Date(Math.min(...times)).toISOString(),
     latestActivity: new Date(Math.max(...times)).toISOString(),

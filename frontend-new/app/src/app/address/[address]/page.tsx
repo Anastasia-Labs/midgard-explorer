@@ -1,14 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AdaAmount, AssetHierarchy } from "../../../components/ui/amount";
+import { AdaAmount, ValueCell } from "../../../components/ui/amount";
+import { ApiExample } from "../../../components/ui/apiexample";
+import { AssetHierarchy } from "../../../components/ui/asset";
 import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
 import { Identifier } from "../../../components/ui/identifier";
 import { IdentityBar } from "../../../components/ui/identitybar";
 import { PageError } from "../../../components/ui/pageerror";
-import { Callout, Card, PageHeader } from "../../../components/ui/primitives";
+import { Callout, Card, EmptyState, PageHeader } from "../../../components/ui/primitives";
+import { RawData } from "../../../components/ui/rawdata";
 import { StatusCell } from "../../../components/ui/status";
 import { SummaryBand } from "../../../components/ui/summary";
+import { Tabs } from "../../../components/ui/tabs";
 import { Timestamp } from "../../../components/ui/timestamp";
 import { DataTable, DecodeWarn } from "../../../components/ui/table";
 import { api } from "../../../lib/api";
@@ -50,6 +54,210 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
     );
   }
 
+  const assets = assetCount(data.balance.assets);
+  const undecodableUtxos = data.utxos.filter((u) => u.decodeError !== null).length;
+
+  const activityTab = (
+    <Card>
+      {/* The confidence rule travels with the columns it qualifies rather than
+          sitting in a paragraph above the page, where it was read once and
+          then forgotten by the time the numbers were reached. */}
+      <p className="border-b border-border px-4 py-2.5 text-[12px] leading-relaxed text-text-3">
+        <strong className="font-semibold text-text-2">Received</strong> is exact: it reads each
+        transaction&apos;s own outputs.{" "}
+        <strong className="font-semibold text-text-2">Spent</strong> appears only when every input
+        of a transaction resolved, because a transaction&apos;s inputs leave the ledger once it is
+        applied. An unresolved input reads as unknown, never as zero.
+      </p>
+      <DataTable
+        caption="Transactions involving this address"
+        columns={[
+          {
+            header: "Transaction",
+            cell: (r) => (
+              <span className="inline-flex items-center gap-2">
+                <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} />
+                <DecodeWarn error={r.decodeError} />
+              </span>
+            ),
+          },
+          {
+            header: "Status",
+            cell: (r) => <StatusCell status={r.status} />,
+            hideBelow: "sm",
+          },
+          {
+            header: "Block",
+            cell: (r) =>
+              r.header_hash === null || r.height === null ? (
+                <span className="text-text-3">Not in a block</span>
+              ) : (
+                <Link
+                  href={`/block/${r.header_hash}`}
+                  className="font-display font-semibold tabular-nums text-accent hover:underline"
+                >
+                  #{r.height}
+                </Link>
+              ),
+            hideBelow: "md",
+          },
+          {
+            header: "Received",
+            cell: (r) =>
+              r.received === null ? (
+                <span className="text-text-3">Unknown</span>
+              ) : (
+                <AdaAmount lovelace={r.received} />
+              ),
+            align: "right",
+          },
+          {
+            header: "Spent",
+            cell: (r) =>
+              r.spentComplete && r.spent !== null ? (
+                <AdaAmount lovelace={r.spent} />
+              ) : (
+                <span
+                  className="text-text-3"
+                  title="Some inputs of this transaction are no longer in the ledger, so the amount spent from this address cannot be determined."
+                >
+                  Inputs pruned
+                </span>
+              ),
+            hideBelow: "lg",
+            align: "right",
+          },
+          {
+            header: "Time",
+            cell: (r) =>
+              r.time_stamp_tz ? <Timestamp iso={r.time_stamp_tz} /> : <span>Not recorded</span>,
+            hideBelow: "sm",
+            align: "right",
+          },
+        ]}
+        mobileRow={(r) => ({
+          primary: <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={6} />,
+          status: (
+            <span className="inline-flex items-center gap-1.5">
+              <StatusCell status={r.status} />
+              {r.decodeError ? <DecodeWarn error={r.decodeError} /> : null}
+            </span>
+          ),
+          meta: r.time_stamp_tz ? <Timestamp iso={r.time_stamp_tz} /> : "Not recorded",
+          secondary:
+            r.received === null ? null : (
+              <span>
+                Received <AdaAmount lovelace={r.received} />
+              </span>
+            ),
+          details: [
+            {
+              label: "Spent",
+              value:
+                r.spentComplete && r.spent !== null ? (
+                  <AdaAmount lovelace={r.spent} />
+                ) : (
+                  <span className="text-text-3">Inputs pruned</span>
+                ),
+            },
+          ],
+        })}
+        rows={data.history}
+        keyOf={(r) => r.tx_id}
+        emptyTitle="No transactions for this address"
+      />
+    </Card>
+  );
+
+  const assetsTab = (
+    <Card>
+      {assets === 0 ? (
+        <EmptyState
+          title="No native assets"
+          hint="This address holds ada only. Assets appear here once a UTxO at this address carries one."
+        />
+      ) : (
+        <div className="p-4">
+          <AssetHierarchy assets={data.balance.assets} />
+        </div>
+      )}
+    </Card>
+  );
+
+  const utxosTab = (
+    <Card>
+      {/* Breaking a balance into the entries that produce it is what makes it
+          checkable rather than something to take on trust. */}
+      <DataTable
+        caption="Spendable UTxOs at this address"
+        columns={[
+          {
+            header: "UTxO",
+            cell: (u) =>
+              u.txId === null || u.index === null ? (
+                <Identifier value={u.outRefHex} head={10} tail={6} />
+              ) : (
+                <Identifier
+                  value={`${u.txId}#${u.index}`}
+                  href={`/transaction/${u.txId}`}
+                  head={10}
+                  tail={6}
+                />
+              ),
+          },
+          {
+            header: "Flags",
+            cell: (u) => (
+              <span className="flex gap-1.5">
+                {u.hasDatum ? <Flag>datum</Flag> : null}
+                {u.hasScriptRef ? <Flag>script ref</Flag> : null}
+                {u.decodeError ? <DecodeWarn error={u.decodeError} /> : null}
+              </span>
+            ),
+            hideBelow: "sm",
+          },
+          {
+            header: "Value",
+            cell: (u) =>
+              u.value === null ? (
+                <span className="text-text-3">Unreadable</span>
+              ) : (
+                <ValueCell value={u.value} />
+              ),
+            align: "right",
+          },
+        ]}
+        mobileRow={(u) => ({
+          primary:
+            u.txId === null || u.index === null ? (
+              <Identifier value={u.outRefHex} head={10} tail={6} />
+            ) : (
+              <Identifier
+                value={`${u.txId}#${u.index}`}
+                href={`/transaction/${u.txId}`}
+                head={10}
+                tail={6}
+              />
+            ),
+          status: u.decodeError ? <DecodeWarn error={u.decodeError} /> : null,
+          secondary:
+            u.value === null ? (
+              <span className="text-text-3">Unreadable</span>
+            ) : (
+              <ValueCell value={u.value} />
+            ),
+          details: [
+            { label: "Datum", value: u.hasDatum ? "Yes" : "No" },
+            { label: "Script ref", value: u.hasScriptRef ? "Yes" : "No" },
+          ],
+        })}
+        rows={[...data.utxos]}
+        keyOf={(u) => u.outRefHex}
+        emptyTitle="No spendable UTxOs at this address"
+      />
+    </Card>
+  );
+
   return (
     <>
       <Breadcrumbs items={CRUMBS} />
@@ -61,6 +269,9 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
           <Callout tone="warning" title="Balance is incomplete.">
             {data.undecodedOutputs} UTxO{data.undecodedOutputs === 1 ? "" : "s"} at this address
             could not be decoded (legacy encoding), so the balance below undercounts by their value.
+            {undecodableUtxos > 0
+              ? " They are listed in the UTxOs tab, marked unreadable, rather than omitted."
+              : null}
           </Callout>
         </div>
       ) : null}
@@ -79,7 +290,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
                 }
               : {}),
           },
-          { label: "Native assets", value: assetCount(data.balance.assets) },
+          { label: "Native assets", value: assets },
           { label: "UTxOs", value: data.utxoCount },
           { label: "Transactions", value: data.txCount },
           {
@@ -93,125 +304,33 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
         ]}
       />
 
-      {Object.keys(data.balance.assets).length > 0 ? (
-        <Card className="mb-6">
-          <h2 className="mg-overline px-4 pt-4">Native assets held</h2>
-          <div className="p-4">
-            <AssetHierarchy assets={data.balance.assets} />
-          </div>
-        </Card>
-      ) : null}
-
-      <p className="mb-6 text-xs text-text-3">
-        Received is exact: it reads each transaction&apos;s own outputs. Spent is shown only when
-        every input of a transaction could be resolved, because a transaction&apos;s inputs leave
-        the ledger once it is applied. An unresolved input is reported as unknown, never as zero.
-      </p>
-
-      <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
-        <h2 className="border-b border-border px-4 py-3 font-display text-[15px] font-semibold">
-          History ({data.txCount})
-        </h2>
-        <DataTable
-          caption="Transactions involving this address"
-          columns={[
-            {
-              header: "Transaction",
-              cell: (r) => (
-                <span className="inline-flex items-center gap-2">
-                  <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} />
-                  <DecodeWarn error={r.decodeError} />
-                </span>
-              ),
-            },
-            {
-              header: "Status",
-              cell: (r) => <StatusCell status={r.status} />,
-              hideBelow: "sm",
-            },
-            {
-              header: "Block",
-              cell: (r) =>
-                r.header_hash === null || r.height === null ? (
-                  <span className="text-text-3">Not in a block</span>
-                ) : (
-                  <Link
-                    href={`/block/${r.header_hash}`}
-                    className="font-display font-semibold tabular-nums text-accent hover:underline"
-                  >
-                    #{r.height}
-                  </Link>
-                ),
-              hideBelow: "md",
-            },
-            {
-              header: "Received",
-              cell: (r) =>
-                r.received === null ? (
-                  <span className="text-text-3">Unknown</span>
-                ) : (
-                  <AdaAmount lovelace={r.received} />
-                ),
-              align: "right",
-            },
-            {
-              header: "Spent",
-              cell: (r) =>
-                r.spentComplete && r.spent !== null ? (
-                  <AdaAmount lovelace={r.spent} />
-                ) : (
-                  <span
-                    className="text-text-3"
-                    title="Some inputs of this transaction are no longer in the ledger, so the amount spent from this address cannot be determined."
-                  >
-                    Inputs pruned
-                  </span>
-                ),
-              hideBelow: "lg",
-              align: "right",
-            },
-            {
-              header: "Time",
-              cell: (r) =>
-                r.time_stamp_tz ? <Timestamp iso={r.time_stamp_tz} /> : <span>Not recorded</span>,
-              hideBelow: "sm",
-              align: "right",
-            },
-          ]}
-          mobileRow={(r) => ({
-            primary: (
-              <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={6} />
+      <Tabs
+        tabs={[
+          { id: "activity", label: "Activity", count: data.txCount, content: activityTab },
+          { id: "assets", label: "Assets", count: assets, content: assetsTab },
+          { id: "utxos", label: "UTxOs", count: data.utxoCount, content: utxosTab },
+          {
+            id: "raw",
+            label: "Raw",
+            content: (
+              <>
+                <div className="mb-4">
+                  <ApiExample path={`/api/address?address=${encodeURIComponent(address)}`} />
+                </div>
+                <RawData data={data} filename={`address-${truncateId(address, 8, 6)}.json`} />
+              </>
             ),
-            status: (
-              <span className="inline-flex items-center gap-1.5">
-                <StatusCell status={r.status} />
-                {r.decodeError ? <DecodeWarn error={r.decodeError} /> : null}
-              </span>
-            ),
-            meta: r.time_stamp_tz ? <Timestamp iso={r.time_stamp_tz} /> : "Not recorded",
-            secondary:
-              r.received === null ? null : (
-                <span>
-                  Received <AdaAmount lovelace={r.received} />
-                </span>
-              ),
-            details: [
-              {
-                label: "Spent",
-                value:
-                  r.spentComplete && r.spent !== null ? (
-                    <AdaAmount lovelace={r.spent} />
-                  ) : (
-                    <span className="text-text-3">Inputs pruned</span>
-                  ),
-              },
-            ],
-          })}
-          rows={data.history}
-          keyOf={(r) => r.tx_id}
-          emptyTitle="No transactions for this address"
-        />
-      </section>
+          },
+        ]}
+      />
     </>
+  );
+}
+
+function Flag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="rounded border border-border bg-surface-2 px-1.5 py-px text-[11px] text-text-3">
+      {children}
+    </span>
   );
 }

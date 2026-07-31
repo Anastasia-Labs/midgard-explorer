@@ -21,11 +21,30 @@ export const AddressHistoryRow = Schema.Struct({
 });
 export type AddressHistoryRow = Schema.Schema.Type<typeof AddressHistoryRow>;
 
+/** One spendable entry behind the balance.
+ *
+ * A UTxO whose output would not decode is present with a null value and its
+ * error rather than absent: an address holding six UTxOs of which one is
+ * unreadable must show six rows and a warning, never five rows and a quietly
+ * smaller total. `outRefHex` is the ledger's own key and is always present,
+ * even when it did not parse into a transaction and index. */
+export const AddressUtxo = Schema.Struct({
+  txId: Schema.NullOr(HexString),
+  index: Schema.NullOr(Schema.Number),
+  outRefHex: HexString,
+  value: Schema.NullOr(ValueView),
+  hasDatum: Schema.Boolean,
+  hasScriptRef: Schema.Boolean,
+  decodeError: Schema.NullOr(Schema.String),
+});
+export type AddressUtxo = Schema.Schema.Type<typeof AddressUtxo>;
+
 /** `undecodedOutputs` > 0 means the balance undercounts: outputs failed to decode. */
 export const AddressResponse = Schema.Struct({
   balance: ValueView,
   undecodedOutputs: Schema.Number,
   utxoCount: Schema.Number,
+  utxos: Schema.Array(AddressUtxo),
   txCount: Schema.Number,
   firstActivity: Schema.NullOr(IsoTimestamp),
   latestActivity: Schema.NullOr(IsoTimestamp),

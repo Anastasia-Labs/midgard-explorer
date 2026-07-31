@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import type { TransactionView } from "@midgard-explorer/contracts";
 import { LifecyclePoller } from "../../../features/transaction/LifecyclePoller";
+import { ApiExample } from "../../../components/ui/apiexample";
 import { AdaAmount, AssetHierarchy, ValueCell } from "../../../components/ui/amount";
 import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
 import { Icon } from "../../../components/ui/icons";
@@ -12,6 +13,7 @@ import { PageError } from "../../../components/ui/pageerror";
 import { Callout, Card, PageHeader } from "../../../components/ui/primitives";
 import { RawData } from "../../../components/ui/rawdata";
 import { Journey } from "../../../components/ui/journey";
+import { LedgerEquation } from "../../../components/ui/ledger";
 import { StatusBadge } from "../../../components/ui/status";
 import { SummaryBand } from "../../../components/ui/summary";
 import { Tabs } from "../../../components/ui/tabs";
@@ -214,7 +216,11 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
   );
 
   const utxoTab = (
-    <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
+    <>
+      {/* The equation leads the tab: two lists show what the transaction
+          contains, and inputs = outputs + fee shows what it did. */}
+      <LedgerEquation tx={tx} />
+      <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
       <Card>
         <h2 className="mg-overline px-4 pt-4">Inputs ({tx.inputs.length})</h2>
         <ul className="space-y-3 p-4">
@@ -279,7 +285,8 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
           ))}
         </ul>
       </Card>
-    </div>
+      </div>
+    </>
   );
 
   return (
@@ -317,7 +324,14 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
           {
             id: "raw",
             label: "Raw",
-            content: <RawData data={data} filename={`tx-${tx.txId}.json`} />,
+            content: (
+              <>
+                <div className="mb-4">
+                  <ApiExample path={`/api/transaction?tx_hash=${tx.txId}`} />
+                </div>
+                <RawData data={data} filename={`tx-${tx.txId}.json`} />
+              </>
+            ),
           },
         ]}
       />

@@ -12,8 +12,11 @@ export async function getAllAddressHistory() {
  * Midgard-native canonical CBOR; the decode layer turns it into a value.
  */
 export async function getAddressUtxos(address: string) {
-  return prisma.$queryRaw<Array<{ output: Uint8Array }>>`
-    SELECT ml.output
+  // `outref` comes back alongside the output so the address page can name each
+  // UTxO rather than only counting them: a balance a reader cannot break down
+  // into its parts is a number they have to take on trust.
+  return prisma.$queryRaw<Array<{ output: Uint8Array; outref: Uint8Array }>>`
+    SELECT ml.output, ml.outref
     FROM mempool_ledger AS ml
     LEFT JOIN deposits_utxos AS d ON d.event_id = ml.source_event_id
     WHERE ml.address = ${address}

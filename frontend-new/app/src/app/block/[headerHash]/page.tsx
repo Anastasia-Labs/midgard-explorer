@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { AdaAmount, ValueCell } from "../../../components/ui/amount";
+import { ApiExample } from "../../../components/ui/apiexample";
 import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
 import { Identifier } from "../../../components/ui/identifier";
 import { IdentityBar } from "../../../components/ui/identitybar";
@@ -244,7 +245,14 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
           {
             id: "raw",
             label: "Raw",
-            content: <RawData data={data} filename={`block-${hash}.json`} />,
+            content: (
+              <>
+                <div className="mb-4">
+                  <ApiExample path={`/api/block?header_hash=${hash}`} />
+                </div>
+                <RawData data={data} filename={`block-${hash}.json`} />
+              </>
+            ),
           },
         ]}
       />

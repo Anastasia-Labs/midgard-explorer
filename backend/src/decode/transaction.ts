@@ -170,6 +170,67 @@ export async function computeBalance(
   return { balance: toValueView({ lovelace, assets }), undecodedOutputs };
 }
 
+export type UtxoView = {
+  txId: string | null;
+  index: number | null;
+  /** The canonical ledger key, kept whether or not it parsed into a pair. */
+  outRefHex: string;
+  value: ValueView | null;
+  hasDatum: boolean;
+  hasScriptRef: boolean;
+  decodeError: string | null;
+};
+
+/**
+ * The individual UTxOs behind a balance.
+ *
+ * A UTxO whose output will not decode is still a UTxO, so it is returned with
+ * a null value and its error rather than dropped: an address holding six UTxOs
+ * of which one is unreadable should show six rows and one warning, not five
+ * rows and a silently smaller total. The outref is kept even when it fails to
+ * parse into a transaction and index, because it is the ledger's own key and
+ * remains the only handle on that entry.
+ */
+export async function decodeUtxos(
+  rows: Array<{ output: Uint8Array; outref: Uint8Array }>,
+): Promise<UtxoView[]> {
+  const codec = await getCodec();
+  return rows.map((row) => {
+    const outRefHex = toHex(row.outref);
+    let txId: string | null = null;
+    let index: number | null = null;
+    try {
+      const [id, i] = codec.decodeSingleCbor(row.outref) as [Uint8Array, number | bigint];
+      txId = toHex(id);
+      index = Number(i);
+    } catch {
+      // Leave the pair null; outRefHex still identifies the entry.
+    }
+    try {
+      const output = codec.decodeMidgardTxOutput(Buffer.from(row.output));
+      return {
+        txId,
+        index,
+        outRefHex,
+        value: toValueView(output.value),
+        hasDatum: output.datum !== undefined,
+        hasScriptRef: output.script_ref !== undefined,
+        decodeError: null,
+      };
+    } catch (err) {
+      return {
+        txId,
+        index,
+        outRefHex,
+        value: null,
+        hasDatum: false,
+        hasScriptRef: false,
+        decodeError: err instanceof Error ? err.message : String(err),
+      };
+    }
+  });
+}
+
 /** Decode a bare Midgard-native value CBOR (e.g. withdrawal_utxos.l2_value). */
 export async function decodeValueSafe(
   valueCbor: Uint8Array,

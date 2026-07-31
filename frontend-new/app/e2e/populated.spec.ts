@@ -289,6 +289,44 @@ test.describe("transaction lifecycle", () => {
     await expect(page.getByRole("heading", { name: /^Outputs \(/ })).toBeVisible();
   });
 
+  test("the UTxO tab states the ledger equation rather than only listing sides", async ({
+    page,
+  }) => {
+    // The fixture resolves every input on every fourth transaction, which is
+    // the only case where the equation can be checked.
+    const rows = await page.request
+      .get(`${FIXTURE}/api/transactions/1`)
+      .then(async (r) => (await r.json()).rows as Array<{ tx_id: string }>);
+    let complete: string | null = null;
+    let partial: string | null = null;
+    for (const row of rows) {
+      const body = await page.request
+        .get(`${FIXTURE}/api/transaction?tx_hash=${row.tx_id}`)
+        .then((r) => r.json());
+      const inputs = body.transaction?.inputs;
+      if (!inputs) continue;
+      const resolvedAll = inputs.every((i: { resolved: unknown }) => i.resolved !== null);
+      if (resolvedAll && complete === null) complete = row.tx_id;
+      if (!resolvedAll && partial === null) partial = row.tx_id;
+      if (complete && partial) break;
+    }
+
+    test.skip(complete === null || partial === null, "fixture lacks both input-resolution states");
+
+    await page.goto(`/transaction/${complete}?tab=utxo`);
+    const ledger = page.locator('[data-region="ledger"]');
+    await expect(ledger).toBeVisible();
+    await expect(ledger.getByText(/everything spent is accounted for/)).toBeVisible();
+    await expect(ledger.getByText("Net movement by address")).toBeVisible();
+
+    // With an unresolved input the total is a lower bound and must say so
+    // rather than presenting the surviving inputs as a sum.
+    await page.goto(`/transaction/${partial}?tab=utxo`);
+    await expect(ledger.getByText("At least")).toBeVisible();
+    await expect(ledger.getByText(/the equation cannot be checked here/)).toBeVisible();
+    await expect(ledger.getByText(/spend side unknown/).first()).toBeVisible();
+  });
+
   test("a committed transaction in an abandoned block does not claim finality", async ({
     page,
   }) => {
@@ -368,10 +406,24 @@ test.describe("address detail", () => {
     await expect(page.getByText(/Undercount/)).toBeVisible();
   });
 
-  test("lists native assets held", async ({ page }) => {
-    await page.goto(`/address/${await fixtureAddress(page, 1)}`);
-    await expect(page.getByRole("heading", { name: "Native assets held" })).toBeVisible();
+  test("lists native assets held under its own tab", async ({ page }) => {
+    await page.goto(`/address/${await fixtureAddress(page, 1)}?tab=assets`);
     await expect(page.getByText("Policy").first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /MIDGARD|PATATE/ }).first()).toBeVisible();
+  });
+
+  test("breaks the balance into the UTxOs that produce it", async ({ page }) => {
+    await page.goto(`/address/${await fixtureAddress(page, 1)}?tab=utxos`);
+    await expect(rowRegion(page).locator("tr, li")).not.toHaveCount(0);
+    // A UTxO the codec cannot read is listed and marked, never dropped: five
+    // rows and a smaller total would be a quieter lie than six and a warning.
+    await expect(page.getByText("Unreadable").first()).toBeVisible();
+  });
+
+  test("offers the request that produced the page", async ({ page }) => {
+    await page.goto(`/address/${await fixtureAddress(page, 1)}?tab=raw`);
+    await expect(page.getByText(/^curl -s /)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy curl" })).toBeVisible();
   });
 
   test("does not warn when every output decoded", async ({ page }) => {
@@ -381,22 +433,45 @@ test.describe("address detail", () => {
 });
 
 test.describe("accessibility on populated pages", () => {
-  test("no automated violations with real data present", async ({ page }) => {
-    const paths = [
-      "/blocks",
-      "/transactions",
-      "/deposits",
-      "/withdrawals",
-      "/forced-transactions",
-      "/assets",
-      `/block/${await firstBlockHash(page)}`,
-      `/transaction/${await txWithStatus(page, "committed")}`,
-      `/address/${await fixtureAddress(page, 1)}`,
-    ];
-    for (const path of paths) {
+  // One test per route rather than one loop over all of them. A loop shares a
+  // single timeout across nine axe runs, so a slow suite fails the whole sweep
+  // without naming which page was at fault.
+  for (const path of [
+    "/",
+    "/blocks",
+    "/transactions",
+    "/deposits",
+    "/withdrawals",
+    "/forced-transactions",
+    "/assets",
+  ]) {
+    test(`${path} has no automated violations with real data`, async ({ page }) => {
       await page.goto(path);
       await expectNoViolations(page, path);
-    }
+    });
+  }
+
+  test("a block page has no automated violations", async ({ page }) => {
+    await page.goto(`/block/${await firstBlockHash(page)}`);
+    await expectNoViolations(page, "/block/[hash]");
+  });
+
+  test("a transaction page has no automated violations", async ({ page }) => {
+    await page.goto(`/transaction/${await txWithStatus(page, "committed")}`);
+    await expectNoViolations(page, "/transaction/[hash]");
+  });
+
+  test("an address page has no automated violations", async ({ page }) => {
+    await page.goto(`/address/${await fixtureAddress(page, 1)}`);
+    await expectNoViolations(page, "/address/[address]");
+  });
+
+  test("an asset page has no automated violations", async ({ page }) => {
+    const rows = await page.request
+      .get(`${FIXTURE}/api/assets`)
+      .then(async (r) => (await r.json()).rows as Array<{ policyId: string; assetName: string }>);
+    await page.goto(`/asset/${rows[0]!.policyId}${rows[0]!.assetName}`);
+    await expectNoViolations(page, "/asset/[unit]");
   });
 
   test("no violations in light theme with real data", async ({ page }) => {

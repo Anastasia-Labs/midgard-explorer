@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { getAddressHistory, getAddressUtxos } from "../../db/address";
-import { computeBalance, decodeTransactionSafe } from "../../decode/transaction";
+import { computeBalance, decodeTransactionSafe, decodeUtxos } from "../../decode/transaction";
 
 export async function getAddressRoute(req: Request, res: Response) {
   const address = req.query.address;
@@ -12,9 +12,10 @@ export async function getAddressRoute(req: Request, res: Response) {
     getAddressHistory(address),
     getAddressUtxos(address),
   ]);
-  const { balance, undecodedOutputs } = await computeBalance(
-    utxos.map((row) => row.output),
-  );
+  const [{ balance, undecodedOutputs }, utxoViews] = await Promise.all([
+    computeBalance(utxos.map((row) => row.output)),
+    decodeUtxos(utxos),
+  ]);
   const payload = await Promise.all(
     history.map(async (row) => {
       const decoded = await decodeTransactionSafe(Buffer.from(row.tx, "hex"));
@@ -60,6 +61,7 @@ export async function getAddressRoute(req: Request, res: Response) {
     balance,
     undecodedOutputs,
     utxoCount: utxos.length,
+    utxos: utxoViews,
     txCount: payload.length,
     firstActivity: times.length > 0 ? new Date(Math.min(...times)) : null,
     latestActivity: times.length > 0 ? new Date(Math.max(...times)) : null,
