@@ -147,7 +147,13 @@ export function ListTools<Row>({
           <Icon name="download" size={13} />
           JSON
         </button>
-        <button type="button" onClick={copyLink} className={cn(btn, copied && "text-success")}>
+        {/* Hidden below sm: it costs a third row on a phone, where copying the
+            URL is a browser action the reader already has. */}
+        <button
+          type="button"
+          onClick={copyLink}
+          className={cn(btn, "hidden sm:inline-flex", copied && "text-success")}
+        >
           {copied ? "Copied" : "Copy view"}
         </button>
       </span>
