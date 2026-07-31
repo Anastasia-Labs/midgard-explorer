@@ -60,9 +60,7 @@ function StageNode({ stage }: { stage: JourneyStage }) {
   return (
     <span className="flex shrink-0 items-center gap-1.5">
       <span aria-hidden className={cn("size-2.5 rounded-full border-2", NODE[stage.state])} />
-      <span className={cn("whitespace-nowrap mg-caption", LABEL[stage.state])}>
-        {stage.label}
-      </span>
+      <span className={cn("whitespace-nowrap mg-caption", LABEL[stage.state])}>{stage.label}</span>
     </span>
   );
 }
@@ -187,17 +185,24 @@ export function Journey({
         ))}
       </ol>
 
-      <p className="px-4 pt-1.5 pb-3 mg-caption leading-relaxed text-text-2">
-        {model.explanation}
-      </p>
+      <p className="px-4 pt-1.5 pb-3 mg-caption leading-relaxed text-text-2">{model.explanation}</p>
 
       <details className="border-t border-border">
         <summary className="cursor-pointer px-4 py-2 mg-caption font-medium text-text-2 hover:text-text">
           {detailsLabel}
         </summary>
-        <dl className="grid gap-px border-t border-border bg-border sm:grid-cols-2">
+        {/* Two columns, but the odd stage out grows to fill its row rather
+            than leaving the container's border colour showing through the
+            1px gap, which reads as a stage that failed to render. A grid
+            cannot do this: it keeps the track whether or not a cell occupies
+            it. Stage counts are odd as often as even, so this is the common
+            case and not an edge one. */}
+        <dl className="flex flex-wrap gap-px border-t border-border bg-border">
           {model.stages.map((s, i) => (
-            <div key={s.key} className="bg-surface px-4 py-2.5">
+            <div
+              key={s.key}
+              className="min-w-0 grow basis-full bg-surface px-4 py-2.5 sm:basis-[calc(50%-1px)]"
+            >
               <dt className="flex items-center gap-1.5 mg-caption font-medium text-text">
                 <span aria-hidden className={cn("size-2 rounded-full border-2", NODE[s.state])} />
                 {s.label}

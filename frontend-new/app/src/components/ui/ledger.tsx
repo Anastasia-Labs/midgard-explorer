@@ -33,11 +33,20 @@ function Amount({ lovelace, tone }: { lovelace: bigint; tone?: "positive" | "neg
   );
 }
 
-function Term({ label, children }: { label: string; children: React.ReactNode }) {
+function Term({
+  label,
+  sub,
+  children,
+}: {
+  label: string;
+  sub?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <span className="flex min-w-0 flex-col">
       <span className="mg-overline">{label}</span>
       <span className="mt-0.5 text-[15px]">{children}</span>
+      {sub ? <span className="mt-0.5 mg-micro text-text-3">{sub}</span> : null}
     </span>
   );
 }
@@ -55,9 +64,28 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
       <div className="flex flex-wrap items-end gap-x-4 gap-y-3 px-4 pt-3.5 pb-3">
         {eq.kind === "incomplete" ? (
           <>
-            <Term label={`Inputs (${eq.resolvedCount} of ${eq.resolvedCount + eq.unresolvedCount})`}>
-              <span className="text-text-3">At least </span>
-              <Amount lovelace={eq.resolvedInputs} />
+            {/* No number on the input side, because none of the numbers
+                available is the input total. Writing "At least ₳9.501" here and
+                then "=" asserted an equality between a lower bound and an exact
+                sum, which is false whenever it is interesting: the reader was
+                told 9.501 equals 4.871. The identity itself still holds, so the
+                honest rendering is to keep the "=" and say the left term is not
+                known, with the part that did resolve as context beneath it. */}
+            <Term
+              label={`Inputs (${eq.resolvedCount} of ${eq.resolvedCount + eq.unresolvedCount} resolved)`}
+              sub={
+                eq.resolvedCount > 0 ? (
+                  <>
+                    {"of which "}
+                    <span className="font-mono tabular-nums">
+                      ₳ {formatAda(eq.resolvedInputs.toString())}
+                    </span>
+                    {" is visible"}
+                  </>
+                ) : null
+              }
+            >
+              <span className="text-text-3">Not known in full</span>
             </Term>
             <Operator>=</Operator>
             <Term label={`Outputs (${eq.outputCount})`}>
@@ -107,7 +135,7 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
           // One string rather than interleaved expressions: JSX drops the
           // space between an expression and the text that follows it here, and
           // "1 of 2inputs" shipped once already.
-          `${eq.unresolvedCount} of ${eq.resolvedCount + eq.unresolvedCount} inputs could not be resolved, so the input total is a lower bound and the equation cannot be checked here. A transaction's inputs leave the ledger once it is applied, so this is the usual case for anything but the newest transactions.`
+          `${eq.unresolvedCount} of ${eq.resolvedCount + eq.unresolvedCount} inputs could not be resolved, so the input total is not stated here and the equation cannot be checked against it. The sum of the inputs that did resolve is not that total, only the part of it still visible, so it is shown as such rather than in the equation. A transaction's inputs leave the ledger once it is applied, so this is the usual case for anything but the newest transactions.`
         )}
       </p>
 

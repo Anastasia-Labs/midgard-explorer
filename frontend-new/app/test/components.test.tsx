@@ -70,12 +70,30 @@ describe("Journey", () => {
   } as BlockFinalization;
 
   it("keeps the scrollable rail keyboard reachable", () => {
-    render(<Journey model={transactionJourney({ status: "queued", admission, inclusion: null, finalization: null })} />);
+    render(
+      <Journey
+        model={transactionJourney({
+          status: "queued",
+          admission,
+          inclusion: null,
+          finalization: null,
+        })}
+      />,
+    );
     expect(screen.getByRole("list").getAttribute("tabindex")).toBe("0");
   });
 
   it("shows measured deltas between recorded stages", () => {
-    render(<Journey model={transactionJourney({ status: "accepted", admission, inclusion: null, finalization: null })} />);
+    render(
+      <Journey
+        model={transactionJourney({
+          status: "accepted",
+          admission,
+          inclusion: null,
+          finalization: null,
+        })}
+      />,
+    );
     expect(screen.getByText("+1.7s")).toBeDefined();
     expect(screen.getByText("+4.2s")).toBeDefined();
   });
@@ -152,8 +170,9 @@ describe("NetworkMetrics", () => {
 
   it("degrades to a message rather than blanking when metrics are unavailable", () => {
     render(<NetworkMetrics metrics={null} totalBlocks={40} totalTxs={60} />);
-    expect(screen.getByText("Metrics are unavailable. Everything else on this page is unaffected."))
-      .toBeDefined();
+    expect(
+      screen.getByText("Metrics are unavailable. Everything else on this page is unaffected."),
+    ).toBeDefined();
     // All-time counts survive a metrics failure: they come from another call.
     expect(screen.getByText("40")).toBeDefined();
   });
@@ -242,10 +261,9 @@ describe("AdaAmount", () => {
 });
 
 describe("SummaryBand", () => {
-  /** Tracks size themselves, so the last row stretches to fill the width and
-   * there is nothing left over to paint. The previous version emitted filler
-   * cells to cover an unfilled row, which hid the artefact without removing
-   * the empty quarter it was covering. */
+  /** The band emits one cell per item and nothing else. An earlier version
+   * painted invisible filler cells to cover an unfilled row, which hid the
+   * artefact without removing the empty space it was covering. */
   it("renders exactly one cell per item, with no fillers", () => {
     for (const count of [1, 3, 5, 7, 12]) {
       const items = Array.from({ length: count }, (_, i) => ({ label: `L${i}`, value: i }));
@@ -256,9 +274,30 @@ describe("SummaryBand", () => {
     }
   });
 
-  it("lets the tracks follow the width rather than fixing a column count", () => {
+  /** This used to assert the class name `auto-fit`, and passed throughout the
+   * period when the band left an empty cell at phone width. Asserting the
+   * mechanism cannot fail when the mechanism is the bug, so what is checked
+   * here now is the property the layout has to have: cells that grow.
+   *
+   * jsdom does no layout, so the real proof is the measured gate in
+   * e2e/layout.spec.ts, which reads actual geometry at four widths. This is
+   * the fast guard against silently reverting to a fixed track count. */
+  it("gives every cell room to grow, so a short row still fills the width", () => {
     const { container } = render(<SummaryBand items={[{ label: "Height", value: "#40" }]} />);
-    expect(container.querySelector("dl")!.className).toMatch(/auto-fit/);
+    const dl = container.querySelector("dl")!;
+    expect(dl.className).toMatch(/\bflex-wrap\b/);
+    expect(dl.className).not.toMatch(/grid-cols/);
+    expect((dl.firstElementChild as HTMLElement).className).toMatch(/\bgrow\b/);
+  });
+
+  /** A clipped number is a different number, so values must never truncate. */
+  it("does not truncate values", () => {
+    const { container } = render(
+      <SummaryBand items={[{ label: "Supply", value: "4,500,000,000", emphasis: true }]} />,
+    );
+    const value = container.querySelector("dd > span")!;
+    expect(value.className).not.toMatch(/\btruncate\b/);
+    expect(value.className).toMatch(/overflow-wrap:anywhere/);
   });
 });
 
@@ -278,9 +317,7 @@ describe("ValueCell", () => {
 
   it("keeps the exact count in the title once the names are elided", () => {
     const { container } = render(
-      <ValueCell
-        value={value("1", { p: { "41": "1", "42": "2", "43": "3", "44": "4" } })}
-      />,
+      <ValueCell value={value("1", { p: { "41": "1", "42": "2", "43": "3", "44": "4" } })} />,
     );
     const chip = within(container).getByText(/\+2$/);
     expect(chip.getAttribute("title")).toBe("4 native assets");

@@ -7,6 +7,9 @@ const FIXTURE_PORT = Number(process.env.FIXTURE_PORT ?? 3101);
 
 export default defineConfig({
   testDir: "./e2e",
+  // Runs after the web servers are up: proves the fixture port belongs to this
+  // repository's fixture and clears any fault left by an interrupted run.
+  globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   // The fixture backend holds fault-injection state globally, so parallel
   // workers would clobber each other's injected failures. One worker keeps the

@@ -1,11 +1,13 @@
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import {
   FIXTURE,
-  expectNoViolations,
+  expect,
+  expectNoViolationsInBothThemes,
   firstBlockHash,
   isNarrow,
   rowRegion,
   settle,
+  test,
   txAwaitingFinality,
   txInAbandonedBlock,
   txWithStatus,
@@ -160,7 +162,9 @@ test.describe("operational metrics", () => {
   test("names the node column behind every figure", async ({ page }) => {
     await page.goto("/");
     await page.getByText("Status breakdown and where each figure comes from").click();
-    await expect(page.getByText("tx_admissions.terminal_at - tx_admissions.first_seen_at")).toBeVisible();
+    await expect(
+      page.getByText("tx_admissions.terminal_at - tx_admissions.first_seen_at"),
+    ).toBeVisible();
     await expect(page.getByText("blocks.height, blocks.time_stamp_tz")).toBeVisible();
   });
 
@@ -198,7 +202,11 @@ test.describe("native assets", () => {
     await expect(rowRegion(page)).toBeVisible();
     // The fingerprint is the identifier worth comparing; a display name is not
     // unique and a policy ID is 56 characters of noise.
-    await expect(rowRegion(page).getByText(/^asset1/).first()).toBeVisible();
+    await expect(
+      rowRegion(page)
+        .getByText(/^asset1/)
+        .first(),
+    ).toBeVisible();
   });
 
   test("a readable name is shown as text, with its bytes alongside", async ({ page }) => {
@@ -233,7 +241,12 @@ test.describe("native assets", () => {
     await expect(page.getByRole("tab", { name: /Holders/ })).toBeVisible();
     // Scoped to the page body: the search dialog's help text also mentions
     // asset1..., and it is present but hidden.
-    await expect(page.getByRole("main").getByText(/^asset1/).first()).toBeVisible();
+    await expect(
+      page
+        .getByRole("main")
+        .getByText(/^asset1/)
+        .first(),
+    ).toBeVisible();
   });
 
   test("the asset page says its total describes the ledger now, not history", async ({ page }) => {
@@ -256,9 +269,7 @@ test.describe("native assets", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Page not found" })).toBeVisible();
   });
 
-  // Same open defect as /block and /transaction: notFound() inside a dynamic
-  // route renders the not-found page but answers HTTP 200.
-  test.fixme("a malformed asset unit responds with HTTP 404", async ({ page }) => {
+  test("a malformed asset unit responds with HTTP 404", async ({ page }) => {
     const res = await page.goto("/asset/nothex");
     expect(res?.status()).toBe(404);
   });
@@ -372,12 +383,21 @@ test.describe("transaction lifecycle", () => {
     await expect(ledger.getByText(/everything spent is accounted for/)).toBeVisible();
     await expect(ledger.getByText("Net movement by address")).toBeVisible();
 
-    // With an unresolved input the total is a lower bound and must say so
-    // rather than presenting the surviving inputs as a sum.
+    // With an unresolved input there is no number that is the input total, so
+    // the equation must not put one on the left of its "=". An earlier version
+    // rendered "At least ₳9.501 = ₳4.7 + ₳0.171", which is a false statement
+    // made in the one place on the page whose whole purpose is to be true.
     await page.goto(`/transaction/${partial}?tab=utxo`);
-    await expect(ledger.getByText("At least")).toBeVisible();
-    await expect(ledger.getByText(/the equation cannot be checked here/)).toBeVisible();
+    await expect(ledger.getByText("Not known in full")).toBeVisible();
+    await expect(ledger.getByText(/is visible/)).toBeVisible();
+    await expect(ledger.getByText(/the equation cannot be checked against it/)).toBeVisible();
     await expect(ledger.getByText(/spend side unknown/).first()).toBeVisible();
+
+    // The equation row itself: every amount it states must belong to a side
+    // that is actually known. Reading the row's own text is what catches a
+    // reintroduced lower bound, which no assertion about a caption would.
+    const row = ledger.locator("div").first();
+    await expect(row).not.toContainText("At least");
   });
 
   test("a committed transaction in an abandoned block does not claim finality", async ({
@@ -489,6 +509,17 @@ test.describe("accessibility on populated pages", () => {
   // One test per route rather than one loop over all of them. A loop shares a
   // single timeout across nine axe runs, so a slow suite fails the whole sweep
   // without naming which page was at fault.
+  //
+  // Each test audits light and dark and asserts they rendered differently. The
+  // previous version audited whatever `prefers-color-scheme` Playwright happens
+  // to emulate, which is light, on every route, and then added one test that
+  // asked for light again. Dark shipped unaudited while the report said
+  // otherwise.
+  //
+  // Two full axe passes over a populated page do not fit the default 30s on
+  // every route. Marked slow rather than trimmed: the budget is the thing that
+  // should give here, not the coverage.
+  test.slow();
   for (const path of [
     "/",
     "/blocks",
@@ -498,38 +529,30 @@ test.describe("accessibility on populated pages", () => {
     "/forced-transactions",
     "/assets",
   ]) {
-    test(`${path} has no automated violations with real data`, async ({ page }) => {
-      await page.goto(path);
-      await expectNoViolations(page, path);
+    test(`${path} has no automated violations with real data in either theme`, async ({ page }) => {
+      await expectNoViolationsInBothThemes(page, path);
     });
   }
 
-  test("a block page has no automated violations", async ({ page }) => {
-    await page.goto(`/block/${await firstBlockHash(page)}`);
-    await expectNoViolations(page, "/block/[hash]");
+  test("a block page has no automated violations in either theme", async ({ page }) => {
+    await expectNoViolationsInBothThemes(page, `/block/${await firstBlockHash(page)}`);
   });
 
-  test("a transaction page has no automated violations", async ({ page }) => {
-    await page.goto(`/transaction/${await txWithStatus(page, "committed")}`);
-    await expectNoViolations(page, "/transaction/[hash]");
+  test("a transaction page has no automated violations in either theme", async ({ page }) => {
+    await expectNoViolationsInBothThemes(
+      page,
+      `/transaction/${await txWithStatus(page, "committed")}`,
+    );
   });
 
-  test("an address page has no automated violations", async ({ page }) => {
-    await page.goto(`/address/${await fixtureAddress(page, 1)}`);
-    await expectNoViolations(page, "/address/[address]");
+  test("an address page has no automated violations in either theme", async ({ page }) => {
+    await expectNoViolationsInBothThemes(page, `/address/${await fixtureAddress(page, 1)}`);
   });
 
-  test("an asset page has no automated violations", async ({ page }) => {
+  test("an asset page has no automated violations in either theme", async ({ page }) => {
     const rows = await page.request
       .get(`${FIXTURE}/api/assets`)
       .then(async (r) => (await r.json()).rows as Array<{ policyId: string; assetName: string }>);
-    await page.goto(`/asset/${rows[0]!.policyId}${rows[0]!.assetName}`);
-    await expectNoViolations(page, "/asset/[unit]");
-  });
-
-  test("no violations in light theme with real data", async ({ page }) => {
-    await page.emulateMedia({ colorScheme: "light" });
-    await page.goto("/deposits");
-    await expectNoViolations(page, "/deposits (light)");
+    await expectNoViolationsInBothThemes(page, `/asset/${rows[0]!.policyId}${rows[0]!.assetName}`);
   });
 });

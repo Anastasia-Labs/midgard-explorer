@@ -31,6 +31,9 @@ import {
 const PORT = Number(process.env.FIXTURE_PORT ?? 3101);
 const LIMIT = 25;
 
+/** Answered by `GET /__control` so the suite can identify this process. */
+const FIXTURE_ID = "midgard-explorer-e2e";
+
 const state = { fail: null, slowMs: 0 };
 
 const page = (rows, p) => {
@@ -253,6 +256,14 @@ const server = createServer(async (req, res) => {
     state.fail = url.searchParams.get("fail");
     state.slowMs = Number(url.searchParams.get("slow") ?? 0);
     return json(res, { ok: true, ...state });
+  }
+
+  // Identity, so the suite can prove the process on this port is this fixture.
+  // `reuseExistingServer` adopts whatever is already listening, and a stray dev
+  // server or an older fixture answering these paths would produce results that
+  // describe nothing.
+  if (req.method === "GET" && url.pathname === "/__control") {
+    return json(res, { fixture: FIXTURE_ID, ...state });
   }
 
   if (state.slowMs > 0) await new Promise((r) => setTimeout(r, state.slowMs));

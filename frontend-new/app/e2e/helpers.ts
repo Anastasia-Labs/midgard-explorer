@@ -1,13 +1,42 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, type Page } from "@playwright/test";
+import { test as base, expect, type Page } from "@playwright/test";
 
-export const FIXTURE = "http://127.0.0.1:3101";
+/** Derived from the same variable `playwright.config.ts` uses to start the
+ * fixture. Hard-coding it here meant `FIXTURE_PORT=…` started a fixture on one
+ * port while every helper talked to another, so the suite silently tested
+ * whatever else happened to be listening on 3101. */
+export const FIXTURE_PORT = Number(process.env.FIXTURE_PORT ?? 3101);
+export const FIXTURE = `http://127.0.0.1:${FIXTURE_PORT}`;
 
 /** Drives the fixture backend's fault injection. */
 export async function inject(page: Page, params: string) {
   const res = await page.request.post(`${FIXTURE}/__control?${params}`);
   expect(res.ok()).toBe(true);
 }
+
+/** Every test starts and ends against a fixture with no injected faults.
+ *
+ * `reuseExistingServer` is on outside CI, so a run that was interrupted after
+ * injecting `fail=all` leaves a poisoned server behind and the next run adopts
+ * it. The symptom is a handful of degraded-state tests failing on one machine
+ * and passing on another, which makes the suite useless as a gate. Resetting on
+ * the way in as well as out means an inherited server heals itself, and a
+ * single missing `afterEach` in one spec file can no longer corrupt another.
+ *
+ * Import `test` from here rather than from `@playwright/test` so this cannot be
+ * forgotten in a new spec file. */
+export const test = base.extend<{ cleanFixture: void }>({
+  cleanFixture: [
+    async ({ request }, use) => {
+      await request.post(`${FIXTURE}/__control?fail=&slow=0`);
+      await use();
+      await request.post(`${FIXTURE}/__control?fail=&slow=0`);
+    },
+    { auto: true },
+  ],
+});
+
+export { expect };
 
 /** Waits until the page is visually at rest.
  *
@@ -37,6 +66,37 @@ export async function expectNoViolations(page: Page, label: string) {
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
   expect(results.violations, `${label} has accessibility violations`).toEqual([]);
+}
+
+/** Audits a route under both colour schemes, and proves they differed.
+ *
+ * The theme follows `prefers-color-scheme`, and Playwright emulates `light`
+ * unless told otherwise. So a suite that never calls `emulateMedia` audits the
+ * light theme on every route and the dark theme on none, while looking exactly
+ * like a suite that covers both. That is what happened here: a report claimed
+ * "both themes" on the strength of a single test whose only distinguishing act
+ * was to request the scheme that was already in effect.
+ *
+ * Running both is half the fix. The other half is the assertion at the end:
+ * if the two passes render the same background, this audited one theme twice
+ * and must fail rather than report a pass for a theme it never loaded. */
+export async function expectNoViolationsInBothThemes(page: Page, path: string) {
+  const background: Record<string, string> = {};
+
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await page.goto(path);
+    await expectNoViolations(page, `${path} (${scheme})`);
+    background[scheme] = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--mg-bg").trim(),
+    );
+  }
+
+  expect(
+    background.light,
+    `${path}: the light and dark passes both rendered ${background.light}, ` +
+      `so only one theme was actually audited`,
+  ).not.toBe(background.dark);
 }
 
 /** Keyboard shortcuts and the theme toggle are registered by client effects, so

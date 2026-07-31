@@ -1,7 +1,7 @@
-import { expect, test } from "@playwright/test";
 import {
   FIXTURE,
-  expectNoViolations,
+  expect,
+  expectNoViolationsInBothThemes,
   firstBlockHash,
   hydrated,
   inject,
@@ -9,11 +9,11 @@ import {
   openSearch,
   searchInput,
   settle,
+  test,
 } from "./helpers";
 
-test.afterEach(async ({ page }) => {
-  await inject(page, "fail=&slow=0");
-});
+// Fault injection is cleared before and after every test by the `cleanFixture`
+// auto-fixture in ./helpers, so no per-file teardown is needed here.
 
 const ROUTES = [
   ["/", "Network overview"],
@@ -196,23 +196,30 @@ test.describe("degraded states", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Page not found" })).toBeVisible();
   });
 
-  // DEFECT (found 2026-07-30, production build): notFound() inside these dynamic
-  // routes renders the not-found page but responds HTTP 200. Only an unmatched
-  // path (/nonexistent-page) returns a real 404. Search engines and uptime
-  // checks cannot tell an invalid identifier from a valid page.
-  test.fixme("a malformed identifier responds with HTTP 404", async ({ page }) => {
-    const res = await page.goto("/block/not-a-hash");
-    expect(res?.status()).toBe(404);
-  });
+  // Was a known defect: notFound() in these routes rendered the not-found page
+  // but responded HTTP 200, so a crawler or an uptime check could not tell an
+  // invalid identifier from a valid page. The cause was a root loading.tsx,
+  // whose Suspense boundary flushed a 200 shell before any page body ran. See
+  // src/app/LOADING.md. These assertions are what stops it coming back, which
+  // is why they check every detail route rather than a representative one.
+  for (const [label, path] of [
+    ["a malformed block hash", "/block/not-a-hash"],
+    ["an unknown transaction hash", `/transaction/${"f".repeat(64)}`],
+    ["a malformed address", "/address/not-an-address"],
+    ["a malformed asset unit", "/asset/zz"],
+    ["a genuinely unmatched path", "/no-such-route"],
+  ] as const) {
+    test(`${label} responds with HTTP 404`, async ({ page }) => {
+      const res = await page.goto(path);
+      expect(res?.status(), `${path} should answer 404`).toBe(404);
+    });
+  }
 
-  test.fixme("an unknown transaction hash responds with HTTP 404", async ({ page }) => {
-    const res = await page.goto(`/transaction/${"f".repeat(64)}`);
-    expect(res?.status()).toBe(404);
-  });
-
-  test("a genuinely unmatched path still returns 404", async ({ page }) => {
-    const res = await page.goto("/no-such-route");
-    expect(res?.status()).toBe(404);
+  // The other half of the contract: a route that streams a skeleton must still
+  // be a 200, or the fix above would have been "make everything 404".
+  test("a valid list route still responds with HTTP 200", async ({ page }) => {
+    const res = await page.goto("/blocks");
+    expect(res?.status()).toBe(200);
   });
 });
 
@@ -236,10 +243,13 @@ test.describe("pagination", () => {
 });
 
 test.describe("accessibility", () => {
+  // Two axe passes per route, one per colour scheme. See the note in
+  // populated.spec.ts: coverage stays, the timeout gives.
+  test.slow();
+
   for (const [path] of ROUTES) {
-    test(`${path} has no automated violations`, async ({ page }) => {
-      await page.goto(path);
-      await expectNoViolations(page, path);
+    test(`${path} has no automated violations in either theme`, async ({ page }) => {
+      await expectNoViolationsInBothThemes(page, path);
     });
   }
 
@@ -256,8 +266,7 @@ test.describe("accessibility", () => {
         .poll(
           () =>
             page.evaluate(
-              () =>
-                document.documentElement.scrollWidth > document.documentElement.clientWidth,
+              () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
             ),
           { message: `${path} overflows horizontally at 320px`, timeout: 3_000 },
         )
