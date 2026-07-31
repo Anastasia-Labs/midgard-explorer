@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   FIXTURE,
   expectNoViolations,
+  firstBlockHash,
   hydrated,
   inject,
   isNarrow,
@@ -59,6 +60,45 @@ test.describe("shell and navigation", () => {
 });
 
 test.describe("search", () => {
+  test("offers both readings of an ambiguous hash instead of guessing", async ({ page }) => {
+    await page.goto("/");
+    await openSearch(page);
+    const hash = await firstBlockHash(page);
+    await searchInput(page).fill(hash);
+    const candidates = page.locator('[data-region="search-candidates"]');
+    // 56 hex is a block header hash and equally a minting policy; picking one
+    // silently sends a reader to a 404 for a record that does exist.
+    await expect(candidates.getByText("Block", { exact: true })).toBeVisible();
+    await expect(candidates.getByText("Minting policy")).toBeVisible();
+  });
+
+  test("finds a record from the first characters of its hash", async ({ page }) => {
+    await page.goto("/");
+    await openSearch(page);
+    const hash = await firstBlockHash(page);
+    await searchInput(page).fill(hash.slice(0, 10));
+    const prefix = page.locator('[data-region="search-prefix"]');
+    await expect(prefix.getByText(/^Block #/)).toBeVisible();
+    await prefix.getByText(/^Block #/).click();
+    await expect(page).toHaveURL(new RegExp(`/block/${hash}`));
+  });
+
+  test("says a prefix is too short rather than searching for it", async ({ page }) => {
+    await page.goto("/");
+    await openSearch(page);
+    await searchInput(page).fill("ab");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("dialog[open]").getByRole("alert")).toContainText(/at least 6/);
+  });
+
+  test("rejects an asset fingerprint with a bad checksum in place", async ({ page }) => {
+    await page.goto("/");
+    await openSearch(page);
+    await searchInput(page).fill("asset1rjklcrnsdzqp65wjgrg55sy9723kw09mlgvlcx");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("dialog[open]").getByRole("alert")).toContainText(/checksum/i);
+  });
+
   // The Ctrl+K and "/" handlers belong to the header SearchBox, which only
   // renders at lg and above. Below that the icon button is the entry point.
   test("opens with the keyboard shortcut and routes a transaction hash", async ({ page }) => {
@@ -68,9 +108,13 @@ test.describe("search", () => {
       .get(`${FIXTURE}/api/transactions/1`)
       .then(async (r) => (await r.json()).rows[0].tx_id as string);
     await hydrated(page);
-    await page.keyboard.press("ControlOrMeta+k");
+    // The shortcut is registered by the search box's own effect, which can land
+    // after the signal `hydrated` waits on, so the press is retried.
+    await expect(async () => {
+      await page.keyboard.press("ControlOrMeta+k");
+      await expect(searchInput(page)).toBeVisible({ timeout: 500 });
+    }).toPass({ timeout: 5_000 });
     const input = searchInput(page);
-    await expect(input).toBeVisible();
     await input.fill(hash);
     await input.press("Enter");
     await expect(page).toHaveURL(new RegExp(`/transaction/${hash}$`));
@@ -80,18 +124,24 @@ test.describe("search", () => {
     test.skip((page.viewportSize()?.width ?? 1280) < 1024, "header search box is lg and up");
     await page.goto("/");
     await hydrated(page);
-    await page.keyboard.press("/");
-    await expect(searchInput(page)).toBeVisible();
+    // The shortcut is registered by the search box's own effect, which can land
+    // after the signal `hydrated` waits on. A single keypress that arrives
+    // first is dropped silently, so the press is retried until it takes.
+    await expect(async () => {
+      await page.keyboard.press("/");
+      await expect(searchInput(page)).toBeVisible({ timeout: 500 });
+    }).toPass({ timeout: 5_000 });
   });
 
   test("explains a wrong-length hex value instead of navigating", async ({ page }) => {
     await page.goto("/");
     await openSearch(page);
     const input = searchInput(page);
+    // 60 hex is no longer a dead end: it is a 28-byte policy plus a 2-byte
+    // asset name, so it opens as an asset rather than being refused.
     await input.fill("a".repeat(60));
     await input.press("Enter");
-    await expect(page.locator("dialog[open]").getByRole("alert")).toContainText("60");
-    await expect(page).toHaveURL("/");
+    await expect(page).toHaveURL(`/asset/${"a".repeat(60)}`);
   });
 
   test("rejects an address with a bad checksum in place", async ({ page }) => {

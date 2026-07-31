@@ -173,10 +173,17 @@ export async function getTotalTransactions() {
   return prisma.blocks.count();
 }
 
-export async function getTransactionsPage(page: number) {
+/** One page of transactions, optionally narrowed to a settlement status.
+ *
+ * The filter is applied in SQL rather than to the page after it is fetched.
+ * Filtering the twenty-five rows that happened to arrive would produce a
+ * control that appears to search the chain and in fact searches one screen,
+ * which is worse than having no filter at all. */
+export async function getTransactionsPage(page: number, status?: string) {
   const limit = config.TRANSACTIONS_PER_PAGE;
   const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
   const offset = (safePage - 1) * limit;
+  const filter = status && status.length > 0 ? status : null;
   const [rows, total] = await Promise.all([
     prisma.$queryRaw<
       Array<{
@@ -202,10 +209,18 @@ export async function getTransactionsPage(page: number) {
         ON b.tx_id = m.tx_id
       LEFT JOIN pending_block_finalizations AS f
         ON f.header_hash = b.header_hash
+      WHERE ${filter}::text IS NULL OR f.status = ${filter}
       ORDER BY b.height DESC
       OFFSET ${offset}
       LIMIT ${limit};`,
-    prisma.blocks.count(),
+    prisma.$queryRaw<Array<{ n: bigint }>>`
+      SELECT COUNT(*)::bigint AS n
+        FROM blocks AS b
+        LEFT JOIN pending_block_finalizations AS f
+          ON f.header_hash = b.header_hash
+       WHERE ${filter}::text IS NULL OR f.status = ${filter};`.then((r) =>
+      Number(r[0]?.n ?? 0n),
+    ),
   ]);
   const hasNextPage = safePage * limit < total;
   return { rows, hasNextPage, total, limit };

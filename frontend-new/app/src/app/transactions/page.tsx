@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ValueCell } from "../../components/ui/amount";
 import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Identifier } from "../../components/ui/identifier";
+import { ListTools } from "../../components/ui/listtools";
 import { PageError } from "../../components/ui/pageerror";
 import { StatusCell } from "../../components/ui/status";
 import { PageHeader } from "../../components/ui/primitives";
@@ -11,6 +12,7 @@ import { Timestamp } from "../../components/ui/timestamp";
 import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
+import { legendFor } from "../../lib/status-registry";
 import { listErrorMessage } from "../../lib/serverErrors";
 
 export const metadata: Metadata = {
@@ -25,13 +27,15 @@ const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Transactions" }];
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; status?: string }>;
 }) {
-  const page = parsePage((await searchParams).page);
+  const params = await searchParams;
+  const page = parsePage(params.page);
+  const status = params.status;
 
   let data;
   try {
-    data = await api.txsPage(page);
+    data = await api.txsPage(page, status);
   } catch (e) {
     return (
       <>
@@ -57,6 +61,23 @@ export default async function TransactionsPage({
           </span>
         }
       />
+      <ListTools
+        filterKey="status"
+        filterLabel="L1 settlement"
+        options={legendFor("finalization").map((e) => ({ value: e.code, label: e.label }))}
+        rows={data.rows}
+        filename={`midgard-transactions-page-${page}${status ? `-${status}` : ""}`}
+        columns={[
+          { header: "tx_id", path: "tx_id" },
+          { header: "height", path: "height" },
+          { header: "header_hash", path: "header_hash" },
+          { header: "status", path: "status" },
+          { header: "finalization_status", path: "finalization_status" },
+          { header: "fee", path: "transaction.fee" },
+          { header: "time", path: "time_stamp_tz" },
+        ]}
+      />
+
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
         <DataTable
           caption="Midgard transactions, newest first"
@@ -151,7 +172,7 @@ export default async function TransactionsPage({
           hasNextPage={data.hasNextPage}
           total={data.total}
           limit={data.limit}
-          hrefFor={(p) => `/transactions?page=${p}`}
+          hrefFor={(p) => `/transactions?page=${p}${status ? `&status=${encodeURIComponent(status)}` : ""}`}
         />
       </section>
     </>

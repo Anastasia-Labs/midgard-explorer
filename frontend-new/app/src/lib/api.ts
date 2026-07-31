@@ -159,12 +159,20 @@ export const api = {
     fetchJson(`/api/blocks/by-height/${height}`, decodeBlockByHeight, init),
   recentBlocks: (init?: FetchInit) => fetchJson("/api/blocks/recent", decodeRecentBlocks, init),
   totalBlocks: (init?: FetchInit) => fetchJson("/api/blocks/total", decodeTotal, init),
-  blocksPage: (page: number, init?: FetchInit) =>
-    fetchJson(`/api/blocks/${page}`, decodeBlocksPage, init),
+  blocksPage: (page: number, status?: string, init?: FetchInit) =>
+    fetchJson(
+      `/api/blocks/${page}${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+      decodeBlocksPage,
+      init,
+    ),
   recentTxs: (init?: FetchInit) => fetchJson("/api/transactions/recent", decodeRecentTxs, init),
   totalTxs: (init?: FetchInit) => fetchJson("/api/transactions/total", decodeTotal, init),
-  txsPage: (page: number, init?: FetchInit) =>
-    fetchJson(`/api/transactions/${page}`, decodeTxsPage, init),
+  txsPage: (page: number, status?: string, init?: FetchInit) =>
+    fetchJson(
+      `/api/transactions/${page}${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+      decodeTxsPage,
+      init,
+    ),
   depositsPage: (page: number, init?: FetchInit) =>
     fetchJson(`/api/deposits/${page}`, decodeDepositsPage, init),
   withdrawalsPage: (page: number, init?: FetchInit) =>

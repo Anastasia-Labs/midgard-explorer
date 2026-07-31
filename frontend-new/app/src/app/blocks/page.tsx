@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Identifier } from "../../components/ui/identifier";
 import { StatusCell } from "../../components/ui/status";
+import { ListTools } from "../../components/ui/listtools";
 import { PageError } from "../../components/ui/pageerror";
 import { PageHeader } from "../../components/ui/primitives";
 import { DataTable, Pagination } from "../../components/ui/table";
@@ -10,6 +11,7 @@ import { Timestamp } from "../../components/ui/timestamp";
 import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
+import { legendFor } from "../../lib/status-registry";
 import { listErrorMessage } from "../../lib/serverErrors";
 
 export const metadata: Metadata = {
@@ -24,13 +26,15 @@ const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Blocks" }];
 export default async function BlocksPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; status?: string }>;
 }) {
-  const page = parsePage((await searchParams).page);
+  const params = await searchParams;
+  const page = parsePage(params.page);
+  const status = params.status;
 
   let data;
   try {
-    data = await api.blocksPage(page);
+    data = await api.blocksPage(page, status);
   } catch (e) {
     return (
       <>
@@ -56,6 +60,21 @@ export default async function BlocksPage({
           </span>
         }
       />
+      <ListTools
+        filterKey="status"
+        filterLabel="L1 settlement"
+        options={legendFor("finalization").map((e) => ({ value: e.code, label: e.label }))}
+        rows={data.rows}
+        filename={`midgard-blocks-page-${page}${status ? `-${status}` : ""}`}
+        columns={[
+          { header: "height", path: "height" },
+          { header: "header_hash", path: "header_hash" },
+          { header: "tx_count", path: "tx_count" },
+          { header: "finalization_status", path: "finalization_status" },
+          { header: "time", path: "time_stamp_tz" },
+        ]}
+      />
+
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
         <DataTable
           caption="Midgard blocks, newest first"
@@ -140,7 +159,7 @@ export default async function BlocksPage({
           hasNextPage={data.hasNextPage}
           total={data.total}
           limit={data.limit}
-          hrefFor={(p) => `/blocks?page=${p}`}
+          hrefFor={(p) => `/blocks?page=${p}${status ? `&status=${encodeURIComponent(status)}` : ""}`}
         />
       </section>
     </>

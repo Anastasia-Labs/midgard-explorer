@@ -167,10 +167,13 @@ export async function getBlockFinalization(headerHash: string) {
 /** One row per block, carrying what a reader needs to choose which block to
  * open: its height, how much it holds, and where it stands on L1. The counts
  * come from `blocks` itself, which holds one row per block-tx pair. */
-export async function getBlocksPage(page: number) {
+export async function getBlocksPage(page: number, status?: string) {
   const limit = config.BLOCKS_PER_PAGE;
   const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
   const offset = (safePage - 1) * limit;
+  // Narrowing happens in SQL. A filter applied to the rows that happened to
+  // arrive would look like it searches the chain and in fact search one screen.
+  const filter = status && status.length > 0 ? status : null;
   const [rows, total] = await Promise.all([
     prisma.$queryRaw<
       Array<{
@@ -188,11 +191,19 @@ export async function getBlocksPage(page: number) {
       FROM blocks AS b
       LEFT JOIN pending_block_finalizations AS f
         ON f.header_hash = b.header_hash
+      WHERE ${filter}::text IS NULL OR f.status = ${filter}
       GROUP BY b.height, b.header_hash
       ORDER BY b.height DESC
       OFFSET ${offset}
       LIMIT ${limit};`,
-    prisma.blocks.groupBy({ by: ["header_hash"] }).then((res) => res.length),
+    prisma.$queryRaw<Array<{ n: bigint }>>`
+      SELECT COUNT(DISTINCT b.header_hash)::bigint AS n
+        FROM blocks AS b
+        LEFT JOIN pending_block_finalizations AS f
+          ON f.header_hash = b.header_hash
+       WHERE ${filter}::text IS NULL OR f.status = ${filter};`.then((r) =>
+      Number(r[0]?.n ?? 0n),
+    ),
   ]);
   const hasNextPage = safePage * limit < total;
   return { rows, hasNextPage, total, limit };

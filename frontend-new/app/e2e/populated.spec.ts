@@ -83,6 +83,53 @@ test.describe("populated lists", () => {
   });
 });
 
+test.describe("list filtering and export", () => {
+  test("a status filter narrows the whole list, not just the page in view", async ({ page }) => {
+    await page.goto("/blocks");
+    const totalText = await page.getByText(/total blocks/).textContent();
+    const before = Number((totalText ?? "").replace(/[^0-9]/g, ""));
+
+    await page.getByLabel("L1 settlement").selectOption("finalized");
+    await expect(page).toHaveURL(/status=finalized/);
+    const afterText = await page.getByText(/total blocks/).textContent();
+    const after = Number((afterText ?? "").replace(/[^0-9]/g, ""));
+    // A control that filtered only the rows that happened to arrive would
+    // leave the total untouched, which is the tell for a fake filter.
+    expect(after).toBeLessThan(before);
+    expect(after).toBeGreaterThan(0);
+  });
+
+  test("the filtered view survives being copied out of the address bar", async ({ page }) => {
+    await page.goto("/blocks?status=finalized");
+    await expect(page.getByLabel("L1 settlement")).toHaveValue("finalized");
+    await expect(rowRegion(page).locator("tr, li")).not.toHaveCount(0);
+  });
+
+  test("changing the filter returns to the first page", async ({ page }) => {
+    await page.goto("/blocks?page=2");
+    await page.getByLabel("L1 settlement").selectOption("finalized");
+    await expect(page).not.toHaveURL(/page=2/);
+  });
+
+  test("export covers the rows in view and says how many", async ({ page }) => {
+    await page.goto("/blocks");
+    const tools = page.locator('[data-region="list-tools"]');
+    await expect(tools.getByText(/rows in view/)).toBeVisible();
+    const download = page.waitForEvent("download");
+    await tools.getByRole("button", { name: "CSV" }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toMatch(/^midgard-blocks-page-1\.csv$/);
+  });
+
+  test("the transactions list filters and exports too", async ({ page }) => {
+    await page.goto("/transactions");
+    await expect(page.getByLabel("L1 settlement")).toBeVisible();
+    const download = page.waitForEvent("download");
+    await page.locator('[data-region="list-tools"]').getByRole("button", { name: "JSON" }).click();
+    expect((await download).suggestedFilename()).toMatch(/\.json$/);
+  });
+});
+
 test.describe("operational metrics", () => {
   test("answers whether the chain is healthy before anything else", async ({ page }) => {
     await page.goto("/");
@@ -180,7 +227,9 @@ test.describe("native assets", () => {
     await expect(page.getByRole("heading", { level: 1, name: "PATATE" })).toBeVisible();
     await expect(page.getByText("Fingerprint (CIP-14)")).toBeVisible();
     await expect(page.getByRole("tab", { name: /Holders/ })).toBeVisible();
-    await expect(page.getByText(/^asset1/).first()).toBeVisible();
+    // Scoped to the page body: the search dialog's help text also mentions
+    // asset1..., and it is present but hidden.
+    await expect(page.getByRole("main").getByText(/^asset1/).first()).toBeVisible();
   });
 
   test("the asset page says its total describes the ledger now, not history", async ({ page }) => {

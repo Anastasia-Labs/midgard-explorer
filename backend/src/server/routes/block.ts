@@ -84,7 +84,7 @@ export async function getBlocksPageRoute(req: Request, res: Response) {
     return res.status(400).json({ error: "Invalid page." });
   }
 
-  const { rows, hasNextPage, total, limit } = await getBlocksPage(page);
+  const { rows, hasNextPage, total, limit } = await getBlocksPage(page, typeof req.query.status === "string" ? req.query.status : undefined);
   const payload = rows.map((row) => ({
     height: row.height,
     header_hash: toHex(row.header_hash),

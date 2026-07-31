@@ -61,6 +61,28 @@ const routes = [
   ["healthz", /^\/healthz$/, () => ({ status: "ok", now: new Date().toISOString() })],
   ["metrics", /^\/api\/metrics$/, () => metrics()],
   ["assets", /^\/api\/assets$/, () => assets()],
+  [
+    "search",
+    /^\/api\/search$/,
+    (_m, res, url) => {
+      const q = (url.searchParams.get("q") ?? "").toLowerCase();
+      if (q.length < 6 || !/^[0-9a-f]+$/.test(q)) {
+        return { hits: [], minPrefix: 6, tooShort: q.length < 6 };
+      }
+      const blocks = BLOCKS.filter((b) => b.header_hash.startsWith(q)).map((b) => ({
+        kind: "block",
+        headerHash: b.header_hash,
+        height: b.height,
+      }));
+      const txs = TXS.filter((t) => t.tx_id.startsWith(q)).map((t) => ({
+        kind: "transaction",
+        txId: t.tx_id,
+        height: BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? null,
+        headerHash: t.header_hash,
+      }));
+      return { hits: [...blocks, ...txs].slice(0, 10), minPrefix: 6, tooShort: false };
+    },
+  ],
 
   [
     "blocks/by-height",
@@ -86,17 +108,20 @@ const routes = [
   [
     "blocks/page",
     /^\/api\/blocks\/(\d+)$/,
-    (m) =>
-      page(
-        BLOCKS.map(({ height, header_hash, time_stamp_tz }) => ({
-          height,
-          header_hash,
-          time_stamp_tz,
-          tx_count: blockRows(height).length,
-          finalization_status: blockFinalization(height)?.status ?? null,
-        })),
-        Number(m[1]),
-      ),
+    (m, _res, url) => {
+      const status = url.searchParams.get("status");
+      const all = BLOCKS.map(({ height, header_hash, time_stamp_tz }) => ({
+        height,
+        header_hash,
+        time_stamp_tz,
+        tx_count: blockRows(height).length,
+        finalization_status: blockFinalization(height)?.status ?? null,
+      }));
+      // Narrowing before pagination, matching the backend: filtering the page
+      // that happened to arrive would be a control that searches one screen.
+      const rows = status ? all.filter((r) => r.finalization_status === status) : all;
+      return page(rows, Number(m[1]));
+    },
   ],
 
   [
@@ -116,25 +141,27 @@ const routes = [
   [
     "transactions/page",
     /^\/api\/transactions\/(\d+)$/,
-    (m) =>
-      page(
-        TXS.map((t) => {
-          const height = BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? 0;
-          return {
-            height,
-            header_hash: t.header_hash,
-            tx_id: t.tx_id,
-            time_stamp_tz: t.time_stamp_tz,
-            // List rows come from the block table, so they are always in a
-            // block; only which tier holds the bytes varies.
-            status: t.status === "pending_commit" ? "pending_commit" : "committed",
-            finalization_status: blockFinalization(height)?.status ?? null,
-            transaction: t.transaction,
-            decodeError: t.decodeError,
-          };
-        }),
-        Number(m[1]),
-      ),
+    (m, _res, url) => {
+      const all = TXS.map((t) => {
+        const height = BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? 0;
+        return {
+          height,
+          header_hash: t.header_hash,
+          tx_id: t.tx_id,
+          time_stamp_tz: t.time_stamp_tz,
+          // List rows come from the block table, so they are always in a
+          // block; only which tier holds the bytes varies.
+          status: t.status === "pending_commit" ? "pending_commit" : "committed",
+          finalization_status: blockFinalization(height)?.status ?? null,
+          transaction: t.transaction,
+          decodeError: t.decodeError,
+        };
+      });
+      // Narrowing before pagination, matching the backend.
+      const status = url.searchParams.get("status");
+      const rows = status ? all.filter((r) => r.finalization_status === status) : all;
+      return page(rows, Number(m[1]));
+    },
   ],
 
   ["deposits", /^\/api\/deposits\/(\d+)$/, (m) => page(DEPOSITS, Number(m[1]))],
@@ -237,7 +264,7 @@ const server = createServer(async (req, res) => {
       return fail(res, 500, "internal_error", `injected failure for ${name}`);
     }
     // A handler that writes its own response (a 404, say) returns undefined.
-    const out = handler(m, res);
+    const out = handler(m, res, url);
     return out === undefined ? undefined : json(res, out);
   }
 

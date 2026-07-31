@@ -133,7 +133,7 @@ export async function getTransactionsPageRoute(req: Request, res: Response) {
     return res.status(400).json({ error: "Invalid page." });
   }
 
-  const { rows, hasNextPage, total, limit } = await getTransactionsPage(page);
+  const { rows, hasNextPage, total, limit } = await getTransactionsPage(page, typeof req.query.status === "string" ? req.query.status : undefined);
   const payload = await Promise.all(
     rows.map(async (row) => {
       const decoded = row.tx
