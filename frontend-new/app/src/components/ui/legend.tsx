@@ -12,7 +12,7 @@ export function StatusLegend({
   if (entries.length === 0) return null;
   return (
     <details className="border-t border-border">
-      <summary className="cursor-pointer px-4 py-2.5 text-[13px] text-text-2 hover:text-text">
+      <summary className="cursor-pointer px-4 py-2.5 mg-caption text-text-2 hover:text-text">
         {label}
       </summary>
       <dl className="grid gap-x-8 gap-y-2 px-4 pb-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -21,7 +21,7 @@ export function StatusLegend({
             <dt className="shrink-0">
               <StatusBadge status={e.code} />
             </dt>
-            <dd className="text-[12.5px] text-text-3">{e.explain}</dd>
+            <dd className="mg-caption text-text-3">{e.explain}</dd>
           </div>
         ))}
       </dl>

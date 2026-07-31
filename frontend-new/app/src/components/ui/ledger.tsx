@@ -93,7 +93,7 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
         )}
       </div>
 
-      <p className="border-t border-border px-4 py-2.5 text-[12.5px] leading-relaxed text-text-2">
+      <p className="border-t border-border px-4 py-2.5 mg-caption leading-relaxed text-text-2">
         {eq.kind === "balanced" ? (
           <>
             The transaction balances: everything spent is accounted for by the outputs and the fee.
@@ -126,7 +126,7 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
                   {d.exact ? (
                     <Amount lovelace={net} tone={net >= 0n ? "positive" : "negative"} />
                   ) : (
-                    <span className="text-right text-[12.5px]">
+                    <span className="text-right mg-caption">
                       <Amount lovelace={d.received} tone="positive" />
                       <span className="block text-text-3">received; spend side unknown</span>
                     </span>
@@ -136,7 +136,7 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
             })}
           </ul>
           {deltas.some((d) => !d.exact) ? (
-            <p className="border-t border-border px-4 py-2.5 text-[12px] text-text-3">
+            <p className="border-t border-border px-4 py-2.5 mg-micro text-text-3">
               A net figure needs both sides. Where an input did not resolve, only what an address
               received is shown, because a net that ignores an unknown spend is not a smaller truth
               than the real one, it is a different number.

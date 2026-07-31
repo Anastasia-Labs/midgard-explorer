@@ -77,7 +77,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
       })}
     >
       {data.admission ? (
-        <p className="font-mono text-[12px] text-text-3">
+        <p className="font-mono mg-micro text-text-3">
           Node admission record · {data.admission.attemptCount} validation attempt
           {data.admission.attemptCount === 1 ? "" : "s"} · {data.admission.requestCount} request
           {data.admission.requestCount === 1 ? "" : "s"} · source: {data.admission.submitSource}
@@ -104,7 +104,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
               transaction body is unavailable.
             </p>
             {data.decodeError.detail ? (
-              <p className="mt-1.5 font-mono text-[12.5px] wrap-break-word text-text-2">
+              <p className="mt-1.5 font-mono mg-caption wrap-break-word text-text-2">
                 {data.decodeError.detail}
               </p>
             ) : null}
@@ -118,7 +118,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
               </p>
             ) : null}
             {data.rejection.reasonDetail ? (
-              <p className="mt-1.5 font-mono text-[12.5px] wrap-break-word text-text-2">
+              <p className="mt-1.5 font-mono mg-caption wrap-break-word text-text-2">
                 {data.rejection.reasonDetail}
               </p>
             ) : null}
@@ -183,7 +183,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
           <h2 className="mg-overline px-4 pt-4">
             Mint / burn policies ({tx.mint.policyIds.length})
           </h2>
-          <p className="px-4 pt-1 text-[12.5px] text-text-3">
+          <p className="px-4 pt-1 mg-caption text-text-3">
             Policy IDs whose assets this transaction mints or burns. Quantities per asset appear on
             the affected outputs in the UTxO flow.
           </p>
@@ -200,7 +200,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
       {tx.referenceInputs.length > 0 ? (
         <Card>
           <h2 className="mg-overline px-4 pt-4">Reference inputs ({tx.referenceInputs.length})</h2>
-          <p className="px-4 pt-1 text-[12.5px] text-text-3">
+          <p className="px-4 pt-1 mg-caption text-text-3">
             Read by scripts without being spent.
           </p>
           <ul className="space-y-1 p-4">
@@ -363,7 +363,7 @@ function Detail({ label, value, hint }: { label: string; value: ReactNode; hint?
       <dt className="mg-overline">{label}</dt>
       <dd className="mt-0.5 text-sm text-text">
         {value}
-        {hint ? <span className="mt-0.5 block text-[12px] text-text-3">{hint}</span> : null}
+        {hint ? <span className="mt-0.5 block mg-micro text-text-3">{hint}</span> : null}
       </dd>
     </div>
   );

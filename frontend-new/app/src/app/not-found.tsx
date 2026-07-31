@@ -6,7 +6,7 @@ export default function NotFound() {
   return (
     <div className="mx-auto max-w-xl py-14 text-center">
       <Image src="/midgard-mark.png" alt="" width={44} height={44} className="mx-auto mb-4" />
-      <p className="font-mono text-[13px] text-text-3">404 · Not found</p>
+      <p className="font-mono mg-caption text-text-3">404 · Not found</p>
       <h1 className="mt-2 font-display text-[26px] font-semibold tracking-tight text-text">
         Page not found
       </h1>

@@ -249,10 +249,19 @@ test.describe("accessibility", () => {
       await page.goto(path);
       await page.getByRole("heading", { level: 1 }).first().waitFor();
       await settle(page);
-      const overflow = await page.evaluate(
-        () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
-      );
-      expect(overflow, `${path} overflows horizontally at 320px`).toBe(false);
+      // Polled rather than sampled once: a font swapping in can widen content
+      // for a frame. A real overflow does not resolve itself, so this still
+      // fails on one while ignoring the reflow.
+      await expect
+        .poll(
+          () =>
+            page.evaluate(
+              () =>
+                document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            ),
+          { message: `${path} overflows horizontally at 320px`, timeout: 3_000 },
+        )
+        .toBe(false);
     }
   });
 });

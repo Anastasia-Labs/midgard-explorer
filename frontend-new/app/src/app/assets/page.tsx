@@ -109,6 +109,39 @@ export default async function AssetsPage() {
           emptyTitle="No native assets on the ledger"
         />
       </section>
+
+      {/* A short roster used to stop mid-page and leave the rest empty. The
+          page now ends on the thing a reader most needs to know before
+          comparing two assets, which is worth a screen whether the list is
+          five rows or five hundred. */}
+      <section className="mt-4 overflow-hidden rounded-lg border border-border bg-surface">
+        <h2 className="border-b border-border px-4 py-3 font-display text-[15px] font-semibold text-text">
+          Reading an asset
+        </h2>
+        <dl className="grid gap-px bg-border sm:grid-cols-3">
+          {(
+            [
+              [
+                "Name",
+                "Bytes chosen by whoever minted the asset. Shown as text only when it decodes cleanly and re-encodes to exactly those bytes; otherwise the hex stands as the name.",
+              ],
+              [
+                "Policy",
+                "The minting script's hash. Two assets can share a name and differ only here, which is why a name alone never identifies one.",
+              ],
+              [
+                "Fingerprint",
+                "CIP-14: one short, unique identifier over policy and name together. This is the one to compare between tools.",
+              ],
+            ] as const
+          ).map(([term, body]) => (
+            <div key={term} className="bg-surface px-4 py-3">
+              <dt className="mg-overline">{term}</dt>
+              <dd className="mt-1 mg-caption leading-relaxed text-text-2">{body}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
     </>
   );
 }

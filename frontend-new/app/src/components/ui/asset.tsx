@@ -20,7 +20,7 @@ export function AssetName({ nameHex, className }: { nameHex: string; className?:
   return (
     <span className={cn("min-w-0", className)}>
       <span
-        className={cn("break-all", canonical ? "font-mono text-[13px]" : "text-sm font-medium")}
+        className={cn("break-all", canonical ? "font-mono mg-caption" : "text-sm font-medium")}
         // A decoded name is not the asset's identity, so it is marked as text
         // the ledger supplied rather than styled like the explorer's own copy.
         {...(canonical ? {} : { title: `Decoded from ${nameHex}` })}
@@ -40,7 +40,7 @@ export function AssetName({ nameHex, className }: { nameHex: string; className?:
 export function AssetFingerprint({ policyId, nameHex }: { policyId: string; nameHex: string }) {
   const fingerprint = assetFingerprint(policyId, nameHex);
   if (fingerprint === null) {
-    return <span className="font-mono text-[12px] text-text-3">Not computable</span>;
+    return <span className="font-mono mg-micro text-text-3">Not computable</span>;
   }
   return <Identifier value={fingerprint} head={14} tail={8} />;
 }
@@ -93,7 +93,7 @@ export function CoverageNote({ coverage, subject }: { coverage: AssetCoverage; s
   const complete = !coverage.truncated && coverage.undecoded === 0;
   if (complete) {
     return (
-      <p className="text-[12px] text-text-3">
+      <p className="mg-micro text-text-3">
         Complete over the current ledger: all {coverage.total.toLocaleString()} spendable UTxOs were
         read. Assets that were minted and fully spent leave no trace here, because this describes
         the ledger now rather than its history.

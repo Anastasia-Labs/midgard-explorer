@@ -2,6 +2,7 @@ import type { MetricsResponse, Percentile } from "@midgard-explorer/contracts";
 import Link from "next/link";
 import { cn, formatDuration, formatTimestamp, groupThousands } from "../../lib/format";
 import { Icon } from "./icons";
+import { LiveValue } from "./livevalue";
 import { Panel } from "./primitives";
 import { StatusBadge } from "./status";
 
@@ -28,28 +29,37 @@ function Figure({
   sub,
   tone = "neutral",
   hint,
+  live,
 }: {
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
   tone?: "neutral" | "success" | "warning" | "danger";
   hint?: string;
+  /** Comparable identity of the figure. Given, the value tints when it moves,
+   * which is the only motion on this page that means anything. */
+  live?: string | number | null;
 }) {
+  const figure = (
+    <span
+      className={cn(
+        "font-display text-[19px] font-semibold tabular-nums",
+        tone === "success" && "text-success",
+        tone === "warning" && "text-warning",
+        tone === "danger" && "text-danger",
+        tone === "neutral" && "text-text",
+      )}
+    >
+      {value}
+    </span>
+  );
   return (
     <div className="min-w-0 px-4 py-3" title={hint}>
       <p className="mg-overline">{label}</p>
-      <p
-        className={cn(
-          "mt-1 font-display text-[19px] font-semibold tabular-nums",
-          tone === "success" && "text-success",
-          tone === "warning" && "text-warning",
-          tone === "danger" && "text-danger",
-          tone === "neutral" && "text-text",
-        )}
-      >
-        {value}
+      <p className="mt-1">
+        {live === undefined ? figure : <LiveValue value={live}>{figure}</LiveValue>}
       </p>
-      {sub ? <p className="mt-0.5 text-[12px] text-text-3">{sub}</p> : null}
+      {sub ? <p className="mt-0.5 mg-micro text-text-3">{sub}</p> : null}
     </div>
   );
 }
@@ -89,7 +99,7 @@ function Latency({ label, p, hint }: { label: string; p: Percentile; hint?: stri
 function ProductionChart({ series }: { series: MetricsResponse["series"] }) {
   if (series.length === 0) {
     return (
-      <p className="px-4 py-6 text-center text-[13px] text-text-3">
+      <p className="px-4 py-6 text-center mg-caption text-text-3">
         No production history in this window.
       </p>
     );
@@ -106,7 +116,7 @@ function ProductionChart({ series }: { series: MetricsResponse["series"] }) {
     <figure className="px-4 pt-3 pb-2">
       <figcaption className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="mg-overline">Blocks per hour</span>
-        <span className="text-[12px] text-text-3">
+        <span className="mg-micro text-text-3">
           peak {peak}
           {outages > 0 ? (
             <span className="ml-1.5 text-warning">
@@ -185,7 +195,7 @@ function StatusBar({ counts }: { counts: readonly { status: string; count: numbe
       </div>
       <ul className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
         {counts.map((c) => (
-          <li key={c.status} className="flex items-center gap-1.5 text-[12px]">
+          <li key={c.status} className="flex items-center gap-1.5 mg-micro">
             <StatusBadge status={c.status} />
             <span className="tabular-nums text-text-2">{groupThousands(String(c.count))}</span>
           </li>
@@ -220,7 +230,7 @@ function tipTone(
 function AllTime({ blocks, txs }: { blocks: number | null; txs: number | null }) {
   if (blocks === null && txs === null) return null;
   return (
-    <span className="text-[12.5px] text-text-3">
+    <span className="mg-caption text-text-3">
       All time:{" "}
       <strong className="font-semibold tabular-nums text-text-2">
         {blocks === null ? "unknown" : groupThousands(String(blocks))}
@@ -251,7 +261,7 @@ export function NetworkMetrics({
         actions={<AllTime blocks={totalBlocks} txs={totalTxs} />}
         className="mb-4"
       >
-        <p className="px-4 py-6 text-center text-[13px] text-text-3">
+        <p className="px-4 py-6 text-center mg-caption text-text-3">
           Metrics are unavailable. Everything else on this page is unaffected.
         </p>
       </Panel>
@@ -284,6 +294,7 @@ export function NetworkMetrics({
       >
         <Figure
           label="Chain tip"
+          live={tip.height}
           value={tip.height === null ? "None" : `#${groupThousands(String(tip.height))}`}
           sub={
             tip.ageSeconds === null ? "No blocks" : `${formatDuration(tip.ageSeconds * 1000)} ago`
@@ -293,6 +304,7 @@ export function NetworkMetrics({
         />
         <Figure
           label="Blocks"
+          live={throughput.blocks}
           value={groupThousands(String(throughput.blocks))}
           sub={
             throughput.blockIntervalSeconds.p50 === null
@@ -303,6 +315,7 @@ export function NetworkMetrics({
         />
         <Figure
           label="Transactions"
+          live={throughput.transactions}
           value={groupThousands(String(throughput.transactions))}
           sub={
             throughput.transactionsPerBlock === null
@@ -349,7 +362,7 @@ export function NetworkMetrics({
           {finality.oldestUnsettled ? (
             <div className="border-t border-border px-4 py-3">
               <p className="mg-overline">Oldest block awaiting L1</p>
-              <p className="mt-1 flex flex-wrap items-center gap-2 text-[13px]">
+              <p className="mt-1 flex flex-wrap items-center gap-2 mg-caption">
                 <Link
                   href={`/block/${finality.oldestUnsettled.headerHash}`}
                   className="inline-flex items-center gap-1 font-medium text-accent hover:underline"
@@ -368,7 +381,7 @@ export function NetworkMetrics({
       </div>
 
       <details className="border-t border-border">
-        <summary className="cursor-pointer px-4 py-2.5 text-[12.5px] font-medium text-text-2 hover:text-text">
+        <summary className="cursor-pointer px-4 py-2.5 mg-caption font-medium text-text-2 hover:text-text">
           Status breakdown and where each figure comes from
         </summary>
         <div className="border-t border-border">
@@ -378,7 +391,7 @@ export function NetworkMetrics({
             Transaction admission ({w.hours}h)
           </h3>
           <StatusBar counts={metrics.statusBreakdown.admission} />
-          <dl className="border-t border-border px-4 py-3 text-[12px]">
+          <dl className="border-t border-border px-4 py-3 mg-micro">
             {(
               [
                 ["Chain tip", tip.source],
@@ -394,7 +407,7 @@ export function NetworkMetrics({
               </div>
             ))}
           </dl>
-          <p className="border-t border-border px-4 py-2.5 text-[12px] leading-relaxed text-text-3">
+          <p className="border-t border-border px-4 py-2.5 mg-micro leading-relaxed text-text-3">
             Window {formatTimestamp(w.start)} to {formatTimestamp(w.end)}.
             {w.partial
               ? ` The node's earliest block is ${formatTimestamp(

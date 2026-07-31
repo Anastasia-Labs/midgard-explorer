@@ -175,6 +175,19 @@ describe("NetworkMetrics", () => {
     expect(container.querySelector(".text-danger")).not.toBeNull();
   });
 
+  it("tints a live figure only after it changes, never on arrival", () => {
+    const { container, rerender } = render(
+      <NetworkMetrics metrics={base} totalBlocks={40} totalTxs={60} />,
+    );
+    // Arriving at the page must not look like a burst of activity that did
+    // not happen.
+    expect(container.querySelector(".mg-tint")).toBeNull();
+
+    const advanced = { ...base, tip: { ...base.tip, height: 41 } } as MetricsResponse;
+    rerender(<NetworkMetrics metrics={advanced} totalBlocks={40} totalTxs={60} />);
+    expect(container.querySelector(".mg-tint")).not.toBeNull();
+  });
+
   it("marks a thin percentile sample instead of presenting it as a measurement", () => {
     const thin = {
       ...base,
@@ -229,28 +242,23 @@ describe("AdaAmount", () => {
 });
 
 describe("SummaryBand", () => {
-  /** Unfilled cells in the painted-gap grid used to render as solid blocks,
-   * which read as a metric that failed to load. */
-  it("pads the grid so no gap cell is left unpainted", () => {
-    const { container } = render(
-      <SummaryBand items={[{ label: "Height", value: "#40" }]} />,
-    );
-    const list = container.querySelector("dl");
-    expect(list).not.toBeNull();
-    // One item plus three fillers covers the 2-, 3- and 4-column breakpoints.
-    expect(list!.children.length).toBe(4);
-    for (const filler of Array.from(list!.children).slice(1)) {
-      expect(filler.getAttribute("aria-hidden")).toBe("true");
+  /** Tracks size themselves, so the last row stretches to fill the width and
+   * there is nothing left over to paint. The previous version emitted filler
+   * cells to cover an unfilled row, which hid the artefact without removing
+   * the empty quarter it was covering. */
+  it("renders exactly one cell per item, with no fillers", () => {
+    for (const count of [1, 3, 5, 7, 12]) {
+      const items = Array.from({ length: count }, (_, i) => ({ label: `L${i}`, value: i }));
+      const { container, unmount } = render(<SummaryBand items={items} />);
+      expect(container.querySelector("dl")!.children.length).toBe(count);
+      expect(container.querySelector("[aria-hidden='true']")).toBeNull();
+      unmount();
     }
   });
 
-  it("adds no fillers when the item count fills every breakpoint", () => {
-    const items = Array.from({ length: 12 }, (_, i) => ({
-      label: `L${i}`,
-      value: i,
-    }));
-    const { container } = render(<SummaryBand items={items} />);
-    expect(container.querySelector("dl")!.children.length).toBe(12);
+  it("lets the tracks follow the width rather than fixing a column count", () => {
+    const { container } = render(<SummaryBand items={[{ label: "Height", value: "#40" }]} />);
+    expect(container.querySelector("dl")!.className).toMatch(/auto-fit/);
   });
 });
 

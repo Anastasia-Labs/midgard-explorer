@@ -69,7 +69,7 @@ function RefreshMeta({ updatedAt }: { updatedAt: number }) {
   }, []);
   const s = Math.max(0, Math.round((now - updatedAt) / 1000));
   return (
-    <span className="inline-flex items-center gap-1.5 text-[13px] text-text-3">
+    <span className="inline-flex items-center gap-1.5 mg-caption text-text-3">
       <Icon name="refresh" size={13} />
       Updated {s < 5 ? "just now" : `${s}s ago`}
     </span>
@@ -175,7 +175,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
             <RefreshMeta updatedAt={dataUpdatedAt} />
             <span
               className={cn(
-                "inline-flex items-center gap-1.5 text-[13px]",
+                "inline-flex items-center gap-1.5 mg-caption",
                 up === false ? "text-danger" : "text-text-3",
               )}
             >
@@ -229,7 +229,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
                       <StatusCell status={r.finalization_status} />
                     )}
                   </span>
-                  <span className="text-[12.5px] text-text-3">
+                  <span className="mg-caption text-text-3">
                     {r.tx_count} {r.tx_count === 1 ? "transaction" : "transactions"}
                   </span>
                 </span>
@@ -255,7 +255,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
               <>
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={8} />
-                  <span className="flex items-center gap-2 text-[12.5px] text-text-3">
+                  <span className="flex items-center gap-2 mg-caption text-text-3">
                     <StatusCell status={r.status} />
                     <Link href={`/block/${r.header_hash}`} className="tabular-nums hover:underline">
                       #{r.height}
@@ -301,7 +301,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
       <details className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
         <summary className="cursor-pointer px-4 py-3 font-display text-[15px] font-semibold text-text">
           How the Midgard ledger works
-          <span className="ml-2 font-sans text-[12.5px] font-normal text-text-3">
+          <span className="ml-2 font-sans mg-caption font-normal text-text-3">
             What this explorer tracks, and where each record comes from
           </span>
         </summary>
@@ -318,7 +318,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
                 <Icon name={c.icon} size={15} />
                 <span className="text-sm font-semibold text-text">{c.title}</span>
               </span>
-              <p className="mt-2 text-[13px] leading-relaxed text-text-2">{c.body}</p>
+              <p className="mt-2 mg-caption leading-relaxed text-text-2">{c.body}</p>
             </div>
           ))}
         </div>

@@ -46,7 +46,7 @@ export function ApiExample({ path, note }: { path: string; note?: string }) {
       <pre className="overflow-x-auto p-4 font-mono text-xs leading-relaxed wrap-anywhere">
         {curl}
       </pre>
-      <p className="border-t border-border px-4 py-2.5 text-[12px] text-text-3">
+      <p className="border-t border-border px-4 py-2.5 mg-micro text-text-3">
         {note ??
           "This is the request behind this page. The response below is exactly what it returns."}
       </p>

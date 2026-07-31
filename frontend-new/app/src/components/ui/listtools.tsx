@@ -116,7 +116,7 @@ export function ListTools<Row>({
           <button
             type="button"
             onClick={() => setFilter("")}
-            className="inline-flex h-9 items-center rounded px-2 text-[12.5px] text-text-3 hover:bg-surface-2 hover:text-text"
+            className="inline-flex h-9 items-center rounded px-2 mg-caption text-text-3 hover:bg-surface-2 hover:text-text"
           >
             Clear
           </button>
@@ -126,7 +126,7 @@ export function ListTools<Row>({
       {/* Wraps to its own line below sm rather than squeezing the filter off
           the edge; at 320px there is no room for both. */}
       <span className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
-        <span className="text-[12px] text-text-3">
+        <span className="mg-micro text-text-3">
           {rows.length} {rows.length === 1 ? "row" : "rows"} in view
         </span>
         <button

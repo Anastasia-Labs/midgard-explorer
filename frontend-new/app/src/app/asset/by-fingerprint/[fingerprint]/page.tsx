@@ -62,7 +62,7 @@ export default async function ByFingerprintPage({
             ? ` This search covered ${roster.coverage.scanned.toLocaleString()} of ${roster.coverage.total.toLocaleString()} ledger entries, so it may also exist beyond the part that was scanned.`
             : ""}
         </p>
-        <p className="mt-1.5 font-mono text-[12.5px] wrap-break-word text-text-2">{wanted}</p>
+        <p className="mt-1.5 font-mono mg-caption wrap-break-word text-text-2">{wanted}</p>
       </Callout>
     </>
   );

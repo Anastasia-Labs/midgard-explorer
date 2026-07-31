@@ -36,7 +36,7 @@ export function Timestamp({ iso, className }: { iso: string; className?: string 
       dateTime={iso}
       title={exact}
       className={cn(
-        "inline-block min-w-[7.5ch] whitespace-nowrap text-[13px] text-text-3 tabular-nums",
+        "inline-block min-w-[7.5ch] whitespace-nowrap mg-caption text-text-3 tabular-nums",
         className,
       )}
     >

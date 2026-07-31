@@ -90,7 +90,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <footer className="mt-6 border-t border-border bg-surface">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-5 text-sm text-text-3">
           <Brand small />
-          <span className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 text-[12.5px]">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 mg-caption">
             <HealthIndicator />
             <span className="font-mono">1 ADA = 1,000,000 lovelace</span>
             <span>Data from the connected Midgard node</span>

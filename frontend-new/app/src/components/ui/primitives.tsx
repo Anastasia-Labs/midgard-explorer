@@ -113,7 +113,7 @@ export function MetricTile({
       >
         {value}
       </p>
-      {sub ? <p className="mt-1.5 text-[12.5px] text-text-3">{sub}</p> : null}
+      {sub ? <p className="mt-1.5 mg-caption text-text-3">{sub}</p> : null}
     </div>
   );
 }
@@ -141,7 +141,7 @@ export function PageHeader({
         <h1 className="font-display text-[26px] font-semibold tracking-tight text-text">{title}</h1>
         {subtitle ? <p className="mt-1 max-w-2xl text-[15px] text-text-2">{subtitle}</p> : null}
         {meta ? (
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-text-2">
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 mg-caption text-text-2">
             {meta}
           </div>
         ) : null}
@@ -169,7 +169,7 @@ export function Panel({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
           <h2 className="font-display text-[15px] font-semibold text-text">{title}</h2>
-          {subtitle ? <p className="mt-0.5 text-[12.5px] text-text-3">{subtitle}</p> : null}
+          {subtitle ? <p className="mt-0.5 mg-caption text-text-3">{subtitle}</p> : null}
         </div>
         {actions}
       </div>

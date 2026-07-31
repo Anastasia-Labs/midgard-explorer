@@ -262,7 +262,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
             </kbd>
           </div>
 
-          <p className="mt-2 text-[12.5px] text-text-3">
+          <p className="mt-2 mg-caption text-text-3">
             Transaction or block hash · block height · bech32 address · asset fingerprint (
             <span className="font-mono">asset1…</span>) · or the first {MIN_PREFIX}+ characters of a
             hash
@@ -293,7 +293,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
                     >
                       <span className="min-w-0">
                         <span className="block text-sm font-medium text-text">{c.label}</span>
-                        <span className="block text-[12px] text-text-3">{c.detail}</span>
+                        <span className="block mg-micro text-text-3">{c.detail}</span>
                       </span>
                       <Icon
                         name={c.external ? "external" : "arrowRight"}
@@ -313,9 +313,9 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
                 Starting with <span className="font-mono normal-case">{value.trim()}</span>
               </p>
               {searching ? (
-                <p className="mt-1 px-2 py-1.5 text-[12.5px] text-text-3">Searching…</p>
+                <p className="mt-1 px-2 py-1.5 mg-caption text-text-3">Searching…</p>
               ) : hits.length === 0 ? (
-                <p className="mt-1 px-2 py-1.5 text-[12.5px] text-text-3">
+                <p className="mt-1 px-2 py-1.5 mg-caption text-text-3">
                   Nothing on this network starts with that.
                 </p>
               ) : (
@@ -331,7 +331,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
                         >
                           <span className="min-w-0">
                             <span className="block text-sm font-medium text-text">{c.label}</span>
-                            <span className="block font-mono text-[12px] text-text-3">
+                            <span className="block font-mono mg-micro text-text-3">
                               {c.detail}
                             </span>
                           </span>
@@ -359,7 +359,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
                     }
                     setRecent([]);
                   }}
-                  className="h-8 rounded px-2 text-[12.5px] text-text-3 hover:text-text"
+                  className="h-8 rounded px-2 mg-caption text-text-3 hover:text-text"
                 >
                   Clear
                 </button>

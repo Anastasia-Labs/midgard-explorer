@@ -199,7 +199,7 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
         detailsLabel="Settlement timings and evidence"
       >
         {finalization ? (
-          <p className="text-[12px] text-text-3">
+          <p className="mg-micro text-text-3">
             Latest node update: {formatTimestamp(finalization.updatedAt)}
             {finalization.submitted_tx_hash ? null : " · no L1 settlement transaction recorded yet"}
           </p>

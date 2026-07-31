@@ -81,13 +81,13 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
             <AssetName nameHex={nameHex} />
           </Field>
           <Field label="Name bytes (hex)">
-            <span className="font-mono text-[12.5px] break-all">
+            <span className="font-mono mg-caption break-all">
               {nameHex === "" ? "(empty)" : nameHex}
             </span>
           </Field>
         </dl>
         {assetLabel(nameHex).canonical ? null : (
-          <p className="border-t border-border px-4 py-2.5 text-[12px] text-text-3">
+          <p className="border-t border-border px-4 py-2.5 mg-micro text-text-3">
             The name above was decoded from its bytes and re-encoded to check it round-trips. It is
             what the ledger holds, not a label this explorer assigned, and it is not unique. Compare
             the fingerprint.

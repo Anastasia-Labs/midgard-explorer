@@ -60,7 +60,7 @@ function StageNode({ stage }: { stage: JourneyStage }) {
   return (
     <span className="flex shrink-0 items-center gap-1.5">
       <span aria-hidden className={cn("size-2.5 rounded-full border-2", NODE[stage.state])} />
-      <span className={cn("whitespace-nowrap text-[12.5px]", LABEL[stage.state])}>
+      <span className={cn("whitespace-nowrap mg-caption", LABEL[stage.state])}>
         {stage.label}
       </span>
     </span>
@@ -187,27 +187,27 @@ export function Journey({
         ))}
       </ol>
 
-      <p className="px-4 pt-1.5 pb-3 text-[12.5px] leading-relaxed text-text-2">
+      <p className="px-4 pt-1.5 pb-3 mg-caption leading-relaxed text-text-2">
         {model.explanation}
       </p>
 
       <details className="border-t border-border">
-        <summary className="cursor-pointer px-4 py-2 text-[12.5px] font-medium text-text-2 hover:text-text">
+        <summary className="cursor-pointer px-4 py-2 mg-caption font-medium text-text-2 hover:text-text">
           {detailsLabel}
         </summary>
         <dl className="grid gap-px border-t border-border bg-border sm:grid-cols-2">
           {model.stages.map((s, i) => (
             <div key={s.key} className="bg-surface px-4 py-2.5">
-              <dt className="flex items-center gap-1.5 text-[12.5px] font-medium text-text">
+              <dt className="flex items-center gap-1.5 mg-caption font-medium text-text">
                 <span aria-hidden className={cn("size-2 rounded-full border-2", NODE[s.state])} />
                 {s.label}
               </dt>
-              <dd className="mt-0.5 font-mono text-[12px] text-text-3">
+              <dd className="mt-0.5 font-mono mg-micro text-text-3">
                 {stageTime(s)}
                 {deltas[i] ? <span className="ml-2 text-text-2">{deltas[i]}</span> : null}
               </dd>
               {s.evidence?.blockHeight !== undefined && s.evidence.blockHash ? (
-                <dd className="mt-1 text-[12px]">
+                <dd className="mt-1 mg-micro">
                   <Link
                     href={`/block/${s.evidence.blockHash}`}
                     className="inline-flex items-center gap-1 text-accent hover:underline"
@@ -218,7 +218,7 @@ export function Journey({
                 </dd>
               ) : null}
               {s.evidence?.l1TxHash ? (
-                <dd className="mt-1 text-[12px]">
+                <dd className="mt-1 mg-micro">
                   L1 tx: <L1TxLink hash={s.evidence.l1TxHash} />
                 </dd>
               ) : null}

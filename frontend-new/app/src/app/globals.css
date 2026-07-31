@@ -100,6 +100,28 @@
   color: var(--mg-text-3);
 }
 
+/* Two named sizes below body, not three.
+ *
+ * The small band had drifted to 12px, 12.5px and 13px, which is three tiers a
+ * reader cannot tell apart and a writer cannot choose between. `caption` is
+ * secondary prose: explanations, confidence notes, row subtitles. `micro` is
+ * provenance: source columns, footnotes, the things that must be present and
+ * must not compete. Naming them is what stops a fourth appearing.
+ *
+ * Declared in the components layer so a `leading-*` utility alongside either
+ * one still wins; the token sets a default line height, not a fixed one. */
+@layer components {
+  .mg-caption {
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+
+  .mg-micro {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+}
+
 @keyframes mg-pulse {
   0%,
   100% {
