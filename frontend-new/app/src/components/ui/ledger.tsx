@@ -104,12 +104,10 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
             expected. Treat the amounts as unverified and read the raw response.
           </>
         ) : (
-          <>
-            {eq.unresolvedCount} of {eq.resolvedCount + eq.unresolvedCount} inputs could not be
-            resolved, so the input total is a lower bound and the equation cannot be checked here. A
-            transaction&apos;s inputs leave the ledger once it is applied, so this is the usual case
-            for anything but the newest transactions.
-          </>
+          // One string rather than interleaved expressions: JSX drops the
+          // space between an expression and the text that follows it here, and
+          // "1 of 2inputs" shipped once already.
+          `${eq.unresolvedCount} of ${eq.resolvedCount + eq.unresolvedCount} inputs could not be resolved, so the input total is a lower bound and the equation cannot be checked here. A transaction's inputs leave the ledger once it is applied, so this is the usual case for anything but the newest transactions.`
         )}
       </p>
 

@@ -62,12 +62,15 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
       {/* The confidence rule travels with the columns it qualifies rather than
           sitting in a paragraph above the page, where it was read once and
           then forgotten by the time the numbers were reached. */}
+      {/* Explicit {" "} after each element: JSX drops the space between an
+          element and the text that follows it on the same line here, and
+          "Receivedis exact" shipped once already. */}
       <p className="border-b border-border px-4 py-2.5 text-[12px] leading-relaxed text-text-3">
-        <strong className="font-semibold text-text-2">Received</strong> is exact: it reads each
-        transaction&apos;s own outputs.{" "}
-        <strong className="font-semibold text-text-2">Spent</strong> appears only when every input
-        of a transaction resolved, because a transaction&apos;s inputs leave the ledger once it is
-        applied. An unresolved input reads as unknown, never as zero.
+        <strong className="font-semibold text-text-2">Received</strong>{" "}
+        is exact: it reads each transaction&apos;s own outputs.{" "}
+        <strong className="font-semibold text-text-2">Spent</strong>{" "}
+        appears only when every input of a transaction resolved, because a transaction&apos;s inputs
+        leave the ledger once it is applied. An unresolved input reads as unknown, never as zero.
       </p>
       <DataTable
         caption="Transactions involving this address"

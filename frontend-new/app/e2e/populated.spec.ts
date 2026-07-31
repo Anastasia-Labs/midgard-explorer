@@ -195,6 +195,7 @@ test.describe("native assets", () => {
   test("the roster lists every asset on the ledger with its fingerprint", async ({ page }) => {
     await page.goto("/assets");
     await expect(page.getByRole("heading", { level: 1, name: "Native assets" })).toBeVisible();
+    await expect(rowRegion(page)).toBeVisible();
     // The fingerprint is the identifier worth comparing; a display name is not
     // unique and a policy ID is 56 characters of noise.
     await expect(rowRegion(page).getByText(/^asset1/).first()).toBeVisible();
@@ -202,12 +203,14 @@ test.describe("native assets", () => {
 
   test("a readable name is shown as text, with its bytes alongside", async ({ page }) => {
     await page.goto("/assets");
+    await expect(rowRegion(page)).toBeVisible();
     await expect(rowRegion(page).getByText("MIDGARD").first()).toBeVisible();
     await expect(rowRegion(page).getByText("PATATE").first()).toBeVisible();
   });
 
   test("bytes that are not text stay hex rather than becoming a guess", async ({ page }) => {
     await page.goto("/assets");
+    await expect(rowRegion(page)).toBeVisible();
     await expect(rowRegion(page).getByText("fffe0102").first()).toBeVisible();
   });
 
@@ -215,6 +218,7 @@ test.describe("native assets", () => {
     // "USD" + U+202E + "C" renders as "USDC" reversed, which is how one token
     // is made to read as another. It must appear as its bytes.
     await page.goto("/assets");
+    await expect(rowRegion(page)).toBeVisible();
     await expect(rowRegion(page).getByText("555344e280ae43").first()).toBeVisible();
     await expect(page.getByText("USD‮C")).toHaveCount(0);
   });
