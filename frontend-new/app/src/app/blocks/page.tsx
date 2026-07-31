@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Identifier } from "../../components/ui/identifier";
-import { StatusBadge } from "../../components/ui/status";
+import { StatusCell } from "../../components/ui/status";
 import { PageError } from "../../components/ui/pageerror";
 import { PageHeader } from "../../components/ui/primitives";
 import { DataTable, Pagination } from "../../components/ui/table";
@@ -87,7 +87,7 @@ export default async function BlocksPage({
                 r.finalization_status === null ? (
                   <span className="text-text-3">Not yet recorded</span>
                 ) : (
-                  <StatusBadge status={r.finalization_status} />
+                  <StatusCell status={r.finalization_status} />
                 ),
               hideBelow: "sm",
             },
@@ -108,7 +108,7 @@ export default async function BlocksPage({
             ),
             status:
               r.finalization_status === null ? null : (
-                <StatusBadge status={r.finalization_status} />
+                <StatusCell status={r.finalization_status} />
               ),
             meta: <Timestamp iso={r.time_stamp_tz} />,
             secondary: (

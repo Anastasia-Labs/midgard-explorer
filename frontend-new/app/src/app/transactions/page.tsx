@@ -4,7 +4,7 @@ import { ValueCell } from "../../components/ui/amount";
 import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Identifier } from "../../components/ui/identifier";
 import { PageError } from "../../components/ui/pageerror";
-import { StatusBadge } from "../../components/ui/status";
+import { StatusCell } from "../../components/ui/status";
 import { PageHeader } from "../../components/ui/primitives";
 import { DataTable, DecodeWarn, Pagination } from "../../components/ui/table";
 import { Timestamp } from "../../components/ui/timestamp";
@@ -72,7 +72,7 @@ export default async function TransactionsPage({
             },
             {
               header: "Status",
-              cell: (r) => <StatusBadge status={r.status} />,
+              cell: (r) => <StatusCell status={r.status} />,
             },
             {
               header: "Block",
@@ -123,7 +123,7 @@ export default async function TransactionsPage({
             ),
             status: (
               <span className="inline-flex items-center gap-1.5">
-                <StatusBadge status={r.status} />
+                <StatusCell status={r.status} />
                 {r.decodeError ? <DecodeWarn error={r.decodeError} /> : null}
               </span>
             ),

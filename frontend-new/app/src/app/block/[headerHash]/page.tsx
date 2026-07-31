@@ -5,7 +5,7 @@ import { AdaAmount, ValueCell } from "../../../components/ui/amount";
 import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
 import { Identifier } from "../../../components/ui/identifier";
 import { IdentityBar } from "../../../components/ui/identitybar";
-import { L1TxLink } from "../../../components/ui/l1link";
+import { Journey } from "../../../components/ui/journey";
 import { PageError } from "../../../components/ui/pageerror";
 import { Callout, Card, PageHeader } from "../../../components/ui/primitives";
 import { RawData } from "../../../components/ui/rawdata";
@@ -14,11 +14,10 @@ import { SummaryBand } from "../../../components/ui/summary";
 import { DataTable, DecodeWarn } from "../../../components/ui/table";
 import { Tabs } from "../../../components/ui/tabs";
 import { Timestamp } from "../../../components/ui/timestamp";
-import { FinalizationTimeline } from "../../../components/ui/timeline";
 import { api } from "../../../lib/api";
-import { formatDuration, truncateId } from "../../../lib/format";
+import { formatDuration, formatTimestamp, truncateId } from "../../../lib/format";
+import { blockJourney } from "../../../lib/journey";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
-import { statusOf } from "../../../lib/status-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -189,9 +188,27 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
       </PageHeader>
       <IdentityBar overline="Block header hash" value={hash} />
 
+      {/* One journey replaces the five-column finalization timeline and the
+          callout that restated it: the same milestones, the same evidence, in
+          the grammar every other record on the site uses. It leads the page
+          because "is this block final?" is the question a block is opened to
+          answer; the counts below are context for that answer. */}
+      <Journey
+        model={blockJourney(finalization, first?.height ?? 0)}
+        detailsLabel="Settlement timings and evidence"
+      >
+        {finalization ? (
+          <p className="text-[12px] text-text-3">
+            Latest node update: {formatTimestamp(finalization.updatedAt)}
+            {finalization.submitted_tx_hash ? null : " · no L1 settlement transaction recorded yet"}
+          </p>
+        ) : null}
+      </Journey>
+
+      {/* Height is in the title and the closing time is in the journey, so
+          neither is repeated here. */}
       <SummaryBand
         items={[
-          { label: "Height", value: first ? `#${first.height}` : "Unknown", emphasis: true },
           {
             label: "Transactions",
             value: data.rows.length,
@@ -205,40 +222,15 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
           },
           {
             label: "Fees",
-            value:
-              decodable.length > 0 ? <AdaAmount lovelace={feeSum.toString()} /> : "Unknown",
+            value: decodable.length > 0 ? <AdaAmount lovelace={feeSum.toString()} /> : "Unknown",
           },
           {
             label: "Duration",
             value: windowMs === null ? "Not recorded" : formatDuration(windowMs),
             ...(data.da ? { sub: "Block window" } : {}),
           },
-          {
-            label: "Time",
-            value: first ? <Timestamp iso={first.time_stamp_tz} /> : "Unknown",
-          },
         ]}
       />
-
-      {finalization ? (
-        <>
-          <FinalizationTimeline finalization={finalization} />
-          <div className="mb-4">
-            <Callout
-              tone={statusOf(finalization.status).tone}
-              title={statusOf(finalization.status).explain}
-            >
-              {finalization.submitted_tx_hash ? (
-                <>
-                  L1 settlement tx: <L1TxLink hash={finalization.submitted_tx_hash} />
-                </>
-              ) : (
-                "No L1 settlement transaction recorded yet."
-              )}
-            </Callout>
-          </div>
-        </>
-      ) : null}
 
       <Tabs
         tabs={[

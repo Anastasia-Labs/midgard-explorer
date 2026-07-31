@@ -1,6 +1,12 @@
 import Link from "next/link";
-import { railStages, type JourneyModel, type JourneyStage, type JourneyStageState } from "../../lib/journey";
-import { cn, formatTimestamp } from "../../lib/format";
+import {
+  journeyProgress,
+  railStages,
+  type JourneyModel,
+  type JourneyStage,
+  type JourneyStageState,
+} from "../../lib/journey";
+import { cn, formatDuration, formatTimestamp } from "../../lib/format";
 import { Icon } from "./icons";
 import { L1TxLink } from "./l1link";
 
@@ -71,6 +77,65 @@ function stageTime(stage: JourneyStage): string {
   return stage.timestampKind === "not_applicable" ? "Not applicable yet" : "Not recorded";
 }
 
+/** How long the record waited at this stage. Derived from two recorded
+ * timestamps, never from one: an elapsed time next to a stage whose moment the
+ * node never wrote down would be a guess wearing a measurement's clothes. */
+function elapsed(stage: JourneyStage, previous: string | null): string | null {
+  if (previous === null || stage.timestampKind !== "recorded" || stage.occurredAt === null) {
+    return null;
+  }
+  const ms = new Date(stage.occurredAt).getTime() - new Date(previous).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return `+${formatDuration(ms)}`;
+}
+
+const PROGRESS_FILL = {
+  active: "bg-info",
+  complete: "bg-success",
+  failed: "bg-danger",
+  unknown: "bg-warning",
+} as const;
+
+/** The rail, compressed to fit beside a status badge in a list row.
+ *
+ * It answers "how far along?" at a glance, which a code alone cannot: a reader
+ * scanning fifty rows should not have to know that `observed_waiting_stability`
+ * comes after `submitted_unconfirmed`. The dots are decorative; the label
+ * carries the same fact in words for anyone not reading pixels. */
+export function JourneyIndicator({ status }: { status: string }) {
+  const { step, total, state, label } = journeyProgress(status);
+  const description =
+    state === "failed"
+      ? `${label}: stopped`
+      : state === "unknown"
+        ? `${label}: stage not recognized`
+        : `${label}: step ${step} of ${total}`;
+
+  return (
+    <span className="inline-flex items-center gap-0.75" title={description}>
+      <span className="sr-only">{description}</span>
+      {Array.from({ length: total }, (_, i) => (
+        <span
+          key={i}
+          aria-hidden
+          className={cn(
+            "h-1 w-2.5 rounded-full",
+            state === "failed"
+              ? i === 0
+                ? PROGRESS_FILL.failed
+                : "bg-border-strong"
+              : state === "unknown"
+                ? "border border-dashed border-warning"
+                : i < step
+                  ? PROGRESS_FILL[state]
+                  : "bg-border-strong",
+          )}
+        />
+      ))}
+    </span>
+  );
+}
+
 export function Journey({
   model,
   detailsLabel = "Stage timings and evidence",
@@ -82,6 +147,16 @@ export function Journey({
 }) {
   const rail = railStages(model.stages);
   const failedAt = rail.findIndex((s) => s.state === "failed");
+
+  // Each stage's wait is measured against the last stage that actually has a
+  // recorded moment, so a gap in the node's records shifts the baseline rather
+  // than silently absorbing the missing interval.
+  let previous: string | null = null;
+  const deltas = model.stages.map((s) => {
+    const d = elapsed(s, previous);
+    if (s.timestampKind === "recorded" && s.occurredAt !== null) previous = s.occurredAt;
+    return d;
+  });
 
   return (
     <section
@@ -121,13 +196,16 @@ export function Journey({
           {detailsLabel}
         </summary>
         <dl className="grid gap-px border-t border-border bg-border sm:grid-cols-2">
-          {model.stages.map((s) => (
+          {model.stages.map((s, i) => (
             <div key={s.key} className="bg-surface px-4 py-2.5">
               <dt className="flex items-center gap-1.5 text-[12.5px] font-medium text-text">
                 <span aria-hidden className={cn("size-2 rounded-full border-2", NODE[s.state])} />
                 {s.label}
               </dt>
-              <dd className="mt-0.5 font-mono text-[12px] text-text-3">{stageTime(s)}</dd>
+              <dd className="mt-0.5 font-mono text-[12px] text-text-3">
+                {stageTime(s)}
+                {deltas[i] ? <span className="ml-2 text-text-2">{deltas[i]}</span> : null}
+              </dd>
               {s.evidence?.blockHeight !== undefined && s.evidence.blockHash ? (
                 <dd className="mt-1 text-[12px]">
                   <Link

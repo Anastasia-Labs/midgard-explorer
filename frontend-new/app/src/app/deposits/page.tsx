@@ -7,7 +7,7 @@ import { L1TxLink } from "../../components/ui/l1link";
 import { StatusLegend } from "../../components/ui/legend";
 import { PageError } from "../../components/ui/pageerror";
 import { L1L2Badge, PageHeader } from "../../components/ui/primitives";
-import { StatusBadge } from "../../components/ui/status";
+import { StatusCell } from "../../components/ui/status";
 import { DataTable, Pagination } from "../../components/ui/table";
 import { Timestamp } from "../../components/ui/timestamp";
 import { api } from "../../lib/api";
@@ -102,7 +102,7 @@ export default async function DepositsPage({
             },
             {
               header: "Status",
-              cell: (r) => <StatusBadge status={r.status} />,
+              cell: (r) => <StatusCell status={r.status} />,
             },
             {
               header: "Projected block",
@@ -133,7 +133,7 @@ export default async function DepositsPage({
                 tail={6}
               />
             ),
-            status: <StatusBadge status={r.status} />,
+            status: <StatusCell status={r.status} />,
             meta: <Timestamp iso={r.inclusion_time} />,
             secondary: r.value ? (
               <ValueCell value={r.value} />

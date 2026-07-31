@@ -8,7 +8,7 @@ import { SearchBox } from "../../components/search/SearchOverlay";
 import { BRIDGE } from "../../components/shell/NavLinks";
 import { Icon, type IconName } from "../../components/ui/icons";
 import { Identifier } from "../../components/ui/identifier";
-import { StatusBadge } from "../../components/ui/status";
+import { StatusCell } from "../../components/ui/status";
 import {
   EmptyState,
   ErrorState,
@@ -234,7 +234,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
                       #{r.height}
                     </Link>
                     {r.finalization_status === null ? null : (
-                      <StatusBadge status={r.finalization_status} />
+                      <StatusCell status={r.finalization_status} />
                     )}
                   </span>
                   <span className="text-[12.5px] text-text-3">
@@ -264,7 +264,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={8} />
                   <span className="flex items-center gap-2 text-[12.5px] text-text-3">
-                    <StatusBadge status={r.status} />
+                    <StatusCell status={r.status} />
                     <Link href={`/block/${r.header_hash}`} className="tabular-nums hover:underline">
                       #{r.height}
                     </Link>

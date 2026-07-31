@@ -29,6 +29,10 @@ const WIDTHS = FULL
 test.describe("layout gates", () => {
   // This spec sets its own viewport sizes, so running it under both projects
   // would measure the same layout twice.
+  // Playwright passes the fixtures object first and the test info second, so
+  // reaching the project name means naming a first parameter this hook does
+  // not use.
+  // eslint-disable-next-line no-empty-pattern
   test.beforeEach(({}, info) => {
     test.skip(info.project.name !== "desktop", "sets its own viewports");
   });

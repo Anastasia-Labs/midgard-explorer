@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { BlockFinalization, TxAdmission, TxInclusion } from "@midgard-explorer/contracts";
-import { blockJourney, transactionJourney, type JourneyModel } from "../src/lib/journey";
+import {
+  blockJourney,
+  journeyProgress,
+  transactionJourney,
+  type JourneyModel,
+} from "../src/lib/journey";
 import { STATUS_REGISTRY } from "../src/lib/status-registry";
 
 /** Contract types are branded; fixtures build the shapes without decoding. */
@@ -135,6 +140,72 @@ describe("unknown statuses stay visible", () => {
     for (const status of ["committed", "rejected", "some_future_status"]) {
       const m = transactionJourney({ status, admission: admission(), inclusion: null, finalization: null });
       expect(m.rawStatus).toBe(status);
+    }
+  });
+});
+
+describe("the list-row indicator cannot outrun the record", () => {
+  it("never reports complete for a status that is not terminal success", () => {
+    const nonTerminal = [
+      "queued",
+      "validating",
+      "accepted",
+      "pending_commit",
+      "pending_submission",
+      "submitted_unconfirmed",
+      "submitted_local_finalization_pending",
+      "observed_waiting_stability",
+      "awaiting",
+      "projected",
+    ];
+    for (const status of nonTerminal) {
+      expect(journeyProgress(status).state, `${status} claimed completion`).toBe("active");
+    }
+    for (const status of ["committed", "finalized", "consumed"]) {
+      const p = journeyProgress(status);
+      expect(p.state).toBe("complete");
+      expect(p.step).toBe(p.total);
+    }
+  });
+
+  it("gives a failure no progress at all", () => {
+    for (const status of ["rejected", "abandoned"]) {
+      const p = journeyProgress(status);
+      expect(p.state).toBe("failed");
+      expect(p.step).toBe(0);
+    }
+  });
+
+  it("refuses to place an unrecognized status in the ordering", () => {
+    const p = journeyProgress("some_future_status");
+    expect(p.state).toBe("unknown");
+    expect(p.step).toBe(0);
+    expect(p.label).toBe("some_future_status");
+  });
+
+  it("orders each lifecycle so a later status never sits earlier", () => {
+    const orderings = [
+      ["queued", "validating", "accepted", "committed"],
+      ["pending_submission", "submitted_unconfirmed", "observed_waiting_stability", "finalized"],
+      ["awaiting", "projected", "consumed"],
+    ];
+    for (const chain of orderings) {
+      const steps = chain.map((s) => journeyProgress(s).step);
+      for (let i = 1; i < steps.length; i++) {
+        expect(steps[i], `${chain[i]} is not after ${chain[i - 1]}`).toBeGreaterThan(steps[i - 1]!);
+      }
+    }
+  });
+
+  it("agrees with the full journey about whether a transaction is settled", () => {
+    // A row and the record it links to must not disagree: if the indicator
+    // shows complete, the journey must call the outcome complete too.
+    for (const status of ["committed", "pending_commit", "rejected"]) {
+      const rowComplete = journeyProgress(status).state === "complete";
+      const journeyComplete =
+        transactionJourney({ status, admission: admission(), inclusion: inclusion(), finalization: finalization() })
+          .outcome === "complete";
+      if (rowComplete) expect(journeyComplete).toBe(true);
     }
   });
 });

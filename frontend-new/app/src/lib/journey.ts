@@ -140,10 +140,18 @@ function admissionStages(
   return [received, validating, accepted];
 }
 
+/** How much of the L1 half belongs on the rail.
+ *
+ * `compact` is for a transaction, where settlement is the tail of a longer
+ * story and the rail has already spent its width on admission. `full` is for a
+ * block, whose entire story is settlement, so the intermediate L1 stages earn
+ * their place on the rail rather than sitting behind the disclosure. */
+type L1Detail = "compact" | "full";
+
 /** The L1 half of any journey. Kept separate from inclusion so a block, which
  * is its own inclusion, never has to fabricate a transaction-shaped record to
  * reuse it. */
-function l1Stages(finalization: BlockFinalization | null): JourneyStage[] {
+function l1Stages(finalization: BlockFinalization | null, detail: L1Detail): JourneyStage[] {
   if (finalization === null) {
     return [
       stage("final", "Final on L1", "future", "pending_block_finalizations", null, "not_recorded"),
@@ -154,12 +162,28 @@ function l1Stages(finalization: BlockFinalization | null): JourneyStage[] {
   const evidence = finalization.submitted_tx_hash
     ? { l1TxHash: finalization.submitted_tx_hash }
     : undefined;
+  const [queued, queuedKind] = recorded(finalization.createdAt, true);
+
+  // The node records when finalization was queued but never when the L1
+  // transaction was handed to the network, so submission is evidenced by the
+  // transaction hash rather than by a time.
+  const queuedStage = stage(
+    "queued_for_l1",
+    "Queued for L1",
+    "reached",
+    "pending_block_finalizations",
+    queued,
+    queuedKind,
+    undefined,
+    false,
+  );
 
   // An unrecognized settlement status is appended verbatim. Mapping it onto the
   // nearest known stage would assert protocol knowledge we do not have.
   if (!known) {
     const [seen, seenKind] = recorded(finalization.observedConfirmedAt, true);
     return [
+      queuedStage,
       stage(
         "unknown_settlement",
         finalization.status,
@@ -175,6 +199,18 @@ function l1Stages(finalization: BlockFinalization | null): JourneyStage[] {
   const isFinal = finalization.status === L1_TERMINAL_SUCCESS;
   const isAbandoned = finalization.status === L1_TERMINAL_FAILURE;
   const [observed, observedKind] = recorded(finalization.observedConfirmedAt, true);
+  const onRail = detail === "full";
+
+  const submitted = stage(
+    "submitted",
+    "Submitted to L1",
+    finalization.submitted_tx_hash ? "reached" : isAbandoned ? "failed" : "future",
+    "pending_block_finalizations",
+    null,
+    "not_recorded",
+    evidence,
+    onRail,
+  );
 
   const seenOnL1 = stage(
     "seen_on_l1",
@@ -184,7 +220,7 @@ function l1Stages(finalization: BlockFinalization | null): JourneyStage[] {
     observed,
     observedKind,
     evidence,
-    false,
+    onRail,
   );
 
   const final = stage(
@@ -199,7 +235,7 @@ function l1Stages(finalization: BlockFinalization | null): JourneyStage[] {
     evidence,
   );
 
-  return [seenOnL1, final];
+  return [queuedStage, submitted, seenOnL1, final];
 }
 
 /** Inclusion plus settlement, for a record that lives inside a block. */
@@ -225,7 +261,7 @@ function settlementStages(
       "recorded",
       { blockHeight: inclusion.height, blockHash: inclusion.header_hash },
     ),
-    ...l1Stages(finalization),
+    ...l1Stages(finalization, "compact"),
   ];
 }
 
@@ -290,27 +326,109 @@ export function transactionJourney(input: {
   return { kind: "transaction", outcome, headline, explanation, stages, rawStatus: status };
 }
 
+/** How far along a record is, for a list row that has room for a status code
+ * and nothing else.
+ *
+ * A badge names the state; it does not say whether that state is early or
+ * nearly done. Two codes a reader has not memorized are indistinguishable
+ * without this. The step counts come from the same protocol ordering the full
+ * journey uses, so a row and the record it links to can never disagree. */
+export type JourneyProgress = {
+  step: number;
+  total: number;
+  state: "active" | "complete" | "failed" | "unknown";
+  label: string;
+};
+
+const PROGRESS_ORDER: Record<string, number> = {
+  // Transaction lifecycle: received, validated, accepted, in a block.
+  queued: 1,
+  validating: 2,
+  accepted: 3,
+  pending_commit: 3,
+  committed: 4,
+  // Block finalization: queued, submitted, seen on L1, final.
+  pending_submission: 1,
+  submitted_local_finalization_pending: 2,
+  submitted_unconfirmed: 2,
+  observed_waiting_stability: 3,
+  finalized: 4,
+  // Bridge events: observed on L1, projected into the ledger, settled.
+  awaiting: 1,
+  projected: 2,
+  consumed: 4,
+};
+
+const PROGRESS_FAILURES = new Set(["rejected", "abandoned"]);
+
+const PROGRESS_TOTAL = 4;
+
+export function journeyProgress(status: string): JourneyProgress {
+  const resolved = statusOf(status);
+  if (PROGRESS_FAILURES.has(status)) {
+    return { step: 0, total: PROGRESS_TOTAL, state: "failed", label: resolved.label };
+  }
+  const step = PROGRESS_ORDER[status];
+  if (step === undefined) {
+    // An unrecognized code has no position in the ordering, and guessing one
+    // would put a reader further along than the node ever said they were.
+    return { step: 0, total: PROGRESS_TOTAL, state: "unknown", label: resolved.label };
+  }
+  return {
+    step,
+    total: PROGRESS_TOTAL,
+    state: step === PROGRESS_TOTAL ? "complete" : "active",
+    label: resolved.label,
+  };
+}
+
 export function blockJourney(finalization: BlockFinalization | null, height: number): JourneyModel {
   // A block is its own inclusion, so it composes the closed stage with the L1
   // stages directly rather than borrowing a transaction's shape.
   const [closedAt, closedKind] = recorded(finalization?.blockEndTime ?? null, true);
   const stages = [
     stage("closed", `Block #${height}`, "reached", "blocks", closedAt, closedKind),
-    ...l1Stages(finalization),
+    ...l1Stages(finalization, "full"),
   ];
 
   const resolved = finalization === null ? null : statusOf(finalization.status);
   const settled = finalization?.status === L1_TERMINAL_SUCCESS;
   const abandoned = finalization?.status === L1_TERMINAL_FAILURE;
+  const hasUnknownStage = stages.some((s) => s.state === "unknown");
+
+  const outcome: JourneyOutcome = settled
+    ? "complete"
+    : abandoned
+      ? "failed"
+      : hasUnknownStage || !resolved?.known
+        ? "unknown"
+        : "active";
+
+  // The headline answers "is this block final?" rather than restating the
+  // status code, which the badge beside the title already carries.
+  const headline = settled
+    ? "Final on Cardano L1"
+    : abandoned
+      ? "Finalization abandoned"
+      : finalization === null
+        ? "No finalization record yet"
+        : hasUnknownStage
+          ? "Settlement stage not recognized"
+          : "Committed, awaiting L1 finality";
 
   return {
     kind: "block",
-    outcome: settled ? "complete" : abandoned ? "failed" : resolved?.known ? "active" : "unknown",
-    headline: finalization === null ? "No finalization record" : (resolved?.label ?? finalization.status),
+    outcome,
+    headline,
     explanation:
       finalization === null
-        ? "The node has not recorded a finalization attempt for this block yet."
-        : (resolved?.explain ?? "The node reported a settlement stage this explorer does not recognize."),
+        ? "The node has not recorded a finalization attempt for this block yet, so this block is not yet on its way to Cardano L1."
+        : settled
+          ? "This block and every transaction in it are settled on Cardano L1 and can no longer be reversed."
+          : hasUnknownStage
+            ? "The node reported a settlement stage this explorer does not recognize, so this block's finality cannot be stated here. The raw status is shown as reported."
+            : (resolved?.explain ??
+              "The node reported a settlement stage this explorer does not recognize."),
     stages,
     rawStatus: finalization?.status ?? "none",
   };

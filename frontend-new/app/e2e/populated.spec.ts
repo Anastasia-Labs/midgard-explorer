@@ -87,8 +87,14 @@ test.describe("block detail", () => {
     await page.goto(`/block/${hash}`);
     await expect(page.getByRole("heading", { level: 1, name: /Block #/ })).toBeVisible();
     await expect(page.getByRole("tab", { name: /Transactions/ })).toBeVisible();
-    await expect(page.getByLabel("Block finalization timeline")).toBeVisible();
-    await expect(page.getByText("Observed on L1")).toBeVisible();
+    // The block's settlement story uses the same journey grammar as a
+    // transaction's, with the intermediate L1 stages promoted to the rail
+    // because settlement is the whole of a block's story.
+    const journey = page.getByRole("region", { name: "Protocol journey" });
+    await expect(journey).toBeVisible();
+    await expect(journey.getByRole("list").getByText("Seen on L1")).toBeVisible();
+    await journey.getByText("Settlement timings and evidence").click();
+    await expect(journey.getByRole("group").getByText("Queued for L1")).toBeVisible();
 
     await page.getByRole("tab", { name: "Data availability" }).click();
     await expect(page).toHaveURL(/tab=da/);

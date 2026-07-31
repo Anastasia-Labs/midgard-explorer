@@ -1,12 +1,12 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { AdaAmount, ValueCell } from "../src/components/ui/amount";
-import { LifecycleStepper } from "../src/components/ui/lifecycle";
+import { Journey } from "../src/components/ui/journey";
 import { EmptyState, ErrorState, L1L2Badge } from "../src/components/ui/primitives";
 import { StatusBadge } from "../src/components/ui/status";
 import { SummaryBand } from "../src/components/ui/summary";
 import { DecodeWarn } from "../src/components/ui/table";
-import { AdmissionTimeline, FinalizationTimeline } from "../src/components/ui/timeline";
+import { blockJourney, transactionJourney } from "../src/lib/journey";
 import type { BlockFinalization, TxAdmission, ValueView } from "@midgard-explorer/contracts";
 
 /** DecimalString is branded; fixtures build the branded shape without decoding. */
@@ -38,69 +38,72 @@ describe("StatusBadge", () => {
   });
 });
 
-describe("LifecycleStepper", () => {
-  it("marks the current step with aria-current", () => {
-    render(<LifecycleStepper status="accepted" />);
-    const current = screen.getByText("Accepted").closest("[aria-current]");
-    expect(current?.getAttribute("aria-current")).toBe("step");
+/** The lifecycle stepper, admission timeline and settlement band were three
+ * renderings of one story; `Journey` replaced all three. The invariants they
+ * guarded did not go away with them, so they are asserted here against the
+ * component that now does the rendering. */
+describe("Journey", () => {
+  const admission = {
+    status: "accepted",
+    firstSeenAt: "2026-07-28T12:00:00.000Z",
+    validationStartedAt: "2026-07-28T12:00:01.700Z",
+    terminalAt: "2026-07-28T12:00:05.900Z",
+    updatedAt: "2026-07-28T12:00:05.900Z",
+    attemptCount: 1,
+    requestCount: 2,
+    submitSource: "native",
+  } as TxAdmission;
+
+  const finalization = {
+    status: "observed_waiting_stability",
+    submitted_tx_hash: "ab".repeat(32),
+    blockEndTime: "2026-07-28T12:00:00.000Z",
+    createdAt: "2026-07-28T12:00:01.400Z",
+    updatedAt: "2026-07-28T12:00:19.400Z",
+    observedConfirmedAt: "2026-07-28T12:00:19.400Z",
+  } as BlockFinalization;
+
+  it("keeps the scrollable rail keyboard reachable", () => {
+    render(<Journey model={transactionJourney({ status: "queued", admission, inclusion: null, finalization: null })} />);
+    expect(screen.getByRole("list").getAttribute("tabindex")).toBe("0");
   });
 
-  it("treats committed as reached rather than in progress", () => {
-    render(<LifecycleStepper status="committed" />);
-    expect(screen.getByText("Committed").closest("[aria-current]")).toBeNull();
-  });
-
-  it("shows the failure path for a rejected transaction", () => {
-    render(<LifecycleStepper status="rejected" />);
-    expect(screen.getByText("Rejected")).toBeDefined();
-    expect(screen.queryByText("Committed")).toBeNull();
-  });
-
-  it("renders nothing for a status outside the lifecycle", () => {
-    const { container } = render(<LifecycleStepper status="finalized" />);
-    expect(container.firstChild).toBeNull();
-  });
-
-  it("keeps the scrollable step list keyboard reachable", () => {
-    render(<LifecycleStepper status="queued" />);
-    expect(screen.getByLabelText("Transaction lifecycle").getAttribute("tabindex")).toBe("0");
-  });
-});
-
-describe("recorded timelines", () => {
-  it("shows admission timestamps and measured deltas", () => {
-    const admission = {
-      status: "accepted",
-      firstSeenAt: "2026-07-28T12:00:00.000Z",
-      validationStartedAt: "2026-07-28T12:00:01.700Z",
-      terminalAt: "2026-07-28T12:00:05.900Z",
-      updatedAt: "2026-07-28T12:00:05.900Z",
-      attemptCount: 1,
-      requestCount: 2,
-      submitSource: "native",
-    } as TxAdmission;
-    render(<AdmissionTimeline admission={admission} outcome="committed" />);
-    expect(screen.getByLabelText("Node admission timeline")).toBeDefined();
+  it("shows measured deltas between recorded stages", () => {
+    render(<Journey model={transactionJourney({ status: "accepted", admission, inclusion: null, finalization: null })} />);
     expect(screen.getByText("+1.7s")).toBeDefined();
     expect(screen.getByText("+4.2s")).toBeDefined();
-    expect(screen.getByText(/2 requests/)).toBeDefined();
   });
 
   it("does not invent an L1 submission timestamp", () => {
-    const finalization = {
-      status: "observed_waiting_stability",
-      submitted_tx_hash: "ab".repeat(32),
-      blockEndTime: "2026-07-28T12:00:00.000Z",
-      createdAt: "2026-07-28T12:00:01.400Z",
-      updatedAt: "2026-07-28T12:00:19.400Z",
-      observedConfirmedAt: "2026-07-28T12:00:19.400Z",
-    } as BlockFinalization;
-    render(<FinalizationTimeline finalization={finalization} />);
-    const timeline = screen.getByLabelText("Block finalization timeline");
-    const submitted = within(timeline).getByText("Submitted").closest("li");
-    expect(submitted).not.toBeNull();
-    expect(within(submitted!).getByText("Time not recorded")).toBeDefined();
-    expect(within(timeline).getByText("Observed on L1")).toBeDefined();
+    render(<Journey model={blockJourney(finalization, 40)} />);
+    // The label is on the rail and again in the details; the details entry is
+    // the one that carries the timestamp, or says it has none.
+    const entry = screen
+      .getAllByText("Submitted to L1")
+      .map((el) => el.closest("dt")?.parentElement)
+      .find((el) => el != null);
+    expect(entry).toBeDefined();
+    expect(within(entry!).getByText("Not recorded")).toBeDefined();
+  });
+
+  it("shows the failure path and no settlement stage for a rejection", () => {
+    render(
+      <Journey
+        model={transactionJourney({
+          status: "rejected",
+          admission: { ...admission, status: "rejected" } as TxAdmission,
+          inclusion: null,
+          finalization: null,
+        })}
+      />,
+    );
+    expect(screen.getAllByText("Rejected").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Final on L1")).toBeNull();
+  });
+
+  it("names the stage a block is waiting on rather than restating its code", () => {
+    render(<Journey model={blockJourney(finalization, 40)} />);
+    expect(screen.getByText("Committed, awaiting L1 finality")).toBeDefined();
   });
 });
 

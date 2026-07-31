@@ -1,5 +1,6 @@
 import { cn } from "../../lib/format";
 import { statusOf, type StatusTone } from "../../lib/status-registry";
+import { JourneyIndicator } from "./journey";
 
 export { statusOf };
 
@@ -69,6 +70,17 @@ export function StatusBadge({ status, className }: { status: string; className?:
       <Marker state={state} />
       {label}
       {known ? null : <span className="sr-only">(unrecognized status)</span>}
+    </span>
+  );
+}
+
+/** The list-row form: what state, and how far through the protocol that state
+ * is. The badge alone leaves a reader ranking codes from memory. */
+export function StatusCell({ status }: { status: string }) {
+  return (
+    <span className="inline-flex items-center gap-2">
+      <StatusBadge status={status} />
+      <JourneyIndicator status={status} />
     </span>
   );
 }

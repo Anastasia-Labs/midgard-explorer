@@ -7,7 +7,7 @@ import { Identifier } from "../../../components/ui/identifier";
 import { IdentityBar } from "../../../components/ui/identitybar";
 import { PageError } from "../../../components/ui/pageerror";
 import { Callout, Card, PageHeader } from "../../../components/ui/primitives";
-import { StatusBadge } from "../../../components/ui/status";
+import { StatusCell } from "../../../components/ui/status";
 import { SummaryBand } from "../../../components/ui/summary";
 import { Timestamp } from "../../../components/ui/timestamp";
 import { DataTable, DecodeWarn } from "../../../components/ui/table";
@@ -126,7 +126,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
             },
             {
               header: "Status",
-              cell: (r) => <StatusBadge status={r.status} />,
+              cell: (r) => <StatusCell status={r.status} />,
               hideBelow: "sm",
             },
             {
@@ -184,7 +184,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
             ),
             status: (
               <span className="inline-flex items-center gap-1.5">
-                <StatusBadge status={r.status} />
+                <StatusCell status={r.status} />
                 {r.decodeError ? <DecodeWarn error={r.decodeError} /> : null}
               </span>
             ),
