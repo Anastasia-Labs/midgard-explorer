@@ -1,0 +1,271 @@
+/** Representative, not merely abundant. Every lifecycle state the status
+ * registry knows about appears at least once, plus the awkward shapes:
+ * undecodable rows, empty blocks, many-transaction blocks, multi-asset values,
+ * and maximum-length identifiers. */
+
+const hex = (seed, len) => {
+  let out = "";
+  let x = seed >>> 0;
+  while (out.length < len) {
+    x = (x * 1664525 + 1013904223) >>> 0;
+    out += x.toString(16).padStart(8, "0");
+  }
+  return out.slice(0, len);
+};
+
+export const txId = (n) => hex(n * 7919 + 11, 64);
+export const blockHash = (n) => hex(n * 6271 + 3, 56);
+export const l1TxHash = (n) => hex(n * 5231 + 17, 64);
+export const eventId = (n) => hex(n * 4409 + 29, 64);
+
+/** Addresses must carry a valid BIP-173 checksum: the app rejects malformed
+ * ones in place, so a fixture with a made-up checksum would 404 rather than
+ * exercise the address route. Generated here rather than hard-coded. */
+const BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+function bech32Polymod(values) {
+  const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  let chk = 1;
+  for (const v of values) {
+    const top = chk >>> 25;
+    chk = ((chk & 0x1ffffff) << 5) ^ v;
+    for (let i = 0; i < 5; i++) if ((top >>> i) & 1) chk ^= GEN[i];
+  }
+  return chk;
+}
+
+function bech32HrpExpand(hrp) {
+  const out = [];
+  for (let i = 0; i < hrp.length; i++) out.push(hrp.charCodeAt(i) >>> 5);
+  out.push(0);
+  for (let i = 0; i < hrp.length; i++) out.push(hrp.charCodeAt(i) & 31);
+  return out;
+}
+
+function bech32Encode(hrp, bytes) {
+  let acc = 0;
+  let bits = 0;
+  const words = [];
+  for (const b of bytes) {
+    acc = (acc << 8) | b;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      words.push((acc >> bits) & 31);
+    }
+  }
+  if (bits > 0) words.push((acc << (5 - bits)) & 31);
+  const mod = bech32Polymod([...bech32HrpExpand(hrp), ...words, 0, 0, 0, 0, 0, 0]) ^ 1;
+  const checksum = Array.from({ length: 6 }, (_, i) => (mod >> (5 * (5 - i))) & 31);
+  return `${hrp}1${[...words, ...checksum].map((w) => BECH32_CHARSET[w]).join("")}`;
+}
+
+const addrBytes = (seed) => Array.from({ length: 29 }, (_, i) => (seed * 31 + i * 7 + 3) & 0xff);
+
+export const ADDRESSES = [
+  bech32Encode("addr_test", addrBytes(1)),
+  bech32Encode("addr_test", addrBytes(2)),
+  bech32Encode("addr_test", addrBytes(3)),
+];
+
+const value = (lovelace, assets = {}) => ({ lovelace: String(lovelace), assets });
+
+const MULTI_ASSET = {
+  [hex(101, 56)]: { [hex(201, 16)]: "1", [hex(202, 20)]: "4500000000" },
+  [hex(102, 56)]: { "": "7" },
+};
+
+const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) => ({
+  txId: txId(n),
+  formatVersion: 1,
+  validity,
+  fee: String(170000 + n * 1013),
+  validityInterval: { start: n % 3 === 0 ? String(1000 + n) : null, end: null },
+  networkId: 0,
+  inputs: [
+    {
+      txId: txId(n + 500),
+      index: 0,
+      resolved: { address: ADDRESSES[n % ADDRESSES.length], value: value(9_500_000 + n * 1000) },
+    },
+    { txId: txId(n + 900), index: 1, resolved: null },
+  ],
+  referenceInputs: n % 4 === 0 ? [{ txId: txId(n + 77), index: 0 }] : [],
+  outputs: Array.from({ length: outputs }, (_, i) => ({
+    address: ADDRESSES[(n + i) % ADDRESSES.length],
+    value: i === 0 && n % 3 === 0 ? value(4_250_000, MULTI_ASSET) : value(2_100_000 + i * 500_000),
+    hasDatum: i === 1,
+    hasScriptRef: n % 5 === 0 && i === 0,
+  })),
+  mint: n % 6 === 0 ? { policyIds: [hex(303, 56), hex(304, 56)] } : null,
+  witnesses: { vkeyCount: 1 + (n % 3), scriptCount: n % 2, redeemerCount: n % 2 },
+  ...(pending ? { pending: true } : {}),
+});
+
+/** Blocks 1..40; block 3 is empty, block 5 carries many transactions. */
+export const BLOCKS = Array.from({ length: 40 }, (_, i) => {
+  const height = 40 - i;
+  return {
+    height,
+    header_hash: blockHash(height),
+    tx_id: txId(height),
+    time_stamp_tz: new Date(Date.UTC(2026, 6, 28, 12, 0, 0) - i * 21_000).toISOString(),
+  };
+});
+
+const txCountForBlock = (height) => (height === 3 ? 0 : height === 5 ? 12 : 2);
+
+export const blockRows = (height) =>
+  Array.from({ length: txCountForBlock(height) }, (_, i) => {
+    const n = height * 100 + i;
+    const undecodable = height === 7 && i === 1;
+    return {
+      height,
+      header_hash: blockHash(height),
+      tx_id: txId(n),
+      time_stamp_tz: new Date(
+        Date.UTC(2026, 6, 28, 12, 0, 0) - (40 - height) * 21_000,
+      ).toISOString(),
+      transaction: undecodable ? null : view(n),
+      decodeError: undecodable ? "unsupported output encoding (legacy CML)" : null,
+    };
+  });
+
+export const blockDa = (height) =>
+  height === 9
+    ? null
+    : {
+        utxos_root: hex(height * 11 + 1, 64),
+        transactions_root: hex(height * 11 + 2, 64),
+        deposits_root: hex(height * 11 + 3, 64),
+        withdrawals_root: hex(height * 11 + 4, 64),
+        forced_transactions_root: hex(height * 11 + 5, 64),
+        transition_trace_root: hex(height * 11 + 6, 64),
+        event_to_step_root: hex(height * 11 + 7, 64),
+        l2_transaction_count: txCountForBlock(height),
+        deposit_count: height % 3,
+        withdrawal_count: height % 2,
+        forced_transaction_count: height % 4 === 0 ? 1 : 0,
+        total_event_count: txCountForBlock(height) + (height % 3) + (height % 2),
+        transition_step_count: txCountForBlock(height) * 2,
+        block_start_time: new Date(Date.UTC(2026, 6, 28, 11, 59, 40)).toISOString(),
+        block_end_time: new Date(Date.UTC(2026, 6, 28, 12, 0, 0)).toISOString(),
+      };
+
+/** Every finalization status the registry knows, cycled across blocks. */
+const FINALIZATION_STATUSES = [
+  "finalized",
+  "observed_waiting_stability",
+  "submitted_unconfirmed",
+  "submitted_local_finalization_pending",
+  "pending_submission",
+  "abandoned",
+];
+
+export const blockFinalization = (height) => {
+  if (height === 11) return null;
+  const status = FINALIZATION_STATUSES[height % FINALIZATION_STATUSES.length];
+  return {
+    status,
+    submitted_tx_hash: status === "pending_submission" ? null : l1TxHash(height),
+  };
+};
+
+/** Transaction lifecycle: one of every known status, plus an unknown one so the
+ * "unrecognized status" path is exercised. */
+export const TX_STATUSES = [
+  "committed",
+  "pending_commit",
+  "accepted",
+  "validating",
+  "queued",
+  "rejected",
+  "some_future_status",
+];
+
+export const TXS = Array.from({ length: 60 }, (_, i) => {
+  const n = i + 1;
+  const status = TX_STATUSES[i % TX_STATUSES.length];
+  const undecodable = i % 17 === 5;
+  return {
+    n,
+    status,
+    header_hash: blockHash(40 - (i % 40)),
+    tx_id: txId(n),
+    time_stamp_tz: new Date(Date.UTC(2026, 6, 28, 12, 0, 0) - i * 37_000).toISOString(),
+    transaction: undecodable ? null : view(n, { pending: status !== "committed" }),
+    decodeError: undecodable ? "unsupported output encoding (legacy CML)" : null,
+  };
+});
+
+const BRIDGE_STATUSES = ["awaiting", "projected", "consumed", "finalized"];
+
+export const DEPOSITS = Array.from({ length: 47 }, (_, i) => ({
+  event_id: eventId(i + 1),
+  deposit_l1_tx_hash: l1TxHash(i + 1),
+  ledger_tx_id: txId(i + 200),
+  ledger_address: ADDRESSES[i % ADDRESSES.length],
+  status: BRIDGE_STATUSES[i % BRIDGE_STATUSES.length],
+  inclusion_time: new Date(Date.UTC(2026, 6, 28, 11, 0, 0) - i * 61_000).toISOString(),
+  projected_header_hash: i % 5 === 0 ? null : blockHash(40 - (i % 40)),
+  value: i % 11 === 3 ? null : value(25_000_000 + i * 130_000, i % 4 === 0 ? MULTI_ASSET : {}),
+}));
+
+const WITHDRAWAL_VALIDITY = [
+  "WithdrawalIsValid",
+  "NonExistentWithdrawalUtxo",
+  "SpentWithdrawalUtxo",
+  "IncorrectWithdrawalOwner",
+  "IncorrectWithdrawalValue",
+  "IncorrectWithdrawalSignature",
+  "TooManyTokensInWithdrawal",
+  "UnpayableWithdrawalValue",
+];
+
+export const WITHDRAWALS = Array.from({ length: 39 }, (_, i) => ({
+  event_id: eventId(i + 500),
+  withdrawal_l1_tx_hash: l1TxHash(i + 500),
+  withdrawal_l1_output_index: i % 4,
+  l2_outref: txId(i + 700),
+  l2_value: i % 9 === 4 ? null : value(12_000_000 + i * 90_000),
+  l1_address: hex(i * 31 + 7, 58),
+  validity: i % 7 === 2 ? null : WITHDRAWAL_VALIDITY[i % WITHDRAWAL_VALIDITY.length],
+  status: BRIDGE_STATUSES[i % BRIDGE_STATUSES.length],
+  inclusion_time: new Date(Date.UTC(2026, 6, 28, 10, 30, 0) - i * 73_000).toISOString(),
+  projected_header_hash: i % 6 === 0 ? null : blockHash(40 - (i % 40)),
+}));
+
+const FORCED_VALIDITY = [
+  "TxIsValid",
+  "NonExistentInputUtxo",
+  "InvalidSignature",
+  "FailedScript",
+  "FeeTooLow",
+  "UnbalancedTx",
+];
+
+export const FORCED = Array.from({ length: 28 }, (_, i) => ({
+  tx_order_id: eventId(i + 900),
+  tx_order_l1_tx_hash: l1TxHash(i + 900),
+  tx_order_l1_output_index: i % 3,
+  tx_id: txId(i + 1100),
+  operator_validity: FORCED_VALIDITY[i % FORCED_VALIDITY.length],
+  status: BRIDGE_STATUSES[i % BRIDGE_STATUSES.length],
+  inclusion_time: new Date(Date.UTC(2026, 6, 28, 9, 45, 0) - i * 97_000).toISOString(),
+  projected_header_hash: i % 4 === 0 ? null : blockHash(40 - (i % 40)),
+}));
+
+export const addressResponse = (address) => {
+  const history = TXS.filter((t) => t.transaction).slice(0, 9);
+  const undecodedOutputs = address === ADDRESSES[1] ? 3 : 0;
+  return {
+    balance: value(184_250_000, MULTI_ASSET),
+    undecodedOutputs,
+    history: history.map((t) => ({
+      tx_id: t.tx_id,
+      address,
+      transaction: t.transaction,
+      decodeError: t.decodeError,
+    })),
+  };
+};
