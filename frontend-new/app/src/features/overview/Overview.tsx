@@ -151,9 +151,16 @@ export function Overview({ initial }: { initial: OverviewData }) {
     staleTime: 15_000,
   });
 
+  // The health query is client-only, so the server always renders "checking…".
+  // Reading its result before mount lets a fast fetch win the race against
+  // hydration and produce a server/client mismatch, which React resolves by
+  // throwing away the server HTML for this subtree.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const sectionState = (section: unknown): "error" | "success" =>
     section === null ? "error" : "success";
-  const up = health.data?.up;
+  const up = mounted ? health.data?.up : undefined;
 
   return (
     <>
