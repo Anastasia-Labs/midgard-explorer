@@ -129,13 +129,31 @@ const handleTransaction = (url, res) => {
   if (!hash || !/^[0-9a-f]{64}$/i.test(hash)) return fail(res, 400, "bad_request", "tx_hash");
   const found = TXS.find((t) => t.tx_id === hash.toLowerCase());
   if (!found) return fail(res, 404, "not_found");
-  // Undecodable rows surface as 422 on the detail route, matching the backend.
-  if (found.decodeError) return fail(res, 422, "decode_failed", found.decodeError);
-  if (!found.transaction || found.status === "rejected") {
+
+  // Committed transactions carry inclusion, and inclusion carries settlement.
+  const included = found.status === "committed" || found.status === "pending_commit";
+  const height = BLOCKS.find((b) => b.header_hash === found.header_hash)?.height ?? null;
+  const inclusion =
+    included && height !== null
+      ? { height, header_hash: found.header_hash, time_stamp_tz: found.time_stamp_tz }
+      : null;
+  const envelope = {
+    txId: found.tx_id,
+    admission: found.admission,
+    inclusion,
+    finalization: inclusion ? blockFinalization(inclusion.height) : null,
+  };
+
+  // Lifecycle-only outcomes come first, matching the backend: a transaction
+  // that never reached a ledger tier is never handed to the decoder, so
+  // "rejected" and "undecodable body" cannot both describe one transaction.
+  // Lifecycle-only means the node has no body at all, which is not the same as
+  // having one it cannot read.
+  if (found.status === "rejected" || (!found.transaction && !found.decodeError)) {
     return json(res, {
+      ...envelope,
       transaction: null,
       status: found.status,
-      admission: found.admission,
       ...(found.status === "rejected"
         ? {
             rejection: {
@@ -147,10 +165,20 @@ const handleTransaction = (url, res) => {
         : {}),
     });
   }
+  // A body that will not decode is still a transaction: everything outside the
+  // body is returned with a 200, matching the backend.
+  if (found.decodeError) {
+    return json(res, {
+      ...envelope,
+      transaction: null,
+      status: found.status,
+      decodeError: { code: "undecodable_body", detail: found.decodeError },
+    });
+  }
   return json(res, {
+    ...envelope,
     transaction: { ...found.transaction, timestamp: found.time_stamp_tz },
     status: found.status,
-    admission: found.admission,
   });
 };
 

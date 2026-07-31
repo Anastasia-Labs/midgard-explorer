@@ -204,7 +204,9 @@ export const TX_STATUSES = [
 export const TXS = Array.from({ length: 60 }, (_, i) => {
   const n = i + 1;
   const status = TX_STATUSES[i % TX_STATUSES.length];
-  const undecodable = i % 17 === 5;
+  // Only a transaction that reached a ledger tier has a body to decode, so a
+  // rejected or still-admitting one can never also be undecodable.
+  const undecodable = i % 17 === 5 && ["committed", "pending_commit", "accepted"].includes(status);
   const txTimeMs = Date.UTC(2026, 6, 28, 12, 0, 0) - i * 37_000;
   const firstSeenMs = txTimeMs - 24_000;
   const admissionStatus =

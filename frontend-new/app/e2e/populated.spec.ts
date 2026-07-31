@@ -159,7 +159,9 @@ test.describe("transaction lifecycle", () => {
     await expect(page.getByLabel("Node admission timeline").getByText("Rejected")).toBeVisible();
   });
 
-  test("an undecodable transaction says so without claiming it is missing", async ({ page }) => {
+  test("an undecodable transaction keeps everything that does not need the body", async ({
+    page,
+  }) => {
     const rows = await page.request
       .get(`${FIXTURE}/api/transactions/1`)
       .then(
@@ -168,7 +170,23 @@ test.describe("transaction lifecycle", () => {
     const undecodable = rows.find((r) => r.decodeError);
     test.skip(!undecodable, "no undecodable fixture on page 1");
     await page.goto(`/transaction/${undecodable!.tx_id}`);
-    await expect(page.getByText("This transaction could not be decoded.")).toBeVisible();
+    await expect(page.getByText("This transaction's body could not be decoded.")).toBeVisible();
+    // The failure is scoped to the body: lifecycle, timings and settlement
+    // state come from the node's own records and must survive it.
+    await expect(page.getByText("L2 inclusion")).toBeVisible();
+    await expect(page.getByText("Cardano L1 settlement")).toBeVisible();
+    await expect(page.getByText("Node admission record", { exact: false })).toBeVisible();
+  });
+
+  test("a committed transaction links to its block and its L1 settlement state", async ({
+    page,
+  }) => {
+    const rows = await page.request
+      .get(`${FIXTURE}/api/transactions/1`)
+      .then(async (r) => (await r.json()).rows as Array<{ tx_id: string }>);
+    await page.goto(`/transaction/${rows[0]!.tx_id}`);
+    await expect(page.getByRole("link", { name: /^Block #\d+$/ })).toBeVisible();
+    await expect(page.getByText("Cardano L1 settlement")).toBeVisible();
   });
 });
 
