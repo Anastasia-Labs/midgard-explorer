@@ -170,11 +170,24 @@ describe("NetworkMetrics", () => {
 
   it("degrades to a message rather than blanking when metrics are unavailable", () => {
     render(<NetworkMetrics metrics={null} totalBlocks={40} totalTxs={60} />);
-    expect(
-      screen.getByText("Metrics are unavailable. Everything else on this page is unaffected."),
-    ).toBeDefined();
+    // The panel says it cannot judge, in the same grammar it uses when it can.
+    // A panel that answers only when things are fine teaches a reader that
+    // silence means trouble, which is a worse signal than saying so.
+    expect(screen.getByText("The network's health cannot be judged right now.")).toBeDefined();
+    expect(screen.getByText(/Everything else on this page is unaffected/)).toBeDefined();
     // All-time counts survive a metrics failure: they come from another call.
     expect(screen.getByText("40")).toBeDefined();
+  });
+
+  it("states a verdict above the figures rather than leaving the reader to add up five numbers", () => {
+    render(<NetworkMetrics metrics={base} totalBlocks={40} totalTxs={60} />);
+    const verdict = screen.getByText(/producing blocks and settling/i);
+    expect(verdict).toBeDefined();
+    // The verdict has to outrank the figures visually, or it is just another
+    // line of text on a panel that already had plenty.
+    const figure = screen.getByText("#40");
+    const sizeOf = (el: Element) => Number(/text-\[(\d+)px\]/.exec(el.className)?.[1] ?? 0);
+    expect(sizeOf(verdict)).toBeGreaterThan(sizeOf(figure));
   });
 
   it("says nothing completed rather than showing a zero latency", () => {

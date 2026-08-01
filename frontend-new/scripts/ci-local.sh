@@ -43,7 +43,13 @@ NEXT_PUBLIC_L1_EXPLORER_URL="${NEXT_PUBLIC_L1_EXPLORER_URL:-https://preprod.card
 
 if [[ $FAST -eq 0 ]]; then
   step "e2e (fixture backend)"
-  pnpm --filter @midgard-explorer/app exec playwright test
+  # Dedicated ports. `reuseExistingServer` is on outside CI, so on the default
+  # ports the gate will adopt a dev server, or a production build started by
+  # hand before the last edit, and report a pass for code it never loaded.
+  # That has already happened here. Ports nothing else uses mean the gate
+  # builds and starts exactly what it is about to test.
+  E2E_PORT=3210 FIXTURE_PORT=3211 \
+    pnpm --filter @midgard-explorer/app exec playwright test
 else
   printf '\n(skipped e2e: --fast)\n'
 fi

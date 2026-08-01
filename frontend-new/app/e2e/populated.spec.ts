@@ -142,6 +142,36 @@ test.describe("operational metrics", () => {
     await expect(metrics.getByText("L1 settlement")).toBeVisible();
   });
 
+  test("states a health verdict in words, above the figures", async ({ page }) => {
+    // The panel used to be five figures of equal weight under a heading
+    // reading "Network health", and never said whether health was good. The
+    // reader had to know that a 33% abandonment rate is bad, which is exactly
+    // the knowledge someone arriving at an explorer does not have.
+    await page.goto("/");
+    const verdict = page.locator('[data-region="verdict"]');
+    await expect(verdict).toBeVisible();
+
+    // The fixture chain abandons a third of its settlements, so the verdict
+    // must not be the reassuring one. A green light on a degraded chain is the
+    // single worst thing this panel could do.
+    await expect(verdict).toContainText(/not everything is settling|falling behind|stopped/i);
+
+    // Every reason cites a figure, so a reader can disagree with the judgement.
+    const reasons = await verdict.locator("li").allInnerTexts();
+    expect(reasons.length).toBeGreaterThan(0);
+    for (const reason of reasons) expect(reason).toMatch(/\d/);
+
+    // It outranks the figures, or it is just another line on a busy panel.
+    const sizes = await verdict.evaluate((el) => ({
+      headline: parseFloat(getComputedStyle(el.querySelector("p > span:last-child")!).fontSize),
+    }));
+    const figure = await page
+      .locator('[data-region="metrics"] span')
+      .first()
+      .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+    expect(sizes.headline).toBeGreaterThan(figure);
+  });
+
   test("labels a percentile drawn from too few records", async ({ page }) => {
     await page.goto("/");
     // The fixture settles only a handful of blocks, which is exactly the case
@@ -180,7 +210,12 @@ test.describe("operational metrics", () => {
     await page.request.post(`${FIXTURE}/__control?fail=metrics`);
     try {
       await page.goto("/");
-      await expect(page.getByText("Metrics are unavailable.")).toBeVisible();
+      // The panel says it cannot judge, in the same grammar it uses when it
+      // can. A panel that answers only when things are fine teaches a reader
+      // that silence means trouble.
+      const verdict = page.locator('[data-region="verdict"]');
+      await expect(verdict).toContainText("cannot be judged");
+      await expect(page.getByText(/Everything else on this page is unaffected/)).toBeVisible();
       // The rest of the overview still has to work.
       await expect(page.getByText("Latest blocks")).toBeVisible();
     } finally {

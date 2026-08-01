@@ -1,6 +1,7 @@
 import type { MetricsResponse, Percentile } from "@midgard-explorer/contracts";
 import Link from "next/link";
 import { cn, formatDuration, formatTimestamp, groupThousands } from "../../lib/format";
+import { networkHealth, type NetworkHealth } from "../../lib/health";
 import { Icon } from "./icons";
 import { LiveValue } from "./livevalue";
 import { Panel } from "./primitives";
@@ -22,6 +23,56 @@ import { StatusBadge } from "./status";
 /** Below this, a percentile is a description of a handful of records rather
  * than a distribution, and the UI says so instead of implying otherwise. */
 const THIN_SAMPLE = 20;
+
+const VERDICT_TONE = {
+  healthy: { text: "text-success", dot: "bg-success" },
+  degraded: { text: "text-warning", dot: "bg-warning" },
+  stalled: { text: "text-danger", dot: "bg-danger" },
+  unknown: { text: "text-text-2", dot: "bg-text-3" },
+} as const;
+
+/** The panel's answer, and the largest thing on it.
+ *
+ * The figures below are evidence. Five of them at equal weight left the reader
+ * to decide whether 43s of settlement latency and a 33% abandonment rate add up
+ * to a working chain, which is precisely the judgement someone arriving at an
+ * explorer has no basis to make. So the panel states its conclusion first and
+ * shows its working underneath, in the same grammar every record page uses.
+ *
+ * The reasons are not decoration: each one names the figure it came from, so
+ * disagreeing with the verdict costs a reader nothing. A judgement that cannot
+ * be checked would be worth less than the numbers it sits above. */
+function Verdict({ health }: { health: NetworkHealth }) {
+  const tone = VERDICT_TONE[health.state];
+  return (
+    <div data-region="verdict" className="border-b border-border px-4 py-3.5">
+      <p className="flex items-start gap-2.5">
+        <span aria-hidden className={cn("mt-2 size-2 shrink-0 rounded-full", tone.dot)} />
+        {/* Larger than the 19px figures at every width, including the phone.
+            An earlier version was 19px at base and only outgrew them at `sm`,
+            which left the panel with no focal point on exactly the viewport
+            where having one matters most. */}
+        <span
+          className={cn(
+            "font-display text-[21px] leading-snug font-semibold text-balance sm:text-[26px]",
+            tone.text,
+          )}
+        >
+          {health.headline}
+        </span>
+      </p>
+      {health.reasons.length > 0 ? (
+        <ul className="mt-2 space-y-1 pl-4.5">
+          {health.reasons.map((reason) => (
+            <li key={reason} className="mg-caption leading-relaxed text-text-2">
+              {reason}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 function Figure({
   label,
@@ -261,8 +312,12 @@ export function NetworkMetrics({
         actions={<AllTime blocks={totalBlocks} txs={totalTxs} />}
         className="mb-4"
       >
-        <p className="px-4 py-6 text-center mg-caption text-text-3">
-          Metrics are unavailable. Everything else on this page is unaffected.
+        {/* The same grammar as the healthy case. A panel that answers when
+            things are fine and goes blank when they are not teaches a reader
+            that silence means trouble, which is a worse signal than saying so. */}
+        <Verdict health={networkHealth(null)} />
+        <p className="px-4 py-3 mg-caption text-text-3">
+          Everything else on this page is unaffected.
         </p>
       </Panel>
     );
@@ -289,6 +344,8 @@ export function NetworkMetrics({
       actions={<AllTime blocks={totalBlocks} txs={totalTxs} />}
       className="mb-4"
     >
+      <Verdict health={networkHealth(metrics)} />
+
       <div
         data-region="metrics"
         className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-3 lg:grid-cols-5"

@@ -27,6 +27,14 @@ export default tseslint.config(
     languageOptions: { globals: nodeGlobals },
   },
   {
+    // Capture scripts run in Node but pass callbacks to `page.evaluate`, whose
+    // body is serialized and executed inside the browser. Those references are
+    // correct, and the only place in this repo where one file legitimately
+    // spans both environments.
+    files: ["app/scripts/**/*.mjs"],
+    languageOptions: { globals: { ...nodeGlobals, document: "readonly" } },
+  },
+  {
     // Fixtures and tests build branded shapes directly rather than decoding.
     files: ["app/test/**", "app/e2e/**"],
     rules: { "@typescript-eslint/no-non-null-assertion": "off" },
