@@ -17,7 +17,7 @@ import { listErrorMessage } from "../../lib/serverErrors";
 
 export const metadata: Metadata = {
   title: "Transactions",
-  description: "Browse Midgard L2 transactions.",
+  description: "Browse Midgard transactions.",
 };
 
 export const dynamic = "force-dynamic";
@@ -51,7 +51,7 @@ export default async function TransactionsPage({
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
         title="Transactions"
-        subtitle="Transactions processed by the Midgard L2 ledger, newest first. Open one for its lifecycle, UTxO flow, and raw data."
+        subtitle="Transactions processed by the Midgard ledger, newest first. Open one for its journey, ledger equation, and raw data."
         meta={
           <span>
             <strong className="font-semibold text-text tabular-nums">
@@ -166,6 +166,7 @@ export default async function TransactionsPage({
           rows={data.rows}
           keyOf={(r) => r.tx_id}
           emptyTitle="No transactions yet"
+          emptyHint="Submitted transactions appear here as the node processes them."
         />
         <Pagination
           page={page}

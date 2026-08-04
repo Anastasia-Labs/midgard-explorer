@@ -54,9 +54,14 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "tx_lifecycle",
     "warning",
     "Pending commit",
-    "Processed and waiting to be merged into an L2 block.",
+    "Processed and waiting to be merged into a Midgard block.",
   ),
-  committed: e("tx_lifecycle", "success", "Committed", "Included in a Midgard L2 block."),
+  committed: e(
+    "tx_lifecycle",
+    "success",
+    "Committed",
+    "Included in a Midgard block. Reversible until that block is final on Cardano L1.",
+  ),
   rejected: e("tx_lifecycle", "danger", "Rejected", "Failed validation and will not be included."),
 
   // --- bridge event status ---------------------------------------------
@@ -76,7 +81,7 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "bridge_status",
     "success",
     "Consumed",
-    "The deposit UTxO was spent into the L2 ledger.",
+    "The deposit UTxO was spent into the Midgard ledger. Final once the containing block settles on Cardano L1.",
   ),
 
   // --- block finalization ----------------------------------------------

@@ -50,6 +50,12 @@ export type JourneyModel = {
 /** Lifecycle statuses that mean the node stopped working on the transaction. */
 const TERMINAL_FAILURES = new Set(["rejected"]);
 
+/** One wording for the unrecognized-stage case. It appears on a transaction, on
+ * a block, and as the fallback when a finalization record resolves to nothing,
+ * and three hand-written variants had already drifted apart. */
+const UNKNOWN_STAGE_EXPLANATION =
+  "The node reported a settlement stage this explorer does not recognize, so finality cannot be stated here. The raw status is shown as reported.";
+
 /** The only finalization status that means settled on L1. */
 const L1_TERMINAL_SUCCESS = "finalized";
 
@@ -322,9 +328,9 @@ export function transactionJourney(input: {
             : resolved.label;
 
   const explanation = failed
-    ? "The node rejected this transaction, so it was never included in an L2 block."
+    ? "The node rejected this transaction, so it was never included in a block."
     : hasUnknownStage
-      ? "The node reported a settlement stage this explorer does not recognize, so its finality cannot be stated here. The raw status is shown as reported."
+      ? UNKNOWN_STAGE_EXPLANATION
       : settled
         ? "The block carrying this transaction is settled on Cardano L1."
         : abandoned
@@ -434,11 +440,10 @@ export function blockJourney(finalization: BlockFinalization | null, height: num
       finalization === null
         ? "The node has not recorded a finalization attempt for this block yet, so this block is not yet on its way to Cardano L1."
         : settled
-          ? "This block and every transaction in it are settled on Cardano L1 and can no longer be reversed."
+          ? "This block and every transaction in it are settled on Cardano L1 at the required stability depth."
           : hasUnknownStage
-            ? "The node reported a settlement stage this explorer does not recognize, so this block's finality cannot be stated here. The raw status is shown as reported."
-            : (resolved?.explain ??
-              "The node reported a settlement stage this explorer does not recognize."),
+            ? UNKNOWN_STAGE_EXPLANATION
+            : (resolved?.explain ?? UNKNOWN_STAGE_EXPLANATION),
     stages,
     rawStatus: finalization?.status ?? "none",
   };

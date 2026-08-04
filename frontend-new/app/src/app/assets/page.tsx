@@ -42,7 +42,7 @@ export default async function AssetsPage() {
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
         title="Native assets"
-        subtitle="Every asset carried by a spendable UTxO in the current ledger. This is a snapshot of what exists now, not a mint history."
+        subtitle="Every asset carried by a spendable UTxO in the current ledger. Mint and burn history is not tracked here."
         meta={
           <span>
             <strong className="font-semibold text-text tabular-nums">{data.total}</strong> distinct{" "}
@@ -112,6 +112,7 @@ export default async function AssetsPage() {
           rows={[...data.rows]}
           keyOf={(r) => assetUnit(r.policyId, r.assetName)}
           emptyTitle="No native assets on the ledger"
+          emptyHint="Assets appear once a UTxO on the ledger carries one."
         />
       </section>
 

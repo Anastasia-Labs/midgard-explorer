@@ -135,7 +135,7 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
           // One string rather than interleaved expressions: JSX drops the
           // space between an expression and the text that follows it here, and
           // "1 of 2inputs" shipped once already.
-          `${eq.unresolvedCount} of ${eq.resolvedCount + eq.unresolvedCount} inputs could not be resolved, so the input total is not stated here and the equation cannot be checked against it. The sum of the inputs that did resolve is not that total, only the part of it still visible, so it is shown as such rather than in the equation. A transaction's inputs leave the ledger once it is applied, so this is the usual case for anything but the newest transactions.`
+          `${eq.unresolvedCount} of ${eq.resolvedCount + eq.unresolvedCount} inputs could not be resolved, so the input total is not stated and the equation cannot be checked against it. Spent inputs leave the ledger, so this is normal for anything but the newest transactions.`
         )}
       </p>
 
@@ -165,9 +165,8 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
           </ul>
           {deltas.some((d) => !d.exact) ? (
             <p className="border-t border-border px-4 py-2.5 mg-micro text-text-3">
-              A net figure needs both sides. Where an input did not resolve, only what an address
-              received is shown, because a net that ignores an unknown spend is not a smaller truth
-              than the real one, it is a different number.
+              Where an input did not resolve, only what the address received is shown. A net figure
+              needs both sides.
             </p>
           ) : null}
         </div>
