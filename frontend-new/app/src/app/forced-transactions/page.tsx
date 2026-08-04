@@ -48,7 +48,7 @@ export default async function ForcedTransactionsPage({
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
         title="Forced transactions"
-        subtitle="Transaction orders escrowed on Cardano L1 that the Midgard operator is obliged to include in the L2 ledger."
+        subtitle="Transaction orders escrowed on Cardano L1 that the Midgard operator is obliged to include."
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
@@ -67,7 +67,7 @@ export default async function ForcedTransactionsPage({
       />
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
         <DataTable
-          caption="Forced transaction orders submitted on L1"
+          caption="Forced transaction orders, newest first"
           columns={[
             {
               header: "Order",
@@ -157,6 +157,7 @@ export default async function ForcedTransactionsPage({
           rows={data.rows}
           keyOf={(r) => r.tx_order_id}
           emptyTitle="No forced transactions yet"
+          emptyHint="These appear when a user escrows an order on Cardano L1 for the operator to include."
         />
         <StatusLegend kinds={["bridge_status", "forced_validity"]} />
         <Pagination

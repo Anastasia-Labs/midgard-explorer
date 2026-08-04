@@ -129,6 +129,7 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
       rows={data.rows}
       keyOf={(r) => r.tx_id}
       emptyTitle="No transactions in this block"
+      emptyHint="The operator committed this block with nothing in it."
     />
   );
 

@@ -169,6 +169,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
         rows={data.history}
         keyOf={(r) => r.tx_id}
         emptyTitle="No transactions for this address"
+        emptyHint="This address has not appeared in a transaction on the Midgard ledger yet."
       />
     </Card>
   );
@@ -258,6 +259,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
         rows={[...data.utxos]}
         keyOf={(u) => u.outRefHex}
         emptyTitle="No spendable UTxOs at this address"
+        emptyHint="Every UTxO this address received has since been spent."
       />
     </Card>
   );

@@ -168,8 +168,8 @@ export function Overview({ initial }: { initial: OverviewData }) {
   return (
     <>
       <PageHeader
-        title="Network overview"
-        subtitle="Live activity on the Midgard Layer 2 network, anchored to Cardano L1."
+        title="Midgard Blockchain Explorer"
+        subtitle="Blocks, transactions and bridge activity on Midgard, the Layer 2 ledger that settles on Cardano."
         meta={
           <>
             <RefreshMeta updatedAt={dataUpdatedAt} />
@@ -270,7 +270,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
       </div>
 
       <div className="mb-4">
-        <Panel title="Bridge" subtitle="Assets crossing between Cardano L1 and Midgard L2">
+        <Panel title="Bridge" subtitle="Assets moving in and out of Midgard">
           <div className="grid sm:grid-cols-3">
             {BRIDGE.map((b, i) => (
               <Link

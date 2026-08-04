@@ -281,7 +281,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
           {candidates.length > 0 ? (
             <div className="mt-3" data-region="search-candidates">
               <p className="mg-overline">
-                {result?.ok && result.ambiguous ? "That could be" : "Open"}
+                {result?.ok && result.ambiguous ? "Matches more than one record" : "Open"}
               </p>
               <ul className="mt-1 space-y-1">
                 {candidates.map((c) => (

@@ -11,7 +11,7 @@ function Brand({ small = false }: { small?: boolean }) {
   return (
     <Link
       href="/"
-      aria-label="Midgard L2 Explorer, home"
+      aria-label="Midgard Explorer, home"
       className={
         small
           ? "flex min-h-9 min-w-0 items-center gap-2.5"
@@ -27,14 +27,14 @@ function Brand({ small = false }: { small?: boolean }) {
         className="shrink-0"
       />
       {small ? (
-        <span className="min-w-0 text-sm text-text-3">Midgard L2 Explorer, by Anastasia Labs</span>
+        <span className="min-w-0 text-sm text-text-3">Midgard Explorer, by Anastasia Labs</span>
       ) : (
         <span className="flex flex-col leading-none">
           <span className="font-display text-[17px] font-bold tracking-[0.02em] text-text">
             MIDGARD
           </span>
           <span className="mt-0.5 text-[10.5px] font-semibold tracking-[0.1em] text-text-3">
-            L2 EXPLORER
+            EXPLORER
           </span>
         </span>
       )}
@@ -94,6 +94,22 @@ export function AppShell({ children }: { children: ReactNode }) {
             <HealthIndicator />
             <span className="font-mono">1 ADA = 1,000,000 lovelace</span>
             <span>Data from the connected Midgard node</span>
+            <a
+              href="https://midgardprotocol.com"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-text-2 hover:underline"
+            >
+              About Midgard
+            </a>
+            <a
+              href="https://github.com/Anastasia-Labs/midgard"
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-text-2 hover:underline"
+            >
+              Source
+            </a>
           </span>
         </div>
       </footer>

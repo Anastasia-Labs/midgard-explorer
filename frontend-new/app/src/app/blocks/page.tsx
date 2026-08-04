@@ -16,7 +16,7 @@ import { listErrorMessage } from "../../lib/serverErrors";
 
 export const metadata: Metadata = {
   title: "Blocks",
-  description: "Browse Midgard L2 blocks.",
+  description: "Browse Midgard blocks.",
 };
 
 export const dynamic = "force-dynamic";
@@ -50,7 +50,7 @@ export default async function BlocksPage({
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
         title="Blocks"
-        subtitle="L2 blocks produced on Midgard, newest first. Open a block for finalization state, data-availability roots, and transactions."
+        subtitle="Blocks produced on Midgard, newest first. Open a block to see whether it has settled on Cardano L1, and what it carries."
         meta={
           <span>
             <strong className="font-semibold text-text tabular-nums">

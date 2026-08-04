@@ -16,7 +16,7 @@ import {
 // auto-fixture in ./helpers, so no per-file teardown is needed here.
 
 const ROUTES = [
-  ["/", "Network overview"],
+  ["/", "Midgard Blockchain Explorer"],
   ["/blocks", "Blocks"],
   ["/transactions", "Transactions"],
   ["/deposits", "Deposits"],
@@ -172,7 +172,9 @@ test.describe("degraded states", () => {
   test("a failing overview reports it without blanking the page", async ({ page }) => {
     await inject(page, "fail=all");
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1, name: "Network overview" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Midgard Blockchain Explorer" }),
+    ).toBeVisible();
     await expect(page.getByText("Unavailable").first()).toBeVisible();
   });
 

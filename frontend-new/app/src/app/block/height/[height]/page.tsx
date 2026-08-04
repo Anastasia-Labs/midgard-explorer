@@ -9,7 +9,7 @@ import { listErrorMessage } from "../../../../lib/serverErrors";
 
 export const metadata: Metadata = {
   title: "Block by height",
-  description: "Resolve a Midgard L2 block height to its header hash.",
+  description: "Resolve a Midgard block height to its header hash.",
 };
 
 export const dynamic = "force-dynamic";

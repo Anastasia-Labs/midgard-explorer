@@ -308,7 +308,7 @@ export function NetworkMetrics({
     return (
       <Panel
         title="Network health"
-        subtitle="Operational metrics from the node's own tables"
+        subtitle="How the network is performing right now, measured from the node's records"
         actions={<AllTime blocks={totalBlocks} txs={totalTxs} />}
         className="mb-4"
       >

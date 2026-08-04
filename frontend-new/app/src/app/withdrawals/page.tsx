@@ -49,7 +49,7 @@ export default async function WithdrawalsPage({
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
         title="Withdrawals"
-        subtitle="Funds leaving the Midgard L2 ledger back to Cardano L1. Validity and lifecycle status are separate checks."
+        subtitle="Funds leaving the Midgard ledger back to Cardano L1. A withdrawal can be valid and still be waiting, so validity and status are shown separately."
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
@@ -198,6 +198,7 @@ export default async function WithdrawalsPage({
           rows={data.rows}
           keyOf={(r) => r.event_id}
           emptyTitle="No withdrawals yet"
+          emptyHint="Withdrawals appear once an address sends funds from the Midgard ledger back to Cardano L1."
         />
         <StatusLegend kinds={["bridge_status", "withdrawal_validity"]} />
         <Pagination

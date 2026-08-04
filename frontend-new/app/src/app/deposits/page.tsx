@@ -49,7 +49,7 @@ export default async function DepositsPage({
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
         title="Deposits"
-        subtitle="Funds locked on Cardano L1 and credited to an address on the Midgard L2 ledger."
+        subtitle="Funds locked on Cardano L1 and credited to an address on the Midgard ledger."
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
@@ -171,6 +171,7 @@ export default async function DepositsPage({
           rows={data.rows}
           keyOf={(r) => r.event_id}
           emptyTitle="No deposits yet"
+          emptyHint="Deposits appear once funds are locked on Cardano L1 for an address on this network."
         />
         <StatusLegend kinds={["bridge_status"]} />
         <Pagination
