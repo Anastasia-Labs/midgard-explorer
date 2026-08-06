@@ -8,9 +8,12 @@ import { cn } from "../../lib/format";
 
 /** Information architecture from the Ledger Redesign template: top-level
  * routes match the domain model; the three L1↔L2 bridge mechanisms live
- * under one "Bridge" menu instead of crowding the header. */
+ * under one "Bridge" menu instead of crowding the header.
+ *
+ * These are data domains only. The overview is reached through the brand mark,
+ * which is already a labelled home link, so listing it here would be a second
+ * control for the same destination sitting beside the first. */
 const TOP = [
-  { href: "/", label: "Overview" },
   { href: "/blocks", label: "Blocks" },
   { href: "/transactions", label: "Transactions" },
   { href: "/assets", label: "Assets" },
@@ -196,6 +199,10 @@ export function MobileNav() {
           </button>
         </div>
         <nav aria-label="Primary" className="flex flex-col gap-0.5 p-2">
+          {/* The header keeps no Overview tab, since the brand mark is the home
+              link. That mark is behind this modal's backdrop while the drawer
+              is open, so the drawer carries the entry the header does not. */}
+          {item("/", "Overview")}
           {TOP.map(({ href, label }) => item(href, label))}
           <p className="mg-overline px-3 pb-1 pt-3">Bridge</p>
           {BRIDGE.map((b) => item(b.href, b.label, b.desc))}
