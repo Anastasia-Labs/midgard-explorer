@@ -235,9 +235,19 @@ const handleTransaction = (url, res) => {
       decodeError: { code: "undecodable_body", detail: found.decodeError },
     });
   }
+  // Only this route carries the raw bytes, matching the backend: list rows
+  // leave `cborHex` null so a page response is not multiplied by its
+  // transactions. One transaction is oversized so the truncation path is
+  // exercised rather than assumed.
+  const oversized = found.transaction.size > 600;
   return json(res, {
     ...envelope,
-    transaction: { ...found.transaction, timestamp: found.time_stamp_tz },
+    transaction: {
+      ...found.transaction,
+      cborHex: "a3" + (found.tx_id + found.tx_id).slice(0, oversized ? 512 : 128),
+      cborTruncated: oversized,
+      timestamp: found.time_stamp_tz,
+    },
     status: found.status,
   });
 };

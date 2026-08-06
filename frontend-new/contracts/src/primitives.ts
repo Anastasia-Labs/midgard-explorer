@@ -6,6 +6,21 @@ export const DecimalString = Schema.String.pipe(
 );
 export type DecimalString = Schema.Schema.Type<typeof DecimalString>;
 
+/**
+ * A decimal integer that may be negative.
+ *
+ * `DecimalString` is unsigned, which is right for lovelace and for asset
+ * balances: neither can go below zero. A mint quantity can. A burn is
+ * represented by a negative quantity, so encoding it as `DecimalString` made
+ * the contract unable to express a burn at all, and Schema rejected the whole
+ * response rather than the one field.
+ */
+export const SignedDecimalString = Schema.String.pipe(
+  Schema.pattern(/^-?\d+$/),
+  Schema.brand("SignedDecimalString"),
+);
+export type SignedDecimalString = Schema.Schema.Type<typeof SignedDecimalString>;
+
 export const HexString = Schema.String.pipe(
   Schema.pattern(/^[0-9a-f]*$/i),
   Schema.brand("HexString"),

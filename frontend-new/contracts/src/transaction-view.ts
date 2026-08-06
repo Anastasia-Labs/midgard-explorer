@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { DecimalString, IsoTimestamp } from "./primitives";
+import { DecimalString, IsoTimestamp, SignedDecimalString } from "./primitives";
 
 export const AssetMap = Schema.Record({
   key: Schema.String,
@@ -12,6 +12,10 @@ export const ValueView = Schema.Struct({
   assets: AssetMap,
 });
 export type ValueView = Schema.Schema.Type<typeof ValueView>;
+
+/** "Script" | "PubKey" today. Kept open rather than a literal union: an
+ * unrecognized kind must render as itself, not fail the page. */
+export const AddressKind = Schema.String;
 
 export const OutRef = Schema.Struct({
   txId: Schema.String,
@@ -26,26 +30,84 @@ export const InputView = Schema.Struct({
   resolved: Schema.NullOr(
     Schema.Struct({
       address: Schema.String,
+      addressKind: AddressKind,
       value: ValueView,
     }),
   ),
 });
 export type InputView = Schema.Schema.Type<typeof InputView>;
 
+/** Midgard-native datums are always inline, so there is no datum-hash variant.
+ * `json` is nullable: a datum the codec cannot render degrades to hex rather
+ * than failing the response. */
+export const DatumView = Schema.Struct({
+  cborHex: Schema.String,
+  json: Schema.NullOr(Schema.Unknown),
+});
+export type DatumView = Schema.Schema.Type<typeof DatumView>;
+
+/** Kept open rather than a literal union: an unrecognized language must render
+ * as itself, not 404 the page. */
+export const ScriptLanguage = Schema.String;
+
+export const ScriptRefView = Schema.Struct({
+  hash: Schema.String,
+  language: ScriptLanguage,
+  cborHex: Schema.String,
+});
+export type ScriptRefView = Schema.Schema.Type<typeof ScriptRefView>;
+
 export const OutputView = Schema.Struct({
   address: Schema.String,
+  addressKind: AddressKind,
   value: ValueView,
+  /** Kept beside `datum` and `scriptRef` so existing readers keep working. */
   hasDatum: Schema.Boolean,
   hasScriptRef: Schema.Boolean,
+  datum: Schema.NullOr(DatumView),
+  scriptRef: Schema.NullOr(ScriptRefView),
 });
 export type OutputView = Schema.Schema.Type<typeof OutputView>;
+
+export const ScriptWitnessView = Schema.Struct({
+  hash: Schema.String,
+  language: ScriptLanguage,
+});
+export type ScriptWitnessView = Schema.Schema.Type<typeof ScriptWitnessView>;
+
+/** Midgard defines no redeemer decoder, so the bytes are always present and the
+ * structured fields are filled only when the generic CBOR decode yields the
+ * `[tag, index, data, exUnits]` shape. */
+export const RedeemerView = Schema.Struct({
+  cborHex: Schema.String,
+  tag: Schema.NullOr(Schema.Number),
+  index: Schema.NullOr(Schema.Number),
+  exUnits: Schema.NullOr(Schema.Struct({ mem: DecimalString, steps: DecimalString })),
+});
+export type RedeemerView = Schema.Schema.Type<typeof RedeemerView>;
 
 export const WitnessSummary = Schema.Struct({
   vkeyCount: Schema.Number,
   scriptCount: Schema.Number,
   redeemerCount: Schema.Number,
+  scripts: Schema.Array(ScriptWitnessView),
+  redeemers: Schema.Array(RedeemerView),
 });
 export type WitnessSummary = Schema.Schema.Type<typeof WitnessSummary>;
+
+/** A negative quantity is a burn, which is why this is signed. */
+export const MintedAsset = Schema.Struct({
+  policyId: Schema.String,
+  assetName: Schema.String,
+  quantity: SignedDecimalString,
+});
+export type MintedAsset = Schema.Schema.Type<typeof MintedAsset>;
+
+export const MintView = Schema.Struct({
+  policyIds: Schema.Array(Schema.String),
+  assets: Schema.Array(MintedAsset),
+});
+export type MintView = Schema.Schema.Type<typeof MintView>;
 
 export const TransactionView = Schema.Struct({
   txId: Schema.String,
@@ -61,8 +123,14 @@ export const TransactionView = Schema.Struct({
   inputs: Schema.Array(InputView),
   referenceInputs: Schema.Array(OutRef),
   outputs: Schema.Array(OutputView),
-  mint: Schema.NullOr(Schema.Struct({ policyIds: Schema.Array(Schema.String) })),
+  mint: Schema.NullOr(MintView),
   witnesses: WitnessSummary,
+  /** Carried only by the single-transaction route; list rows leave it null. */
+  cborHex: Schema.NullOr(Schema.String),
+  /** True when `cborHex` was cut at the inline cap, so a shortened hex string
+   * is never mistaken for a complete one. */
+  cborTruncated: Schema.Boolean,
+  size: Schema.Number,
   /** True while the tx is still in the mempool. */
   pending: Schema.optional(Schema.Boolean),
 });

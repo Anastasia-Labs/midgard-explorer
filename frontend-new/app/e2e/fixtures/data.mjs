@@ -146,7 +146,11 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
       {
         txId: txId(n + 500),
         index: 0,
-        resolved: { address: ADDRESSES[n % ADDRESSES.length], value: value(inputA) },
+        resolved: {
+          address: ADDRESSES[n % ADDRESSES.length],
+          addressKind: n % 4 === 0 ? "Script" : "PubKey",
+          value: value(inputA),
+        },
       },
       {
         txId: txId(n + 900),
@@ -154,18 +158,67 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
         resolved:
           inputB === null
             ? null
-            : { address: ADDRESSES[(n + 1) % ADDRESSES.length], value: value(inputB) },
+            : {
+                address: ADDRESSES[(n + 1) % ADDRESSES.length],
+                addressKind: "PubKey",
+                value: value(inputB),
+              },
       },
     ],
     referenceInputs: n % 4 === 0 ? [{ txId: txId(n + 77), index: 0 }] : [],
-    outputs: amounts.map((lovelace, i) => ({
-      address: ADDRESSES[(n + i) % ADDRESSES.length],
-      value: i === 0 && n % 3 === 0 ? value(lovelace, MULTI_ASSET) : value(lovelace),
-      hasDatum: i === 1,
-      hasScriptRef: n % 5 === 0 && i === 0,
-    })),
-    mint: n % 6 === 0 ? { policyIds: [hex(303, 56), hex(304, 56)] } : null,
-    witnesses: { vkeyCount: 1 + (n % 3), scriptCount: n % 2, redeemerCount: n % 2 },
+    outputs: amounts.map((lovelace, i) => {
+      const hasDatum = i === 1;
+      const hasScriptRef = n % 5 === 0 && i === 0;
+      return {
+        address: ADDRESSES[(n + i) % ADDRESSES.length],
+        // Datum-bearing outputs are the script ones, which is what makes the
+        // graph's script/key distinction visible in the fixture.
+        addressKind: hasDatum || hasScriptRef ? "Script" : "PubKey",
+        value: i === 0 && n % 3 === 0 ? value(lovelace, MULTI_ASSET) : value(lovelace),
+        hasDatum,
+        hasScriptRef,
+        datum: hasDatum
+          ? {
+              cborHex: hex(1200 + n + i, 64),
+              // One datum in three is left undecodable so the hex-only
+              // fallback is exercised rather than assumed.
+              json: (n + i) % 3 === 0 ? null : { constructor: 0, fields: [n + i] },
+            }
+          : null,
+        scriptRef: hasScriptRef
+          ? { hash: hex(1300 + n, 56), language: "PlutusV3", cborHex: hex(1400 + n, 80) }
+          : null,
+      };
+    }),
+    mint:
+      n % 6 === 0
+        ? {
+            policyIds: [hex(303, 56), hex(304, 56)],
+            assets: [
+              { policyId: hex(303, 56), assetName: "4d4944", quantity: String(1000 + n) },
+              // A negative quantity is a burn, and the UI must not read it as a mint.
+              { policyId: hex(304, 56), assetName: "424e", quantity: String(-(50 + n)) },
+            ],
+          }
+        : null,
+    witnesses: {
+      vkeyCount: 1 + (n % 3),
+      scriptCount: n % 2,
+      redeemerCount: n % 2,
+      scripts: Array.from({ length: n % 2 }, (_, i) => ({
+        hash: hex(1500 + n + i, 56),
+        language: "PlutusV3",
+      })),
+      redeemers: Array.from({ length: n % 2 }, (_, i) => ({
+        cborHex: hex(1600 + n + i, 48),
+        tag: 0,
+        index: i,
+        exUnits: { mem: String(500_000 + n), steps: String(120_000_000 + n) },
+      })),
+    },
+    cborHex: null,
+    cborTruncated: false,
+    size: 350 + (n % 40) * 7,
     ...(pending ? { pending: true } : {}),
   };
 };

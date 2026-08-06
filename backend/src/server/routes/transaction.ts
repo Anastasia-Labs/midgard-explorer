@@ -72,7 +72,11 @@ export async function getTransactionRoute(req: Request, res: Response) {
       });
     }
     if (lifecycle) {
-      return res.json({ ...envelope, transaction: null, status: lifecycle.status });
+      return res.json({
+        ...envelope,
+        transaction: null,
+        status: lifecycle.status,
+      });
     }
     return res.status(404).json({ error: "Transaction not found." });
   }
@@ -85,7 +89,11 @@ export async function getTransactionRoute(req: Request, res: Response) {
         : "accepted";
 
   try {
-    const transaction = await decodeTransaction(tx.tx, findOutRef);
+    // Only this route carries the raw bytes. A list route inlining them would
+    // multiply its response by the size of every transaction on the page.
+    const transaction = await decodeTransaction(tx.tx, findOutRef, {
+      includeCbor: true,
+    });
     return res.json({
       ...envelope,
       transaction: {
@@ -133,7 +141,10 @@ export async function getTransactionsPageRoute(req: Request, res: Response) {
     return res.status(400).json({ error: "Invalid page." });
   }
 
-  const { rows, hasNextPage, total, limit } = await getTransactionsPage(page, typeof req.query.status === "string" ? req.query.status : undefined);
+  const { rows, hasNextPage, total, limit } = await getTransactionsPage(
+    page,
+    typeof req.query.status === "string" ? req.query.status : undefined,
+  );
   const payload = await Promise.all(
     rows.map(async (row) => {
       const decoded = row.tx

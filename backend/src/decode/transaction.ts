@@ -1,9 +1,16 @@
 import { getCodec } from "./codec";
 import type {
+  AddressKind,
   AssetMap,
+  DatumView,
   InputView,
+  MintedAsset,
   OutRef,
   OutputView,
+  RedeemerView,
+  ScriptLanguage,
+  ScriptRefView,
+  ScriptWitnessView,
   TransactionView,
   ValueView,
 } from "./types";
@@ -18,6 +25,90 @@ export type OutRefLookup = (
 ) => Promise<{ address: string; output: Uint8Array } | null>;
 
 const SUPPORTED_VERSION = 1n;
+
+/**
+ * Options for the shape of a decoded transaction.
+ *
+ * `includeCbor` is off by default so list routes never inline a transaction's
+ * own bytes into every row. The single-transaction route turns it on.
+ */
+export type DecodeOptions = { includeCbor?: boolean };
+
+/**
+ * Cap on the transaction CBOR returned inline.
+ *
+ * Midgard constrains individual transaction fields to 14 KB, so a whole
+ * transaction can still run well past that. Past this cap the hex is cut and
+ * `cborTruncated` says so, because a silently shortened hex string is worse
+ * than no hex at all: it looks decodable and is not.
+ */
+export const MAX_INLINE_CBOR_BYTES = 64 * 1024;
+
+/** CBOR that will not render to JSON degrades to hex rather than throwing: a
+ * datum shape the codec cannot read must not take a whole page down. */
+const tryJson = (
+  decode: (bytes: Uint8Array) => unknown,
+  bytes: Uint8Array,
+): unknown | null => {
+  try {
+    return jsonSafe(decode(bytes));
+  } catch {
+    return null;
+  }
+};
+
+/** Decoded CBOR carries bigints and byte strings, neither of which survive
+ * JSON. Bytes become hex and bigints become decimal strings, matching how every
+ * other numeric field crosses this boundary. */
+const jsonSafe = (value: unknown): unknown => {
+  if (value instanceof Uint8Array) return toHex(value);
+  if (typeof value === "bigint") return value.toString();
+  if (Array.isArray(value)) return value.map(jsonSafe);
+  if (value instanceof Map) {
+    return Object.fromEntries(
+      [...value].map(([k, v]) => [String(jsonSafe(k)), jsonSafe(v)]),
+    );
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, jsonSafe(v)]),
+    );
+  }
+  return value;
+};
+
+/** `[tag, index, data, [mem, steps]]` is the Cardano redeemer shape. Anything
+ * else keeps its bytes and leaves the structured fields null rather than
+ * guessing at a layout this codec does not define. */
+const readRedeemer = (
+  item: Uint8Array,
+  decodeCbor: (b: Uint8Array) => unknown,
+): RedeemerView => {
+  const view: RedeemerView = {
+    cborHex: toHex(item),
+    tag: null,
+    index: null,
+    exUnits: null,
+  };
+  let parsed: unknown;
+  try {
+    parsed = decodeCbor(item);
+  } catch {
+    return view;
+  }
+  if (!Array.isArray(parsed) || parsed.length < 4) return view;
+  const [tag, index, , units] = parsed as [unknown, unknown, unknown, unknown];
+  const numeric = (v: unknown): number | null =>
+    typeof v === "bigint" || typeof v === "number" ? Number(v) : null;
+  const exUnits =
+    Array.isArray(units) && units.length >= 2
+      ? {
+          mem: BigInt(units[0] as number | bigint),
+          steps: BigInt(units[1] as number | bigint),
+        }
+      : null;
+  return { ...view, tag: numeric(tag), index: numeric(index), exUnits };
+};
 
 const toHex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
@@ -52,10 +143,13 @@ const toValueView = (value: {
 export async function decodeTransaction(
   txBytes: Uint8Array,
   lookup?: OutRefLookup,
+  options?: DecodeOptions,
 ): Promise<TransactionView> {
   const codec = await getCodec();
 
-  const full = codec.decodeMidgardNativeTxFullFromCanonicalCbor(Buffer.from(txBytes));
+  const full = codec.decodeMidgardNativeTxFullFromCanonicalCbor(
+    Buffer.from(txBytes),
+  );
   if (full.version !== SUPPORTED_VERSION) {
     throw new Error(
       `Unsupported Midgard tx format version: ${full.version} (expected ${SUPPORTED_VERSION})`,
@@ -64,7 +158,10 @@ export async function decodeTransaction(
 
   // Each spend/reference input preimage item is a standard CBOR [txid, index] pair.
   const decodeOutRef = (bytes: Uint8Array): OutRef => {
-    const [txId, index] = codec.decodeSingleCbor(bytes) as [Uint8Array, number | bigint];
+    const [txId, index] = codec.decodeSingleCbor(bytes) as [
+      Uint8Array,
+      number | bigint,
+    ];
     return { txId: toHex(txId), index: Number(index) };
   };
 
@@ -80,7 +177,12 @@ export async function decodeTransaction(
         const output = codec.decodeMidgardTxOutput(Buffer.from(hit.output));
         return {
           ...ref,
-          resolved: { address: hit.address, value: toValueView(output.value) },
+          resolved: {
+            address: hit.address,
+            addressKind: codec.decodeMidgardAddressText(hit.address)
+              .paymentCredential.kind as AddressKind,
+            value: toValueView(output.value),
+          },
         };
       }),
   );
@@ -93,20 +195,88 @@ export async function decodeTransaction(
     .decodeMidgardNativeByteListPreimage(full.body.outputsPreimageCbor)
     .map((item) => {
       const output = codec.decodeMidgardTxOutput(item);
+      const datum: DatumView | null =
+        output.datum === undefined
+          ? null
+          : {
+              cborHex: toHex(output.datum.cbor),
+              json: tryJson(
+                (b) => codec.decodeSingleCbor(b),
+                output.datum.cbor,
+              ),
+            };
+      const scriptRef: ScriptRefView | null =
+        output.script_ref === undefined
+          ? null
+          : {
+              hash: codec.hashMidgardVersionedScript(output.script_ref),
+              language: output.script_ref.language as ScriptLanguage,
+              cborHex: toHex(
+                codec.encodeMidgardVersionedScript(output.script_ref),
+              ),
+            };
       return {
         address: codec.encodeMidgardAddressText(output.address),
+        addressKind: codec.paymentCredentialFromMidgardAddress(output.address)
+          .kind as AddressKind,
         value: toValueView(output.value),
         hasDatum: output.datum !== undefined,
         hasScriptRef: output.script_ref !== undefined,
+        datum,
+        scriptRef,
       };
     });
 
   const decodedMint = codec.decodeMidgardNativeMint(full.body.mintPreimageCbor);
-  const mint = decodedMint ? { policyIds: [...decodedMint.policyIds] } : null;
+  // A mint's own map is the only place the per-asset quantities live, and a
+  // negative one is a burn. `policyIds` alone could not tell a mint of a token
+  // from a burn of it.
+  const mintedAssets = (): MintedAsset[] => {
+    if (!decodedMint) return [];
+    const out: MintedAsset[] = [];
+    const policies = decodedMint.mint.keys();
+    for (let i = 0; i < policies.len(); i += 1) {
+      const policy = policies.get(i);
+      const assets = decodedMint.mint.get_assets(policy);
+      if (!assets) continue;
+      const names = assets.keys();
+      for (let j = 0; j < names.len(); j += 1) {
+        const name = names.get(j);
+        const quantity = assets.get(name);
+        if (quantity === undefined) continue;
+        out.push({
+          policyId: policy.to_hex(),
+          assetName: name.to_hex(),
+          quantity,
+        });
+      }
+    }
+    return out;
+  };
+  const mint = decodedMint
+    ? { policyIds: [...decodedMint.policyIds], assets: mintedAssets() }
+    : null;
 
-  // Witness preimages are CBOR lists; we report counts without decoding each item.
+  // Witness preimages are CBOR lists. The counts stay so existing readers keep
+  // working; the lists beside them are what a developer debugging a script
+  // actually needs.
   const countItems = (preimage: Uint8Array): number =>
     (codec.decodeSingleCbor(preimage) as unknown[]).length;
+
+  const scripts: ScriptWitnessView[] = codec
+    .decodeMidgardVersionedScriptListPreimage(
+      full.witnessSet.scriptTxWitsPreimageCbor,
+    )
+    .map((script) => ({
+      hash: codec.hashMidgardVersionedScript(script),
+      language: script.language as ScriptLanguage,
+    }));
+
+  const redeemers: RedeemerView[] = codec
+    .decodeMidgardNativeByteListPreimage(
+      full.witnessSet.redeemerTxWitsPreimageCbor,
+    )
+    .map((item) => readRedeemer(item, (b) => codec.decodeSingleCbor(b)));
 
   const noneTime = codec.MIDGARD_POSIX_TIME_NONE;
   const noneNetwork = codec.MIDGARD_NATIVE_NETWORK_ID_NONE;
@@ -118,8 +288,12 @@ export async function decodeTransaction(
     validity: full.validity,
     fee: body.fee,
     validityInterval: {
-      start: body.validityIntervalStart === noneTime ? null : body.validityIntervalStart,
-      end: body.validityIntervalEnd === noneTime ? null : body.validityIntervalEnd,
+      start:
+        body.validityIntervalStart === noneTime
+          ? null
+          : body.validityIntervalStart,
+      end:
+        body.validityIntervalEnd === noneTime ? null : body.validityIntervalEnd,
     },
     networkId: body.networkId === noneNetwork ? null : Number(body.networkId),
     inputs,
@@ -130,7 +304,15 @@ export async function decodeTransaction(
       vkeyCount: countItems(full.witnessSet.addrTxWitsPreimageCbor),
       scriptCount: countItems(full.witnessSet.scriptTxWitsPreimageCbor),
       redeemerCount: countItems(full.witnessSet.redeemerTxWitsPreimageCbor),
+      scripts,
+      redeemers,
     },
+    cborHex: options?.includeCbor
+      ? toHex(txBytes.subarray(0, MAX_INLINE_CBOR_BYTES))
+      : null,
+    cborTruncated:
+      options?.includeCbor === true && txBytes.length > MAX_INLINE_CBOR_BYTES,
+    size: txBytes.length,
   };
 }
 
@@ -200,7 +382,10 @@ export async function decodeUtxos(
     let txId: string | null = null;
     let index: number | null = null;
     try {
-      const [id, i] = codec.decodeSingleCbor(row.outref) as [Uint8Array, number | bigint];
+      const [id, i] = codec.decodeSingleCbor(row.outref) as [
+        Uint8Array,
+        number | bigint,
+      ];
       txId = toHex(id);
       index = Number(i);
     } catch {
@@ -251,7 +436,9 @@ export type SafeDecode =
  * Decode without throwing — for list/multi contexts (a block's txs, an address
  * history) where one undecodable tx must not fail the whole response.
  */
-export async function decodeTransactionSafe(txBytes: Uint8Array): Promise<SafeDecode> {
+export async function decodeTransactionSafe(
+  txBytes: Uint8Array,
+): Promise<SafeDecode> {
   try {
     return { transaction: await decodeTransaction(txBytes), error: null };
   } catch (err) {
