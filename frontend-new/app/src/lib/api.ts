@@ -72,7 +72,11 @@ const SAFE_MESSAGES: Record<ApiErrorCategory, string> = {
 export const isRetryable = (category: ApiErrorCategory): boolean =>
   category === "network" || category === "timeout" || category === "http_5xx";
 
-const DEFAULT_TIMEOUT_MS = 15_000;
+/** Production keeps a generous budget, since a real query may legitimately be
+ * slow. Development fails fast instead: when the API is simply not running,
+ * undici's own 10s connect timeout would otherwise fire first and hold every
+ * skeleton for ~10.5s before the error state could appear, once per poll. */
+const DEFAULT_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 2_000 : 15_000;
 
 export type FetchInit = { signal?: AbortSignal; revalidate?: number };
 
