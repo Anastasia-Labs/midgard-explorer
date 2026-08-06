@@ -5,6 +5,7 @@ import { HeaderSearchBox, SearchBox } from "../search/SearchOverlay";
 import { HealthIndicator } from "./HealthIndicator";
 import { MobileNav, NavLinks } from "./NavLinks";
 import { ThemeToggle } from "./ThemeToggle";
+import { BRIDGE, TOP } from "../../lib/nav";
 import { NETWORK_LABEL } from "../../lib/network";
 
 function Brand({ small = false }: { small?: boolean }) {
@@ -27,7 +28,9 @@ function Brand({ small = false }: { small?: boolean }) {
         className="shrink-0"
       />
       {small ? (
-        <span className="min-w-0 text-sm text-text-3">Midgard Explorer, by Anastasia Labs</span>
+        <span className="min-w-0 font-display text-sm font-semibold text-text-2">
+          Midgard Explorer
+        </span>
       ) : (
         <span className="flex flex-col leading-none">
           <span className="font-display text-[17px] font-bold tracking-[0.02em] text-text">
@@ -39,6 +42,45 @@ function Brand({ small = false }: { small?: boolean }) {
         </span>
       )}
     </Link>
+  );
+}
+
+const YEAR = new Date().getFullYear();
+
+function FooterColumn({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <p className="mg-overline mb-2.5">{title}</p>
+      <ul className="flex flex-col gap-1">{children}</ul>
+    </div>
+  );
+}
+
+/** Footer links carry a comfortable tap target on phones and collapse to the
+ * text height once there is a pointer, matching the density of the columns. */
+function FooterLink({
+  href,
+  external = false,
+  children,
+}: {
+  href: string;
+  external?: boolean;
+  children: ReactNode;
+}) {
+  const className =
+    "inline-flex min-h-9 items-center text-sm text-text-3 transition-colors hover:text-text-2 hover:underline sm:min-h-0 sm:py-0.5";
+  return (
+    <li>
+      {external ? (
+        <a href={href} target="_blank" rel="noreferrer" className={className}>
+          {children}
+        </a>
+      ) : (
+        <Link href={href} className={className}>
+          {children}
+        </Link>
+      )}
+    </li>
   );
 }
 
@@ -91,29 +133,54 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       <footer className="mt-6 border-t border-border bg-surface">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-5 text-sm text-text-3">
-          <Brand small />
-          <span className="flex min-w-0 flex-wrap items-center gap-x-5 gap-y-1 mg-caption">
-            <HealthIndicator />
-            <span className="font-mono">1 ADA = 1,000,000 lovelace</span>
-            <span>Data from the connected Midgard node</span>
-            <a
-              href="https://midgardprotocol.com"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-text-2 hover:underline"
-            >
-              About Midgard
-            </a>
-            <a
-              href="https://github.com/Anastasia-Labs/midgard"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-text-2 hover:underline"
-            >
-              Source
-            </a>
-          </span>
+        <div className="mx-auto max-w-7xl px-4 py-8">
+          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr]">
+            <div className="min-w-0">
+              <Brand small />
+              <p className="mt-3 max-w-xs text-sm text-text-3">
+                A block explorer for Midgard, the Layer 2 ledger that settles on Cardano.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 mg-caption text-text-3">
+                <HealthIndicator />
+                {NETWORK_LABEL === null ? null : (
+                  <span className="font-mono">{NETWORK_LABEL}</span>
+                )}
+              </div>
+            </div>
+
+            <FooterColumn title="Explore">
+              {TOP.map((t) => (
+                <FooterLink key={t.href} href={t.href}>
+                  {t.label}
+                </FooterLink>
+              ))}
+            </FooterColumn>
+
+            <FooterColumn title="Bridge">
+              {BRIDGE.map((b) => (
+                <FooterLink key={b.href} href={b.href}>
+                  {b.label}
+                </FooterLink>
+              ))}
+            </FooterColumn>
+
+            <FooterColumn title="Resources">
+              <FooterLink href="https://midgardprotocol.com" external>
+                About Midgard
+              </FooterLink>
+              <FooterLink href="https://github.com/Anastasia-Labs/midgard" external>
+                Source
+              </FooterLink>
+            </FooterColumn>
+          </div>
+
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-border pt-5 mg-caption text-text-3">
+            <span>© {YEAR} Midgard Labs</span>
+            <span className="flex flex-wrap items-center gap-x-5 gap-y-1">
+              <span className="font-mono">1 ADA = 1,000,000 lovelace</span>
+              <span>Data from the connected Midgard node</span>
+            </span>
+          </div>
         </div>
       </footer>
     </>
