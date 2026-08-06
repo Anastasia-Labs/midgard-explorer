@@ -5,43 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "../ui/icons";
 import { cn } from "../../lib/format";
-
-/** Information architecture from the Ledger Redesign template: top-level
- * routes match the domain model; the three L1↔L2 bridge mechanisms live
- * under one "Bridge" menu instead of crowding the header.
- *
- * These are data domains only. The overview is reached through the brand mark,
- * which is already a labelled home link, so listing it here would be a second
- * control for the same destination sitting beside the first. */
-const TOP = [
-  { href: "/blocks", label: "Blocks" },
-  { href: "/transactions", label: "Transactions" },
-  { href: "/assets", label: "Assets" },
-];
-
-export const BRIDGE = [
-  {
-    href: "/deposits",
-    label: "Deposits",
-    desc: "L1 funds entering the L2 ledger",
-    from: "L1",
-    to: "L2",
-  },
-  {
-    href: "/withdrawals",
-    label: "Withdrawals",
-    desc: "L2 funds exiting back to L1",
-    from: "L2",
-    to: "L1",
-  },
-  {
-    href: "/forced-transactions",
-    label: "Forced transactions",
-    desc: "L1-escrowed transactions the operator must include",
-    from: "L1",
-    to: "L2",
-  },
-] as const;
+import { BRIDGE, TOP } from "../../lib/nav";
 
 function useActive() {
   const pathname = usePathname();

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import type { MetricsResponse, RecentBlockRow, RecentTxRow } from "@midgard-explorer/contracts";
 import { SearchBox } from "../../components/search/SearchOverlay";
-import { BRIDGE } from "../../components/shell/NavLinks";
+import { BRIDGE } from "../../lib/nav";
 import { Icon, type IconName } from "../../components/ui/icons";
 import { Identifier } from "../../components/ui/identifier";
 import { NetworkMetrics } from "../../components/ui/metrics";
