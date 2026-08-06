@@ -25,5 +25,23 @@ The rule that follows:
 - **The root must not**, because a root boundary applies the detail routes'
   problem to everything.
 
+## The overview still gets its skeleton
+
+The overview awaits five endpoints, so it does want a boundary. It gets one
+without reintroducing the root problem by living in a **route group**:
+
+    src/app/(overview)/page.tsx
+    src/app/(overview)/loading.tsx
+
+A route group adds no URL segment, so the page is still `/`, but the Suspense
+boundary is scoped to that group rather than to the root. Detail routes sit
+outside it and keep their status open.
+
+This was learned twice. `835a859` added `src/app/loading.tsx` for the overview's
+benefit and silently reverted the rule above; the ten status-code assertions in
+`e2e/core-flows.spec.ts` failed from that commit until the route group replaced
+it. If a boundary is ever wanted for another slow page, give that page its own
+group. Never put one at the root.
+
 `e2e/core-flows.spec.ts` asserts the status codes directly, so reintroducing a
 root `loading.tsx` fails the suite rather than silently reverting this.

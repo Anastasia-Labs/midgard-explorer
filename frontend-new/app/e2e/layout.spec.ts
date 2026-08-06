@@ -1,4 +1,4 @@
-import { FIXTURE, expect, test } from "./helpers";
+import { FIXTURE, expect, settle, test } from "./helpers";
 import {
   TX_GATES,
   VIEWPORTS,
@@ -140,6 +140,11 @@ test.describe("summary band fills its rows", () => {
       for (const [label, path] of routes) {
         await page.goto(path);
         await page.getByRole("heading", { level: 1 }).first().waitFor();
+        // Without this the gap is read before the stylesheet applies, so every
+        // band computes `normal` and the filter below finds nothing. The
+        // failure then reads as "no hairline-gap container" rather than as the
+        // timing race it is.
+        await settle(page);
         // A collapsed <details> has no layout, so its contents would be
         // silently skipped rather than measured. The journey stage list lives
         // in one, and that is where the second instance of this defect was.

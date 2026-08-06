@@ -1,7 +1,10 @@
-import { PageHeader, Panel, Skeleton } from "../components/ui/primitives";
+import { PageHeader, Panel, Skeleton } from "../../components/ui/primitives";
 
 // The overview awaits five endpoints before it returns anything, so without a
 // boundary here the route streams no HTML at all until the slowest one settles.
+// It lives in the `(overview)` route group so the Suspense boundary covers this
+// page alone. At the root it covered every route, which committed a 200 before
+// the detail routes could call `notFound()`. See ../LOADING.md.
 // Header and search are static, so they paint immediately; only the data
 // regions shimmer, and the layout matches Overview to avoid a shift on swap.
 export default function Loading() {

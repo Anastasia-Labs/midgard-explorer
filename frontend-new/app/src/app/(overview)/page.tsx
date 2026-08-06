@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { Overview } from "../features/overview/Overview";
-import { getOverviewData } from "../lib/overview";
+import { Overview } from "../../features/overview/Overview";
+import { getOverviewData } from "../../lib/overview";
 
 export const metadata: Metadata = {
   title: "Overview",
