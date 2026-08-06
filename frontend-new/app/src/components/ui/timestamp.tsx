@@ -26,21 +26,39 @@ const subscribe = (l: () => void): (() => void) => {
 const getNow = () => now;
 const getServerNow = () => 0;
 
-export function Timestamp({ iso, className }: { iso: string; className?: string }) {
+export function Timestamp({
+  iso,
+  exact: showExact = false,
+  className,
+}: {
+  iso: string;
+  /** Show the absolute instant beside the relative one. Every reference
+   * explorer does this on detail pages, where there is room for it and where a
+   * reader wants the moment rather than the distance. Lists stay relative. */
+  exact?: boolean;
+  className?: string;
+}) {
   const nowMs = useSyncExternalStore(subscribe, getNow, getServerNow);
   const exact = formatTimestamp(iso);
-  // The exact instant is read by assistive tech, not only hover: `title`
-  // alone is not reachable by keyboard or screen reader.
+  const relative = nowMs === 0 ? exact : relativeTime(iso, nowMs);
+  // No `title`: hover reached neither touch nor keyboard. The absolute instant
+  // is either rendered beside the relative one or read out by assistive tech.
   return (
     <time
       dateTime={iso}
-      title={exact}
       className={cn(
-        "inline-block min-w-[7.5ch] whitespace-nowrap mg-caption text-text-3 tabular-nums",
+        "inline-block whitespace-nowrap mg-caption text-text-3 tabular-nums",
+        showExact ? "min-w-0" : "min-w-[7.5ch]",
         className,
       )}
     >
-      <span aria-hidden>{nowMs === 0 ? exact : relativeTime(iso, nowMs)}</span>
+      <span aria-hidden>{relative}</span>
+      {showExact && relative !== exact ? (
+        <span aria-hidden className="text-text-3">
+          {" · "}
+          {exact}
+        </span>
+      ) : null}
       <span className="sr-only">{exact}</span>
     </time>
   );

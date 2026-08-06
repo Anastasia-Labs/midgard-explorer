@@ -110,7 +110,9 @@ export function JourneyIndicator({ status }: { status: string }) {
         : `${label}: step ${step} of ${total}`;
 
   return (
-    <span className="inline-flex items-center gap-0.75" title={description}>
+    <span className="inline-flex items-center gap-0.75">
+      {/* The dots are decorative and the sr-only line carries the same fact in
+          words. A hover-only `title` added nothing a touch user could reach. */}
       <span className="sr-only">{description}</span>
       {Array.from({ length: total }, (_, i) => (
         <span

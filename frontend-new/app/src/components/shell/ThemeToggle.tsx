@@ -63,7 +63,6 @@ export function ThemeToggle() {
     <button
       type="button"
       aria-label={label}
-      title={label}
       onClick={() => apply(next, os)}
       className="relative flex size-9 items-center justify-center rounded-md text-text-2 hover:bg-surface-2 hover:text-text"
     >

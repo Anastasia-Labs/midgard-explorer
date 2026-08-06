@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { HeaderSearchBox, SearchBox } from "../search/SearchOverlay";
+import { InfoTip } from "../ui/infotip";
 import { HealthIndicator } from "./HealthIndicator";
 import { MobileNav, NavLinks } from "./NavLinks";
 import { ThemeToggle } from "./ThemeToggle";
@@ -106,12 +107,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex min-w-0 items-center justify-end gap-2">
             <HeaderSearchBox />
             {NETWORK_LABEL === null ? (
-              <span
-                className="hidden items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1 text-[11.5px] font-semibold text-warning sm:inline-flex"
-                title="Set NEXT_PUBLIC_NETWORK_LABEL to identify this deployment's network."
-              >
+              <span className="hidden items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1 text-[11.5px] font-semibold text-warning sm:inline-flex">
                 <span aria-hidden className="size-1.5 rounded-full bg-warning" />
                 Network not configured
+                <InfoTip
+                  subject="network configuration"
+                  explain="Set NEXT_PUBLIC_NETWORK_LABEL to identify which network this deployment reads from."
+                />
               </span>
             ) : (
               <span className="hidden items-center gap-1.5 rounded-md border border-border bg-surface-2 px-2.5 py-1 font-mono text-[11.5px] font-semibold text-text-2 sm:inline-flex">
@@ -142,9 +144,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 mg-caption text-text-3">
                 <HealthIndicator />
-                {NETWORK_LABEL === null ? null : (
-                  <span className="font-mono">{NETWORK_LABEL}</span>
-                )}
+                {NETWORK_LABEL === null ? null : <span className="font-mono">{NETWORK_LABEL}</span>}
               </div>
             </div>
 

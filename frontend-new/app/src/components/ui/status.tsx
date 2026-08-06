@@ -1,5 +1,6 @@
 import { cn } from "../../lib/format";
 import { statusOf, type StatusTone } from "../../lib/status-registry";
+import { InfoTip } from "./infotip";
 import { JourneyIndicator } from "./journey";
 
 export { statusOf };
@@ -59,17 +60,19 @@ export function StatusBadge({ status, className }: { status: string; className?:
   const { tone, label, explain, known } = statusOf(status);
   const state: StateClass = known ? STATE_CLASS[tone] : "unknown";
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs",
-        TONE_CLASS[tone],
-        className,
-      )}
-      title={explain}
-    >
-      <Marker state={state} />
-      {label}
-      {known ? null : <span className="sr-only">(unrecognized status)</span>}
+    <span className="inline-flex items-center gap-1">
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs",
+          TONE_CLASS[tone],
+          className,
+        )}
+      >
+        <Marker state={state} />
+        {label}
+        {known ? null : <span className="sr-only">(unrecognized status)</span>}
+      </span>
+      <InfoTip explain={explain} subject={label} />
     </span>
   );
 }

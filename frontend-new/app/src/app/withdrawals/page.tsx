@@ -4,6 +4,7 @@ import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Icon } from "../../components/ui/icons";
 import { Identifier } from "../../components/ui/identifier";
 import { L1TxLink } from "../../components/ui/l1link";
+import { InfoTip } from "../../components/ui/infotip";
 import { StatusLegend } from "../../components/ui/legend";
 import { PageError } from "../../components/ui/pageerror";
 import { L1L2Badge, PageHeader } from "../../components/ui/primitives";
@@ -72,11 +73,13 @@ export default async function WithdrawalsPage({
           columns={[
             {
               header: "L1 tx",
+              headerNote: "on Cardano",
               cell: (r) => (
                 <span className="inline-flex items-center gap-1.5">
                   <L1TxLink hash={r.withdrawal_l1_tx_hash} />
-                  <span className="font-mono text-[11px] text-text-3" title="L1 output index">
+                  <span className="font-mono text-[11px] text-text-3">
                     #{r.withdrawal_l1_output_index}
+                    <span className="sr-only"> (L1 output index)</span>
                   </span>
                 </span>
               ),
@@ -97,18 +100,27 @@ export default async function WithdrawalsPage({
                 r.l2_value ? (
                   <ValueCell value={r.l2_value} />
                 ) : (
-                  <span className="text-text-3" title="This row could not be decoded.">
+                  <span className="inline-flex items-center gap-1 text-text-3">
                     undecodable
+                    <InfoTip
+                      subject="undecodable value"
+                      explain="This row could not be decoded by the explorer, so its value is unavailable."
+                    />
                   </span>
                 ),
               align: "right",
             },
             {
               header: "Validity",
+              headerNote: "whether the node accepted it",
               cell: (r) =>
                 r.validity === null ? (
-                  <span className="text-text-3" title="Not yet validated by the node.">
+                  <span className="inline-flex items-center gap-1 text-text-3">
                     Not yet
+                    <InfoTip
+                      subject="validity"
+                      explain="The node has not validated this withdrawal yet, so it has no validity result."
+                    />
                   </span>
                 ) : (
                   <StatusBadge status={r.validity} />

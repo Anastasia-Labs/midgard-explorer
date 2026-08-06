@@ -48,11 +48,7 @@ export function AssetFingerprint({ policyId, nameHex }: { policyId: string; name
 }
 
 export function AssetQuantity({ quantity }: { quantity: string }) {
-  return (
-    <span className="font-mono tabular-nums" title={`${quantity} (raw)`}>
-      {formatQuantity(quantity)}
-    </span>
-  );
+  return <span className="font-mono tabular-nums">{formatQuantity(quantity)}</span>;
 }
 
 /** Policy-grouped holdings, with each asset linking to its own page. */

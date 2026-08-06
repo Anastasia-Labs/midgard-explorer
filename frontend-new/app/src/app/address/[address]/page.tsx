@@ -5,6 +5,7 @@ import { AdaAmount, ValueCell } from "../../../components/ui/amount";
 import { ApiExample } from "../../../components/ui/apiexample";
 import { AssetHierarchy } from "../../../components/ui/asset";
 import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
+import { InfoTip } from "../../../components/ui/infotip";
 import { Identifier } from "../../../components/ui/identifier";
 import { IdentityBar } from "../../../components/ui/identitybar";
 import { PageError } from "../../../components/ui/pageerror";
@@ -119,11 +120,12 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
               r.spentComplete && r.spent !== null ? (
                 <AdaAmount lovelace={r.spent} />
               ) : (
-                <span
-                  className="text-text-3"
-                  title="Some inputs of this transaction are no longer in the ledger, so the amount spent from this address cannot be determined."
-                >
+                <span className="inline-flex items-center gap-1 text-text-3">
                   Inputs pruned
+                  <InfoTip
+                    subject="pruned inputs"
+                    explain="Some inputs of this transaction are no longer in the ledger, so the amount spent from this address cannot be determined."
+                  />
                 </span>
               ),
             hideBelow: "lg",
@@ -301,11 +303,19 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
           { label: "Transactions", value: data.txCount },
           {
             label: "First activity",
-            value: data.firstActivity ? <Timestamp iso={data.firstActivity} /> : "Not recorded",
+            value: data.firstActivity ? (
+              <Timestamp exact iso={data.firstActivity} />
+            ) : (
+              "Not recorded"
+            ),
           },
           {
             label: "Latest activity",
-            value: data.latestActivity ? <Timestamp iso={data.latestActivity} /> : "Not recorded",
+            value: data.latestActivity ? (
+              <Timestamp exact iso={data.latestActivity} />
+            ) : (
+              "Not recorded"
+            ),
           },
         ]}
       />

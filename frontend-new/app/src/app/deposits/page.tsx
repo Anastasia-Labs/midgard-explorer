@@ -4,6 +4,7 @@ import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Icon } from "../../components/ui/icons";
 import { Identifier } from "../../components/ui/identifier";
 import { L1TxLink } from "../../components/ui/l1link";
+import { InfoTip } from "../../components/ui/infotip";
 import { StatusLegend } from "../../components/ui/legend";
 import { PageError } from "../../components/ui/pageerror";
 import { L1L2Badge, PageHeader } from "../../components/ui/primitives";
@@ -94,8 +95,12 @@ export default async function DepositsPage({
                 r.value ? (
                   <ValueCell value={r.value} />
                 ) : (
-                  <span className="text-text-3" title="This row could not be decoded.">
+                  <span className="inline-flex items-center gap-1 text-text-3">
                     undecodable
+                    <InfoTip
+                      subject="undecodable value"
+                      explain="This row could not be decoded by the explorer, so its value is unavailable."
+                    />
                   </span>
                 ),
               align: "right",

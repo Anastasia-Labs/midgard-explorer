@@ -75,11 +75,13 @@ export default async function ForcedTransactionsPage({
             },
             {
               header: "L1 tx",
+              headerNote: "on Cardano",
               cell: (r) => (
                 <span className="inline-flex items-center gap-1.5">
                   <L1TxLink hash={r.tx_order_l1_tx_hash} />
-                  <span className="font-mono text-[11px] text-text-3" title="L1 output index">
+                  <span className="font-mono text-[11px] text-text-3">
                     #{r.tx_order_l1_output_index}
+                    <span className="sr-only"> (L1 output index)</span>
                   </span>
                 </span>
               ),

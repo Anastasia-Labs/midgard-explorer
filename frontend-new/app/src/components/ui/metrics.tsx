@@ -3,6 +3,7 @@ import Link from "next/link";
 import { cn, formatDuration, formatTimestamp, groupThousands } from "../../lib/format";
 import { networkHealth, type NetworkHealth } from "../../lib/health";
 import { Icon } from "./icons";
+import { FieldLabel } from "./infotip";
 import { LiveValue } from "./livevalue";
 import { Panel } from "./primitives";
 import { StatusBadge } from "./status";
@@ -105,8 +106,10 @@ function Figure({
     </span>
   );
   return (
-    <div className="min-w-0 px-4 py-3" title={hint}>
-      <p className="mg-overline">{label}</p>
+    <div className="min-w-0 px-4 py-3">
+      <p className="mg-overline">
+        <FieldLabel label={label} explain={hint} />
+      </p>
       <p className="mt-1">
         {live === undefined ? figure : <LiveValue value={live}>{figure}</LiveValue>}
       </p>

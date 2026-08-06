@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { InfoTip } from "./infotip";
 import { LedgerRow, type LedgerRowSpec } from "./mobilerow";
 import { EmptyState, ErrorState, TableSkeleton } from "./primitives";
 
@@ -11,6 +12,13 @@ const HIDE_CLASS = {
 
 export type Column<T> = {
   header: string;
+  /** A short qualifier rendered under the header, always visible.
+   *
+   * A column that needs explaining is better served by a permanent second line
+   * than by a control the reader has to find and open: the explanation is there
+   * at the moment it is needed and costs no interaction. Keep it to a few
+   * words; anything longer belongs in the page subtitle. */
+  headerNote?: string;
   cell: (row: T) => ReactNode;
   align?: "right";
   hideBelow?: keyof typeof HIDE_CLASS;
@@ -92,6 +100,11 @@ export function DataTable<T>({
                   className={`px-4 py-2.5 font-medium ${c.hideBelow ? HIDE_CLASS[c.hideBelow] : ""} ${c.align === "right" ? "text-right tabular-nums" : ""}`}
                 >
                   {c.header}
+                  {c.headerNote ? (
+                    <span className="block text-[10px] font-normal normal-case tracking-normal text-text-3">
+                      {c.headerNote}
+                    </span>
+                  ) : null}
                 </th>
               ))}
             </tr>
@@ -227,11 +240,14 @@ function PageLink({
 export function DecodeWarn({ error }: { error: string | null }) {
   if (error === null) return null;
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs text-warning"
-      title="This row could not be decoded by the explorer."
-    >
-      Partial decode
+    <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-0.5 text-xs text-warning">
+        Partial decode
+      </span>
+      <InfoTip
+        subject="partial decode"
+        explain="This row could not be decoded by the explorer, so some of its fields are missing."
+      />
     </span>
   );
 }

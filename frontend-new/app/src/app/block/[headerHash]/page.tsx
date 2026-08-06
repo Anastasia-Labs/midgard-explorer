@@ -154,8 +154,8 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
         ))}
       </div>
       <div className="grid grid-cols-2 gap-x-8 gap-y-2 border-t border-border p-4 text-sm sm:grid-cols-3">
-        <Field label="Block start" value={<Timestamp iso={data.da.block_start_time} />} />
-        <Field label="Block end" value={<Timestamp iso={data.da.block_end_time} />} />
+        <Field label="Block start" value={<Timestamp exact iso={data.da.block_start_time} />} />
+        <Field label="Block end" value={<Timestamp exact iso={data.da.block_end_time} />} />
         <Field
           label="Duration"
           value={windowMs === null ? "Not recorded" : formatDuration(windowMs)}

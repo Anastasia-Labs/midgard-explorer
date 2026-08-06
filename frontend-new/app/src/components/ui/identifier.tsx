@@ -28,7 +28,6 @@ export function Identifier({
         full ? "break-all" : "whitespace-nowrap",
         className,
       )}
-      title={value}
     >
       {display}
     </span>

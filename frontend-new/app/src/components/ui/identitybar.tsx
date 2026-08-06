@@ -31,10 +31,7 @@ export function IdentityBar({
           truncated line; the copy button still yields the full value, and it is
           shown in full from `sm` up. */}
       <div className="mt-2 flex items-center gap-1.5">
-        <code
-          title={value}
-          className="min-w-0 truncate font-mono text-[14.5px] font-medium leading-normal text-text sm:hidden"
-        >
+        <code className="min-w-0 truncate font-mono text-[14.5px] font-medium leading-normal text-text sm:hidden">
           {value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-10)}` : value}
         </code>
         <code className="hidden min-w-0 break-all font-mono text-[14.5px] font-medium leading-normal text-text sm:inline">
@@ -48,7 +45,6 @@ export function IdentityBar({
               target="_blank"
               rel="noopener noreferrer"
               aria-label={externalLabel ?? "Open on Cardano explorer"}
-              title={externalLabel ?? "Open on Cardano explorer"}
               className="flex size-7 items-center justify-center rounded text-text-3 hover:text-text-2"
             >
               <Icon name="external" size={14} />

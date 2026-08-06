@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { AdaAmount, ValueCell } from "../src/components/ui/amount";
 import { Journey } from "../src/components/ui/journey";
@@ -38,9 +38,13 @@ describe("StatusBadge", () => {
     expect(screen.queryByText("(unrecognized status)")).toBeNull();
   });
 
-  it("carries a plain-English explanation, not colour alone", () => {
+  it("carries a plain-English explanation reachable without a mouse", () => {
     const { container } = render(<StatusBadge status="pending_commit" />);
-    expect(container.querySelector("[title]")?.getAttribute("title")).toMatch(/waiting/i);
+    // The explanation used to live in `title=`, which touch and screen-reader
+    // users could not reach. It is now behind a real button.
+    expect(container.querySelector("[title]")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "About Pending commit" }));
+    expect(screen.getByRole("tooltip").textContent).toMatch(/waiting/i);
   });
 });
 
@@ -247,29 +251,35 @@ describe("StatusBadge reads the authoritative registry", () => {
   });
 
   it("encodes state class in shape, not hue alone", () => {
+    // Scoped to the badge: the help trigger beside it carries its own glyph,
+    // so an unscoped svg lookup would report a marker that is not there.
+    const marker = (container: HTMLElement) =>
+      container.querySelector(".rounded-full.border")?.querySelector("svg") ?? null;
+
     const settled = render(<StatusBadge status="committed" />);
-    expect(settled.container.querySelector("svg")).not.toBeNull();
+    expect(marker(settled.container)).not.toBeNull();
     cleanup();
     const failed = render(<StatusBadge status="rejected" />);
-    expect(failed.container.querySelector("svg")).not.toBeNull();
+    expect(marker(failed.container)).not.toBeNull();
     cleanup();
     // A state still in motion gets a dot, never the conclusion glyph.
     const waiting = render(<StatusBadge status="pending_commit" />);
-    expect(waiting.container.querySelector("svg")).toBeNull();
+    expect(marker(waiting.container)).toBeNull();
   });
 });
 
 describe("AdaAmount", () => {
-  it("shows grouped ada and keeps exact lovelace in the title", () => {
-    render(<AdaAmount lovelace="1234567890" />);
-    const el = screen.getByTitle("1234567890 lovelace");
-    expect(el.textContent).toContain("1,234.56789");
+  it("shows grouped ada at full precision", () => {
+    const { container } = render(<AdaAmount lovelace="1234567890" />);
+    // formatAda is lossless, so no hover-only copy of the raw figure is owed.
+    expect(container.querySelector("[title]")).toBeNull();
+    expect(container.textContent).toContain("1,234.56789");
   });
 
-  it("puts the ada symbol before the amount", () => {
-    render(<AdaAmount lovelace="1000000" />);
-    const el = screen.getByTitle("1000000 lovelace");
-    expect(el.textContent?.trim()).toBe("₳ 1");
+  it("puts the ada symbol before the amount and names the unit for screen readers", () => {
+    const { container } = render(<AdaAmount lovelace="1000000" />);
+    expect(container.textContent?.trim()).toBe("₳ 1 ada");
+    expect(container.querySelector("[aria-hidden]")?.textContent).toBe("₳");
   });
 });
 
@@ -328,12 +338,13 @@ describe("ValueCell", () => {
     expect(within(container).getByText("MIDGARD")).toBeDefined();
   });
 
-  it("keeps the exact count in the title once the names are elided", () => {
+  it("keeps the exact count reachable once the names are elided", () => {
     const { container } = render(
       <ValueCell value={value("1", { p: { "41": "1", "42": "2", "43": "3", "44": "4" } })} />,
     );
-    const chip = within(container).getByText(/\+2$/);
-    expect(chip.getAttribute("title")).toBe("4 native assets");
+    // The count moved out of `title` into text assistive tech can actually read.
+    expect(container.querySelector("[title]")).toBeNull();
+    expect(within(container).getByText(/^4 native assets:/)).toBeDefined();
   });
 
   it("shows an unreadable name as its bytes, never as a guess", () => {

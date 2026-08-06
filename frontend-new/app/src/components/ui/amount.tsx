@@ -6,8 +6,12 @@ import { assetCount, formatAda } from "../../lib/format";
  * Summary bands used to render it leading and tables trailing. */
 export function AdaAmount({ lovelace }: { lovelace: string }) {
   return (
-    <span className="font-mono tabular-nums" title={`${lovelace} lovelace`}>
-      <span className="text-text-3">₳</span> {formatAda(lovelace)}
+    <span className="font-mono tabular-nums">
+      <span aria-hidden className="text-text-3">
+        ₳
+      </span>{" "}
+      {formatAda(lovelace)}
+      <span className="sr-only"> ada</span>
     </span>
   );
 }
@@ -32,11 +36,11 @@ export function ValueCell({ value }: { value: ValueView }) {
     <span className="inline-flex items-center gap-2">
       <AdaAmount lovelace={value.lovelace} />
       {count > 0 ? (
-        <span
-          className="max-w-[16ch] truncate rounded-full bg-surface-2 px-2 py-0.5 text-xs text-text-2"
-          title={`${count} native asset${count === 1 ? "" : "s"}`}
-        >
-          {assetSummary(value)}
+        <span className="max-w-[16ch] truncate rounded-full bg-surface-2 px-2 py-0.5 text-xs text-text-2">
+          <span aria-hidden>{assetSummary(value)}</span>
+          <span className="sr-only">
+            {count} native asset{count === 1 ? "" : "s"}: {assetSummary(value)}
+          </span>
         </span>
       ) : null}
     </span>
