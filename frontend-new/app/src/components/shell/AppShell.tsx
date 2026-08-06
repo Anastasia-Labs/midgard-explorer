@@ -53,13 +53,16 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
 
       <header className="sticky top-0 z-40 border-b border-border bg-bg">
-        <div className="mx-auto flex h-[60px] max-w-7xl items-center gap-4 px-4">
+        {/* Three columns rather than a flex row with mx-auto: the centre column
+            is measured against the header, not against whatever the two side
+            clusters happen to weigh. The active nav item turns semibold and the
+            network badge appears at sm, both of which would otherwise shift the
+            nav sideways as you navigate and resize. */}
+        <div className="mx-auto grid h-[60px] max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-4">
           <Brand />
           <NavLinks />
-          <div className="mx-auto hidden w-full max-w-md lg:block">
+          <div className="flex min-w-0 items-center justify-end gap-2">
             <HeaderSearchBox />
-          </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2 lg:ml-0">
             {NETWORK_LABEL === null ? (
               <span
                 className="hidden items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1 text-[11.5px] font-semibold text-warning sm:inline-flex"

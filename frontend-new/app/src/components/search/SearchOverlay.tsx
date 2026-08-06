@@ -45,11 +45,17 @@ function readRecent(): string[] {
 export type SearchVariant = "header" | "hero" | "icon";
 
 /** The overview leads with the hero search, so the header's copy of the same
- * control is suppressed there rather than shown twice on one screen. */
+ * control is suppressed there rather than shown twice on one screen. The width
+ * lives here rather than in the header, so the null case leaves no empty gap in
+ * the layout. */
 export function HeaderSearchBox() {
   const pathname = usePathname();
   if (pathname === "/") return null;
-  return <SearchBox variant="header" />;
+  return (
+    <div className="hidden w-40 lg:block">
+      <SearchBox variant="header" />
+    </div>
+  );
 }
 
 export function SearchBox({ variant }: { variant: SearchVariant }) {
@@ -189,7 +195,12 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
           )}
         >
           <Icon name="search" size={variant === "hero" ? 17 : 15} />
-          <span className="flex-1 truncate">Search transactions, blocks, addresses</span>
+          {/* The hero has room to say what is searchable. The header trigger is
+              compact, and the overlay's placeholder and hint line answer the
+              same question as soon as it opens. */}
+          <span className="flex-1 truncate">
+            {variant === "hero" ? "Search transactions, blocks, addresses" : "Search"}
+          </span>
           <kbd className="rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[11px] text-text-3">
             ⌘K
           </kbd>
