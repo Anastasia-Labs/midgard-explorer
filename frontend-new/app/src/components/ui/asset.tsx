@@ -19,14 +19,13 @@ export function AssetName({ nameHex, className }: { nameHex: string; className?:
   const { label, canonical } = assetLabel(nameHex);
   return (
     <span className={cn("min-w-0", className)}>
-      <span
-        className={cn("break-all", canonical ? "font-mono mg-caption" : "text-sm font-medium")}
-        // A decoded name is not the asset's identity, so it is marked as text
-        // the ledger supplied rather than styled like the explorer's own copy.
-        {...(canonical ? {} : { title: `Decoded from ${nameHex}` })}
-      >
+      <span className={cn("break-all", canonical ? "font-mono mg-caption" : "text-sm font-medium")}>
         {label}
       </span>
+      {/* A decoded name is not the asset's identity. The bytes it came from are
+          rendered beside it below, so a hover-only "Decoded from …" said
+          nothing extra and said it only to a mouse. */}
+      {canonical ? null : <span className="sr-only"> decoded from {nameHex},</span>}
       {canonical ? null : (
         <span className="ml-1.5 font-mono text-[11px] text-text-3">
           {truncateId(nameHex, 8, 4)}

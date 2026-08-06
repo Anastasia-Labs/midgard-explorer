@@ -1,6 +1,7 @@
 import type { TransactionView } from "@midgard-explorer/contracts";
 import { addressDeltas, ledgerEquation } from "../../lib/ledger";
-import { cn, formatAda } from "../../lib/format";
+import { cn, formatAda, truncateId } from "../../lib/format";
+import { AssetName } from "./asset";
 import { Identifier } from "./identifier";
 
 /** What a transaction did, stated as arithmetic.
@@ -142,6 +143,8 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
       {deltas.length > 0 ? (
         <div className="border-t border-border">
           <h3 className="mg-overline px-4 pt-3">Net movement by address</h3>
+          {/* Ada alone said nothing about a transaction that moved a token and
+              no lovelace, which is a whole class of Midgard activity. */}
           <ul className="divide-y divide-border">
             {deltas.map((d) => {
               const net = d.received - d.spent;
@@ -159,6 +162,43 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
                       <span className="block text-text-3">received; spend side unknown</span>
                     </span>
                   )}
+                  {d.assets.length > 0 ? (
+                    <ul className="w-full space-y-0.5 pl-0.5">
+                      {d.assets.map((a) => {
+                        const assetNet = a.received - a.spent;
+                        return (
+                          <li
+                            key={`${a.policyId}.${a.assetName}`}
+                            className="flex items-center justify-between gap-3 mg-micro"
+                          >
+                            <span className="flex min-w-0 items-baseline gap-1.5">
+                              <AssetName nameHex={a.assetName} />
+                              <span className="shrink-0 font-mono text-[10px] text-text-3">
+                                {truncateId(a.policyId, 6, 4)}
+                              </span>
+                            </span>
+                            {d.exact ? (
+                              <span
+                                className={cn(
+                                  "font-mono tabular-nums",
+                                  assetNet > 0n && "text-success",
+                                  assetNet < 0n && "text-danger",
+                                  assetNet === 0n && "text-text-3",
+                                )}
+                              >
+                                {assetNet > 0n ? "+" : ""}
+                                {assetNet.toString()}
+                              </span>
+                            ) : (
+                              <span className="font-mono tabular-nums text-text-3">
+                                +{a.received.toString()} received
+                              </span>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : null}
                 </li>
               );
             })}

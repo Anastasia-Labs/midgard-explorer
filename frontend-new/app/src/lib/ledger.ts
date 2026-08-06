@@ -1,4 +1,4 @@
-import type { TransactionView } from "@midgard-explorer/contracts";
+import type { TransactionView, ValueView } from "@midgard-explorer/contracts";
 
 /** The ledger equation behind a transaction: inputs = outputs + fee.
  *
@@ -107,27 +107,66 @@ export type AddressDelta = {
   /** False when some input of the transaction did not resolve, so `spent` is a
    * lower bound and `net` must not be shown. */
   exact: boolean;
+  /** Movement of each native asset this address touched. Ada alone answered
+   * nothing for a transaction that moved a token and no lovelace, which is a
+   * whole class of Midgard activity. Empty when only ada moved. */
+  assets: AssetDelta[];
 };
+
+export type AssetDelta = {
+  policyId: string;
+  assetName: string;
+  received: bigint;
+  spent: bigint;
+};
+
+type Side = "received" | "spent";
 
 export function addressDeltas(tx: TransactionView): AddressDelta[] {
   const exact = tx.inputs.every((i) => i.resolved !== null);
-  const byAddress = new Map<string, { received: bigint; spent: bigint }>();
-  const entry = (address: string) => {
-    const found = byAddress.get(address) ?? { received: 0n, spent: 0n };
+  type Acc = {
+    received: bigint;
+    spent: bigint;
+    assets: Map<string, { policyId: string; assetName: string; received: bigint; spent: bigint }>;
+  };
+  const byAddress = new Map<string, Acc>();
+  const entry = (address: string): Acc => {
+    const found = byAddress.get(address) ?? { received: 0n, spent: 0n, assets: new Map() };
     byAddress.set(address, found);
     return found;
   };
 
-  for (const output of tx.outputs) {
-    entry(output.address).received += BigInt(output.value.lovelace);
-  }
+  const addValue = (address: string, value: ValueView, side: Side) => {
+    const acc = entry(address);
+    acc[side] += BigInt(value.lovelace);
+    for (const [policyId, names] of Object.entries(value.assets)) {
+      for (const [assetName, quantity] of Object.entries(names)) {
+        const key = `${policyId}.${assetName}`;
+        const asset = acc.assets.get(key) ?? { policyId, assetName, received: 0n, spent: 0n };
+        asset[side] += BigInt(quantity);
+        acc.assets.set(key, asset);
+      }
+    }
+  };
+
+  for (const output of tx.outputs) addValue(output.address, output.value, "received");
   for (const input of tx.inputs) {
     if (input.resolved === null) continue;
-    entry(input.resolved.address).spent += BigInt(input.resolved.value.lovelace);
+    addValue(input.resolved.address, input.resolved.value, "spent");
   }
 
   return [...byAddress.entries()]
-    .map(([address, v]) => ({ address, received: v.received, spent: v.spent, exact }))
+    .map(([address, v]) => ({
+      address,
+      received: v.received,
+      spent: v.spent,
+      exact,
+      // Sorted so two renders of the same transaction agree, and so a reader
+      // comparing two addresses sees the same asset in the same place.
+      assets: [...v.assets.values()].sort(
+        (a, b) => a.policyId.localeCompare(b.policyId) || a.assetName.localeCompare(b.assetName),
+      ),
+    }))
     .sort((a, b) => {
       const an = a.received - a.spent;
       const bn = b.received - b.spent;

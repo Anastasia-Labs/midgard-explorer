@@ -12,6 +12,7 @@ import { IdentityBar } from "../../../components/ui/identitybar";
 import { PageError } from "../../../components/ui/pageerror";
 import { Callout, Card, PageHeader } from "../../../components/ui/primitives";
 import { RawData } from "../../../components/ui/rawdata";
+import { DatumPanel, RawCbor, WitnessPanel } from "../../../components/ui/scriptdata";
 import { Journey } from "../../../components/ui/journey";
 import { LedgerEquation } from "../../../components/ui/ledger";
 import { StatusBadge } from "../../../components/ui/status";
@@ -287,6 +288,12 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
     </>
   );
 
+  // Datums belong to the outputs that carry them, so the output index travels
+  // with each one: "an inline datum" alone does not say which UTxO it locks.
+  const datums = tx.outputs.flatMap((output, index) =>
+    output.datum === null ? [] : [{ index, address: output.address, datum: output.datum }],
+  );
+
   return (
     <>
       <Breadcrumbs items={CRUMBS} />
@@ -307,28 +314,58 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
           { label: "Inputs", value: tx.inputs.length },
           { label: "Outputs", value: tx.outputs.length },
           { label: "Fee", value: <AdaAmount lovelace={tx.fee} /> },
+          {
+            label: "Size",
+            value: (
+              <span className="font-mono tabular-nums">
+                {tx.size.toLocaleString()}
+                <span className="ml-1 text-text-3">bytes</span>
+              </span>
+            ),
+          },
         ]}
       />
 
       <Tabs
         tabs={[
-          { id: "summary", label: "Summary", content: summaryTab },
+          // Named from what the reference explorers call these sections rather
+          // than from our own vocabulary: "State" is what Etherscan, Blockscout
+          // and cexplorer all call "what this transaction changed", which is
+          // exactly what the ledger equation and per-address movement answer.
+          { id: "summary", label: "Overview", content: summaryTab },
           {
             id: "utxo",
-            label: "UTxO flow",
+            label: "State",
             count: tx.inputs.length + tx.outputs.length,
             content: utxoTab,
+          },
+          {
+            id: "datums",
+            label: "Datums & redeemers",
+            count: datums.length + tx.witnesses.scripts.length + tx.witnesses.redeemers.length,
+            content: (
+              <div className="space-y-5">
+                <DatumPanel datums={datums} />
+                <WitnessPanel scripts={tx.witnesses.scripts} redeemers={tx.witnesses.redeemers} />
+              </div>
+            ),
           },
           {
             id: "raw",
             label: "Raw",
             content: (
-              <>
-                <div className="mb-4">
-                  <ApiExample path={`/api/transaction?tx_hash=${tx.txId}`} />
-                </div>
+              <div className="space-y-4">
+                <ApiExample path={`/api/transaction?tx_hash=${tx.txId}`} />
+                {tx.cborHex === null ? null : (
+                  <RawCbor
+                    cborHex={tx.cborHex}
+                    truncated={tx.cborTruncated}
+                    size={tx.size}
+                    txId={tx.txId}
+                  />
+                )}
                 <RawData data={data} filename={`tx-${tx.txId}.json`} />
-              </>
+              </div>
             ),
           },
         ]}

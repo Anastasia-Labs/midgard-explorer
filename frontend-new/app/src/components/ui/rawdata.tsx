@@ -23,7 +23,16 @@ export function RawData({ data, filename }: { data: unknown; filename: string })
           </a>
         </div>
       </div>
-      <pre className="max-h-128 overflow-auto p-4 font-mono text-xs leading-relaxed">{json}</pre>
+      {/* A scrollable region with no focusable content cannot be scrolled from
+          a keyboard at all, which axe reports as a serious violation. */}
+      <pre
+        tabIndex={0}
+        role="region"
+        aria-label="Raw response body"
+        className="max-h-128 overflow-auto p-4 font-mono text-xs leading-relaxed"
+      >
+        {json}
+      </pre>
     </section>
   );
 }

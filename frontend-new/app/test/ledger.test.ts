@@ -145,3 +145,108 @@ describe("per-address movement", () => {
     expect(deltas[0]!.address).toBe(B);
   });
 });
+
+/** Phase 2.5: the same movement, per native asset.
+ *
+ * `addressDeltas` answered only in ada, so a transaction that moved a token and
+ * no lovelace looked like nothing happened. The reference explorers all call
+ * this the transaction's "state", which is what it is: what each address held
+ * before and after. */
+const assetTx = (over: {
+  fee: string;
+  inputs: Array<{ address: string; lovelace: string; assets?: AssetMapLike } | null>;
+  outputs: Array<{ address: string; lovelace: string; assets?: AssetMapLike }>;
+}): TransactionView =>
+  ({
+    txId: "cc".repeat(32),
+    fee: over.fee,
+    inputs: over.inputs.map((i, index) => ({
+      txId: "dd".repeat(32),
+      index,
+      resolved:
+        i === null
+          ? null
+          : {
+              address: i.address,
+              addressKind: "PubKey",
+              value: { lovelace: i.lovelace, assets: i.assets ?? {} },
+            },
+    })),
+    outputs: over.outputs.map((o) => ({
+      address: o.address,
+      addressKind: "PubKey",
+      value: { lovelace: o.lovelace, assets: o.assets ?? {} },
+      hasDatum: false,
+      hasScriptRef: false,
+      datum: null,
+      scriptRef: null,
+    })),
+    referenceInputs: [],
+  }) as unknown as TransactionView;
+
+type AssetMapLike = Record<string, Record<string, string>>;
+const POLICY = "ab".repeat(28);
+const NAME = "4d4944";
+
+describe("per-address movement, per asset", () => {
+  it("reports a token received alongside the ada", () => {
+    const deltas = addressDeltas(
+      assetTx({
+        fee: "200000",
+        inputs: [{ address: A, lovelace: "5000000", assets: { [POLICY]: { [NAME]: "10" } } }],
+        outputs: [{ address: B, lovelace: "4800000", assets: { [POLICY]: { [NAME]: "10" } } }],
+      }),
+    );
+    const to = deltas.find((d) => d.address === B);
+    expect(to?.assets).toEqual([
+      { policyId: POLICY, assetName: NAME, received: 10n, spent: 0n },
+    ]);
+  });
+
+  it("reports a token spent by the address that held it", () => {
+    const deltas = addressDeltas(
+      assetTx({
+        fee: "200000",
+        inputs: [{ address: A, lovelace: "5000000", assets: { [POLICY]: { [NAME]: "10" } } }],
+        outputs: [{ address: B, lovelace: "4800000", assets: { [POLICY]: { [NAME]: "10" } } }],
+      }),
+    );
+    const from = deltas.find((d) => d.address === A);
+    expect(from?.assets).toEqual([{ policyId: POLICY, assetName: NAME, received: 0n, spent: 10n }]);
+  });
+
+  it("sees a transaction that moved a token but no net ada", () => {
+    const deltas = addressDeltas(
+      assetTx({
+        fee: "0",
+        inputs: [{ address: A, lovelace: "2000000", assets: { [POLICY]: { [NAME]: "1" } } }],
+        outputs: [{ address: A, lovelace: "2000000", assets: {} }, { address: B, lovelace: "0", assets: { [POLICY]: { [NAME]: "1" } } }],
+      }),
+    );
+    const from = deltas.find((d) => d.address === A);
+    expect(from?.received).toBe(from?.spent);
+    expect(from?.assets).toEqual([{ policyId: POLICY, assetName: NAME, received: 0n, spent: 1n }]);
+  });
+
+  it("leaves assets empty when nothing but ada moved", () => {
+    const deltas = addressDeltas(
+      assetTx({
+        fee: "200000",
+        inputs: [{ address: A, lovelace: "5000000" }],
+        outputs: [{ address: B, lovelace: "4800000" }],
+      }),
+    );
+    for (const d of deltas) expect(d.assets).toEqual([]);
+  });
+
+  it("carries the same exactness rule as the ada figures", () => {
+    const deltas = addressDeltas(
+      assetTx({
+        fee: "200000",
+        inputs: [null, { address: A, lovelace: "5000000", assets: { [POLICY]: { [NAME]: "3" } } }],
+        outputs: [{ address: B, lovelace: "4800000", assets: { [POLICY]: { [NAME]: "3" } } }],
+      }),
+    );
+    for (const d of deltas) expect(d.exact).toBe(false);
+  });
+});
