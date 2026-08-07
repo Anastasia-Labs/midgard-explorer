@@ -46,8 +46,25 @@ describe("parseTxInfo", () => {
     expect(infos[0].block_height).toBeGreaterThan(4900000);
   });
 
-  it("retains inline datums where present", () => {
-    const withDatum = infos[0].outputs.filter((o) => o.inline_datum !== null);
-    expect(withDatum.length).toBeGreaterThanOrEqual(2);
+  /**
+   * Asserts the datum CONTENT survived, not merely that the wrapper object is
+   * present. Koios returns `{bytes: null, value: null}` unless the request
+   * sets `_scripts: true`, and a wrapper-only check passes happily against
+   * that empty shell, which is how a null-datum capture would otherwise reach
+   * the decoder in the next task unnoticed.
+   */
+  it("retains decoded inline datum content, not just the wrapper", () => {
+    const withValue = infos[0].outputs.filter(
+      (o) => o.inline_datum != null && o.inline_datum.value != null,
+    );
+    expect(withValue.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("exposes a datum shaped like a Plutus constructor", () => {
+    const first = infos[0].outputs.find(
+      (o) => o.inline_datum != null && o.inline_datum.value != null,
+    );
+    expect(first).toBeDefined();
+    expect(first!.inline_datum!.value).toHaveProperty("fields");
   });
 });
