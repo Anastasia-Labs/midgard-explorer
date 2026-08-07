@@ -1,6 +1,6 @@
 import { config } from "../config";
 import { logger } from "../logger";
-import { getSyncCursor, setSyncCursor } from "./db";
+import { getSyncCursor, indexerPrisma, setSyncCursor } from "./db";
 import { deleteFromBlockHeight, ingestTxInfos } from "./ingest";
 import { fetchAddressTxs as realFetchAddressTxs, fetchTxInfo as realFetchTxInfo } from "./koios";
 import { loadManifest } from "./manifest";
@@ -92,9 +92,48 @@ export async function warnOnPreDeploymentActivity(
   return suspicious;
 }
 
+/**
+ * The cursor is DERIVED from the contents of l1_tx, so anything that empties
+ * that table must reset the cursor in the same unit of work. A migration once
+ * did `DELETE FROM l1_tx` with a comment promising the rows would be
+ * "re-fetched on the next sync". They were not: the cursor still pointed near
+ * chain tip, so every later pass scanned a 20 block window, found nothing,
+ * wrote nothing, and logged success. The explorer sat empty and said it was
+ * fine, which is the worst failure this system has.
+ *
+ * This is a boot-time safety net, deliberately NOT part of the tick loop. In
+ * the loop, an empty RESULT is ordinary and must never trigger a rescan. Here
+ * the signal is different and unambiguous: syncOnce only ever advances the
+ * cursor to the height of rows it actually found, so a cursor above zero
+ * proves rows once existed. If the table is now completely empty, they were
+ * removed out of band and the cursor is lying.
+ *
+ * It warns loudly rather than healing quietly, because the underlying cause is
+ * always a bug somewhere else.
+ */
+export async function healCursorIfDataWasWiped(): Promise<boolean> {
+  const cursor = await getSyncCursor(SOURCE);
+  if (!cursor || cursor.lastBlockHeight === 0) return false;
+
+  const rows = await indexerPrisma.l1Tx.count();
+  if (rows > 0) return false;
+
+  logger.warn(
+    `L1 sync cursor is at height ${cursor.lastBlockHeight} but l1_tx is empty. ` +
+      `The data was removed without resetting the cursor, so history would never ` +
+      `be re-fetched. Resetting the cursor to 0 to re-index from genesis.`,
+  );
+  await setSyncCursor(SOURCE, 0);
+  return true;
+}
+
 /** Background loop. Failures are logged and retried on the next tick: sync
  * problems must never take down the read path. */
 export function startSync(): void {
+  void healCursorIfDataWasWiped().catch((err) =>
+    logger.error(`Cursor consistency check failed: ${String(err)}`),
+  );
+
   void warnOnPreDeploymentActivity().catch((err) =>
     logger.error(`Pre-deployment activity check failed: ${String(err)}`),
   );
