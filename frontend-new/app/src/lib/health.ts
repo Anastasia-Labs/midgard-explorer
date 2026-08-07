@@ -69,11 +69,35 @@ export function networkHealth(metrics: MetricsResponse | null): NetworkHealth {
   }
 
   if (p50 === null || p50 <= 0) {
+    // No interval could be measured, which has three quite different causes.
+    // Reporting them all as "not enough history" told a reader the chain was
+    // too young to judge while the panel beside it read "All time: 6 blocks",
+    // which is a contradiction and hid the real answer: the node had stopped.
+    if (tip.height === null || tip.height <= 0) {
+      return {
+        state: "unknown",
+        headline: "There is not enough history to judge the network yet.",
+        reasons: ["No block has been produced, so there is nothing to measure."],
+      };
+    }
+
+    if (throughput.blocks === 0) {
+      return {
+        state: "stalled",
+        headline: "This Midgard node has stopped producing blocks.",
+        reasons: [
+          `The last block, #${tip.height}, arrived ${seconds(tip.ageSeconds)} ago, and none has been produced in the last ${metrics.window.hours} hours.`,
+          "Figures below cover the Midgard ledger only. Midgard's activity on Cardano is indexed separately and is unaffected by this node being offline.",
+        ],
+      };
+    }
+
     return {
       state: "unknown",
-      headline: "There is not enough history to judge the network yet.",
+      headline: "There is not enough history to judge the network's pace yet.",
       reasons: [
-        `The last block arrived ${seconds(tip.ageSeconds)} ago, but no block interval has been measured, so there is nothing to call that late or on time.`,
+        `Only ${throughput.blocks} ${throughput.blocks === 1 ? "block has" : "blocks have"} arrived in the last ${metrics.window.hours} hours, so no interval between blocks has been measured yet.`,
+        `The last one, #${tip.height}, arrived ${seconds(tip.ageSeconds)} ago.`,
       ],
     };
   }

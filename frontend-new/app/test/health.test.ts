@@ -171,3 +171,75 @@ describe("networkHealth", () => {
     }
   });
 });
+
+/** A node that produced blocks and then stopped is the state this explorer was
+ * actually in: tip #20 from three days earlier, nothing in the window. It
+ * reported "not enough history to judge the network yet" directly above a panel
+ * reading "All time: 6 blocks", telling the reader the chain was too young when
+ * really it had gone quiet. */
+describe("networkHealth when no interval can be measured", () => {
+  const noInterval = (over: Partial<MetricsResponse["throughput"]> = {}) =>
+    base({
+      tip: {
+        height: 20,
+        at: "2026-08-04T12:28:29.120Z",
+        ageSeconds: 284112,
+        source: "blocks.height",
+      },
+      throughput: {
+        transactions: 0,
+        blocks: 0,
+        transactionsPerBlock: null,
+        blockIntervalSeconds: { p50: null, p95: null, sampleCount: 0 },
+        source: "blocks",
+        ...over,
+      },
+    });
+
+  it("calls a node that produced blocks and then went quiet stalled, not unjudgeable", () => {
+    const h = networkHealth(noInterval());
+    expect(h.state).toBe("stalled");
+    expect(h.headline).toContain("stopped producing blocks");
+  });
+
+  it("names the last block and how long ago it was, so the claim is checkable", () => {
+    const h = networkHealth(noInterval());
+    expect(h.reasons[0]).toContain("#20");
+    expect(h.reasons[0]).toContain("78.9h");
+    expect(h.reasons[0]).toContain("24 hours");
+  });
+
+  it("says the figures below cover the ledger only, not Midgard's L1 activity", () => {
+    const h = networkHealth(noInterval());
+    expect(h.reasons.join(" ")).toContain("indexed separately");
+  });
+
+  // The discriminating case against the fix over-reaching: a chain that has
+  // genuinely never produced a block still has no history to judge, and must
+  // not be reported as having stopped.
+  it("still reports a chain with no blocks at all as unjudgeable", () => {
+    const h = networkHealth(
+      base({
+        tip: { height: 0, at: null, ageSeconds: 0, source: "blocks.height" },
+        throughput: {
+          transactions: 0,
+          blocks: 0,
+          transactionsPerBlock: null,
+          blockIntervalSeconds: { p50: null, p95: null, sampleCount: 0 },
+          source: "blocks",
+        },
+      }),
+    );
+    expect(h.state).toBe("unknown");
+    expect(h.headline).toContain("not enough history");
+  });
+
+  // And a chain that IS producing, but has only one block in the window, is
+  // unmeasurable rather than stalled.
+  it("reports a single block in the window as unmeasurable pace, not stopped", () => {
+    const h = networkHealth(noInterval({ blocks: 1 }));
+    expect(h.state).toBe("unknown");
+    expect(h.headline).toContain("pace");
+    expect(h.reasons[0]).toContain("1 block has");
+  });
+});
