@@ -2,6 +2,7 @@ import { indexerPrisma } from "./db";
 import type { KoiosAsset, KoiosPlutusContract, KoiosTxInfo, KoiosUtxo } from "./koios";
 import type { ValidatorEntry } from "./manifest";
 import { decodeStateQueueDatum } from "./stateQueueDatum";
+import { classifyEvent } from "./userEventDatum";
 import { logger } from "../logger";
 
 /** Outputs at addresses we do not track are ignored. A transaction commonly
@@ -186,11 +187,15 @@ export async function ingestTxInfos(
 
       // An unrecognised datum is stored raw and flagged rather than dropped:
       // losing an event is worse than not understanding it yet.
+      const user = header === null && datumValue !== null
+        ? classifyEvent(validator.family, datumValue)
+        : { eventType: "unknown", decoded: null };
+
       const eventType =
         header !== null
           ? "blockCommitment"
           : datumValue !== null
-            ? "unknown"
+            ? user.eventType
             : "noDatum";
 
       if (eventType === "unknown") {
@@ -210,8 +215,13 @@ export async function ingestTxInfos(
           outputIndex: index,
           lovelace: BigInt(out.value),
           datum: datumValue as never,
+          decoded: user.decoded as never,
         },
-        update: { validator: validator.family, eventType },
+        update: {
+          validator: validator.family,
+          eventType,
+          decoded: user.decoded as never,
+        },
       });
       events += 1;
 
