@@ -10,6 +10,8 @@ import { registerRoutes } from "./routes";
 import http from "http";
 import { bigintStringify } from "./helpers";
 import { prisma } from "../db";
+import { indexerPrisma } from "../indexer/db";
+import { startSync } from "../indexer/sync";
 
 export const startServer = async () => {
   const app = express();
@@ -42,6 +44,10 @@ export const startServer = async () => {
   });
 
   registerRoutes(app);
+
+  // Background L1 indexing. Deliberately after route registration: a sync
+  // failure must never prevent the API from coming up.
+  startSync();
 
   // 404 for unmatched routes.
   app.use((_req, res) => {
@@ -76,6 +82,7 @@ export const startServer = async () => {
     logger.info(`Received ${signal}, shutting down.`);
     server.close(async () => {
       await prisma.$disconnect();
+      await indexerPrisma.$disconnect();
       logger.info("Shutdown complete.");
       process.exit(0);
     });
