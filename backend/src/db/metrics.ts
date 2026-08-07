@@ -48,7 +48,11 @@ export type MetricsResponse = {
     transactions: number;
     blocks: number;
     transactionsPerBlock: number | null;
-    blockIntervalSeconds: { p50: number | null; p95: number | null; sampleCount: number };
+    blockIntervalSeconds: {
+      p50: number | null;
+      p95: number | null;
+      sampleCount: number;
+    };
     source: string;
   };
   admission: {
@@ -139,7 +143,9 @@ export async function getMetrics(): Promise<MetricsResponse> {
 
     // Interval between consecutive block closes. One row per block, so the
     // per-tx duplication in `blocks` cannot inflate the sample.
-    prisma.$queryRaw<Array<{ p50: number | null; p95: number | null; n: bigint }>>`
+    prisma.$queryRaw<
+      Array<{ p50: number | null; p95: number | null; n: bigint }>
+    >`
       WITH per_block AS (
         SELECT header_hash, MAX(time_stamp_tz) AS closed_at
           FROM blocks
@@ -157,7 +163,9 @@ export async function getMetrics(): Promise<MetricsResponse> {
     // Admission latency: first seen to terminal decision, for rows that reached
     // one. Rows still queued or validating have no latency yet and must not be
     // counted as fast ones.
-    prisma.$queryRaw<Array<{ p50: number | null; p95: number | null; n: bigint }>>`
+    prisma.$queryRaw<
+      Array<{ p50: number | null; p95: number | null; n: bigint }>
+    >`
       SELECT percentile_cont(0.5) WITHIN GROUP (
                ORDER BY EXTRACT(EPOCH FROM terminal_at - first_seen_at) * 1000) AS p50,
              percentile_cont(0.95) WITHIN GROUP (
@@ -194,7 +202,9 @@ export async function getMetrics(): Promise<MetricsResponse> {
     // "-7.8m" would be the confidently wrong figure this file exists to
     // prevent. Excluding them means the tile reads "No data" until the node
     // records timestamps that can be subtracted, which is the honest answer.
-    prisma.$queryRaw<Array<{ p50: number | null; p95: number | null; n: bigint }>>`
+    prisma.$queryRaw<
+      Array<{ p50: number | null; p95: number | null; n: bigint }>
+    >`
       SELECT percentile_cont(0.5) WITHIN GROUP (
                ORDER BY EXTRACT(EPOCH FROM updated_at - block_end_time) * 1000) AS p50,
              percentile_cont(0.95) WITHIN GROUP (
@@ -207,7 +217,9 @@ export async function getMetrics(): Promise<MetricsResponse> {
     // Backlog is a standing figure, not a windowed one: a block stuck for three
     // days is exactly what an operator needs to see, and a 24 hour filter would
     // hide it.
-    prisma.$queryRaw<Array<{ finalized: bigint; pending: bigint; abandoned: bigint }>>`
+    prisma.$queryRaw<
+      Array<{ finalized: bigint; pending: bigint; abandoned: bigint }>
+    >`
       SELECT COUNT(*) FILTER (WHERE status = 'finalized')::bigint AS finalized,
              COUNT(*) FILTER (WHERE status NOT IN ('finalized', 'abandoned'))::bigint AS pending,
              COUNT(*) FILTER (WHERE status = 'abandoned')::bigint AS abandoned
@@ -256,8 +268,15 @@ export async function getMetrics(): Promise<MetricsResponse> {
   const observedFrom = firstRows[0]?.at ?? null;
   const throughput = throughputRows[0] ?? { txs: 0n, blocks: 0n };
   const interval = intervalRows[0] ?? { p50: null, p95: null, n: 0n };
-  const admissionLatency = admissionLatencyRows[0] ?? { p50: null, p95: null, n: 0n };
-  const admissionCounts = admissionCountRows[0] ?? { accepted: 0n, rejected: 0n };
+  const admissionLatency = admissionLatencyRows[0] ?? {
+    p50: null,
+    p95: null,
+    n: 0n,
+  };
+  const admissionCounts = admissionCountRows[0] ?? {
+    accepted: 0n,
+    rejected: 0n,
+  };
   const settlement = settlementRows[0] ?? { p50: null, p95: null, n: 0n };
   const finalityCounts = finalityCountRows[0] ?? {
     finalized: 0n,
@@ -284,7 +303,9 @@ export async function getMetrics(): Promise<MetricsResponse> {
       height: num(tip.height),
       at: tip.at === null ? null : tip.at.toISOString(),
       ageSeconds:
-        tip.at === null ? null : Math.max(0, Math.round((end.getTime() - tip.at.getTime()) / 1000)),
+        tip.at === null
+          ? null
+          : Math.max(0, Math.round((end.getTime() - tip.at.getTime()) / 1000)),
       source: "blocks.height, blocks.time_stamp_tz",
     },
     throughput: {
@@ -334,17 +355,23 @@ export async function getMetrics(): Promise<MetricsResponse> {
               blockEndTime: oldest.block_end_time.toISOString(),
               waitingSeconds: Math.max(
                 0,
-                Math.round((end.getTime() - oldest.block_end_time.getTime()) / 1000),
+                Math.round(
+                  (end.getTime() - oldest.block_end_time.getTime()) / 1000,
+                ),
               ),
             },
-      source: "pending_block_finalizations.status, pending_block_finalizations.block_end_time",
+      source:
+        "pending_block_finalizations.status, pending_block_finalizations.block_end_time",
     },
     statusBreakdown: {
       finalization: finalizationBreakdown.map((r) => ({
         status: r.status,
         count: Number(r.count),
       })),
-      admission: admissionBreakdown.map((r) => ({ status: r.status, count: Number(r.count) })),
+      admission: admissionBreakdown.map((r) => ({
+        status: r.status,
+        count: Number(r.count),
+      })),
     },
     series: seriesRows.map((r) => ({
       hour: r.hour.toISOString(),
