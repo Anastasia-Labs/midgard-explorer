@@ -19,6 +19,12 @@ import { getForcedTransactionsPageRoute } from "./routes/forcedTransactions";
 import { getMetricsRoute } from "./routes/metrics";
 import { getAssetRoute, getAssetsRoute } from "./routes/asset";
 import { getSearchRoute } from "./routes/search";
+import {
+  getL1SummaryRoute,
+  getL1TransactionsPageRoute,
+  getL1TransactionRoute,
+  getL1BlockHeadersRoute,
+} from "./routes/l1";
 
 export function registerRoutes(app: Express) {
   app.get("/api/metrics", getMetricsRoute);
@@ -38,4 +44,8 @@ export function registerRoutes(app: Express) {
   app.get("/api/deposits/:page", getDepositsPageRoute);
   app.get("/api/withdrawals/:page", getWithdrawalsPageRoute);
   app.get("/api/forced-transactions/:page", getForcedTransactionsPageRoute);
+  app.get("/api/l1/summary", getL1SummaryRoute);
+  app.get("/api/l1/transaction", getL1TransactionRoute);
+  app.get("/api/l1/block-headers", getL1BlockHeadersRoute);
+  app.get("/api/l1/transactions/:page", getL1TransactionsPageRoute);
 }
