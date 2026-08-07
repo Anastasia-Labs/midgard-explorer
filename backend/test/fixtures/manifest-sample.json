@@ -6,6 +6,7 @@
     "hubOracleMint": { "scriptHash": "5fdec6ae62250ad27a21ad01d646238b6e95991b738f513f58a91b81" },
     "stateQueueSpend": { "scriptHash": "5712b8d11b58e1fcef4f16067b3b07e40073a64212012099005b21d8" },
     "depositSpend": { "scriptHash": "a202e037d840240718ad200165abb3ad2a4e7a9bb12c9fb1293fcf35" },
+    "depositMint": { "scriptHash": "0ccf8d1c17a606a898194617a46409879b39afd1ee33e07377f937ba" },
     "daParamsGovernorSpend": { "scriptHash": "008c416cdcfe3081a32202a605b777e3790947cdd00900cf72343958" },
     "daParamsGovernorMint": { "scriptHash": "008c416cdcfe3081a32202a605b777e3790947cdd00900cf72343958" },
     "daAttestationSpend": { "scriptHash": "65976139558770f54efbe6a16cc2ae078007e347c2bff6e8e9f3a948" },

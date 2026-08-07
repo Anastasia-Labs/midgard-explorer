@@ -4,6 +4,7 @@ import { scriptHashToAddress } from "./bech32";
 const PURPOSE_SUFFIXES = ["Spend", "Mint", "Withdraw", "Observer"];
 
 export type ValidatorEntry = {
+  entryName: string;
   family: string;
   scriptHash: string;
   address: string;
@@ -45,9 +46,20 @@ export function findStubHashes(
 
 export function loadManifest(path: string) {
   const raw = JSON.parse(readFileSync(path, "utf8"));
-  const network: "preprod" | "mainnet" =
-    String(raw.network).toLowerCase() === "mainnet" ? "mainnet" : "preprod";
-  const contracts: Record<string, { scriptHash?: string }> = raw.contracts ?? {};
+
+  if (!raw.contracts) {
+    throw new Error(`Manifest at ${path} has no contracts key`);
+  }
+
+  const networkStr = String(raw.network).toLowerCase();
+  if (networkStr !== "mainnet" && networkStr !== "preprod") {
+    throw new Error(
+      `Manifest at ${path} has unrecognized network value: ${raw.network}`,
+    );
+  }
+  const network: "preprod" | "mainnet" = networkStr as "preprod" | "mainnet";
+
+  const contracts: Record<string, { scriptHash?: string }> = raw.contracts;
   const stubHashes = findStubHashes(contracts);
 
   const seen = new Set<string>();
@@ -55,10 +67,11 @@ export function loadManifest(path: string) {
   for (const [name, entry] of Object.entries(contracts)) {
     if (!entry.scriptHash) continue;
     if (stubHashes.has(entry.scriptHash)) continue;
+    if (seen.has(entry.scriptHash)) continue;
+    seen.add(entry.scriptHash);
     const family = contractFamily(name);
-    if (seen.has(family)) continue;
-    seen.add(family);
     validators.push({
+      entryName: name,
       family,
       scriptHash: entry.scriptHash,
       address: scriptHashToAddress(entry.scriptHash, network),

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   contractFamily,
   findStubHashes,
@@ -69,15 +71,51 @@ describe("loadManifest", () => {
     expect(hashes).not.toContain(FRAUD_CATALOGUE);
   });
 
-  it("deduplicates families that share a hash", () => {
-    const families = m.validators.map((v) => v.family);
-    expect(new Set(families).size).toBe(families.length);
-    expect(families).toContain("daParamsGovernor");
+  it("deduplicates by script hash, not by family", () => {
+    const depositEntries = m.validators.filter((v) => v.family === "deposit");
+    expect(depositEntries.length).toBe(2);
+    const depositAddresses = depositEntries.map((v) => v.address);
+    expect(new Set(depositAddresses).size).toBe(2);
+  });
+
+  it("still yields one entry for shared-hash contracts", () => {
+    const daParamsEntries = m.validators.filter(
+      (v) => v.family === "daParamsGovernor",
+    );
+    expect(daParamsEntries.length).toBe(1);
+  });
+
+  it("preserves the unmodified entry name", () => {
+    const depositSpend = m.validators.find((v) => v.entryName === "depositSpend");
+    expect(depositSpend).toBeDefined();
+    expect(depositSpend?.family).toBe("deposit");
+    const depositMint = m.validators.find((v) => v.entryName === "depositMint");
+    expect(depositMint).toBeDefined();
+    expect(depositMint?.family).toBe("deposit");
   });
 
   it("derives a usable address for each validator", () => {
     for (const v of m.validators) {
       expect(v.address.startsWith("addr_test1w")).toBe(true);
     }
+  });
+
+  it("throws on missing contracts key", () => {
+    const malformed = join(tmpdir(), "no-contracts.json");
+    writeFileSync(malformed, JSON.stringify({ network: "Preprod" }));
+    expect(() => loadManifest(malformed)).toThrow(
+      /has no contracts key/,
+    );
+  });
+
+  it("throws on unrecognized network value", () => {
+    const malformed = join(tmpdir(), "bad-network.json");
+    writeFileSync(
+      malformed,
+      JSON.stringify({ network: "Mainnet2", contracts: {} }),
+    );
+    expect(() => loadManifest(malformed)).toThrow(
+      /unrecognized network value/,
+    );
   });
 });
