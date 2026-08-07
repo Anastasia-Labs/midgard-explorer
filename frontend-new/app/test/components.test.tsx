@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AdaAmount, ValueCell } from "../src/components/ui/amount";
 import { Journey } from "../src/components/ui/journey";
 import { NetworkMetrics } from "../src/components/ui/metrics";
-import { EmptyState, ErrorState, L1L2Badge } from "../src/components/ui/primitives";
+import { Callout, EmptyState, ErrorState, L1L2Badge } from "../src/components/ui/primitives";
 import { StatusBadge } from "../src/components/ui/status";
 import { SummaryBand } from "../src/components/ui/summary";
 import { DecodeWarn } from "../src/components/ui/table";
@@ -235,6 +235,38 @@ describe("NetworkMetrics", () => {
     render(<NetworkMetrics metrics={thin} totalBlocks={40} totalTxs={60} />);
     expect(screen.getByText(/thin sample/)).toBeDefined();
   });
+
+  /** A node idle for days made every windowed tile read zero while the only
+   * real figures sat in a caption in the panel's corner, so the panel looked
+   * broken rather than quiet. */
+  it("falls back to all-time counts when nothing happened in the window", () => {
+    const idle = {
+      ...base,
+      throughput: {
+        ...base.throughput,
+        blocks: 0,
+        transactions: 0,
+        transactionsPerBlock: null,
+        blockIntervalSeconds: { p50: null, p95: null, sampleCount: 0 },
+      },
+    } as MetricsResponse;
+    render(<NetworkMetrics metrics={idle} totalBlocks={6} totalTxs={21} />);
+    const region = document.querySelector('[data-region="metrics"]')!;
+    expect(region.textContent).toContain("6");
+    expect(region.textContent).toContain("21");
+    // The basis must be stated. A figure a reader cannot situate is worth
+    // less than the zero it replaced.
+    expect(region.textContent).toContain("all time");
+  });
+
+  // The discriminating case: a window with real activity must keep showing
+  // the window, or the panel silently stops being a 24 hour panel.
+  it("keeps showing window counts when the window has activity", () => {
+    render(<NetworkMetrics metrics={base} totalBlocks={9999} totalTxs={9999} />);
+    const region = document.querySelector('[data-region="metrics"]')!;
+    expect(region.textContent).not.toContain("9,999");
+    expect(region.textContent).not.toContain("all time");
+  });
 });
 
 describe("StatusBadge reads the authoritative registry", () => {
@@ -381,6 +413,63 @@ describe("states", () => {
   it("omits the retry button when there is nothing to retry", () => {
     render(<ErrorState message="Could not load." />);
     expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("marks an empty state, so an empty table does not read as a broken one", () => {
+    const { container } = render(<EmptyState title="No blocks yet" />);
+    expect(container.querySelector("svg")).not.toBeNull();
+  });
+
+  it("keeps the empty-state mark out of the accessibility tree", () => {
+    // The headline already says what is missing. A second announcement of the
+    // same fact is noise to a screen reader.
+    const { container } = render(<EmptyState title="No blocks yet" />);
+    expect(container.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("marks an error state, whether or not it can be retried", () => {
+    const { container } = render(<ErrorState message="Could not load." />);
+    expect(container.querySelector("svg")).not.toBeNull();
+  });
+});
+
+describe("Callout", () => {
+  const glyph = (tone: "info" | "warning" | "danger" | "success") => {
+    const { container } = render(
+      <Callout tone={tone} title="Something to know">
+        Detail.
+      </Callout>,
+    );
+    const svg = container.querySelector("svg")?.innerHTML ?? null;
+    cleanup();
+    return svg;
+  };
+
+  it("gives each toned callout a glyph, so the tone is not carried by colour alone", () => {
+    for (const tone of ["info", "warning", "danger", "success"] as const) {
+      expect(glyph(tone)).not.toBeNull();
+    }
+  });
+
+  it("draws a different glyph for a warning than for a failure", () => {
+    // Both are red-adjacent and both interrupt. If they share a mark, the mark
+    // adds weight without adding information.
+    expect(glyph("warning")).not.toBe(glyph("danger"));
+  });
+
+  it("draws a different glyph for success than for information", () => {
+    expect(glyph("success")).not.toBe(glyph("info"));
+  });
+
+  it("draws no glyph on a neutral callout, which asserts no tone", () => {
+    const { container } = render(<Callout tone="neutral" title="Plain note" />);
+    expect(container.querySelector("svg")).toBeNull();
+  });
+
+  it("keeps the title readable as text, with the glyph decorative", () => {
+    const { container } = render(<Callout tone="warning" title="Outputs not decoded" />);
+    expect(screen.getByText("Outputs not decoded")).toBeDefined();
+    expect(container.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
 });
 
