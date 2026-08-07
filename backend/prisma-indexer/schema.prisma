@@ -46,8 +46,14 @@ model L1Event {
 }
 
 model L1BlockHeader {
-  headerHash             String @id @map("header_hash")
-  l1TxHash               String @map("l1_tx_hash")
+  headerHash             String  @id @map("header_hash")
+  // Nullable on purpose. A commit transaction carries BOTH the new head header
+  // and a re-output of the previous queue node, so a header can first be seen
+  // as carried-forward. These stay null until the block is observed as the head
+  // of its own commit transaction, which is the only moment the attribution is
+  // actually true.
+  l1TxHash               String? @map("l1_tx_hash")
+  blockHeight            Int?    @map("block_height")
   prevUtxosRoot          String @map("prev_utxos_root")
   utxosRoot              String @map("utxos_root")
   withdrawalsRoot        String @map("withdrawals_root")
@@ -70,5 +76,6 @@ model L1BlockHeader {
 
   @@index([l1TxHash])
   @@index([prevUtxosRoot])
+  @@index([blockHeight])
   @@map("l1_block_header")
 }

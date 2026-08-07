@@ -22,6 +22,25 @@ export async function ingestTxInfos(
   let headers = 0;
 
   for (const info of infos) {
+    // Decode every state-queue datum in this transaction first, so we can tell
+    // the head header from the previous queue node it re-outputs. A header is
+    // carried forward when a sibling's prevUtxosRoot equals its utxosRoot.
+    const decoded = new Map<number, NonNullable<ReturnType<typeof decodeStateQueueDatum>>>();
+    for (const [index, out] of info.outputs.entries()) {
+      const v = validatorForAddress(out.payment_addr.bech32, validators);
+      if (!v || v.family !== "stateQueue") continue;
+      const d = out.inline_datum?.value ?? null;
+      if (d === null) continue;
+      const h = decodeStateQueueDatum(d);
+      if (h) decoded.set(index, h);
+    }
+    const carriedForward = new Set<string>();
+    for (const a of decoded.values()) {
+      for (const b of decoded.values()) {
+        if (a !== b && b.prevUtxosRoot === a.utxosRoot) carriedForward.add(a.utxosRoot);
+      }
+    }
+
     await indexerPrisma.l1Tx.upsert({
       where: { txHash: info.tx_hash },
       create: {
@@ -84,14 +103,21 @@ export async function ingestTxInfos(
       events += 1;
 
       if (header) {
+        const isHead = !carriedForward.has(header.utxosRoot);
         await indexerPrisma.l1BlockHeader.upsert({
           where: { headerHash: header.utxosRoot },
           create: {
             headerHash: header.utxosRoot,
-            l1TxHash: info.tx_hash,
+            l1TxHash: isHead ? info.tx_hash : null,
+            blockHeight: isHead ? info.block_height : null,
             ...header,
           },
-          update: { l1TxHash: info.tx_hash },
+          // Only a head observation may set attribution. A carried-forward
+          // sighting must never overwrite the transaction that truly committed
+          // the block, and must never clear it back to null either.
+          update: isHead
+            ? { l1TxHash: info.tx_hash, blockHeight: info.block_height }
+            : {},
         });
         headers += 1;
       }
@@ -104,6 +130,14 @@ export async function ingestTxInfos(
 /** Reorg reconciliation: drop everything at or above a height so it can be
  * re-ingested from the chain's current view. Events cascade with their tx. */
 export async function deleteFromBlockHeight(height: number): Promise<number> {
+  // Headers carry their own blockHeight rather than relying on a foreign key,
+  // because l1TxHash is null for a header only ever seen as carried forward.
+  // Deleting by height reconciles a reorg without depending on attribution
+  // being present. Headers with a null blockHeight are blocks learned about
+  // indirectly, below the scan floor, and are deliberately kept.
+  await indexerPrisma.l1BlockHeader.deleteMany({
+    where: { blockHeight: { gte: height } },
+  });
   const { count } = await indexerPrisma.l1Tx.deleteMany({
     where: { blockHeight: { gte: height } },
   });

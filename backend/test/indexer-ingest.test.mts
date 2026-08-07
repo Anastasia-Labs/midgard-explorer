@@ -79,6 +79,12 @@ describe("ingestTxInfos", () => {
       events: await indexerPrisma.l1Event.count(),
       headers: await indexerPrisma.l1BlockHeader.count(),
     };
+    // Without these, the test passes when ingest writes NOTHING on both runs,
+    // since 0 === 0. It would then prove idempotence and silence are the same
+    // thing, which is the failure it exists to catch.
+    expect(afterFirst.txs).toBeGreaterThan(0);
+    expect(afterFirst.events).toBeGreaterThan(0);
+    expect(afterFirst.headers).toBeGreaterThan(0);
     await ingestTxInfos(infos, validators);
     await ingestTxInfos(infos, validators);
     expect({
@@ -94,6 +100,58 @@ describe("ingestTxInfos", () => {
     const families = validators.map((v) => v.family);
     const rows = await indexerPrisma.l1Event.findMany();
     for (const row of rows) expect(families).toContain(row.validator);
+  });
+
+  /**
+    * A commit transaction re-outputs the previous queue node beside the new
+    * one, so both decode to headers. Only the head may claim the transaction:
+    * the carried-forward one was committed earlier, by a transaction this
+    * ingest is not looking at.
+    */
+  it("attributes the transaction to the head header only", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    await deleteFromBlockHeight(0);
+    await ingestTxInfos(infos, validators);
+
+    const headers = await indexerPrisma.l1BlockHeader.findMany();
+    expect(headers.length).toBe(2);
+
+    const head = headers.find((h) => h.l1TxHash !== null);
+    const carried = headers.find((h) => h.l1TxHash === null);
+    expect(head).toBeDefined();
+    expect(carried).toBeDefined();
+
+    // The carried-forward header is the older block, and the head links to it.
+    expect(head!.prevUtxosRoot).toBe(carried!.utxosRoot);
+    expect(head!.endTime).toBeGreaterThan(carried!.endTime);
+    expect(head!.blockHeight).not.toBeNull();
+    expect(carried!.blockHeight).toBeNull();
+  });
+
+  it("does not overwrite attribution when a header is seen again", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    await deleteFromBlockHeight(0);
+    await ingestTxInfos(infos, validators);
+    const before = await indexerPrisma.l1BlockHeader.findMany({
+      orderBy: { headerHash: "asc" },
+    });
+    await ingestTxInfos(infos, validators);
+    const after = await indexerPrisma.l1BlockHeader.findMany({
+      orderBy: { headerHash: "asc" },
+    });
+    expect(after.map((h) => h.l1TxHash)).toEqual(before.map((h) => h.l1TxHash));
+  });
+
+  it("removes headers as well as transactions on rollback", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    await deleteFromBlockHeight(0);
+    await ingestTxInfos(infos, validators);
+    expect(await indexerPrisma.l1BlockHeader.count()).toBeGreaterThan(0);
+    await deleteFromBlockHeight(infos[0].block_height);
+    // The head header sat at this height, so it goes. A carried-forward header
+    // has a null blockHeight and is deliberately retained.
+    const left = await indexerPrisma.l1BlockHeader.findMany();
+    expect(left.every((h) => h.blockHeight === null)).toBe(true);
   });
 
   it("deletes from a block height for reorg reconciliation", async (ctx) => {
