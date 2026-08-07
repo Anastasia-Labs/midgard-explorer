@@ -39,11 +39,21 @@ async function probe(): Promise<void> {
   ]);
 }
 
+/** Test cleanup must be total. `deleteFromBlockHeight` is a production
+ * reconciliation primitive: by design it never touches rows whose blockHeight
+ * is null, which is exactly what carried-forward headers are. Reusing it as
+ * test teardown leaves residue that has already produced one false pass. */
+async function truncateL1(): Promise<void> {
+  await indexerPrisma.l1BlockHeader.deleteMany({});
+  await indexerPrisma.l1Event.deleteMany({});
+  await indexerPrisma.l1Tx.deleteMany({});
+}
+
 beforeAll(async () => {
   try {
     await probe();
     reachable = true;
-    await deleteFromBlockHeight(0);
+    await truncateL1();
   } catch (err) {
     console.warn(`Skipping: indexer Postgres unreachable. ${String(err)}`);
   }
@@ -51,7 +61,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (reachable) {
-    await deleteFromBlockHeight(0);
+    await truncateL1();
     await indexerPrisma.$disconnect();
   }
 });
@@ -72,7 +82,7 @@ describe("ingestTxInfos", () => {
 
   it("is idempotent across repeated ingests", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    await deleteFromBlockHeight(0);
+    await truncateL1();
     await ingestTxInfos(infos, validators);
     const afterFirst = {
       txs: await indexerPrisma.l1Tx.count(),
@@ -110,7 +120,7 @@ describe("ingestTxInfos", () => {
     */
   it("attributes the transaction to the head header only", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    await deleteFromBlockHeight(0);
+    await truncateL1();
     await ingestTxInfos(infos, validators);
 
     const headers = await indexerPrisma.l1BlockHeader.findMany();
@@ -130,7 +140,7 @@ describe("ingestTxInfos", () => {
 
   it("does not overwrite attribution when a header is seen again", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    await deleteFromBlockHeight(0);
+    await truncateL1();
     await ingestTxInfos(infos, validators);
     const before = await indexerPrisma.l1BlockHeader.findMany({
       orderBy: { headerHash: "asc" },
@@ -144,7 +154,7 @@ describe("ingestTxInfos", () => {
 
   it("removes headers as well as transactions on rollback", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    await deleteFromBlockHeight(0);
+    await truncateL1();
     await ingestTxInfos(infos, validators);
     expect(await indexerPrisma.l1BlockHeader.count()).toBeGreaterThan(0);
     await deleteFromBlockHeight(infos[0].block_height);
