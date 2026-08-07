@@ -78,5 +78,20 @@ export function loadManifest(path: string) {
     });
   }
 
-  return { network, createdAt: String(raw.createdAt), validators, stubHashes };
+  // Reference scripts are published to the DEPLOYER'S OWN WALLET address, not
+  // to a script address, so the transactions that put Midgard's contracts on
+  // chain are invisible to an address scan over validators. Each carries a
+  // token under this policy, which is how they can be found at all.
+  const referenceScriptAuthPolicy: string | null =
+    typeof raw.referenceScriptAuthPolicy?.policyId === "string"
+      ? raw.referenceScriptAuthPolicy.policyId
+      : null;
+
+  return {
+    network,
+    createdAt: String(raw.createdAt),
+    validators,
+    stubHashes,
+    referenceScriptAuthPolicy,
+  };
 }

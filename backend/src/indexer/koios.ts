@@ -194,3 +194,34 @@ export async function fetchTxInfo(txHashes: string[]): Promise<KoiosTxInfo[]> {
     }),
   );
 }
+
+const policyAssetSchema = z.object({
+  asset_name: z.string().nullable().default(null),
+});
+
+/** Assets minted under one policy. Used to find Midgard transactions that
+ * carry no output at a Midgard script address, which address scanning alone
+ * cannot see. */
+export async function fetchPolicyAssets(policyId: string): Promise<string[]> {
+  const rows = z
+    .array(policyAssetSchema)
+    .parse(await post("/policy_asset_list", { _asset_policy: policyId }));
+  return rows.map((r) => r.asset_name ?? "");
+}
+
+/** Every transaction that ever held one asset. `_history: true` is required:
+ * without it Koios returns only the transaction holding the asset RIGHT NOW,
+ * so a deployment transaction whose token has since moved would be invisible. */
+export async function fetchAssetTxs(
+  policyId: string,
+  assetName: string,
+): Promise<KoiosAddressTx[]> {
+  return parseAddressTxs(
+    await post("/asset_txs", {
+      _asset_policy: policyId,
+      _asset_name: assetName,
+      _after_block_height: 0,
+      _history: true,
+    }),
+  );
+}

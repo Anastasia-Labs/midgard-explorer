@@ -2,7 +2,12 @@ import { config } from "../config";
 import { logger } from "../logger";
 import { getSyncCursor, indexerPrisma, setSyncCursor } from "./db";
 import { deleteFromBlockHeight, ingestTxInfos } from "./ingest";
-import { fetchAddressTxs as realFetchAddressTxs, fetchTxInfo as realFetchTxInfo } from "./koios";
+import {
+  fetchAddressTxs as realFetchAddressTxs,
+  fetchAssetTxs as realFetchAssetTxs,
+  fetchPolicyAssets as realFetchPolicyAssets,
+  fetchTxInfo as realFetchTxInfo,
+} from "./koios";
 import { loadManifest } from "./manifest";
 
 const SOURCE = "l1";
@@ -10,6 +15,11 @@ const SOURCE = "l1";
 export type SyncDeps = {
   fetchAddressTxs: typeof realFetchAddressTxs;
   fetchTxInfo: typeof realFetchTxInfo;
+  // Injectable like the other two. The deployment sweep reaches the network,
+  // so leaving it out of this seam made every sync test hit live Koios and
+  // time out.
+  fetchPolicyAssets: typeof realFetchPolicyAssets;
+  fetchAssetTxs: typeof realFetchAssetTxs;
 };
 
 /**
@@ -23,8 +33,10 @@ export async function syncOnce(
 ): Promise<{ scanned: number; ingested: number }> {
   const fetchAddressTxs = deps.fetchAddressTxs ?? realFetchAddressTxs;
   const fetchTxInfo = deps.fetchTxInfo ?? realFetchTxInfo;
+  const fetchPolicyAssets = deps.fetchPolicyAssets ?? realFetchPolicyAssets;
+  const fetchAssetTxs = deps.fetchAssetTxs ?? realFetchAssetTxs;
 
-  const { validators } = loadManifest(config.MIDGARD_MANIFEST_PATH);
+  const { validators, referenceScriptAuthPolicy } = loadManifest(config.MIDGARD_MANIFEST_PATH);
   const addresses = validators.map((v) => v.address);
 
   const cursor = await getSyncCursor(SOURCE);
@@ -39,8 +51,38 @@ export async function syncOnce(
   // row in `rows` and would otherwise survive forever.
   await deleteFromBlockHeight(scanFloor);
 
-  const hashes = [...new Set(rows.map((r) => r.tx_hash))];
-  const infos = hashes.length > 0 ? await fetchTxInfo(hashes) : [];
+  const hashes = new Set(rows.map((r) => r.tx_hash));
+
+  // Address scanning alone misses the transactions that PUT Midgard on chain.
+  // Reference scripts are published to the deployer's own wallet address, so
+  // no output of theirs sits at a validator address and no amount of address
+  // scanning will ever see them. They are findable only by the auth token each
+  // one carries. Measured on preprod 2026-08-07: 10 such transactions in
+  // blocks 4939783 to 4939818, all of them invisible to the address scan,
+  // whose earliest hit was block 4939843.
+  //
+  // Only swept on a full historical pass. These are one-time, immutable and
+  // ancient; re-sweeping them every tick would spend dozens of Koios calls a
+  // minute to re-learn the same answer.
+  if (scanFloor === 0 && referenceScriptAuthPolicy !== null) {
+    try {
+      for (const assetName of await fetchPolicyAssets(referenceScriptAuthPolicy)) {
+        for (const tx of await fetchAssetTxs(referenceScriptAuthPolicy, assetName)) {
+          hashes.add(tx.tx_hash);
+        }
+      }
+      logger.info(
+        `L1 sync: deployment sweep over policy ${referenceScriptAuthPolicy} raised the ` +
+          `scan set to ${hashes.size} transactions`,
+      );
+    } catch (err) {
+      // A failed sweep must not lose the address scan's results, which are the
+      // bulk of the data. The next full pass retries it.
+      logger.error(`Reference script deployment sweep failed: ${String(err)}`);
+    }
+  }
+  const hashList = [...hashes];
+  const infos = hashList.length > 0 ? await fetchTxInfo(hashList) : [];
   const result = await ingestTxInfos(infos, validators);
 
   // Never let an empty window move the cursor. Seeding the reduce with

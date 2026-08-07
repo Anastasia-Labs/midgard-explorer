@@ -61,6 +61,10 @@ describe("syncOnce", () => {
     const r = await syncOnce({
       fetchAddressTxs: async () => addressTxs,
       fetchTxInfo: async () => txInfo,
+      // The deployment sweep reaches Koios. Stubbed empty so these tests
+      // stay hermetic; sweep behaviour is covered in its own test.
+      fetchPolicyAssets: async () => [],
+      fetchAssetTxs: async () => [],
     });
     expect(r.ingested).toBeGreaterThanOrEqual(1);
     const cursor = await getSyncCursor("l1");
@@ -84,6 +88,10 @@ describe("syncOnce", () => {
     await syncOnce({
       fetchAddressTxs: async () => addressTxs,
       fetchTxInfo: async () => txInfo,
+      // The deployment sweep reaches Koios. Stubbed empty so these tests
+      // stay hermetic; sweep behaviour is covered in its own test.
+      fetchPolicyAssets: async () => [],
+      fetchAssetTxs: async () => [],
     });
     expect(await indexerPrisma.l1Tx.count()).toBeGreaterThan(0);
 
@@ -91,6 +99,10 @@ describe("syncOnce", () => {
     await syncOnce({
       fetchAddressTxs: async () => [],
       fetchTxInfo: async () => [],
+      // The deployment sweep reaches Koios. Stubbed empty so these tests
+      // stay hermetic; sweep behaviour is covered in its own test.
+      fetchPolicyAssets: async () => [],
+      fetchAssetTxs: async () => [],
     });
     expect(await indexerPrisma.l1Tx.count()).toBe(0);
   });
@@ -100,6 +112,10 @@ describe("syncOnce", () => {
     await syncOnce({
       fetchAddressTxs: async () => addressTxs,
       fetchTxInfo: async () => txInfo,
+      // The deployment sweep reaches Koios. Stubbed empty so these tests
+      // stay hermetic; sweep behaviour is covered in its own test.
+      fetchPolicyAssets: async () => [],
+      fetchAssetTxs: async () => [],
     });
     const advanced = (await getSyncCursor("l1"))!.lastBlockHeight;
     expect(advanced).toBeGreaterThan(0);
@@ -107,6 +123,10 @@ describe("syncOnce", () => {
     await syncOnce({
       fetchAddressTxs: async () => [],
       fetchTxInfo: async () => [],
+      // The deployment sweep reaches Koios. Stubbed empty so these tests
+      // stay hermetic; sweep behaviour is covered in its own test.
+      fetchPolicyAssets: async () => [],
+      fetchAssetTxs: async () => [],
     });
     const after = (await getSyncCursor("l1"))!.lastBlockHeight;
     expect(after).toBe(advanced);
@@ -121,6 +141,10 @@ describe("syncOnce", () => {
           throw new Error("Koios 503");
         },
         fetchTxInfo: async () => [],
+        // The deployment sweep reaches Koios. Stubbed empty so these tests
+        // stay hermetic; sweep behaviour is covered in its own test.
+        fetchPolicyAssets: async () => [],
+        fetchAssetTxs: async () => [],
       }),
     ).rejects.toThrow(/503/);
     const after = await getSyncCursor("l1");
