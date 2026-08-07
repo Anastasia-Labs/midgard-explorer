@@ -14,4 +14,9 @@ export type Config = {
   RECENT_TRANSACTIONS_LIMIT: number;
   TRANSACTIONS_PER_PAGE: number;
   BLOCKS_PER_PAGE: number;
+  INDEXER_POSTGRES_URL: string;
+  KOIOS_BASE_URL: string;
+  MIDGARD_MANIFEST_PATH: string;
+  L1_SYNC_INTERVAL_MS: number;
+  L1_REORG_LOOKBACK_BLOCKS: number;
 };

@@ -23,4 +23,9 @@ export const config: Config = {
   RECENT_TRANSACTIONS_LIMIT: Number(process.env.RECENT_TRANSACTIONS_LIMIT),
   TRANSACTIONS_PER_PAGE: Number(process.env.TRANSACTIONS_PER_PAGE),
   BLOCKS_PER_PAGE: Number(process.env.BLOCKS_PER_PAGE),
+  INDEXER_POSTGRES_URL: process.env.INDEXER_POSTGRES_URL as string,
+  KOIOS_BASE_URL: process.env.KOIOS_BASE_URL as string,
+  MIDGARD_MANIFEST_PATH: process.env.MIDGARD_MANIFEST_PATH as string,
+  L1_SYNC_INTERVAL_MS: Number(process.env.L1_SYNC_INTERVAL_MS),
+  L1_REORG_LOOKBACK_BLOCKS: Number(process.env.L1_REORG_LOOKBACK_BLOCKS),
 };

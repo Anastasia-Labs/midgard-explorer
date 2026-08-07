@@ -1,0 +1,16 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "indexer-client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model SyncCursor {
+  source          String   @id
+  lastBlockHeight Int      @map("last_block_height")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("sync_cursor")
+}

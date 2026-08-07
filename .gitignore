@@ -9,6 +9,7 @@ lerna-debug.log*
 
 node_modules
 explorer-client
+indexer-client
 dist
 dist-ssr
 *.local
