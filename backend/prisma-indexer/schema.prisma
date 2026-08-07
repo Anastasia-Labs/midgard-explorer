@@ -14,3 +14,61 @@ model SyncCursor {
 
   @@map("sync_cursor")
 }
+
+model L1Tx {
+  txHash      String   @id @map("tx_hash")
+  blockHeight Int      @map("block_height")
+  blockHash   String   @map("block_hash")
+  slot        Int
+  epoch       Int
+  txTime      DateTime @map("tx_time")
+
+  events L1Event[]
+
+  @@index([blockHeight])
+  @@map("l1_tx")
+}
+
+model L1Event {
+  id          Int     @id @default(autoincrement())
+  txHash      String  @map("tx_hash")
+  validator   String
+  eventType   String  @map("event_type")
+  outputIndex Int     @map("output_index")
+  lovelace    BigInt
+  datum       Json?
+
+  tx L1Tx @relation(fields: [txHash], references: [txHash], onDelete: Cascade)
+
+  @@unique([txHash, outputIndex], map: "l1_event_tx_output_key")
+  @@index([validator])
+  @@map("l1_event")
+}
+
+model L1BlockHeader {
+  headerHash             String @id @map("header_hash")
+  l1TxHash               String @map("l1_tx_hash")
+  prevUtxosRoot          String @map("prev_utxos_root")
+  utxosRoot              String @map("utxos_root")
+  withdrawalsRoot        String @map("withdrawals_root")
+  forcedTransactionsRoot String @map("forced_transactions_root")
+  transactionsRoot       String @map("transactions_root")
+  depositsRoot           String @map("deposits_root")
+  transitionTraceRoot    String @map("transition_trace_root")
+  eventToStepRoot        String @map("event_to_step_root")
+  withdrawalCount        BigInt @map("withdrawal_count")
+  forcedTransactionCount BigInt @map("forced_transaction_count")
+  l2TransactionCount     BigInt @map("l2_transaction_count")
+  depositCount           BigInt @map("deposit_count")
+  totalEventCount        BigInt @map("total_event_count")
+  transitionStepCount    BigInt @map("transition_step_count")
+  startTime              BigInt @map("start_time")
+  endTime                BigInt @map("end_time")
+  prevHeaderHash         String @map("prev_header_hash")
+  operatorVkey           String @map("operator_vkey")
+  protocolVersion        BigInt @map("protocol_version")
+
+  @@index([l1TxHash])
+  @@index([prevUtxosRoot])
+  @@map("l1_block_header")
+}
