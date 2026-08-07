@@ -115,10 +115,18 @@ export async function getMetrics(): Promise<MetricsResponse> {
     admissionBreakdown,
     seriesRows,
   ] = await Promise.all([
-    // Tip: `blocks` holds one row per block-tx pair, so the tip is the maximum
-    // height, and its time is the latest timestamp carried by that height.
+    // Tip: `blocks` holds one row per block-tx pair and `height` is an
+    // autoincrement row id, so `MAX(height)` is the newest *transaction*, not
+    // the newest block's height. The tip is the block holding that row, and its
+    // height is the lowest row id in it, which is what every listing reports.
+    // Reading the maximum made the panel say "chain tip #21" for a block the
+    // list beneath it called #20.
     prisma.$queryRaw<Array<{ height: number | null; at: Date | null }>>`
-      SELECT MAX(height)::int AS height, MAX(time_stamp_tz) AS at FROM blocks;`,
+      SELECT MIN(height)::int AS height, MAX(time_stamp_tz) AS at
+        FROM blocks
+       WHERE header_hash = (
+         SELECT header_hash FROM blocks ORDER BY height DESC LIMIT 1
+       );`,
 
     prisma.$queryRaw<Array<{ at: Date | null }>>`
       SELECT MIN(time_stamp_tz) AS at FROM blocks;`,
@@ -171,6 +179,21 @@ export async function getMetrics(): Promise<MetricsResponse> {
 
     // Settlement latency: block close to the node recording finalization. Only
     // finalized rows have a completed settlement to measure.
+    //
+    // Not windowed, matching the backlog counts directly below. Windowing this
+    // one while counting finalizations over all time put "No data" beside
+    // "8 settled" in the same panel, which reads as a broken explorer rather
+    // than a quiet day. The same reasoning applies as for the backlog: how long
+    // settlement takes on this node is a standing fact, and it does not stop
+    // being true because nothing settled today.
+    //
+    // Non-positive durations are excluded. Every finalized row currently on
+    // this node records `updated_at` five to eight minutes BEFORE
+    // `block_end_time`, which yields a negative elapsed time. That is a data
+    // problem in the node, not a fast settlement, and a panel that printed
+    // "-7.8m" would be the confidently wrong figure this file exists to
+    // prevent. Excluding them means the tile reads "No data" until the node
+    // records timestamps that can be subtracted, which is the honest answer.
     prisma.$queryRaw<Array<{ p50: number | null; p95: number | null; n: bigint }>>`
       SELECT percentile_cont(0.5) WITHIN GROUP (
                ORDER BY EXTRACT(EPOCH FROM updated_at - block_end_time) * 1000) AS p50,
@@ -178,7 +201,8 @@ export async function getMetrics(): Promise<MetricsResponse> {
                ORDER BY EXTRACT(EPOCH FROM updated_at - block_end_time) * 1000) AS p95,
              COUNT(*)::bigint AS n
         FROM pending_block_finalizations
-       WHERE status = 'finalized' AND updated_at >= ${start};`,
+       WHERE status = 'finalized'
+         AND updated_at > block_end_time;`,
 
     // Backlog is a standing figure, not a windowed one: a block stuck for three
     // days is exactly what an operator needs to see, and a 24 hour filter would
@@ -292,8 +316,11 @@ export async function getMetrics(): Promise<MetricsResponse> {
         p50Ms: msOrNull(settlement.p50),
         p95Ms: msOrNull(settlement.p95),
         sampleCount: Number(settlement.n),
+        // Names its scope. This figure is all time while most of the panel is
+        // windowed, and a reader comparing it against the window would draw the
+        // wrong conclusion without being told.
         source:
-          "pending_block_finalizations.updated_at - pending_block_finalizations.block_end_time",
+          "all time · pending_block_finalizations.updated_at - pending_block_finalizations.block_end_time",
       },
       finalized: Number(finalityCounts.finalized),
       pending: Number(finalityCounts.pending),
