@@ -16,6 +16,9 @@ export const TOP = [
   { href: "/blocks", label: "Blocks" },
   { href: "/transactions", label: "Transactions" },
   { href: "/assets", label: "Assets" },
+  // Midgard's own footprint on Cardano, which is a different data domain from
+  // the three above: those read the Midgard ledger, this reads the L1 chain.
+  { href: "/l1", label: "Cardano L1" },
 ] as const;
 
 export const BRIDGE = [

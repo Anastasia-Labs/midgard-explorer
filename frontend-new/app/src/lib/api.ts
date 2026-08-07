@@ -1,3 +1,5 @@
+import { DecimalString } from "@midgard-explorer/contracts";
+import { Schema } from "effect";
 import {
   decodeAddressResponse,
   decodeAsset,
@@ -183,4 +185,60 @@ export const api = {
     fetchJson(`/api/withdrawals/${page}`, decodeWithdrawalsPage, init),
   forcedTxsPage: (page: number, init?: FetchInit) =>
     fetchJson(`/api/forced-transactions/${page}`, decodeForcedTxsPage, init),
+  l1TxsPage: (page: number, init?: FetchInit) =>
+    fetchJson(`/api/l1/transactions/${page}`, decodeL1TxsPage, init),
 };
+
+/** Cardano L1 transactions that touch a Midgard validator address.
+ *
+ * These are indexed from preprod by the explorer's own indexer, scanning from
+ * block height 0, so this list is complete from the deployment's first
+ * transaction rather than from whenever a local node happened to be running.
+ * That is the difference between this page and /transactions, which reads the
+ * Midgard node's own ledger.
+ *
+ * Decoded here rather than in the contracts package because these rows are
+ * served by the indexer routes, which have no Effect Schema contract yet.
+ * Lovelace values stay STRINGS all the way to the screen: they routinely
+ * exceed Number.MAX_SAFE_INTEGER and rounding them would misreport balances.
+ */
+export type L1TxRow = {
+  txHash: string;
+  blockHeight: number;
+  blockHash: string;
+  slot: number;
+  epoch: number;
+  txTime: string;
+  fee: DecimalString;
+  size: number;
+  totalOutput: DecimalString;
+  events: { validator: string; eventType: string; lovelace: string }[];
+};
+
+export type L1TxsPage = {
+  rows: L1TxRow[];
+  total: number;
+  limit: number;
+  hasNextPage: boolean;
+};
+
+const toDecimal = Schema.decodeUnknownSync(DecimalString);
+
+function decodeL1TxsPage(body: unknown): L1TxsPage {
+  const b = body as { rows?: unknown; total?: unknown; limit?: unknown; hasNextPage?: unknown };
+  if (!b || !Array.isArray(b.rows) || typeof b.total !== "number") {
+    throw new Error("Malformed L1 transactions response");
+  }
+  return {
+    // Run the money fields through the same branded schema the rest of the
+    // app uses, so a non-numeric fee fails here rather than reaching a
+    // formatter that would render it as NaN.
+    rows: b.rows.map((r) => {
+      const row = r as L1TxRow;
+      return { ...row, fee: toDecimal(row.fee), totalOutput: toDecimal(row.totalOutput) };
+    }),
+    total: b.total,
+    limit: typeof b.limit === "number" ? b.limit : b.rows.length,
+    hasNextPage: b.hasNextPage === true,
+  };
+}
