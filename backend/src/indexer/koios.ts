@@ -31,7 +31,17 @@ const assetSchema = z.object({
 // preprod tx 9152dc88...ddf92), while every other utxo's asset_list is a real
 // array. This preprocess accepts either without changing the inferred type.
 const assetListSchema = z.preprocess(
-  (v) => (typeof v === "string" ? JSON.parse(v) : v),
+  (v) => {
+    if (typeof v !== "string") return v;
+    // A malformed string must fail as a normal ZodError at the array check
+    // below, not escape .parse() as a raw SyntaxError that the rest of the
+    // boundary validation doesn't produce.
+    try {
+      return JSON.parse(v);
+    } catch {
+      return v;
+    }
+  },
   z.array(assetSchema).default([]),
 );
 
@@ -57,7 +67,10 @@ const plutusContractSchema = z.object({
   address: z.string().nullable().default(null),
   script_hash: z.string(),
   size: z.number().nullable().default(null),
-  valid_contract: z.boolean().default(true),
+  // No default: a script execution of unknown validity must fail parsing
+  // loudly rather than being silently recorded as valid if Koios ever omits
+  // this field. That is the exact failure mode this task exists to close.
+  valid_contract: z.boolean(),
   // Live-checked against preprod tx 9152dc88...ddf92: spends_input is the
   // UTxO the script spends ({ tx_hash, tx_index }), not a boolean.
   spends_input: z.object({ tx_hash: z.string(), tx_index: z.number() }).nullable().default(null),
@@ -72,6 +85,14 @@ const plutusContractSchema = z.object({
   }).nullable().default(null),
 });
 
+// Live-checked against preprod tx 9152dc88...ddf92: both sections were empty
+// arrays on that transaction, so no populated example was available to shape
+// these precisely. Typed as arrays of a permissive object rather than
+// guessed-at fields, since we requested this data (_withdrawals, _certs) and
+// it must survive parsing rather than being stripped by a bare z.object().
+const withdrawalSchema = z.record(z.string(), z.unknown());
+const certificateSchema = z.record(z.string(), z.unknown());
+
 const txInfoSchema = z.object({
   tx_hash: z.string(),
   block_height: z.number(),
@@ -84,7 +105,10 @@ const txInfoSchema = z.object({
   tx_size: z.number(),
   total_output: z.string(),
   tx_block_index: z.number(),
-  deposit: z.string().default("0"),
+  // No default: deposit is a base tx_info field present regardless of which
+  // of the six detail flags are set, so a missing value means Koios' schema
+  // changed, not that there is no deposit. Defaulting would mask that.
+  deposit: z.string(),
   invalid_before: z.union([z.number(), z.string()]).nullable().default(null),
   invalid_after: z.union([z.number(), z.string()]).nullable().default(null),
   metadata: z.unknown().nullable().default(null),
@@ -94,6 +118,11 @@ const txInfoSchema = z.object({
   collateral_output: utxoSchema.nullable().default(null),
   assets_minted: z.array(assetSchema).default([]),
   plutus_contracts: z.array(plutusContractSchema).default([]),
+  // No default, same reasoning as deposit: we requested this data via
+  // _withdrawals/_certs, so its absence means something upstream changed,
+  // not that the transaction has none (Koios still sends [] for "none").
+  withdrawals: z.array(withdrawalSchema),
+  certificates: z.array(certificateSchema),
 });
 
 export type KoiosAddressTx = z.infer<typeof addressTxSchema>;
