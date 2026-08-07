@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { indexerPrisma } from "../src/indexer/db.js";
 import { parseTxInfo } from "../src/indexer/koios.js";
 import { loadManifest } from "../src/indexer/manifest.js";
-import { ingestTxInfos, deleteFromBlockHeight } from "../src/indexer/ingest.js";
+import { ingestTxInfos } from "../src/indexer/ingest.js";
 import {
   getL1TransactionsPage,
   getL1Transaction,
@@ -99,5 +99,67 @@ describe("L1 read queries", () => {
     const s = await getL1Summary();
     expect(s.transactions).toBeGreaterThanOrEqual(1);
     expect(s.byValidator.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("L1 transaction paging across a same-block tie", () => {
+  // txTime is populated from the Cardano block, not a per-transaction clock,
+  // so every transaction in the same block gets a byte-identical txTime.
+  // These five rows share one txTime on purpose: it is the exact condition
+  // that requires a deterministic tiebreaker in the orderBy, and it is the
+  // only way a page-boundary bug (dropped/duplicated rows, wrong hasNextPage)
+  // would actually surface instead of hiding behind incidental row order.
+  const tiedTxTime = new Date("2026-01-01T00:00:00.000Z");
+  const syntheticHashes = Array.from(
+    { length: 5 },
+    (_, i) => `${"a".repeat(63)}${i}`,
+  );
+
+  beforeAll(async () => {
+    if (!reachable) return;
+    await truncateL1();
+    await indexerPrisma.l1Tx.createMany({
+      data: syntheticHashes.map((txHash, i) => ({
+        txHash,
+        blockHeight: 9000 + i,
+        blockHash: `synthetic-block-${i}`,
+        slot: 9000 + i,
+        epoch: 1,
+        txTime: tiedTxTime,
+      })),
+    });
+  });
+
+  afterAll(async () => {
+    if (!reachable) return;
+    await truncateL1();
+  });
+
+  it("keeps pages disjoint and complete when every row ties on txTime", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+
+    const page1 = await getL1TransactionsPage(1, 2);
+    const page2 = await getL1TransactionsPage(2, 2);
+    const page3 = await getL1TransactionsPage(3, 2);
+
+    expect(page1.total).toBe(5);
+    expect(page1.rows.length).toBe(2);
+    expect(page1.hasNextPage).toBe(true);
+    expect(page2.rows.length).toBe(2);
+    expect(page2.hasNextPage).toBe(true);
+    expect(page3.rows.length).toBe(1);
+    expect(page3.hasNextPage).toBe(false);
+
+    const hashesPerPage = [page1, page2, page3].map((p) =>
+      p.rows.map((r) => (r as { txHash: string }).txHash),
+    );
+    const allHashes = hashesPerPage.flat();
+
+    // Pairwise disjoint and together covering all 5: this is what actually
+    // proves the tiebreaker works, not just that each page has the right
+    // length. A missing tiebreaker can repeat a tied row across pages or
+    // drop one entirely while every length assertion above still passes.
+    expect(new Set(allHashes).size).toBe(5);
+    expect([...allHashes].sort()).toEqual([...syntheticHashes].sort());
   });
 });

@@ -2,15 +2,18 @@ import { indexerPrisma, getSyncCursor } from "../indexer/db";
 
 const PAGE_SIZE = 25;
 
-export async function getL1TransactionsPage(page: number) {
+export async function getL1TransactionsPage(page: number, pageSize = PAGE_SIZE) {
   const current = Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
-  const skip = (current - 1) * PAGE_SIZE;
+  const skip = (current - 1) * pageSize;
 
   const [rows, total] = await Promise.all([
     indexerPrisma.l1Tx.findMany({
-      orderBy: { txTime: "desc" },
+      // txTime comes from the Cardano block, so every transaction in the same
+      // block ties. Without a deterministic tiebreaker, OFFSET/LIMIT can
+      // repeat or drop rows across pages once the table exceeds one page.
+      orderBy: [{ txTime: "desc" }, { txHash: "desc" }],
       skip,
-      take: PAGE_SIZE,
+      take: pageSize,
       include: { events: true },
     }),
     indexerPrisma.l1Tx.count(),
@@ -20,7 +23,7 @@ export async function getL1TransactionsPage(page: number) {
     rows,
     total,
     hasNextPage: skip + rows.length < total,
-    limit: PAGE_SIZE,
+    limit: pageSize,
   };
 }
 
@@ -33,7 +36,7 @@ export async function getL1Transaction(txHash: string) {
 
 export async function getL1BlockHeaders(limit: number) {
   return indexerPrisma.l1BlockHeader.findMany({
-    orderBy: { endTime: "desc" },
+    orderBy: [{ endTime: "desc" }, { headerHash: "desc" }],
     take: Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 25,
   });
 }
