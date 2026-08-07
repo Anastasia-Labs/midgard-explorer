@@ -187,7 +187,33 @@ export const api = {
     fetchJson(`/api/forced-transactions/${page}`, decodeForcedTxsPage, init),
   l1TxsPage: (page: number, init?: FetchInit) =>
     fetchJson(`/api/l1/transactions/${page}`, decodeL1TxsPage, init),
+  l1Summary: (init?: FetchInit) => fetchJson("/api/l1/summary", decodeL1Summary, init),
 };
+
+/** What the indexer has found on Cardano itself. Independent of the Midgard
+ * node: this data survives the node being offline, which is exactly when the
+ * overview's ledger figures go quiet and a reader most needs something real. */
+export type L1Summary = {
+  transactions: number;
+  events: number;
+  blockHeaders: number;
+  lastSyncedHeight: number;
+  byValidator: { validator: string; count: number }[];
+};
+
+function decodeL1Summary(body: unknown): L1Summary {
+  const b = body as Partial<L1Summary> | null;
+  if (!b || typeof b.transactions !== "number") {
+    throw new Error("Malformed L1 summary response");
+  }
+  return {
+    transactions: b.transactions,
+    events: typeof b.events === "number" ? b.events : 0,
+    blockHeaders: typeof b.blockHeaders === "number" ? b.blockHeaders : 0,
+    lastSyncedHeight: typeof b.lastSyncedHeight === "number" ? b.lastSyncedHeight : 0,
+    byValidator: Array.isArray(b.byValidator) ? b.byValidator : [],
+  };
+}
 
 /** Cardano L1 transactions that touch a Midgard validator address.
  *
