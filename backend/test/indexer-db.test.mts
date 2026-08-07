@@ -13,9 +13,22 @@ import {
 
 let reachable = false;
 
+/** Bounded probe. A stopped container on WSL2 black-holes TCP rather than
+ * refusing it, so an unguarded query hangs past Vitest's hook timeout and the
+ * suite reports FAIL instead of skipping. The race turns that into a clean
+ * negative. */
+async function probe(): Promise<void> {
+  await Promise.race([
+    indexerPrisma.$queryRaw`SELECT 1;`,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("probe timed out after 3000ms")), 3000),
+    ),
+  ]);
+}
+
 beforeAll(async () => {
   try {
-    await indexerPrisma.$queryRaw`SELECT 1;`;
+    await probe();
     reachable = true;
   } catch (err) {
     console.warn(
