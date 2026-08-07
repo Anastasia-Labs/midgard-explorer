@@ -23,10 +23,100 @@ model L1Tx {
   epoch       Int
   txTime      DateTime @map("tx_time")
 
-  events L1Event[]
+  // Koios returns these as decimal strings. They are lovelace and byte counts,
+  // so they are BigInt here and must never be round-tripped through Number.
+  fee           BigInt
+  size          Int
+  totalOutput   BigInt  @map("total_output")
+  blockIndex    Int     @map("block_index")
+  // Koios calls this `deposit`. Renamed because in this codebase a deposit is
+  // a Midgard user event, and this is the unrelated Cardano stake deposit.
+  certDeposit   BigInt  @map("cert_deposit")
+  invalidBefore BigInt? @map("invalid_before")
+  invalidAfter  BigInt? @map("invalid_after")
+  metadata      Json?
+
+  events    L1Event[]
+  ios       L1TxIo[]
+  redeemers L1Redeemer[]
+  assets    L1TxAsset[]
 
   @@index([blockHeight])
+  @@index([txTime])
   @@map("l1_tx")
+}
+
+/// One row per input, output, reference input or collateral input. A single
+/// table rather than four keeps the resolution logic in one place: they all
+/// carry exactly the same UTxO shape, and `kind` is the only thing that
+/// differs. `sourceTxHash`/`sourceIndex` point at the UTxO being referenced,
+/// which for an output is this transaction itself.
+model L1TxIo {
+  id           Int     @id @default(autoincrement())
+  txHash       String  @map("tx_hash")
+  kind         String
+  position     Int
+  sourceTxHash String  @map("source_tx_hash")
+  sourceIndex  Int     @map("source_index")
+  address      String?
+  paymentCred  String? @map("payment_cred")
+  stakeAddr    String? @map("stake_addr")
+  lovelace     BigInt
+  datumHash    String? @map("datum_hash")
+  inlineDatum  Json?   @map("inline_datum")
+  refScriptHash String? @map("ref_script_hash")
+
+  tx     L1Tx        @relation(fields: [txHash], references: [txHash], onDelete: Cascade)
+  assets L1TxAsset[]
+
+  @@unique([txHash, kind, position], map: "l1_tx_io_position_key")
+  @@index([address])
+  @@index([sourceTxHash, sourceIndex])
+  @@map("l1_tx_io")
+}
+
+/// Native assets. `ioId` is null for mints and burns, which belong to the
+/// transaction rather than to any one UTxO. A burn is a negative quantity.
+model L1TxAsset {
+  id          Int     @id @default(autoincrement())
+  txHash      String  @map("tx_hash")
+  ioId        Int?    @map("io_id")
+  kind        String
+  policyId    String  @map("policy_id")
+  assetName   String  @map("asset_name")
+  fingerprint String?
+  quantity    BigInt
+
+  tx L1Tx    @relation(fields: [txHash], references: [txHash], onDelete: Cascade)
+  io L1TxIo? @relation(fields: [ioId], references: [id], onDelete: Cascade)
+
+  @@index([policyId, assetName])
+  @@index([txHash])
+  @@map("l1_tx_asset")
+}
+
+/// One row per Plutus script execution, carrying the redeemer that drove it.
+/// This is what makes a Midgard transaction legible: the redeemer says which
+/// operation was invoked, where the datum only says what the state became.
+model L1Redeemer {
+  id            Int     @id @default(autoincrement())
+  txHash        String  @map("tx_hash")
+  scriptHash    String  @map("script_hash")
+  address       String?
+  purpose       String
+  memUnits      BigInt  @map("mem_units")
+  stepUnits     BigInt  @map("step_units")
+  fee           BigInt
+  datumHash     String? @map("datum_hash")
+  datum         Json?
+  validContract Boolean @map("valid_contract")
+  scriptSize    Int?    @map("script_size")
+
+  tx L1Tx @relation(fields: [txHash], references: [txHash], onDelete: Cascade)
+
+  @@index([txHash])
+  @@index([scriptHash])
+  @@map("l1_redeemer")
 }
 
 model L1Event {
@@ -38,10 +128,21 @@ model L1Event {
   lovelace    BigInt
   datum       Json?
 
+  /// Which deployment's manifest this validator came from. Two deployments
+  /// have entirely different script hashes, so without this an event cannot
+  /// be attributed once more than one manifest is loaded.
+  deployment String @default("default")
+
+  /// Populated for deposits and withdrawals once the datum decodes. Null
+  /// means "not decoded", never "zero": a decoder that cannot prove the
+  /// shape returns null rather than guessing.
+  decoded Json?
+
   tx L1Tx @relation(fields: [txHash], references: [txHash], onDelete: Cascade)
 
   @@unique([txHash, outputIndex], map: "l1_event_tx_output_key")
   @@index([validator])
+  @@index([deployment])
   @@map("l1_event")
 }
 
