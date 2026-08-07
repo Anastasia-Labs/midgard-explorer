@@ -162,4 +162,31 @@ describe("L1 transaction paging across a same-block tie", () => {
     expect(new Set(allHashes).size).toBe(5);
     expect([...allHashes].sort()).toEqual([...syntheticHashes].sort());
   });
+
+  it("orders tied timestamps deterministically by the tiebreaker", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    await truncateL1();
+
+    // Same txTime for every row, so ONLY the tiebreaker can order them. The
+    // hashes are inserted ascending while the tiebreaker sorts descending, so
+    // heap order and correct order are opposites: a missing tiebreaker returns
+    // the exact reverse of what this asserts.
+    const tied = new Date("2026-07-26T09:32:00.000Z");
+    const hashes = ["aa", "bb", "cc", "dd", "ee"].map((c) => c.repeat(32));
+    await indexerPrisma.l1Tx.createMany({
+      data: hashes.map((txHash, i) => ({
+        txHash,
+        blockHeight: 4980661,
+        blockHash: "f".repeat(64),
+        slot: 128458937 + i,
+        epoch: 303,
+        txTime: tied,
+      })),
+    });
+
+    const page = await getL1TransactionsPage(1, 5);
+    expect(page.rows.map((r: { txHash: string }) => r.txHash)).toEqual(
+      [...hashes].reverse(),
+    );
+  });
 });
