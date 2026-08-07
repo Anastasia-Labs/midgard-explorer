@@ -54,7 +54,9 @@ export async function syncOnce(
   await setSyncCursor(SOURCE, tip);
 
   logger.info(
-    `L1 sync: scanned ${rows.length} rows from height ${scanFloor}, wrote ${result.txs} txs, ${result.events} events, ${result.headers} headers`,
+    `L1 sync: scanned ${rows.length} rows from height ${scanFloor}, wrote ` +
+      `${result.txs} txs, ${result.events} events, ${result.headers} headers, ` +
+      `${result.ios} utxos, ${result.assets} assets, ${result.redeemers} redeemers`,
   );
   return { scanned: rows.length, ingested: result.txs };
 }

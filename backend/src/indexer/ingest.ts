@@ -1,5 +1,5 @@
 import { indexerPrisma } from "./db";
-import type { KoiosTxInfo } from "./koios";
+import type { KoiosAsset, KoiosPlutusContract, KoiosTxInfo, KoiosUtxo } from "./koios";
 import type { ValidatorEntry } from "./manifest";
 import { decodeStateQueueDatum } from "./stateQueueDatum";
 import { logger } from "../logger";
@@ -13,13 +13,114 @@ function validatorForAddress(
   return validators.find((v) => v.address === address);
 }
 
+/** Koios gives lovelace and ex-units as decimal strings. They exceed 2^53 in
+ * the general case, so they go to BigInt directly and never through Number. */
+const big = (v: string | number | null | undefined): bigint =>
+  v === null || v === undefined ? 0n : BigInt(v);
+
+/** Rewrites all detail for one transaction. Delete-then-insert rather than
+ * upsert: a reorged transaction can come back with fewer inputs than before,
+ * and an upsert would leave the surplus rows behind forever. The rows have no
+ * stable natural key of their own, so there is nothing to upsert against. */
+async function writeTxDetail(info: KoiosTxInfo): Promise<{
+  ios: number; assets: number; redeemers: number;
+}> {
+  await indexerPrisma.l1TxIo.deleteMany({ where: { txHash: info.tx_hash } });
+  await indexerPrisma.l1TxAsset.deleteMany({ where: { txHash: info.tx_hash } });
+  await indexerPrisma.l1Redeemer.deleteMany({ where: { txHash: info.tx_hash } });
+
+  const sections: Array<[string, KoiosUtxo[]]> = [
+    ["input", info.inputs],
+    ["output", info.outputs],
+    ["reference", info.reference_inputs],
+    ["collateral", info.collateral_inputs],
+  ];
+
+  let ios = 0;
+  let assets = 0;
+
+  for (const [kind, utxos] of sections) {
+    for (const [position, u] of utxos.entries()) {
+      const io = await indexerPrisma.l1TxIo.create({
+        data: {
+          txHash: info.tx_hash,
+          kind,
+          position,
+          sourceTxHash: u.tx_hash,
+          sourceIndex: u.tx_index,
+          address: u.payment_addr?.bech32 ?? null,
+          paymentCred: u.payment_addr?.cred ?? null,
+          stakeAddr: u.stake_addr,
+          lovelace: big(u.value),
+          datumHash: u.datum_hash,
+          inlineDatum: (u.inline_datum?.value ?? null) as never,
+          refScriptHash: u.reference_script?.hash ?? null,
+        },
+      });
+      ios += 1;
+      for (const a of u.asset_list) {
+        await indexerPrisma.l1TxAsset.create({
+          data: {
+            txHash: info.tx_hash, ioId: io.id, kind,
+            policyId: a.policy_id, assetName: a.asset_name ?? "",
+            fingerprint: a.fingerprint, quantity: big(a.quantity),
+          },
+        });
+        assets += 1;
+      }
+    }
+  }
+
+  // Mints belong to the transaction, not to any one UTxO, so ioId stays null.
+  for (const a of info.assets_minted) {
+    await indexerPrisma.l1TxAsset.create({
+      data: {
+        txHash: info.tx_hash, ioId: null, kind: "mint",
+        policyId: a.policy_id, assetName: a.asset_name ?? "",
+        fingerprint: a.fingerprint, quantity: big(a.quantity),
+      },
+    });
+    assets += 1;
+  }
+
+  let redeemers = 0;
+  for (const c of info.plutus_contracts as KoiosPlutusContract[]) {
+    const r = c.input?.redeemer;
+    if (!r) continue;
+    await indexerPrisma.l1Redeemer.create({
+      data: {
+        txHash: info.tx_hash,
+        scriptHash: c.script_hash,
+        address: c.address,
+        purpose: r.purpose,
+        memUnits: big(r.unit.mem),
+        stepUnits: big(r.unit.steps),
+        fee: big(r.fee),
+        datumHash: r.datum?.hash ?? null,
+        datum: (r.datum?.value ?? null) as never,
+        validContract: c.valid_contract,
+        scriptSize: c.size,
+      },
+    });
+    redeemers += 1;
+  }
+
+  return { ios, assets, redeemers };
+}
+
 export async function ingestTxInfos(
   infos: KoiosTxInfo[],
   validators: ValidatorEntry[],
-): Promise<{ txs: number; events: number; headers: number }> {
+): Promise<{
+  txs: number; events: number; headers: number;
+  ios: number; assets: number; redeemers: number;
+}> {
   let txs = 0;
   let events = 0;
   let headers = 0;
+  let ios = 0;
+  let assetRows = 0;
+  let redeemerRows = 0;
 
   for (const info of infos) {
     // Decode every state-queue datum in this transaction first, so we can tell
@@ -27,7 +128,9 @@ export async function ingestTxInfos(
     // carried forward when a sibling's prevUtxosRoot equals its utxosRoot.
     const decoded = new Map<number, NonNullable<ReturnType<typeof decodeStateQueueDatum>>>();
     for (const [index, out] of info.outputs.entries()) {
-      const v = validatorForAddress(out.payment_addr.bech32, validators);
+      const v = out.payment_addr
+        ? validatorForAddress(out.payment_addr.bech32, validators)
+        : undefined;
       if (!v || v.family !== "stateQueue") continue;
       const d = out.inline_datum?.value ?? null;
       if (d === null) continue;
@@ -41,28 +144,38 @@ export async function ingestTxInfos(
       }
     }
 
+    const scalars = {
+      blockHeight: info.block_height,
+      blockHash: info.block_hash,
+      slot: info.absolute_slot,
+      epoch: info.epoch_no,
+      txTime: new Date(info.tx_timestamp * 1000),
+      fee: big(info.fee),
+      size: info.tx_size,
+      totalOutput: big(info.total_output),
+      blockIndex: info.tx_block_index,
+      certDeposit: big(info.deposit),
+      invalidBefore: info.invalid_before === null ? null : big(info.invalid_before),
+      invalidAfter: info.invalid_after === null ? null : big(info.invalid_after),
+      metadata: (info.metadata ?? null) as never,
+    };
+
     await indexerPrisma.l1Tx.upsert({
       where: { txHash: info.tx_hash },
-      create: {
-        txHash: info.tx_hash,
-        blockHeight: info.block_height,
-        blockHash: info.block_hash,
-        slot: info.absolute_slot,
-        epoch: info.epoch_no,
-        txTime: new Date(info.tx_timestamp * 1000),
-      },
-      update: {
-        blockHeight: info.block_height,
-        blockHash: info.block_hash,
-      },
+      create: { txHash: info.tx_hash, ...scalars },
+      update: scalars,
     });
     txs += 1;
 
+    const detail = await writeTxDetail(info);
+    ios += detail.ios;
+    assetRows += detail.assets;
+    redeemerRows += detail.redeemers;
+
     for (const [index, out] of info.outputs.entries()) {
-      const validator = validatorForAddress(
-        out.payment_addr.bech32,
-        validators,
-      );
+      const validator = out.payment_addr
+        ? validatorForAddress(out.payment_addr.bech32, validators)
+        : undefined;
       if (!validator) continue;
 
       const datumValue = out.inline_datum?.value ?? null;
@@ -124,7 +237,7 @@ export async function ingestTxInfos(
     }
   }
 
-  return { txs, events, headers };
+  return { txs, events, headers, ios, assets: assetRows, redeemers: redeemerRows };
 }
 
 /** Reorg reconciliation: drop everything at or above a height so it can be

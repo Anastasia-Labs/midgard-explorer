@@ -117,6 +117,11 @@ describe("L1 transaction paging across a same-block tie", () => {
         slot: 9000 + i,
         epoch: 1,
         txTime: tiedTxTime,
+        fee: 0n,
+        size: 0,
+        totalOutput: 0n,
+        blockIndex: i,
+        certDeposit: 0n,
       })),
     });
   });
@@ -172,6 +177,11 @@ describe("L1 transaction paging across a same-block tie", () => {
         slot: 128458937 + i,
         epoch: 303,
         txTime: tied,
+        fee: 0n,
+        size: 0,
+        totalOutput: 0n,
+        blockIndex: i,
+        certDeposit: 0n,
       })),
     });
 

@@ -100,7 +100,13 @@ const txInfoSchema = z.object({
   absolute_slot: z.number(),
   epoch_no: z.number(),
   tx_timestamp: z.number(),
-  outputs: z.array(txOutputSchema),
+  // Outputs need the same detail as inputs/reference/collateral (tx_hash,
+  // tx_index, datum_hash, asset_list, reference_script), so they use the
+  // shared utxoSchema rather than the narrower txOutputSchema. Discovered
+  // when writeTxDetail (Task 4) tried to read u.tx_hash off an output and
+  // got undefined, because txOutputSchema stripped every field it didn't
+  // declare.
+  outputs: z.array(utxoSchema),
   fee: z.string(),
   tx_size: z.number(),
   total_output: z.string(),

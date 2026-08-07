@@ -26,7 +26,7 @@ const infos = parseTxInfo(
 );
 
 const datumOutput = infos[0].outputs.find(
-  (o) => o.payment_addr.bech32 === STATE_QUEUE_ADDR && o.inline_datum !== null,
+  (o) => o.payment_addr?.bech32 === STATE_QUEUE_ADDR && o.inline_datum !== null,
 );
 
 describe("decodeStateQueueDatum", () => {
