@@ -4,6 +4,7 @@ import { indexerPrisma } from "../src/indexer/db.js";
 import { parseTxInfo } from "../src/indexer/koios.js";
 import { loadManifest } from "../src/indexer/manifest.js";
 import { ingestTxInfos, deleteFromBlockHeight } from "../src/indexer/ingest.js";
+import { truncateL1 } from "./helpers/truncate.mjs";
 
 /**
  * Ingest must be idempotent. The sync loop re-scans recent blocks on every
@@ -37,16 +38,6 @@ async function probe(): Promise<void> {
       setTimeout(() => reject(new Error("probe timed out after 3000ms")), 3000),
     ),
   ]);
-}
-
-/** Test cleanup must be total. `deleteFromBlockHeight` is a production
- * reconciliation primitive: by design it never touches rows whose blockHeight
- * is null, which is exactly what carried-forward headers are. Reusing it as
- * test teardown leaves residue that has already produced one false pass. */
-async function truncateL1(): Promise<void> {
-  await indexerPrisma.l1BlockHeader.deleteMany({});
-  await indexerPrisma.l1Event.deleteMany({});
-  await indexerPrisma.l1Tx.deleteMany({});
 }
 
 beforeAll(async () => {

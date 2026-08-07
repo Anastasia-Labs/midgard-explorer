@@ -10,6 +10,7 @@ import {
   getL1BlockHeaders,
   getL1Summary,
 } from "../src/db/l1.js";
+import { truncateL1 } from "./helpers/truncate.mjs";
 
 const infos = parseTxInfo(
   JSON.parse(
@@ -36,16 +37,6 @@ async function probe(): Promise<void> {
       setTimeout(() => reject(new Error("probe timed out after 3000ms")), 3000),
     ),
   ]);
-}
-
-/** Test cleanup must be total. `deleteFromBlockHeight` is a production
- * reconciliation primitive: by design it never touches rows whose blockHeight
- * is null, which is exactly what carried-forward headers are. Reusing it as
- * test teardown leaves residue that has already produced one false pass. */
-async function truncateL1(): Promise<void> {
-  await indexerPrisma.l1BlockHeader.deleteMany({});
-  await indexerPrisma.l1Event.deleteMany({});
-  await indexerPrisma.l1Tx.deleteMany({});
 }
 
 beforeAll(async () => {
