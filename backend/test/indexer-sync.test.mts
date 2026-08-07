@@ -104,6 +104,23 @@ describe("syncOnce", () => {
     expect(await indexerPrisma.l1Tx.count()).toBe(0);
   });
 
+  it("does not move the cursor backwards when the window is empty", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    await syncOnce({
+      fetchAddressTxs: async () => addressTxs,
+      fetchTxInfo: async () => txInfo,
+    });
+    const advanced = (await getSyncCursor("l1"))!.lastBlockHeight;
+    expect(advanced).toBeGreaterThan(0);
+
+    await syncOnce({
+      fetchAddressTxs: async () => [],
+      fetchTxInfo: async () => [],
+    });
+    const after = (await getSyncCursor("l1"))!.lastBlockHeight;
+    expect(after).toBe(advanced);
+  });
+
   it("surfaces a fetch failure rather than corrupting the cursor", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
     const before = await getSyncCursor("l1");

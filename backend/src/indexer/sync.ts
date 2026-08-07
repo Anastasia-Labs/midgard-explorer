@@ -43,7 +43,14 @@ export async function syncOnce(
   const infos = hashes.length > 0 ? await fetchTxInfo(hashes) : [];
   const result = await ingestTxInfos(infos, validators);
 
-  const tip = rows.reduce((max, r) => Math.max(max, r.block_height), scanFloor);
+  // Never let an empty window move the cursor. Seeding the reduce with
+  // scanFloor would write back (cursor - lookback) whenever the scan finds
+  // nothing, so the cursor walks backward one lookback per poll and each tick
+  // re-scans an ever-wider range from Koios. Self-healing, but pure waste.
+  const tip =
+    rows.length > 0
+      ? rows.reduce((max, r) => Math.max(max, r.block_height), scanFloor)
+      : (cursor?.lastBlockHeight ?? scanFloor);
   await setSyncCursor(SOURCE, tip);
 
   logger.info(
