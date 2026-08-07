@@ -12,6 +12,7 @@ import { bigintStringify } from "./helpers";
 import { prisma } from "../db";
 import { indexerPrisma } from "../indexer/db";
 import { startSync } from "../indexer/sync";
+import { reportDatabaseIdentity } from "../db/identity";
 
 export const startServer = async () => {
   const app = express();
@@ -47,6 +48,9 @@ export const startServer = async () => {
 
   // Background L1 indexing. Deliberately after route registration: a sync
   // failure must never prevent the API from coming up.
+  // Before the sync loop, so the log names its databases even if sync fails.
+  void reportDatabaseIdentity();
+
   startSync();
 
   // 404 for unmatched routes.
