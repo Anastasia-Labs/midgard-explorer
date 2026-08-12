@@ -3,13 +3,16 @@ import { ValueCell } from "../../components/ui/amount";
 import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Identifier } from "../../components/ui/identifier";
 import { PageError } from "../../components/ui/pageerror";
+import { DeploymentNote } from "../../components/shell/SourceBanner";
 import { PageHeader } from "../../components/ui/primitives";
 import { DataTable, Pagination } from "../../components/ui/table";
 import { Timestamp } from "../../components/ui/timestamp";
-import { api } from "../../lib/api";
+import { ValidatorLabel } from "../../components/ui/validatorlabel";
+import { api, type L1ValidatorIdentity } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
+import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Cardano L1 activity",
@@ -40,8 +43,15 @@ export default async function L1Page({
   const page = parsePage(params.page);
 
   let data;
+  let validators: readonly L1ValidatorIdentity[] = [];
   try {
-    data = await api.l1TxsPage(page);
+    const init = await viewerInit();
+    const [rows, summary] = await Promise.all([
+      api.l1TxsPage(page, init),
+      api.l1Summary(init).catch(() => null),
+    ]);
+    data = rows;
+    validators = summary?.source?.validators ?? [];
   } catch (e) {
     return (
       <>
@@ -69,13 +79,17 @@ export default async function L1Page({
         }
       />
 
+      <div className="mb-4">
+        <DeploymentNote />
+      </div>
+
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
         <DataTable
           caption="Midgard transactions on Cardano preprod, newest first"
           columns={[
             {
               header: "Transaction",
-              cell: (r) => <Identifier value={r.txHash} />,
+              cell: (r) => <Identifier value={r.txHash} href={`/l1/transaction/${r.txHash}`} />,
             },
             {
               header: "Contract",
@@ -84,7 +98,11 @@ export default async function L1Page({
               cell: (r) => {
                 const names = [...new Set(r.events.map((e) => e.validator))];
                 return names.length > 0 ? (
-                  <span className="text-text-2">{names.join(", ")}</span>
+                  <span className="flex flex-wrap gap-x-2 gap-y-1 text-text-2">
+                    {names.map((name) => (
+                      <ValidatorLabel key={name} family={name} validators={validators} />
+                    ))}
+                  </span>
                 ) : (
                   <span className="text-text-3">None</span>
                 );
@@ -120,7 +138,14 @@ export default async function L1Page({
             },
           ]}
           mobileRow={(r) => ({
-            primary: <Identifier value={r.txHash} head={10} tail={6} />,
+            primary: (
+              <Identifier
+                value={r.txHash}
+                href={`/l1/transaction/${r.txHash}`}
+                head={10}
+                tail={6}
+              />
+            ),
             meta: <Timestamp iso={r.txTime} />,
             secondary: <ValueCell value={{ lovelace: r.fee, assets: {} }} />,
             details: [
@@ -132,6 +157,10 @@ export default async function L1Page({
                 label: "Epoch",
                 value: <span className="tabular-nums">{r.epoch}</span>,
               },
+              ...[...new Set(r.events.map((event) => event.validator))].map((family) => ({
+                label: "Contract",
+                value: <ValidatorLabel family={family} validators={validators} />,
+              })),
             ],
           })}
           rows={data.rows}
