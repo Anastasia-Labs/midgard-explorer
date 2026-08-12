@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { EntityIcon } from "./entity";
 import { Icon, type IconName } from "./icons";
+import type { EntityKind } from "../../lib/entities";
 import { cn } from "../../lib/format";
 
 export function Skeleton({ className }: { className?: string }) {
@@ -16,9 +18,23 @@ export function TableSkeleton({ rows = 5 }: { rows?: number }) {
   );
 }
 
-export function EmptyState({ title, hint }: { title: string; hint?: string | undefined }) {
+/** A mark above the headline, because a bare paragraph in a table body reads
+ * as a failure rather than as an absence. Decorative: the headline is already
+ * the information, and announcing it twice is noise. */
+export function EmptyState({
+  title,
+  hint,
+  icon = "inbox",
+}: {
+  title: string;
+  hint?: string | undefined;
+  icon?: IconName;
+}) {
   return (
     <div className="p-8 text-center">
+      <span className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-surface-2 text-text-3">
+        <Icon name={icon} size={19} />
+      </span>
       <p className="text-text-2">{title}</p>
       {hint ? <p className="mt-1 text-sm text-text-3">{hint}</p> : null}
     </div>
@@ -34,6 +50,9 @@ export function ErrorState({
 }) {
   return (
     <div role="alert" className="p-8 text-center">
+      <span className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-danger/10 text-danger">
+        <Icon name="alertTriangle" size={19} />
+      </span>
       <p className="text-danger">{message}</p>
       {onRetry ? (
         <button
@@ -49,6 +68,23 @@ export function ErrorState({
 }
 
 export type CalloutTone = "info" | "warning" | "danger" | "success" | "neutral";
+
+/** The glyph per tone, so a callout classifies itself before it is read and
+ * without depending on hue.
+ *
+ * The vocabulary matches `StatusBadge`'s markers on purpose: a check concludes
+ * well, a cross concludes badly. Warning and danger take different marks
+ * because they are the pair most likely to be confused, and a shared mark
+ * would add weight without adding information.
+ *
+ * Neutral asserts no tone, so it takes no mark. */
+const CALLOUT_ICON: Record<CalloutTone, IconName | null> = {
+  info: "info",
+  warning: "alertTriangle",
+  danger: "x",
+  success: "check",
+  neutral: null,
+};
 
 export function Callout({
   tone,
@@ -66,10 +102,20 @@ export function Callout({
     success: "border-success/40 text-success",
     neutral: "border-border-strong text-text-2",
   }[tone];
+  const icon = CALLOUT_ICON[tone];
   return (
     <div className={cn("rounded-lg border bg-surface p-4", toneClass)}>
-      <p className="font-medium">{title}</p>
-      {children ? <div className="mt-1 text-sm text-text-2">{children}</div> : null}
+      <p className="flex items-start gap-2 font-medium">
+        {icon ? (
+          <span className="mt-0.5 shrink-0">
+            <Icon name={icon} size={16} />
+          </span>
+        ) : null}
+        <span className="min-w-0">{title}</span>
+      </p>
+      {children ? (
+        <div className={cn("mt-1 text-sm text-text-2", icon ? "ps-6" : null)}>{children}</div>
+      ) : null}
     </div>
   );
 }
@@ -107,7 +153,7 @@ export function MetricTile({
       </div>
       <p
         className={cn(
-          "mt-2 font-display text-[28px] font-semibold leading-none tracking-tight tabular-nums",
+          "mt-2 text-[28px] font-semibold leading-none tracking-tight tabular-nums",
           toneText,
         )}
       >
@@ -128,25 +174,37 @@ export function PageHeader({
   title,
   subtitle,
   meta,
+  entity,
   children,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
   meta?: ReactNode;
+  /** The record type this page shows. Renders the type glyph in the type
+   * colour beside the title, which is already the word: glyph, word and colour
+   * together, never colour alone (4.3.2). */
+  entity?: EntityKind;
   children?: ReactNode;
 }) {
   return (
     <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="font-display text-[26px] font-semibold tracking-tight text-text">{title}</h1>
-        {subtitle ? <p className="mt-1 max-w-2xl text-[15px] text-text-2">{subtitle}</p> : null}
+        <h1 className="flex items-center gap-2 font-display text-[26px] font-semibold tracking-tight text-page-title">
+          {entity ? (
+            <span className="mg-field-icon">
+              <EntityIcon kind={entity} size={22} />
+            </span>
+          ) : null}
+          {title}
+        </h1>
+        {subtitle ? <p className="mt-1 max-w-2xl text-[15px] text-page-copy">{subtitle}</p> : null}
         {meta ? (
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 mg-caption text-text-2">
+          <div className="mg-field-surface mt-2 flex w-fit flex-wrap items-center gap-x-4 gap-y-1 mg-caption text-text-2">
             {meta}
           </div>
         ) : null}
       </div>
-      {children}
+      {children ? <div className="mg-field-surface">{children}</div> : null}
     </header>
   );
 }
@@ -168,7 +226,7 @@ export function Panel({
     <Card className={className}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
-          <h2 className="font-display text-[15px] font-semibold text-text">{title}</h2>
+          <h2 className="text-[15px] font-semibold text-text">{title}</h2>
           {subtitle ? <p className="mt-0.5 mg-caption text-text-3">{subtitle}</p> : null}
         </div>
         {actions}

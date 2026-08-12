@@ -13,28 +13,45 @@
   --color-text: var(--mg-text);
   --color-text-2: var(--mg-text-2);
   --color-text-3: var(--mg-text-3);
+  --color-page-title: var(--mg-page-title);
+  --color-page-copy: var(--mg-page-copy);
   --color-accent: var(--mg-accent);
   --color-accent-hover: var(--mg-accent-hover);
   --color-on-accent: var(--mg-on-accent);
+  --color-link: var(--mg-link);
+  --color-link-hover: var(--mg-link-hover);
   --color-info: var(--mg-info);
+  --color-graph-script: var(--mg-graph-script);
+  --color-graph-key: var(--mg-graph-key);
   --color-success: var(--mg-success);
   --color-warning: var(--mg-warning);
   --color-danger: var(--mg-danger);
 
-  --font-sans: var(--font-inter);
-  --font-display: var(--font-space-grotesk);
-  --font-mono: var(--font-jetbrains-mono);
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-platypi);
+  --font-mono: var(--font-geist-mono);
 }
 
 @layer base {
   body {
-    background: var(--mg-bg);
+    background-color: var(--mg-bg);
+    background-image: var(--mg-canvas-texture);
+    background-position: var(--mg-canvas-texture-position);
+    background-size: var(--mg-canvas-texture-size);
     color: var(--mg-text);
-    font-family: var(--font-inter), system-ui, sans-serif;
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     font-size: 15px;
     line-height: 1.5;
+    /* Slashed zero and fixed digit widths, everywhere, for free: both features
+       already ship inside the files being downloaded. `zero` stops a nought
+       reading as a capital O in an identifier, and `tnum` holds every digit to
+       one width so a column of ada amounts aligns on the decimal point rather
+       than drifting. */
+    font-feature-settings:
+      "zero" 1,
+      "tnum" 1;
   }
 
   h1,
@@ -53,6 +70,19 @@
     outline: 2px solid var(--mg-focus);
     outline-offset: 2px;
     border-radius: 5px;
+  }
+
+  /* Pressed feedback (5.2a). Hover said "this is a control", focus said "the
+     keyboard is here", and nothing said "your press landed". One rule rather
+     than a variant per component, so no control can be left without it.
+     Deliberately small: a control that lurches under the finger is worse than
+     one that does nothing. Collapsed with the rest of the motion vocabulary
+     when reduced motion is asked for. */
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active,
+  a:active,
+  summary:active {
+    transform: scale(0.985);
   }
 
   ::-webkit-scrollbar {
@@ -122,6 +152,19 @@
   }
 }
 
+/* In the light theme, the product name carries the established Midgard green
+ * while the Fjord blue remains contextual ink for page titles and navigation.
+ * Dark mode keeps its quieter white/muted wordmark hierarchy. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .mg-brand-green {
+    color: var(--mg-accent);
+  }
+}
+
+:root[data-theme="light"] .mg-brand-green {
+  color: var(--mg-accent);
+}
+
 @keyframes mg-pulse {
   0%,
   100% {
@@ -136,6 +179,44 @@
    endless animation also blocks any tool that waits for animations to finish. */
 .mg-pulse {
   animation: mg-pulse 1.6s ease-in-out 3;
+}
+
+.mg-flow-canvas {
+  --xy-background-color: transparent;
+  --xy-background-pattern-dots-color: var(--mg-border-strong);
+  --xy-edge-stroke: var(--mg-border-strong);
+  --xy-edge-stroke-selected: var(--mg-accent);
+  --xy-minimap-background-color: var(--mg-surface);
+  --xy-minimap-mask-background-color: color-mix(in oklab, var(--mg-bg) 65%, transparent);
+  --xy-controls-button-background-color: var(--mg-surface);
+  --xy-controls-button-background-color-hover: var(--mg-surface-3);
+  --xy-controls-button-color: var(--mg-text-2);
+  --xy-controls-button-border-color: var(--mg-border);
+}
+
+.mg-flow-canvas .react-flow__node {
+  transition: transform 240ms ease-out;
+}
+
+.mg-flow-canvas .react-flow__node:focus-visible .mg-flow-node,
+.mg-flow-canvas .react-flow__node.selected .mg-flow-node {
+  box-shadow: 0 0 0 2px var(--mg-focus);
+}
+
+.mg-flow-canvas .react-flow__handle {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--mg-surface);
+  background: var(--mg-border-strong);
+}
+
+.mg-flow-canvas .react-flow__attribution {
+  background: color-mix(in oklab, var(--mg-surface) 88%, transparent);
+  color: var(--mg-text-3);
+}
+
+.mg-flow-canvas .react-flow__attribution a {
+  color: inherit;
 }
 
 @keyframes mg-pop {
@@ -193,5 +274,15 @@
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  /* The pressed transform is not a transition or an animation, so the rules
+     above do not reach it. Reset it explicitly rather than leave the only
+     movement on the site outside the preference that asks for none. */
+  button:active,
+  [role="button"]:active,
+  a:active,
+  summary:active {
+    transform: none;
   }
 }

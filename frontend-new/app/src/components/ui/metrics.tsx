@@ -2,6 +2,7 @@ import type { MetricsResponse, Percentile } from "@midgard-explorer/contracts";
 import Link from "next/link";
 import { cn, formatDuration, formatTimestamp, groupThousands } from "../../lib/format";
 import { networkHealth, type NetworkHealth } from "../../lib/health";
+import type { GlossaryTerm } from "../../lib/glossary";
 import { Icon } from "./icons";
 import { FieldLabel } from "./infotip";
 import { LiveValue } from "./livevalue";
@@ -82,6 +83,7 @@ function Figure({
   sub,
   tone = "neutral",
   hint,
+  term,
   live,
 }: {
   label: string;
@@ -89,6 +91,7 @@ function Figure({
   sub?: React.ReactNode;
   tone?: "neutral" | "success" | "warning" | "danger";
   hint?: string;
+  term?: GlossaryTerm | undefined;
   /** Comparable identity of the figure. Given, the value tints when it moves,
    * which is the only motion on this page that means anything. */
   live?: string | number | null;
@@ -109,7 +112,7 @@ function Figure({
   return (
     <div className="min-w-0 px-4 py-3">
       <p className="mg-overline">
-        <FieldLabel label={label} explain={hint} />
+        <FieldLabel label={label} explain={hint} term={term} />
       </p>
       <p className="mt-1">
         {live === undefined ? figure : <LiveValue value={live}>{figure}</LiveValue>}
@@ -119,8 +122,24 @@ function Figure({
   );
 }
 
-/** A percentile pair, presented with the sample that produced it. */
-function Latency({ label, p, hint }: { label: string; p: Percentile; hint?: string }) {
+/** A percentile pair, presented with the sample that produced it.
+ *
+ * `emptyNote` exists because an empty sample has more than one cause. A figure
+ * that reports no duration next to a count of settled blocks has to say which
+ * of the two it means, or the panel contradicts itself. */
+function Latency({
+  label,
+  p,
+  hint,
+  term,
+  emptyNote = "Nothing completed in this window",
+}: {
+  label: string;
+  p: Percentile;
+  hint?: string;
+  term?: GlossaryTerm | undefined;
+  emptyNote?: string;
+}) {
   const thin = p.sampleCount > 0 && p.sampleCount < THIN_SAMPLE;
   return (
     <Figure
@@ -128,9 +147,10 @@ function Latency({ label, p, hint }: { label: string; p: Percentile; hint?: stri
       value={p.p50Ms === null ? "No data" : formatDuration(p.p50Ms)}
       tone={p.p50Ms === null ? "neutral" : "neutral"}
       hint={hint ?? p.source}
+      term={term}
       sub={
         p.sampleCount === 0 ? (
-          "Nothing completed in this window"
+          emptyNote
         ) : (
           <>
             p95 {p.p95Ms === null ? "unknown" : formatDuration(p.p95Ms)}
@@ -429,6 +449,7 @@ export function NetworkMetrics({
             tip.ageSeconds === null ? "No blocks" : `${formatDuration(tip.ageSeconds * 1000)} ago`
           }
           tone={tipState.tone}
+          term="chainTip"
           hint={`${tipState.note} · ${tip.source}`}
         />
         {/* A quiet window used to spend both of these tiles on a zero while the
@@ -440,8 +461,11 @@ export function NetworkMetrics({
             reader cannot see is worth less than the zero it replaced. */}
         <Figure
           label="Blocks"
+          term="blockThroughput"
           live={throughput.blocks}
-          value={groupThousands(String(idle && totalBlocks !== null ? totalBlocks : throughput.blocks))}
+          value={groupThousands(
+            String(idle && totalBlocks !== null ? totalBlocks : throughput.blocks),
+          )}
           sub={
             idle && totalBlocks !== null
               ? `all time · none in the last ${w.hours}h`
@@ -453,6 +477,7 @@ export function NetworkMetrics({
         />
         <Figure
           label="Transactions"
+          term="transactionThroughput"
           live={throughput.transactions}
           value={groupThousands(
             String(idle && totalTxs !== null ? totalTxs : throughput.transactions),
@@ -466,8 +491,20 @@ export function NetworkMetrics({
           }
           hint={throughput.source}
         />
-        <Latency label="Admission" p={admission.latency} />
-        <Latency label="L1 settlement" p={finality.settlementLatency} />
+        <Latency label="Admission" term="admissionLatency" p={admission.latency} />
+        <Latency
+          label="L1 settlement"
+          term="l1Finality"
+          p={finality.settlementLatency}
+          // Settlement durations are all-time, not windowed, and a block whose
+          // reported settlement precedes its own end contributes nothing. Say
+          // that, rather than denying the settled count beside it.
+          emptyNote={
+            finality.finalized > 0
+              ? `${finality.finalized} settled, none reported a usable duration`
+              : "Nothing settled yet"
+          }
+        />
       </div>
 
       <div className="grid divide-y divide-border border-t border-border lg:grid-cols-2 lg:divide-x lg:divide-y-0">
@@ -477,6 +514,7 @@ export function NetworkMetrics({
           <div className="grid grid-cols-2 divide-x divide-border">
             <Figure
               label="Awaiting L1"
+              term="l1Finality"
               value={groupThousands(String(finality.pending))}
               sub={`${finality.finalized} settled · ${finality.abandoned} abandoned`}
               tone={backlogTone}
@@ -484,6 +522,7 @@ export function NetworkMetrics({
             />
             <Figure
               label="Admission queue"
+              term="admissionQueue"
               value={groupThousands(String(admission.queueDepth))}
               sub={
                 admission.rejectionRate === null

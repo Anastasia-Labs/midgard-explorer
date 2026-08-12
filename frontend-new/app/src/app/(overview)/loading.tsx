@@ -1,4 +1,4 @@
-import { PageHeader, Panel, Skeleton } from "../../components/ui/primitives";
+import { Panel, Skeleton } from "../../components/ui/primitives";
 
 // The overview awaits five endpoints before it returns anything, so without a
 // boundary here the route streams no HTML at all until the slowest one settles.
@@ -10,14 +10,22 @@ import { PageHeader, Panel, Skeleton } from "../../components/ui/primitives";
 export default function Loading() {
   return (
     <>
-      <PageHeader
-        title="Midgard Blockchain Explorer"
-        subtitle="Blocks, transactions and bridge activity on Midgard, the Layer 2 ledger that settles on Cardano."
-      />
-
-      <div className="mb-5 max-w-2xl">
-        <Skeleton className="h-10 w-full" />
-      </div>
+      {/* Mirrors Overview's hero column for column. If the two disagree the
+          page jumps when the data arrives, which is the whole reason this
+          file duplicates the layout rather than importing it. */}
+      <header className="mb-5">
+        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
+          <h1 className="mg-brand-green min-w-0 font-display text-[21px] font-semibold tracking-tight text-page-title sm:text-[26px]">
+            Midgard Blockchain Explorer
+          </h1>
+          <div className="w-full sm:w-96 lg:w-112">
+            <Skeleton className="h-11 w-full" />
+          </div>
+        </div>
+        <div className="mt-2.5 flex justify-center">
+          <Skeleton className="h-4 w-56" />
+        </div>
+      </header>
 
       <Skeleton className="mb-4 h-28 w-full" />
 

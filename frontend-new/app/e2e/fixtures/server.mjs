@@ -17,6 +17,9 @@ import {
   BLOCKS,
   DEPOSITS,
   FORCED,
+  FLOW_STRESS_TX,
+  L1_VALIDATORS,
+  L1_TXS,
   TXS,
   WITHDRAWALS,
   addressResponse,
@@ -60,8 +63,58 @@ const json = (res, body, status = 200) => {
 
 const fail = (res, status, error, detail) => json(res, { error, detail }, status);
 
+/** A small OpenAPI document, deliberately not a copy of the backend's.
+ *
+ * The API reference page renders whatever document the server hands it, so what
+ * the e2e suite must prove is faithful rendering: every path in the document
+ * appears, the group order is the tag order, and a 429 response shows as a rate
+ * limit. Whether the real document is correct is the backend's question, and
+ * `catalogue.test.mts` answers it against the routes it registers. Reproducing
+ * all 24 real endpoints here would just be a fifth copy of the API. */
+const openApiDocument = () => ({
+  openapi: "3.1.0",
+  info: {
+    title: "Midgard Explorer API",
+    version: "1.0.0",
+    description: "Integer ledger quantities are returned as decimal strings.",
+  },
+  servers: [{ url: "/", description: "This explorer backend" }],
+  tags: [{ name: "System" }, { name: "Blocks" }],
+  paths: {
+    "/healthz": {
+      get: {
+        tags: ["System"],
+        summary: "Report backend health",
+        parameters: [],
+        responses: { 200: {} },
+      },
+    },
+    "/api/transaction": {
+      get: {
+        tags: ["System"],
+        summary: "Return one Midgard transaction",
+        parameters: [
+          { name: "tx_hash", in: "query", required: false, description: "64-character hash." },
+        ],
+        responses: { 200: {}, 429: {} },
+      },
+    },
+    "/api/blocks/{page}": {
+      get: {
+        tags: ["Blocks"],
+        summary: "List blocks by page",
+        parameters: [
+          { name: "page", in: "path", required: true, description: "One-based page number." },
+        ],
+        responses: { 200: {}, 429: {} },
+      },
+    },
+  },
+});
+
 const routes = [
   ["healthz", /^\/healthz$/, () => ({ status: "ok", now: new Date().toISOString() })],
+  ["openapi", /^\/api\/openapi\.json$/, () => openApiDocument()],
   ["metrics", /^\/api\/metrics$/, () => metrics()],
   ["assets", /^\/api\/assets$/, () => assets()],
   [
@@ -170,6 +223,48 @@ const routes = [
   ["deposits", /^\/api\/deposits\/(\d+)$/, (m) => page(DEPOSITS, Number(m[1]))],
   ["withdrawals", /^\/api\/withdrawals\/(\d+)$/, (m) => page(WITHDRAWALS, Number(m[1]))],
   ["forced-transactions", /^\/api\/forced-transactions\/(\d+)$/, (m) => page(FORCED, Number(m[1]))],
+  [
+    "l1/summary",
+    /^\/api\/l1\/summary$/,
+    () => ({
+      source: {
+        deployment: "fixture-deployment",
+        network: "preprod",
+        deployedAt: "2026-07-01T00:00:00.000Z",
+        l2Database: "midgard_fixture",
+        isFixture: true,
+        validators: L1_VALIDATORS,
+      },
+      transactions: L1_TXS.length,
+      events: L1_TXS.reduce((sum, tx) => sum + tx.events.length, 0),
+      blockHeaders: 18,
+      lastSyncedHeight: 5_120_000,
+      byValidator: [
+        { validator: "deposit", count: 11 },
+        { validator: "stateQueue", count: 1 },
+      ],
+    }),
+  ],
+  [
+    "l1/transactions",
+    /^\/api\/l1\/transactions\/(\d+)$/,
+    (m) =>
+      page(
+        L1_TXS.map((tx) => ({
+          txHash: tx.txHash,
+          blockHeight: tx.blockHeight,
+          blockHash: tx.blockHash,
+          slot: tx.slot,
+          epoch: tx.epoch,
+          txTime: tx.txTime,
+          fee: tx.fee,
+          size: tx.size,
+          totalOutput: tx.totalOutput,
+          events: tx.events,
+        })),
+        Number(m[1]),
+      ),
+  ],
 ];
 
 const handleBlock = (url, res) => {
@@ -177,17 +272,28 @@ const handleBlock = (url, res) => {
   if (!hash || !/^[0-9a-f]{56}$/i.test(hash)) return fail(res, 400, "bad_request", "header_hash");
   const found = BLOCKS.find((b) => b.header_hash === hash.toLowerCase());
   if (!found) return fail(res, 404, "not_found");
+  // Heights descend through BLOCKS, so the neighbour in the list is the
+  // neighbour on the chain. Real heights are not consecutive, which is exactly
+  // why the control shows the number rather than a bare arrow.
+  const i = BLOCKS.indexOf(found);
+  const at = (n) => {
+    const b = BLOCKS[n];
+    return b ? { height: b.height, header_hash: b.header_hash } : null;
+  };
   return json(res, {
     rows: blockRows(found.height),
     da: blockDa(found.height),
     finalization: blockFinalization(found.height),
+    neighbours: { prev: at(i + 1), next: at(i - 1) },
   });
 };
 
 const handleTransaction = (url, res) => {
   const hash = url.searchParams.get("tx_hash");
   if (!hash || !/^[0-9a-f]{64}$/i.test(hash)) return fail(res, 400, "bad_request", "tx_hash");
-  const found = TXS.find((t) => t.tx_id === hash.toLowerCase());
+  const found =
+    TXS.find((t) => t.tx_id === hash.toLowerCase()) ??
+    (FLOW_STRESS_TX.tx_id === hash.toLowerCase() ? FLOW_STRESS_TX : null);
   if (!found) return fail(res, 404, "not_found");
 
   // Committed transactions carry inclusion, and inclusion carries settlement.
@@ -259,8 +365,33 @@ const handleAddress = (url, res) => {
   return json(res, addressResponse(address));
 };
 
+const handleL1Transaction = (url, res) => {
+  const hash = url.searchParams.get("txHash");
+  if (!hash || !/^[0-9a-f]{64}$/i.test(hash)) {
+    return fail(res, 400, "bad_request", "txHash");
+  }
+  const found = L1_TXS.find((tx) => tx.txHash === hash.toLowerCase());
+  return found ? json(res, found) : fail(res, 404, "not_found");
+};
+
+/** The last client address this fixture was told about, per path. The backend
+ * rate-limits per client, so a server-rendered page that does not forward the
+ * viewer's address puts every reader into one bucket. Only a request that
+ * arrives here can show whether it was forwarded. */
+const forwarded = new Map();
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://127.0.0.1:${PORT}`);
+
+  if (req.method === "GET" && url.pathname === "/__forwarded") {
+    return json(res, Object.fromEntries(forwarded));
+  }
+  if (req.method === "GET" && url.pathname === "/__flow-stress") {
+    return json(res, { txId: FLOW_STRESS_TX.tx_id, nodes: 503 });
+  }
+  if (url.pathname.startsWith("/api/")) {
+    forwarded.set(url.pathname, req.headers["x-forwarded-for"] ?? null);
+  }
 
   if (req.method === "POST" && url.pathname === "/__control") {
     state.fail = url.searchParams.get("fail");
@@ -297,6 +428,12 @@ const server = createServer(async (req, res) => {
     if (state.fail === "all" || state.fail === "transaction")
       return fail(res, 500, "internal_error");
     return handleTransaction(url, res);
+  }
+  if (url.pathname === "/api/l1/transaction") {
+    if (state.fail === "all" || state.fail === "l1/transaction") {
+      return fail(res, 500, "internal_error");
+    }
+    return handleL1Transaction(url, res);
   }
   if (url.pathname === "/api/asset") {
     if (state.fail === "all" || state.fail === "asset") return fail(res, 500, "internal_error");

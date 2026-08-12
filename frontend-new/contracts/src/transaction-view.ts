@@ -17,6 +17,20 @@ export type ValueView = Schema.Schema.Type<typeof ValueView>;
  * unrecognized kind must render as itself, not fail the page. */
 export const AddressKind = Schema.String;
 
+export const CredentialView = Schema.Struct({
+  kind: AddressKind,
+  hash: Schema.String,
+});
+export type CredentialView = Schema.Schema.Type<typeof CredentialView>;
+
+export const AddressIdentityView = Schema.Struct({
+  payment: CredentialView,
+  stake: Schema.NullOr(CredentialView),
+  protected: Schema.Boolean,
+  networkId: Schema.Number,
+});
+export type AddressIdentityView = Schema.Schema.Type<typeof AddressIdentityView>;
+
 export const OutRef = Schema.Struct({
   txId: Schema.String,
   index: Schema.Number,
@@ -31,6 +45,7 @@ export const InputView = Schema.Struct({
     Schema.Struct({
       address: Schema.String,
       addressKind: AddressKind,
+      identity: AddressIdentityView,
       value: ValueView,
     }),
   ),
@@ -54,24 +69,38 @@ export const ScriptRefView = Schema.Struct({
   hash: Schema.String,
   language: ScriptLanguage,
   cborHex: Schema.String,
+  source: Schema.Literal("reference_output"),
+  hashVerified: Schema.Literal(true),
 });
 export type ScriptRefView = Schema.Schema.Type<typeof ScriptRefView>;
 
+export const OutputStateView = Schema.Struct({
+  status: Schema.Literal("unspent", "not_in_current_ledger", "unknown"),
+  consumedBy: Schema.NullOr(OutRef),
+});
+export type OutputStateView = Schema.Schema.Type<typeof OutputStateView>;
+
 export const OutputView = Schema.Struct({
+  index: Schema.Number,
   address: Schema.String,
   addressKind: AddressKind,
+  identity: AddressIdentityView,
   value: ValueView,
   /** Kept beside `datum` and `scriptRef` so existing readers keep working. */
   hasDatum: Schema.Boolean,
   hasScriptRef: Schema.Boolean,
   datum: Schema.NullOr(DatumView),
   scriptRef: Schema.NullOr(ScriptRefView),
+  state: OutputStateView,
 });
 export type OutputView = Schema.Schema.Type<typeof OutputView>;
 
 export const ScriptWitnessView = Schema.Struct({
   hash: Schema.String,
   language: ScriptLanguage,
+  cborHex: Schema.String,
+  source: Schema.Literal("witness_set"),
+  hashVerified: Schema.Literal(true),
 });
 export type ScriptWitnessView = Schema.Schema.Type<typeof ScriptWitnessView>;
 
@@ -81,7 +110,9 @@ export type ScriptWitnessView = Schema.Schema.Type<typeof ScriptWitnessView>;
 export const RedeemerView = Schema.Struct({
   cborHex: Schema.String,
   tag: Schema.NullOr(Schema.Number),
+  purpose: Schema.NullOr(Schema.String),
   index: Schema.NullOr(Schema.Number),
+  data: Schema.NullOr(Schema.Unknown),
   exUnits: Schema.NullOr(Schema.Struct({ mem: DecimalString, steps: DecimalString })),
 });
 export type RedeemerView = Schema.Schema.Type<typeof RedeemerView>;
@@ -109,6 +140,20 @@ export const MintView = Schema.Struct({
 });
 export type MintView = Schema.Schema.Type<typeof MintView>;
 
+export const CapabilityView = Schema.Struct({
+  state: Schema.Literal(
+    "available",
+    "not_present",
+    "hash_only",
+    "not_supported",
+    "not_emitted",
+    "not_indexed",
+    "commitment_only",
+  ),
+  reason: Schema.String,
+});
+export type CapabilityView = Schema.Schema.Type<typeof CapabilityView>;
+
 export const TransactionView = Schema.Struct({
   txId: Schema.String,
   formatVersion: Schema.Number,
@@ -121,9 +166,23 @@ export const TransactionView = Schema.Struct({
   }),
   networkId: Schema.NullOr(Schema.Number),
   inputs: Schema.Array(InputView),
-  referenceInputs: Schema.Array(OutRef),
+  referenceInputs: Schema.Array(InputView),
   outputs: Schema.Array(OutputView),
   mint: Schema.NullOr(MintView),
+  requiredObservers: Schema.Array(Schema.String),
+  requiredSigners: Schema.Array(Schema.String),
+  scriptIntegrityHash: Schema.NullOr(Schema.String),
+  auxiliaryDataHash: Schema.NullOr(Schema.String),
+  capabilities: Schema.Struct({
+    collateral: CapabilityView,
+    metadata: CapabilityView,
+    certificates: CapabilityView,
+    withdrawals: CapabilityView,
+    governance: CapabilityView,
+    protocolEvents: CapabilityView,
+    executionTrace: CapabilityView,
+    consumedBy: CapabilityView,
+  }),
   witnesses: WitnessSummary,
   /** Carried only by the single-transaction route; list rows leave it null. */
   cborHex: Schema.NullOr(Schema.String),

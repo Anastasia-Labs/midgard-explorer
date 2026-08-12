@@ -1,5 +1,3 @@
-import { DecimalString } from "@midgard-explorer/contracts";
-import { Schema } from "effect";
 import {
   decodeAddressResponse,
   decodeAsset,
@@ -23,6 +21,7 @@ import {
   decodeTransactionResponse,
   decodeTxsPage,
 } from "@midgard-explorer/contracts";
+import { decodeL1Summary, decodeL1Transaction, decodeL1TxsPage } from "@midgard-explorer/contracts";
 import { apiBase } from "./env";
 
 export type ApiErrorCategory =
@@ -80,7 +79,14 @@ export const isRetryable = (category: ApiErrorCategory): boolean =>
  * skeleton for ~10.5s before the error state could appear, once per poll. */
 const DEFAULT_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 2_000 : 15_000;
 
-export type FetchInit = { signal?: AbortSignal; revalidate?: number };
+export type FetchInit = {
+  signal?: AbortSignal;
+  revalidate?: number;
+  /** Passed straight through. The route handlers use it to forward the original
+   * client address, without which the backend rate-limits every viewer as one
+   * client. */
+  headers?: Record<string, string>;
+};
 
 async function fetchJson<A>(
   path: string,
@@ -97,6 +103,7 @@ async function fetchJson<A>(
     // resources; ignored in the browser.
     res = await fetch(url, {
       signal,
+      ...(init?.headers ? { headers: init.headers } : {}),
       ...(init?.revalidate !== undefined ? { next: { revalidate: init.revalidate } } : {}),
     });
   } catch (cause) {
@@ -187,33 +194,26 @@ export const api = {
     fetchJson(`/api/forced-transactions/${page}`, decodeForcedTxsPage, init),
   l1TxsPage: (page: number, init?: FetchInit) =>
     fetchJson(`/api/l1/transactions/${page}`, decodeL1TxsPage, init),
+  l1Transaction: (txHash: string, init?: FetchInit) =>
+    fetchJson(`/api/l1/transaction?txHash=${encodeURIComponent(txHash)}`, decodeL1Transaction, {
+      ...init,
+      revalidate: 30,
+    }),
   l1Summary: (init?: FetchInit) => fetchJson("/api/l1/summary", decodeL1Summary, init),
 };
 
 /** What the indexer has found on Cardano itself. Independent of the Midgard
  * node: this data survives the node being offline, which is exactly when the
- * overview's ledger figures go quiet and a reader most needs something real. */
-export type L1Summary = {
-  transactions: number;
-  events: number;
-  blockHeaders: number;
-  lastSyncedHeight: number;
-  byValidator: { validator: string; count: number }[];
-};
-
-function decodeL1Summary(body: unknown): L1Summary {
-  const b = body as Partial<L1Summary> | null;
-  if (!b || typeof b.transactions !== "number") {
-    throw new Error("Malformed L1 summary response");
-  }
-  return {
-    transactions: b.transactions,
-    events: typeof b.events === "number" ? b.events : 0,
-    blockHeaders: typeof b.blockHeaders === "number" ? b.blockHeaders : 0,
-    lastSyncedHeight: typeof b.lastSyncedHeight === "number" ? b.lastSyncedHeight : 0,
-    byValidator: Array.isArray(b.byValidator) ? b.byValidator : [],
-  };
-}
+ * overview's ledger figures go quiet and a reader most needs something real.
+ *
+ * Decoded through the shared contract rather than by hand. The hand-written
+ * version predated the L1 routes having a contract at all; that shortcut is
+ * repaid now, and the app and the contract can no longer drift apart. */
+export type {
+  L1SourceIdentity,
+  L1SummaryResponse as L1Summary,
+  L1ValidatorIdentity,
+} from "@midgard-explorer/contracts";
 
 /** Cardano L1 transactions that touch a Midgard validator address.
  *
@@ -222,49 +222,12 @@ function decodeL1Summary(body: unknown): L1Summary {
  * transaction rather than from whenever a local node happened to be running.
  * That is the difference between this page and /transactions, which reads the
  * Midgard node's own ledger.
- *
- * Decoded here rather than in the contracts package because these rows are
- * served by the indexer routes, which have no Effect Schema contract yet.
- * Lovelace values stay STRINGS all the way to the screen: they routinely
- * exceed Number.MAX_SAFE_INTEGER and rounding them would misreport balances.
  */
-export type L1TxRow = {
-  txHash: string;
-  blockHeight: number;
-  blockHash: string;
-  slot: number;
-  epoch: number;
-  txTime: string;
-  fee: DecimalString;
-  size: number;
-  totalOutput: DecimalString;
-  events: { validator: string; eventType: string; lovelace: string }[];
-};
-
-export type L1TxsPage = {
-  rows: L1TxRow[];
-  total: number;
-  limit: number;
-  hasNextPage: boolean;
-};
-
-const toDecimal = Schema.decodeUnknownSync(DecimalString);
-
-function decodeL1TxsPage(body: unknown): L1TxsPage {
-  const b = body as { rows?: unknown; total?: unknown; limit?: unknown; hasNextPage?: unknown };
-  if (!b || !Array.isArray(b.rows) || typeof b.total !== "number") {
-    throw new Error("Malformed L1 transactions response");
-  }
-  return {
-    // Run the money fields through the same branded schema the rest of the
-    // app uses, so a non-numeric fee fails here rather than reaching a
-    // formatter that would render it as NaN.
-    rows: b.rows.map((r) => {
-      const row = r as L1TxRow;
-      return { ...row, fee: toDecimal(row.fee), totalOutput: toDecimal(row.totalOutput) };
-    }),
-    total: b.total,
-    limit: typeof b.limit === "number" ? b.limit : b.rows.length,
-    hasNextPage: b.hasNextPage === true,
-  };
-}
+export type { L1TxRow } from "@midgard-explorer/contracts";
+export type { L1TxsPageResponse as L1TxsPage } from "@midgard-explorer/contracts";
+export type {
+  L1Event,
+  L1Redeemer,
+  L1TransactionResponse,
+  L1TxIo,
+} from "@midgard-explorer/contracts";

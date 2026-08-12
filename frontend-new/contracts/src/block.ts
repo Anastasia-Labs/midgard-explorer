@@ -43,10 +43,27 @@ export const BlockFinalization = Schema.Struct({
 });
 export type BlockFinalization = Schema.Schema.Type<typeof BlockFinalization>;
 
+/** The block either side of this one. Null at each end of the chain, and null
+ * for both when the chain holds a single block. Heights here are block heights,
+ * so they will not be one apart: a height is the lowest row id in its block. */
+export const BlockNeighbour = Schema.Struct({
+  height: Schema.Number,
+  header_hash: Schema.String,
+});
+export type BlockNeighbour = Schema.Schema.Type<typeof BlockNeighbour>;
+
+export const BlockNeighbours = Schema.Struct({
+  prev: Schema.NullOr(BlockNeighbour),
+  next: Schema.NullOr(BlockNeighbour),
+});
+export type BlockNeighbours = Schema.Schema.Type<typeof BlockNeighbours>;
+
 export const BlockResponse = Schema.Struct({
   rows: Schema.Array(BlockTxRow),
   da: Schema.NullOr(BlockDa),
   finalization: Schema.NullOr(BlockFinalization),
+  /** Optional so a backend that predates this field still decodes. */
+  neighbours: Schema.optional(BlockNeighbours),
 });
 export type BlockResponse = Schema.Schema.Type<typeof BlockResponse>;
 

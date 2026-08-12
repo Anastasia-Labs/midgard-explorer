@@ -49,7 +49,7 @@ export function Tabs({ tabs, label = "Sections" }: { tabs: Tab[]; label?: string
       <div
         role="tablist"
         aria-label={label}
-        className="mb-4 flex gap-0.5 overflow-x-auto border-b border-border"
+        className="mg-field-tabs mb-4 flex gap-0.5 overflow-x-auto border-b border-border"
       >
         {tabs.map((t, i) => {
           const on = t.id === current.id;

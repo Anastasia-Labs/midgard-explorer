@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Overview } from "../../features/overview/Overview";
 import { getOverviewData } from "../../lib/overview";
+import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Overview",
@@ -11,6 +12,6 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const initial = await getOverviewData();
+  const initial = await getOverviewData(await viewerInit());
   return <Overview initial={initial} />;
 }

@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { HeaderSearchBox, SearchBox } from "../search/SearchOverlay";
+import { Icon } from "../ui/icons";
 import { InfoTip } from "../ui/infotip";
 import { HealthIndicator } from "./HealthIndicator";
 import { MobileNav, NavLinks } from "./NavLinks";
@@ -20,24 +21,29 @@ function Brand({ small = false }: { small?: boolean }) {
           : "flex min-h-11 shrink-0 items-center gap-2.5"
       }
     >
+      {/* Vector, so the mark stays crisp at 20px, 28px and on a retina screen,
+          and costs a fifth of the raster it replaced. `unoptimized` because the
+          image optimizer cannot improve an SVG and would need
+          `dangerouslyAllowSVG` to pass it through at all. */}
       <Image
-        src="/midgard-mark.png"
+        src="/midgard-mark.svg"
         alt=""
         width={small ? 20 : 28}
         height={small ? 20 : 28}
         priority={!small}
+        unoptimized
         className="shrink-0"
       />
       {small ? (
-        <span className="min-w-0 font-display text-sm font-semibold text-text-2">
+        <span className="mg-brand-green min-w-0 font-display text-sm font-semibold text-text-2">
           Midgard Explorer
         </span>
       ) : (
         <span className="flex flex-col leading-none">
-          <span className="font-display text-[17px] font-bold tracking-[0.02em] text-text">
+          <span className="mg-brand-green font-display text-[17px] font-bold tracking-[0.02em] text-text">
             MIDGARD
           </span>
-          <span className="mt-0.5 text-[10.5px] font-semibold tracking-[0.1em] text-text-3">
+          <span className="mg-brand-green mt-0.5 text-[10.5px] font-semibold tracking-[0.1em] text-text-3">
             EXPLORER
           </span>
         </span>
@@ -58,7 +64,12 @@ function FooterColumn({ title, children }: { title: string; children: ReactNode 
 }
 
 /** Footer links carry a comfortable tap target on phones and collapse to the
- * text height once there is a pointer, matching the density of the columns. */
+ * text height once there is a pointer, matching the density of the columns.
+ *
+ * An external link is marked, because leaving the site in a new tab is a
+ * different act from moving inside it and the two looked identical. The glyph
+ * is decorative and the words carry the destination; the announcement for a
+ * screen reader is the "opens in a new tab" text beside it, not the mark. */
 function FooterLink({
   href,
   external = false,
@@ -69,12 +80,14 @@ function FooterLink({
   children: ReactNode;
 }) {
   const className =
-    "inline-flex min-h-9 items-center text-sm text-text-3 transition-colors hover:text-text-2 hover:underline sm:min-h-0 sm:py-0.5";
+    "inline-flex min-h-9 items-center gap-1.5 text-sm text-text-3 transition-colors hover:text-link hover:underline sm:min-h-0 sm:py-0.5";
   return (
     <li>
       {external ? (
         <a href={href} target="_blank" rel="noreferrer" className={className}>
           {children}
+          <Icon name="external" size={12} />
+          <span className="sr-only">(opens in a new tab)</span>
         </a>
       ) : (
         <Link href={href} className={className}>
@@ -95,13 +108,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
 
-      <header className="sticky top-0 z-40 border-b border-border bg-bg">
+      <header className="sticky top-0 z-40 border-b border-border bg-(--mg-header-bg)">
         {/* Three columns rather than a flex row with mx-auto: the centre column
             is measured against the header, not against whatever the two side
             clusters happen to weigh. The active nav item turns semibold and the
             network badge appears at sm, both of which would otherwise shift the
             nav sideways as you navigate and resize. */}
-        <div className="mx-auto grid h-[60px] max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-4">
+        <div className="mx-auto grid h-[60px] max-w-[96rem] grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 lg:px-6">
           <Brand />
           <NavLinks />
           <div className="flex min-w-0 items-center justify-end gap-2">
@@ -112,7 +125,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 Network not configured
                 <InfoTip
                   subject="network configuration"
-                  explain="Set NEXT_PUBLIC_NETWORK_LABEL to identify which network this deployment reads from."
+                  explain="Set NEXT_PUBLIC_NETWORK_LABEL to identify which network this deployment reads from. Until then, the explorer withholds a network claim rather than guessing."
                 />
               </span>
             ) : (
@@ -130,12 +143,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
+      <main id="main" className="mx-auto w-full max-w-[96rem] flex-1 px-4 py-6 lg:px-6">
         {children}
       </main>
 
       <footer className="mt-6 border-t border-border bg-surface">
-        <div className="mx-auto max-w-7xl px-4 py-8">
+        <div className="mx-auto max-w-[96rem] px-4 py-8 lg:px-6">
           <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr]">
             <div className="min-w-0">
               <Brand small />
@@ -165,6 +178,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             </FooterColumn>
 
             <FooterColumn title="Resources">
+              {/* A utility rather than a record type, so it sits here rather
+                  than competing for room in the primary nav. */}
+              <FooterLink href="/glossary">Glossary</FooterLink>
+              <FooterLink href="/api-docs">API reference</FooterLink>
+              <FooterLink href="/tools">Tools</FooterLink>
               <FooterLink href="https://midgardprotocol.com" external>
                 About Midgard
               </FooterLink>

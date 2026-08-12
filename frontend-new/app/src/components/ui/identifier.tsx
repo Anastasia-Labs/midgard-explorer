@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { cn, truncateId } from "../../lib/format";
+import { Icon } from "./icons";
 
 export function Identifier({
   value,
@@ -10,13 +11,26 @@ export function Identifier({
   head = 8,
   tail = 8,
   full = false,
+  external = false,
+  externalLabel,
   className,
 }: {
   value: string;
-  href?: string;
+  /** Explicitly `| undefined`: under `exactOptionalPropertyTypes` a caller
+   * holding a nullable href cannot otherwise pass it through. */
+  href?: string | undefined;
   head?: number;
   tail?: number;
   full?: boolean;
+  /** The href leaves this site. Marked rather than inferred from the URL, so
+   * a reader is told where a link goes before they follow it and the
+   * client-side router is not asked to handle an address it does not own. */
+  external?: boolean;
+  /** Where the external href goes, named. Supplied by the caller rather than
+   * read from configuration here: this is a generic identifier, and a shared
+   * primitive that knows what a Cardano explorer is cannot be reused for
+   * anything else. */
+  externalLabel?: string;
   className?: string;
 }) {
   const display = full ? value : truncateId(value, head, tail);
@@ -32,18 +46,29 @@ export function Identifier({
       {display}
     </span>
   );
+  const linkClass =
+    "inline-flex min-h-9 items-center gap-1 text-text underline decoration-border-strong " +
+    "underline-offset-2 transition-colors hover:text-link hover:decoration-link sm:min-h-0";
+
   return (
     <span className="inline-flex items-center gap-1.5">
-      {href ? (
-        <Link
+      {href === undefined ? (
+        text
+      ) : external ? (
+        <a
           href={href}
-          prefetch={false}
-          className="inline-flex min-h-9 items-center text-text underline decoration-border-strong underline-offset-2 transition-colors hover:text-accent hover:decoration-accent sm:min-h-0"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={linkClass}
+          aria-label={externalLabel ?? `Open ${display} in a new tab`}
         >
           {text}
-        </Link>
+          <Icon name="external" size={12} />
+        </a>
       ) : (
-        text
+        <Link href={href} prefetch={false} className={linkClass}>
+          {text}
+        </Link>
       )}
       <CopyButton value={value} />
     </span>

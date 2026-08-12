@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { EntityIcon } from "../ui/entity";
 import { Icon } from "../ui/icons";
 import { MIN_PREFIX, isPrefixQuery, searchCandidates, type Candidate } from "../../lib/search";
 import { cn, truncateId } from "../../lib/format";
@@ -13,6 +14,9 @@ const RECENT_MAX = 5;
 type PrefixHit =
   | { kind: "transaction"; txId: string; height: number | null; headerHash: string | null }
   | { kind: "block"; headerHash: string; height: number };
+
+/** One array, so "no suggestions" is referentially stable across renders. */
+const EMPTY_HITS: PrefixHit[] = [];
 
 const hitCandidate = (hit: PrefixHit): Candidate =>
   hit.kind === "block"
@@ -65,41 +69,53 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
   const [value, setValue] = useState("");
   const [reason, setReason] = useState<string | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
-  const [hits, setHits] = useState<PrefixHit[]>([]);
-  const [searching, setSearching] = useState(false);
+  /* The answer is stored with the question it answers.
+   *
+   * Keeping `hits` and `searching` as separate state meant the effect had to
+   * blank them on every keystroke before starting the next query, which is a
+   * synchronous write from an effect body and shows as one render of the
+   * previous query's suggestions under the new query's text. Tagging the
+   * result makes both derivable: anything that does not answer the current
+   * query is simply not this query's answer yet. */
+  const [answer, setAnswer] = useState<{ query: string; hits: PrefixHit[] } | null>(null);
+
+  const raw = value.trim();
+  const prefixQuery = isPrefixQuery(raw);
+  const hits = prefixQuery && answer?.query === raw ? answer.hits : EMPTY_HITS;
+  const searching = prefixQuery && answer?.query !== raw;
 
   const result = value.trim() === "" ? null : searchCandidates(value);
   const candidates = result?.ok ? result.candidates : [];
 
   // A partial identifier is looked up as a prefix, debounced so typing does not
   // fire a query per keystroke. Failures are silent: an absent suggestion is
-  // not worth an error message while someone is mid-word.
+  // not worth an error message while someone is mid-word, and an empty answer
+  // still resolves the query so the reader stops seeing "searching".
   useEffect(() => {
-    const raw = value.trim();
-    if (!isPrefixQuery(raw)) {
-      setHits([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
+    if (!prefixQuery) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       fetch(`/api/search?q=${encodeURIComponent(raw)}`, { signal: controller.signal })
         .then((r) => r.json())
-        .then((body: { hits?: PrefixHit[] }) => setHits(body.hits ?? []))
-        .catch(() => setHits([]))
-        .finally(() => setSearching(false));
+        .then((body: { hits?: PrefixHit[] }) => setAnswer({ query: raw, hits: body.hits ?? [] }))
+        .catch(() => {
+          // An abort is this effect being replaced, not a failed lookup. The
+          // query it was asking about is no longer the one on screen.
+          if (controller.signal.aborted) return;
+          setAnswer({ query: raw, hits: [] });
+        });
     }, 200);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [value]);
+  }, [prefixQuery, raw]);
 
   const open = useCallback(() => {
     setReason(null);
     setValue("");
-    setHits([]);
+    // No `setHits` any more: clearing the value clears the suggestions,
+    // because they are derived from the query they answered.
     setRecent(readRecent());
     dialogRef.current?.showModal();
     inputRef.current?.focus();
@@ -188,10 +204,10 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
           onClick={open}
           aria-label="Search (Ctrl+K)"
           className={cn(
-            "flex w-full items-center gap-2.5 rounded-lg border border-border bg-surface-2/60 text-left text-text-3 transition-colors hover:border-border-strong hover:text-text-2",
+            "flex w-full items-center gap-2.5 rounded-lg border border-border text-left text-text-3 transition-colors hover:border-border-strong hover:text-text-2",
             variant === "hero"
-              ? "px-4 py-2.5 text-[15px] shadow-(--mg-shadow)"
-              : "px-3 py-1.5 text-sm",
+              ? "bg-(--mg-hero-search-bg) px-4 py-2.5 text-[15px] shadow-(--mg-shadow)"
+              : "bg-surface-2/60 px-3 py-1.5 text-sm",
           )}
         >
           <Icon name="search" size={variant === "hero" ? 17 : 15} />
@@ -199,7 +215,11 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
               compact, and the overlay's placeholder and hint line answer the
               same question as soon as it opens. */}
           <span className="flex-1 truncate">
-            {variant === "hero" ? "Search transactions, blocks, addresses" : "Search"}
+            {/* Names what the classifier actually resolves, trimmed to what
+                fits the trigger without truncating. Block heights and the
+                truncated-prefix case are named by the overlay's own
+                placeholder as soon as it opens. */}
+            {variant === "hero" ? "Search address, transaction, block or asset" : "Search"}
           </span>
           <kbd className="rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[11px] text-text-3">
             ⌘K
@@ -239,7 +259,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
             Search by transaction hash, block header hash, or address
           </label>
 
-          <div className="flex items-center gap-2.5 rounded-lg border border-border-strong bg-bg px-3 py-2 focus-within:border-accent">
+          <div className="flex items-center gap-2.5 rounded-lg border border-border-strong bg-(--mg-control-bg) px-3 py-2 focus-within:border-accent">
             <Icon name="search" size={16} className="text-text-3" />
             <input
               id={`universal-search-${variant}`}
@@ -303,7 +323,20 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
                       className="flex w-full items-center justify-between gap-3 rounded px-2 py-1.5 text-left hover:bg-surface-2"
                     >
                       <span className="min-w-0">
-                        <span className="block text-sm font-medium text-text">{c.label}</span>
+                        {/* The type is the whole question an ambiguous input
+                            asks, so it gets the glyph and the colour as well as
+                            the word. The word stays `c.label`, which is the
+                            candidate's own contextual name ("Minting policy",
+                            "Block #40") and says more than the generic type
+                            name would. `blockHeight` is a way of naming a
+                            block, not a separate kind of record. */}
+                        <span className="flex items-center gap-1.5 text-sm font-medium text-text">
+                          <EntityIcon
+                            kind={c.kind === "blockHeight" ? "block" : c.kind}
+                            size={14}
+                          />
+                          {c.label}
+                        </span>
                         <span className="block mg-micro text-text-3">{c.detail}</span>
                       </span>
                       <Icon

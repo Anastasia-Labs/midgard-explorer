@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { TransactionWithMeta } from "@midgard-explorer/contracts";
-import { TXS } from "../e2e/fixtures/data.mjs";
+import { L1TransactionResponse, TransactionWithMeta } from "@midgard-explorer/contracts";
+import { L1_TXS, TXS } from "../e2e/fixtures/data.mjs";
 
 /**
  * The fixture backend must satisfy the same contract the real backend does.
@@ -14,6 +14,7 @@ import { TXS } from "../e2e/fixtures/data.mjs";
  */
 
 const decode = Schema.decodeUnknownEither(TransactionWithMeta);
+const decodeL1 = Schema.decodeUnknownEither(L1TransactionResponse);
 
 describe("fixture transactions satisfy the wire contract", () => {
   const decodable = TXS.filter((t) => t.transaction !== null && !t.decodeError).map((t) => ({
@@ -55,5 +56,29 @@ describe("fixture transactions satisfy the wire contract", () => {
       decodable.flatMap((t) => t.transaction.outputs.map((o) => o.addressKind)),
     );
     expect([...kinds].sort()).toEqual(["PubKey", "Script"]);
+  });
+});
+
+describe("fixture L1 transactions satisfy the wire contract", () => {
+  it("decodes every full Cardano transaction", () => {
+    const failures: string[] = [];
+    for (const tx of L1_TXS) {
+      const result = decodeL1(tx);
+      if (result._tag === "Left") {
+        failures.push(`${tx.txHash.slice(0, 12)}...: ${String(result.left).slice(0, 240)}`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it("covers every investigation section", () => {
+    const tx = L1_TXS[0]!;
+    expect(tx.referenceInputs.length).toBeGreaterThan(0);
+    expect(tx.collateral.length).toBeGreaterThan(0);
+    expect(tx.collateralOutput).not.toBeNull();
+    expect(tx.mints.some((asset) => asset.quantity.startsWith("-"))).toBe(true);
+    expect(tx.redeemers.length).toBeGreaterThan(0);
+    expect(tx.events.length).toBeGreaterThan(0);
+    expect(tx.metadata).not.toBeNull();
   });
 });

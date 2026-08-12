@@ -15,6 +15,7 @@ import { StatusCell } from "../../components/ui/status";
 import { EmptyState, ErrorState, L1L2Badge, Panel } from "../../components/ui/primitives";
 import { Timestamp } from "../../components/ui/timestamp";
 import { cn, groupThousands } from "../../lib/format";
+import { useHydrated } from "../../lib/useHydrated";
 
 /** A stable empty array: a fresh `[]` each render would make the held list
  * think its input changed on every poll. */
@@ -165,15 +166,14 @@ export function Overview({ initial }: { initial: OverviewData }) {
   });
 
   // The health query is client-only, so the server always renders "checking…".
-  // Reading its result before mount lets a fast fetch win the race against
-  // hydration and produce a server/client mismatch, which React resolves by
-  // throwing away the server HTML for this subtree.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  // Reading its result before hydration lets a fast fetch win the race and
+  // produce a server/client mismatch, which React resolves by throwing away
+  // the server HTML for this subtree.
+  const hydrated = useHydrated();
 
   const sectionState = (section: unknown): "error" | "success" =>
     section === null ? "error" : "success";
-  const up = mounted ? health.data?.up : undefined;
+  const up = hydrated ? health.data?.up : undefined;
 
   return (
     <>

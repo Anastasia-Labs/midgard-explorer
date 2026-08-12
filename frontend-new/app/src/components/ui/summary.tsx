@@ -1,10 +1,13 @@
 import { cn } from "../../lib/format";
+import type { GlossaryTerm } from "../../lib/glossary";
+import { FieldLabel } from "./infotip";
 
 export type SummaryItem = {
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
   emphasis?: boolean;
+  term?: GlossaryTerm;
 };
 
 /** Cells wrap at a minimum width and the last row grows to fill the width.
@@ -33,7 +36,9 @@ export function SummaryBand({ items }: { items: SummaryItem[] }) {
           Tailwind emits them, not on the order written here. */}
       {items.map((it) => (
         <div key={it.label} className="min-w-0 grow basis-38 bg-surface px-4 py-3.5">
-          <dt className="mg-overline">{it.label}</dt>
+          <dt className="mg-overline">
+            <FieldLabel label={it.label} term={it.term} />
+          </dt>
           <dd className="mt-1">
             {/* Never `truncate`. These values are mostly quantities, and a
                 clipped number is not an abbreviated number, it is a different
@@ -47,7 +52,7 @@ export function SummaryBand({ items }: { items: SummaryItem[] }) {
                 and was being clipped mid-value. Inside a band, wrapping wins. */}
             <span
               className={cn(
-                "block font-display font-semibold tabular-nums text-text [overflow-wrap:anywhere]",
+                "block font-semibold tabular-nums text-text [overflow-wrap:anywhere]",
                 "[&_time]:whitespace-normal",
                 it.emphasis ? "text-[26px] leading-tight" : "text-[18px] leading-snug",
               )}

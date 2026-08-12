@@ -5,12 +5,19 @@ import { SearchBox } from "../components/search/SearchOverlay";
 export default function NotFound() {
   return (
     <div className="mx-auto max-w-xl py-14 text-center">
-      <Image src="/midgard-mark.png" alt="" width={44} height={44} className="mx-auto mb-4" />
-      <p className="font-mono mg-caption text-text-3">404 · Not found</p>
-      <h1 className="mt-2 font-display text-[26px] font-semibold tracking-tight text-text">
+      <Image
+        src="/midgard-mark.svg"
+        alt=""
+        width={44}
+        height={44}
+        unoptimized
+        className="mx-auto mb-4"
+      />
+      <p className="font-mono mg-caption text-page-copy">404 · Not found</p>
+      <h1 className="mt-2 font-display text-[26px] font-semibold tracking-tight text-page-title">
         Page not found
       </h1>
-      <p className="mt-2 text-[15px] text-text-2">
+      <p className="mt-2 text-[15px] text-page-copy">
         No block, transaction, or address matches this path. Try searching for an identifier, or
         return to the overview.
       </p>
@@ -26,7 +33,7 @@ export default function NotFound() {
         </Link>
         <Link
           href="/blocks"
-          className="rounded-lg border border-border-strong px-4 py-2 text-sm font-medium text-text transition-colors hover:bg-surface-2"
+          className="rounded-lg border border-border-strong bg-surface px-4 py-2 text-sm font-medium text-text shadow-(--mg-shadow) transition-colors hover:bg-surface-2"
         >
           Browse blocks
         </Link>

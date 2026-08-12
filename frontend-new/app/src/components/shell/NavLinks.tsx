@@ -74,7 +74,7 @@ function BridgeMenu() {
               onClick={() => setOpen(false)}
               className="flex items-start gap-3 rounded-lg px-2.5 py-2 hover:bg-surface-2"
             >
-              <span className="mt-0.5 text-accent">
+              <span className="mt-0.5 text-link">
                 <Icon name="bridge" size={16} />
               </span>
               <span className="min-w-0">

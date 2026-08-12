@@ -60,10 +60,14 @@ export function StatusBadge({ status, className }: { status: string; className?:
   const { tone, label, explain, known } = statusOf(status);
   const state: StateClass = known ? STATE_CLASS[tone] : "unknown";
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex min-w-0 max-w-full items-center gap-1">
       <span
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs",
+          // Status codes arrive from the node and are not a closed set, so one
+          // can be arbitrarily long and carry no spaces to break on. Without
+          // this an unrecognised code widens its row, and at 320px that pushes
+          // the whole page into a horizontal scroll.
+          "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs wrap-anywhere",
           TONE_CLASS[tone],
           className,
         )}

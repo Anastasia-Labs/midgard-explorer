@@ -72,6 +72,13 @@ const value = (lovelace, assets = {}) => ({ lovelace: String(lovelace), assets }
 
 const utf8Hex = (s) => Buffer.from(s, "utf8").toString("hex");
 
+const addressIdentity = (seed, kind = "PubKey") => ({
+  payment: { kind, hash: hex(1700 + seed, 56) },
+  stake: seed % 3 === 0 ? { kind: "PubKey", hash: hex(1800 + seed, 56) } : null,
+  protected: seed % 2 === 0,
+  networkId: 0,
+});
+
 /** Asset names an explorer has to survive, not just the pleasant ones. A name
  * is bytes chosen by whoever minted the asset, so the set below includes the
  * two that matter for safety: bytes that are not valid UTF-8, and valid UTF-8
@@ -120,10 +127,16 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
   const fee = 170000 + n * 1013;
   const inputA = 9_500_000 + n * 1000;
   // Most transactions keep one unresolvable input, the common case once a
-  // transaction is applied. Every fourth resolves fully so the exact-spend
-  // path, and with it the checkable equation, is exercised too.
-  const allResolved = n % 4 === 0;
+  // transaction is applied. A transaction with a spend redeemer resolves the
+  // canonical target as well; otherwise the fixture would claim a script ran
+  // while withholding the output that proves which script it was.
+  const hasSpendRedeemer = n % 2 === 1;
+  const allResolved = n % 4 === 0 || hasSpendRedeemer;
   const inputB = allResolved ? 3_400_000 + n * 500 : null;
+  const inputARef = txId(n + 500);
+  const inputBRef = txId(n + 900);
+  const scriptIsInputA = hasSpendRedeemer && inputARef.localeCompare(inputBRef) < 0;
+  const scriptIsInputB = hasSpendRedeemer && !scriptIsInputA;
 
   const tail = Array.from({ length: Math.max(0, outputs - 1) }, (_, i) => 2_100_000 + i * 500_000);
   const tailSum = tail.reduce((a, b) => a + b, 0);
@@ -144,36 +157,54 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
     networkId: 0,
     inputs: [
       {
-        txId: txId(n + 500),
+        txId: inputARef,
         index: 0,
         resolved: {
           address: ADDRESSES[n % ADDRESSES.length],
-          addressKind: n % 4 === 0 ? "Script" : "PubKey",
+          addressKind: scriptIsInputA ? "Script" : "PubKey",
+          identity: addressIdentity(n, scriptIsInputA ? "Script" : "PubKey"),
           value: value(inputA),
         },
       },
       {
-        txId: txId(n + 900),
+        txId: inputBRef,
         index: 1,
         resolved:
           inputB === null
             ? null
             : {
                 address: ADDRESSES[(n + 1) % ADDRESSES.length],
-                addressKind: "PubKey",
+                addressKind: scriptIsInputB ? "Script" : "PubKey",
+                identity: addressIdentity(n + 1, scriptIsInputB ? "Script" : "PubKey"),
                 value: value(inputB),
               },
       },
     ],
-    referenceInputs: n % 4 === 0 ? [{ txId: txId(n + 77), index: 0 }] : [],
+    referenceInputs:
+      n % 4 === 0
+        ? [
+            {
+              txId: txId(n + 77),
+              index: 0,
+              resolved: {
+                address: ADDRESSES[(n + 2) % ADDRESSES.length],
+                addressKind: "Script",
+                identity: addressIdentity(n + 2, "Script"),
+                value: value(4_200_000, MULTI_ASSET),
+              },
+            },
+          ]
+        : [],
     outputs: amounts.map((lovelace, i) => {
       const hasDatum = i === 1;
       const hasScriptRef = n % 5 === 0 && i === 0;
       return {
+        index: i,
         address: ADDRESSES[(n + i) % ADDRESSES.length],
         // Datum-bearing outputs are the script ones, which is what makes the
         // graph's script/key distinction visible in the fixture.
         addressKind: hasDatum || hasScriptRef ? "Script" : "PubKey",
+        identity: addressIdentity(n + i, hasDatum || hasScriptRef ? "Script" : "PubKey"),
         value: i === 0 && n % 3 === 0 ? value(lovelace, MULTI_ASSET) : value(lovelace),
         hasDatum,
         hasScriptRef,
@@ -186,8 +217,18 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
             }
           : null,
         scriptRef: hasScriptRef
-          ? { hash: hex(1300 + n, 56), language: "PlutusV3", cborHex: hex(1400 + n, 80) }
+          ? {
+              hash: hex(1300 + n, 56),
+              language: "PlutusV3",
+              cborHex: hex(1400 + n, 80),
+              source: "reference_output",
+              hashVerified: true,
+            }
           : null,
+        state: {
+          status: i === 0 ? "unspent" : "not_in_current_ledger",
+          consumedBy: i === 0 ? null : { txId: txId(n + 2000), index: 0 },
+        },
       };
     }),
     mint:
@@ -201,6 +242,51 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
             ],
           }
         : null,
+    requiredObservers: n % 5 === 0 ? [hex(1900 + n, 56)] : [],
+    requiredSigners: [hex(2000 + n, 56)],
+    scriptIntegrityHash: n % 2 === 0 ? hex(2100 + n, 64) : null,
+    auxiliaryDataHash: n % 5 === 0 ? hex(2200 + n, 64) : null,
+    capabilities: {
+      collateral: {
+        state: "not_supported",
+        reason: "Midgard native transaction version 1 does not carry Cardano collateral.",
+      },
+      metadata: {
+        state: n % 5 === 0 ? "hash_only" : "not_present",
+        reason:
+          n % 5 === 0
+            ? "Only the auxiliary-data hash is carried, so metadata text cannot be decoded."
+            : "No auxiliary-data hash is declared.",
+      },
+      certificates: {
+        state: "not_supported",
+        reason: "Midgard native transaction version 1 does not carry Cardano certificates.",
+      },
+      withdrawals: {
+        state: n % 5 === 0 ? "available" : "not_present",
+        reason:
+          n % 5 === 0
+            ? "A zero-value Cardano withdrawal script is preserved as a required observer."
+            : "No required withdrawal observers are declared.",
+      },
+      governance: {
+        state: "not_supported",
+        reason:
+          "Midgard native transaction version 1 does not carry Cardano governance procedures.",
+      },
+      protocolEvents: {
+        state: "not_emitted",
+        reason: "Midgard L2 transactions expose state changes, datums, and redeemers instead.",
+      },
+      executionTrace: {
+        state: "commitment_only",
+        reason: "Only the containing block's transition-trace commitment is available.",
+      },
+      consumedBy: {
+        state: "available",
+        reason: "The fixture includes a consuming transaction link for one output.",
+      },
+    },
     witnesses: {
       vkeyCount: 1 + (n % 3),
       scriptCount: n % 2,
@@ -208,11 +294,16 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
       scripts: Array.from({ length: n % 2 }, (_, i) => ({
         hash: hex(1500 + n + i, 56),
         language: "PlutusV3",
+        cborHex: hex(1550 + n + i, 96),
+        source: "witness_set",
+        hashVerified: true,
       })),
       redeemers: Array.from({ length: n % 2 }, (_, i) => ({
         cborHex: hex(1600 + n + i, 48),
         tag: 0,
+        purpose: "spend",
         index: i,
+        data: { constructor: 0, fields: [{ int: String(n) }] },
         exUnits: { mem: String(500_000 + n), steps: String(120_000_000 + n) },
       })),
     },
@@ -373,6 +464,29 @@ export const TXS = Array.from({ length: 60 }, (_, i) => {
   };
 });
 
+/** A route-only stress transaction. Keeping it out of TXS prevents ordinary
+ * list and search payloads from carrying 500 outputs while still giving the
+ * production-browser suite a deterministic high-density graph. */
+export const FLOW_STRESS_TX = {
+  n: 9001,
+  status: "committed",
+  header_hash: blockHash(40),
+  tx_id: txId(9001),
+  time_stamp_tz: new Date(Date.UTC(2026, 6, 28, 12, 1, 0)).toISOString(),
+  admission: {
+    status: "accepted",
+    firstSeenAt: new Date(Date.UTC(2026, 6, 28, 12, 0, 54)).toISOString(),
+    validationStartedAt: new Date(Date.UTC(2026, 6, 28, 12, 0, 55)).toISOString(),
+    terminalAt: new Date(Date.UTC(2026, 6, 28, 12, 0, 56)).toISOString(),
+    updatedAt: new Date(Date.UTC(2026, 6, 28, 12, 0, 56)).toISOString(),
+    attemptCount: 1,
+    requestCount: 1,
+    submitSource: "native",
+  },
+  transaction: view(9001, { outputs: 500 }),
+  decodeError: null,
+};
+
 const BRIDGE_STATUSES = ["awaiting", "projected", "consumed", "finalized"];
 
 export const DEPOSITS = Array.from({ length: 47 }, (_, i) => ({
@@ -429,6 +543,151 @@ export const FORCED = Array.from({ length: 28 }, (_, i) => ({
   inclusion_time: new Date(Date.UTC(2026, 6, 28, 9, 45, 0) - i * 97_000).toISOString(),
   projected_header_hash: i % 4 === 0 ? null : blockHash(40 - (i % 40)),
 }));
+
+const l1Asset = (n, quantity, kind = "output") => ({
+  kind,
+  policyId: hex(700 + n, 56),
+  assetName: utf8Hex(n % 2 === 0 ? "MIDGARD" : `TOKEN${n}`),
+  fingerprint: `asset1fixture${String(n).padStart(4, "0")}`,
+  quantity: String(quantity),
+});
+
+/** Mirrors validators derived from the fixture deployment manifest. Addresses
+ * were produced by the backend's own `scriptHashToAddress` encoder. */
+export const L1_VALIDATORS = [
+  {
+    entryName: "depositSpend",
+    family: "deposit",
+    scriptHash: "a202e037d840240718ad200165abb3ad2a4e7a9bb12c9fb1293fcf35",
+    address: "addr_test1wz3q9cphmpqzgpcc45sqzedtkwkj5nn6nwcje8a39ylu7dghn7vqy",
+  },
+  {
+    entryName: "stateQueueSpend",
+    family: "stateQueue",
+    scriptHash: "5712b8d11b58e1fcef4f16067b3b07e40073a64212012099005b21d8",
+    address: "addr_test1wpt39wx3rdvwrl80futqv7emqljqquaxggfqzgyeqpdjrkqhge828",
+  },
+];
+
+const l1Io = (n, kind, position, txHash, quantity = "1") => ({
+  kind,
+  position,
+  sourceTxHash: txHash,
+  sourceIndex: position,
+  address: ADDRESSES[n % ADDRESSES.length],
+  paymentCred: hex(900 + n, 56),
+  stakeAddr: n % 3 === 0 ? `stake_test1fixture${n}` : null,
+  lovelace: String(3_000_000 + n * 17_000),
+  datumHash: n % 2 === 0 ? hex(1000 + n, 64) : null,
+  inlineDatum: n % 2 === 0 ? { constructor: 0, fields: [{ int: String(n) }] } : null,
+  refScriptHash: n % 4 === 0 ? hex(1100 + n, 56) : null,
+  assets: n % 3 === 0 ? [l1Asset(n, quantity)] : [],
+});
+
+/** Cardano-side transactions are deliberately richer than the L2 fixtures.
+ * The first record exercises every detail section; the rest make paging and
+ * list navigation representative without repeating the large payload. */
+export const L1_TXS = Array.from({ length: 31 }, (_, i) => {
+  const n = i + 1;
+  const hash = l1TxHash(n);
+  const inputHash = l1TxHash(n + 100);
+  const rich = i === 0;
+  const events = rich
+    ? [
+        {
+          validator: "deposit",
+          eventType: "deposit",
+          outputIndex: 0,
+          lovelace: "12500000",
+          datum: { constructor: 0, fields: [{ bytes: hex(20, 56) }] },
+          deployment: "fixture-deployment",
+          decoded: {
+            l2PaymentCredential: hex(20, 56),
+            inclusionTime: "1785238320000",
+          },
+        },
+        {
+          validator: "stateQueue",
+          eventType: "blockCommit",
+          outputIndex: 1,
+          lovelace: "4000000",
+          datum: { constructor: 1, fields: [] },
+          deployment: "fixture-deployment",
+          decoded: { blockHeight: 8401, transactionCount: 18 },
+        },
+      ]
+    : n % 3 === 0
+      ? [
+          {
+            validator: "deposit",
+            eventType: "deposit",
+            outputIndex: 0,
+            lovelace: String(4_000_000 + n * 1000),
+            datum: null,
+            deployment: "fixture-deployment",
+            decoded: null,
+          },
+        ]
+      : [];
+  return {
+    txHash: hash,
+    blockHeight: 5_120_000 - i,
+    blockHash: hex(1200 + n, 64),
+    slot: 141_200_000 - i * 20,
+    epoch: 318,
+    txTime: new Date(Date.UTC(2026, 6, 28, 12, 52, 0) - i * 79_000).toISOString(),
+    fee: String(193_000 + n * 1_111),
+    size: 744 + n * 7,
+    totalOutput: String(22_000_000 + n * 91_000),
+    blockIndex: n % 9,
+    certDeposit: rich ? "2000000" : "0",
+    invalidBefore: rich ? "141199000" : null,
+    invalidAfter: rich ? "141205000" : null,
+    metadata: rich ? { 674: { msg: ["Midgard fixture settlement"], source: "e2e" } } : null,
+    events,
+    inputs: [l1Io(n, "input", 0, inputHash, "8")],
+    outputs: [
+      {
+        ...l1Io(n + 10, "output", 0, hash, "8"),
+        ...(rich
+          ? {
+              address: L1_VALIDATORS[0].address,
+              paymentCred: L1_VALIDATORS[0].scriptHash,
+            }
+          : {}),
+      },
+      ...(rich
+        ? [
+            {
+              ...l1Io(n + 11, "output", 1, hash),
+              address: L1_VALIDATORS[1].address,
+              paymentCred: L1_VALIDATORS[1].scriptHash,
+            },
+          ]
+        : []),
+    ],
+    referenceInputs: rich ? [l1Io(n + 20, "reference", 0, l1TxHash(222))] : [],
+    collateral: rich ? [l1Io(n + 30, "collateral", 0, l1TxHash(223))] : [],
+    collateralOutput: rich ? l1Io(n + 31, "collateral_output", 0, hash) : null,
+    mints: rich ? [l1Asset(41, "2500000", "mint"), l1Asset(42, "-19", "mint")] : [],
+    redeemers: rich
+      ? [
+          {
+            scriptHash: L1_VALIDATORS[0].scriptHash,
+            address: L1_VALIDATORS[0].address,
+            purpose: "spend",
+            memUnits: "3210456",
+            stepUnits: "899321001",
+            fee: "77421",
+            datumHash: hex(1501, 64),
+            datum: { constructor: 0, fields: [{ bytes: hex(1502, 16) }] },
+            validContract: true,
+            scriptSize: 4128,
+          },
+        ]
+      : [],
+  };
+});
 
 export const addressResponse = (address) => {
   const history = TXS.filter((t) => t.transaction).slice(0, 9);

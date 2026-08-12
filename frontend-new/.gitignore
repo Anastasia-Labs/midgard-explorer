@@ -5,3 +5,4 @@ playwright-report/
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+app/public/vendor/elk-worker.min.js
