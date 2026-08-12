@@ -31,7 +31,7 @@ test.describe("layout gates", () => {
   // Playwright passes the fixtures object first and the test info second, so
   // reaching the project name means naming a first parameter this hook does
   // not use.
-  // eslint-disable-next-line no-empty-pattern
+
   test.beforeEach(({}, info) => {
     test.skip(info.project.name !== "desktop", "sets its own viewports");
   });
@@ -108,7 +108,7 @@ test.describe("layout gates", () => {
  * found a second instance in the journey stage list.
  */
 test.describe("summary band fills its rows", () => {
-  // eslint-disable-next-line no-empty-pattern
+
   test.beforeEach(({}, info) => {
     test.skip(info.project.name !== "desktop", "sets its own viewports");
   });

@@ -163,6 +163,10 @@ async function findTx(
     status: string;
     inclusion: unknown;
     finalization: { status: string } | null;
+    transaction?: {
+      inputs: Array<{ resolved: unknown | null }>;
+      witnesses?: { redeemers?: unknown[] };
+    } | null;
   }) => boolean,
   describe: string,
   pages = 2,
@@ -182,6 +186,32 @@ async function findTx(
 
 export const txWithStatus = (page: Page, status: string): Promise<string> =>
   findTx(page, (b) => b.status === status, `in status ${status}`);
+
+export const txWithUnresolvedInput = (page: Page): Promise<string> =>
+  findTx(
+    page,
+    (body) =>
+      body.status === "committed" &&
+      body.transaction !== null &&
+      body.transaction !== undefined &&
+      body.transaction.inputs.some((input) => input.resolved === null),
+    "committed with an unresolved input",
+  );
+
+/** A transaction that ran no scripts. The Events tab has to be honest about
+ * this case as well as the populated one: most transfers invoke nothing, and a
+ * tab that only ever gets exercised with invocations would not notice if the
+ * empty state started claiming something it should not. */
+export const txWithoutInvocations = (page: Page): Promise<string> =>
+  findTx(
+    page,
+    (body) =>
+      body.status === "committed" &&
+      body.transaction !== null &&
+      body.transaction !== undefined &&
+      (body.transaction.witnesses?.redeemers ?? []).length === 0,
+    "committed with no redeemers",
+  );
 
 /** Known finalization statuses that mean the block is still moving toward L1.
  * Terminal ones and unrecognized ones are excluded deliberately: each produces

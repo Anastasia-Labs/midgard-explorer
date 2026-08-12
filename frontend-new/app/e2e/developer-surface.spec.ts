@@ -1,4 +1,12 @@
-import { FIXTURE, expect, expectNoViolations, settle, test, txWithStatus } from "./helpers";
+import {
+  FIXTURE,
+  expect,
+  expectNoViolations,
+  settle,
+  test,
+  txWithStatus,
+  txWithoutInvocations,
+} from "./helpers";
 
 /**
  * Phase 2: what a developer opens a transaction to find out.
@@ -19,7 +27,14 @@ test.describe("transaction tabs", () => {
   test("offers the convention's sections", async ({ page }) => {
     await openTx(page);
     const tabs = page.getByRole("tab");
-    await expect(tabs).toHaveText([/Overview/, /State/, /Datums & redeemers/, /Raw/]);
+    await expect(tabs).toHaveText([
+      /Overview/,
+      /State/,
+      /Datums & redeemers/,
+      /Events/,
+      /Details/,
+      /Raw/,
+    ]);
   });
 
   test("a section is linkable and survives a reload", async ({ page }) => {
@@ -32,6 +47,34 @@ test.describe("transaction tabs", () => {
       "aria-selected",
       "true",
     );
+  });
+});
+
+test.describe("events", () => {
+  test("shows authoritative invocations without claiming emitted logs", async ({ page }) => {
+    await openTx(page);
+    await page.getByRole("tab", { name: /Events/ }).click();
+    const events = page.getByRole("tabpanel", { name: /Events/ });
+    await expect(events.getByText(/do not emit an event-log collection/i)).toBeVisible();
+    await expect(events.getByRole("heading", { name: /Script invocations/ })).toBeVisible();
+    await expect(events.getByRole("heading", { name: "Spend", exact: true })).toBeVisible();
+    await expect(events.getByText(/spend #0/i).first()).toBeVisible();
+    await expect(events.getByText("script", { exact: true }).first()).toBeVisible();
+    await events.getByText("Decoded redeemer and raw CBOR").first().click();
+    await expect(events.getByRole("region", { name: /decoded redeemer/i }).first()).toBeVisible();
+    await expect(events.getByRole("region", { name: /redeemer CBOR/i }).first()).toBeVisible();
+  });
+
+  /** The populated case above is the demonstration. This is the other half of
+   * the contract: a plain transfer runs no scripts, and the tab has to say that
+   * plainly rather than render an empty list that reads as a missing feature. */
+  test("says a transaction ran no scripts rather than showing an empty list", async ({ page }) => {
+    const hash = await txWithoutInvocations(page);
+    await page.goto(`/transaction/${hash}?tab=events`);
+    await settle(page);
+    const events = page.getByRole("tabpanel", { name: /Events/ });
+    await expect(events.getByText(/no redeemers, so it has no recorded script invocations/i)).toBeVisible();
+    await expect(events.getByText(/do not emit an event-log collection/i)).toBeVisible();
   });
 });
 
@@ -73,6 +116,29 @@ test.describe("datums and redeemers", () => {
     }
     expect(found, "no fixture transaction exercised the hex-only datum path").toBe(true);
   });
+
+  test("shows script bytes with recomputed-hash provenance", async ({ page }) => {
+    await openTx(page);
+    await page.getByRole("tab", { name: /Datums & redeemers/ }).click();
+    const disclosure = page.getByText("Script bytes and provenance").first();
+    await disclosure.click();
+    await expect(page.getByText(/Source: transaction witness set/).first()).toBeVisible();
+    await expect(page.getByText("Hash verified").first()).toBeVisible();
+  });
+});
+
+test.describe("protocol details", () => {
+  test("accounts for authorization, commitments, and unavailable sections", async ({ page }) => {
+    await openTx(page);
+    await page.getByRole("tab", { name: "Details" }).click();
+    await expect(page.getByText("Authorization and commitments")).toBeVisible();
+    await expect(page.getByText("Required signers")).toBeVisible();
+    await expect(page.getByText("Protocol availability")).toBeVisible();
+    await expect(page.getByText("Metadata and CIP-20")).toBeVisible();
+    await expect(page.getByText("Protocol events / logs")).toBeVisible();
+    await expect(page.getByText("Execution trace")).toBeVisible();
+    await expect(page.getByText("Not in native format").first()).toBeVisible();
+  });
 });
 
 test.describe("raw bytes", () => {
@@ -91,6 +157,30 @@ test.describe("raw bytes", () => {
 });
 
 test.describe("state", () => {
+  test("shows output spendability and credential identities", async ({ page }) => {
+    const hash = await openTx(page);
+    await page.goto(`/transaction/${hash}?tab=utxo`);
+    await settle(page);
+    await expect(page.getByText(/Unspent|Not in current ledger/).first()).toBeVisible();
+    await page.getByText("Credentials").first().click();
+    await expect(page.getByText("Payment credential").first()).toBeVisible();
+  });
+
+  test("resolves reference-input values without calling them spent", async ({ page }) => {
+    const rows = await page.request.get(`${FIXTURE}/api/transactions/1`).then(
+      async (response) =>
+        (await response.json()).rows as Array<{
+          tx_id: string;
+          transaction: { referenceInputs: unknown[] } | null;
+        }>,
+    );
+    const row = rows.find((candidate) => candidate.transaction?.referenceInputs.length);
+    expect(row, "no fixture transaction carries a reference input").toBeDefined();
+    await page.goto(`/transaction/${row!.tx_id}`);
+    await expect(page.getByText(/Reference inputs \(1\)/)).toBeVisible();
+    await expect(page.getByText(/Read by scripts without being spent/)).toBeVisible();
+  });
+
   test("reports movement per native asset, not only in ada", async ({ page }) => {
     // Ask the fixture which transaction actually carries an asset rather than
     // scanning pages: a scan that finds nothing cannot tell "the feature is
@@ -113,7 +203,7 @@ test.describe("state", () => {
 });
 
 test.describe("accessibility of the new surface", () => {
-  for (const tab of ["datums", "raw", "utxo"] as const) {
+  for (const tab of ["datums", "details", "raw", "utxo"] as const) {
     test(`the ${tab} tab has no automated violations in either theme`, async ({ page }) => {
       const hash = await txWithStatus(page, "committed");
       for (const scheme of ["light", "dark"] as const) {

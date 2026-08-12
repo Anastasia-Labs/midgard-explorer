@@ -1,9 +1,32 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Overridable so the harness can run against its own production build while a
-// dev server holds the default port.
-const PORT = Number(process.env.E2E_PORT ?? 3000);
-const FIXTURE_PORT = Number(process.env.FIXTURE_PORT ?? 3101);
+/* Ports the suite owns, not ports the machine happens to use.
+ *
+ * 3000 and 3101 were the defaults, and both are exactly where a dev server, a
+ * container, or another project also lands. A run on 2026-08-11 reported 12 of
+ * 12 failures that were not real: port 3000 was held by a foreign service
+ * answering 500, and `reuseExistingServer` adopted it. An earlier run adopted a
+ * stale build of this app and tested code that no longer existed.
+ *
+ * These defaults are deliberately unusual, and reuse is now opt-in. */
+const PORT = Number(process.env.E2E_PORT ?? 3210);
+const FIXTURE_PORT = Number(process.env.FIXTURE_PORT ?? 3211);
+
+/* One resolved value, published to everything that needs it.
+ *
+ * `helpers.ts` and the fixture server each fall back to 3101 when the variable
+ * is unset, while this file falls back to 3211. Three defaults for one port
+ * meant the suite only worked for someone who happened to have FIXTURE_PORT
+ * exported: without it, Playwright waited on 3211 for a fixture that had
+ * started on 3101 and failed with a webServer timeout. Writing the resolved
+ * value back makes the config the single source, since Playwright loads it in
+ * the runner and in every worker. */
+process.env.FIXTURE_PORT = String(FIXTURE_PORT);
+process.env.E2E_PORT = String(PORT);
+
+/* Adopting a listening server is a convenience for someone who knows what is
+ * on the port. It is never safe to assume, so it has to be asked for. */
+const REUSE_SERVER = process.env.E2E_REUSE_SERVER === "1";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -30,8 +53,14 @@ export default defineConfig({
     {
       command: "node e2e/fixtures/server.mjs",
       port: FIXTURE_PORT,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: REUSE_SERVER,
       stdout: "ignore",
+      // The fixture defaults to 3101 and this config waits on 3211, so without
+      // passing the port through, `pnpm test:e2e` waits sixty seconds for a
+      // server that started somewhere else and then reports a webServer
+      // timeout. It only ever worked because the operator happened to have
+      // FIXTURE_PORT exported.
+      env: { FIXTURE_PORT: String(FIXTURE_PORT) },
     },
     {
       // Test what ships. The dev server injects an overlay and a build
@@ -39,12 +68,16 @@ export default defineConfig({
       // timing, so e2e results from `next dev` do not describe production.
       command: `pnpm build && pnpm start --port ${PORT}`,
       port: PORT,
-      reuseExistingServer: !process.env.CI,
-      timeout: 180_000,
+      reuseExistingServer: REUSE_SERVER,
+      // A production build on a two core box has exceeded 180s and reported
+      // itself as a suite failure. The gate must fail on regressions, not on
+      // the machine being small.
+      timeout: 600_000,
       env: {
         NEXT_PUBLIC_API_BASE: `http://127.0.0.1:${FIXTURE_PORT}`,
         NEXT_PUBLIC_NETWORK_LABEL: "Fixture",
-        NEXT_PUBLIC_L1_EXPLORER_URL: "https://preprod.cardanoscan.io",
+        NEXT_PUBLIC_L1_EXPLORER_TX_URL: "https://preprod.cardanoscan.io/transaction/{hash}",
+        NEXT_PUBLIC_L1_EXPLORER_NAME: "Cardanoscan",
       },
     },
   ],

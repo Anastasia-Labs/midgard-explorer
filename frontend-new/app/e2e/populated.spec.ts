@@ -371,7 +371,9 @@ test.describe("block detail", () => {
 });
 
 test.describe("transaction lifecycle", () => {
-  test("a committed transaction shows the completed lifecycle and UTxO flow", async ({ page }) => {
+  test("a committed transaction shows the completed lifecycle and its inputs and outputs", async ({
+    page,
+  }) => {
     const hash = await txAwaitingFinality(page);
     await page.goto(`/transaction/${hash}`);
     // One journey replaces the lifecycle chips, admission timeline and
@@ -383,7 +385,10 @@ test.describe("transaction lifecycle", () => {
     // The label appears on the rail and again in the details grid; the details
     // entry is the one that carries the recorded timestamp.
     await expect(journey.getByRole("group").getByText("Validated")).toBeVisible();
-    await page.getByRole("tab", { name: /UTxO flow/ }).click();
+    // The tab was renamed to "State" in Phase 2: it is what the reference
+    // explorers call the section, and "UTxO flow" now names the diagram inside
+    // it rather than the section itself.
+    await page.getByRole("tab", { name: /State/ }).click();
     await expect(page.getByRole("heading", { name: /^Inputs \(/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /^Outputs \(/ })).toBeVisible();
   });

@@ -1,12 +1,9 @@
 import { expect, expectNoViolations, settle, test } from "./helpers";
 
-/** Phase 0: no explanation in the explorer may be hover-only.
+/** No explanation in the explorer may be hover-only.
  *
- * `title=` was reachable by mouse alone. These tests fail if the help text goes
- * back behind a hover, or if it is present in the DOM but unreachable from the
- * keyboard, which a unit test asserting component internals would not catch.
- * The `react/forbid-dom-props` lint rule covers the attribute; this covers the
- * behaviour a user actually gets. */
+ * Mouse hover is supported as a convenience, while click/touch and focus are
+ * first-class paths to the same portalled panel. */
 
 test.describe("help text is reachable without a mouse", () => {
   test("no rendered page carries a hover-only title attribute", async ({ page }) => {
@@ -50,6 +47,55 @@ test.describe("help text is reachable without a mouse", () => {
     const trigger = page.getByRole("button", { name: /^About / }).first();
     await trigger.focus();
     await expect(page.getByRole("tooltip")).toBeVisible();
+  });
+
+  test("a mouse user reaches the same explanation by delayed hover", async ({ page }) => {
+    await page.goto("/transactions");
+    await settle(page);
+
+    const trigger = page.getByRole("button", { name: /^About / }).first();
+    await trigger.hover();
+    await expect(page.getByRole("tooltip")).toBeVisible();
+  });
+
+  test("the portalled tip stays inside the viewport and outside clipping containers", async ({
+    page,
+  }) => {
+    await page.goto("/transactions");
+    await settle(page);
+    const trigger = page.getByRole("button", { name: /^About / }).first();
+    await trigger.click();
+    const tip = page.getByRole("tooltip");
+    await expect(tip).toBeVisible();
+
+    const geometry = await tip.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return {
+        directBodyChild: element.parentElement === document.body,
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+        width: innerWidth,
+        height: innerHeight,
+        position: getComputedStyle(element).position,
+      };
+    });
+    expect(geometry.directBodyChild).toBe(true);
+    expect(geometry.position).toBe("fixed");
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.top).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.width);
+    expect(geometry.bottom).toBeLessThanOrEqual(geometry.height);
+  });
+
+  test("the shared glossary is reachable without opening every tip", async ({ page }) => {
+    await page.goto("/glossary");
+    await expect(page.getByRole("heading", { name: "Glossary" })).toBeVisible();
+    await expect(page.getByText("Reference input", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText(/stays in the ledger after this transaction succeeds/i),
+    ).toBeVisible();
   });
 
   test("the trigger meets the minimum target size", async ({ page }) => {
