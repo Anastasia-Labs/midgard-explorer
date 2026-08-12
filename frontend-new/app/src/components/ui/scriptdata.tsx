@@ -4,7 +4,8 @@ import { useState } from "react";
 import type { DatumView, RedeemerView, ScriptWitnessView } from "@midgard-explorer/contracts";
 import { cn, truncateId } from "../../lib/format";
 import { CopyButton } from "./identifier";
-import { InfoTip } from "./infotip";
+import { FieldLabel, InfoTip } from "./infotip";
+import { SemanticLabel } from "./semantic";
 
 /** A byte payload with its decoded reading, if one exists.
  *
@@ -21,7 +22,17 @@ function Payload({ cborHex, json, label }: { cborHex: string; json?: unknown; la
     <div className="overflow-hidden rounded-lg border border-border bg-surface-2/40">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div className="inline-flex items-center gap-1.5">
-          <span className="mg-overline">{label}</span>
+          <span className="mg-overline">
+            {label === "Inline datum" ? (
+              <SemanticLabel kind="datum" label={label} />
+            ) : label.startsWith("Redeemer") ? (
+              <SemanticLabel kind="script" label={label} />
+            ) : label === "Script bytes" ? (
+              <SemanticLabel kind="script" label={label} />
+            ) : (
+              <FieldLabel label={label} />
+            )}
+          </span>
           <span className="font-mono text-[11px] text-text-3">{cborHex.length / 2} bytes</span>
         </div>
         <div className="inline-flex items-center gap-1">
@@ -119,22 +130,40 @@ export function WitnessPanel({
     <div className="space-y-4">
       {scripts.length > 0 ? (
         <section>
-          <h3 className="mg-overline mb-2">Scripts ({scripts.length})</h3>
+          <h3 className="mg-overline mb-2">
+            <SemanticLabel kind="script" label={`Scripts (${scripts.length})`} />
+          </h3>
           <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
             {scripts.map((script) => (
-              <li
-                key={script.hash}
-                className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5"
-              >
-                <span className="inline-flex min-w-0 items-center gap-1.5">
-                  <span className="font-mono text-[12.5px] break-all">
-                    {truncateId(script.hash, 12, 8)}
+              <li key={script.hash} className="px-3 py-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <span className="font-mono text-[12.5px] break-all">
+                      {truncateId(script.hash, 12, 8)}
+                    </span>
+                    <CopyButton value={script.hash} />
                   </span>
-                  <CopyButton value={script.hash} />
-                </span>
-                <span className="rounded-full border border-border-strong px-2 py-0.5 text-[11px] font-medium text-text-2">
-                  {script.language}
-                </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="rounded-full border border-border-strong px-2 py-0.5 text-[11px] font-medium text-text-2">
+                      {script.language}
+                    </span>
+                    <span className="rounded-full border border-success/35 bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
+                      Hash verified
+                    </span>
+                  </span>
+                </div>
+                <details className="mt-2">
+                  <summary className="cursor-pointer mg-caption text-link">
+                    Script bytes and provenance
+                  </summary>
+                  <div className="mt-2">
+                    <Payload cborHex={script.cborHex} label="Script bytes" />
+                    <p className="mt-1.5 mg-micro text-text-3">
+                      Source: transaction witness set. The displayed hash was recomputed from these
+                      versioned-script bytes.
+                    </p>
+                  </div>
+                </details>
               </li>
             ))}
           </ul>
@@ -143,7 +172,9 @@ export function WitnessPanel({
 
       {redeemers.length > 0 ? (
         <section>
-          <h3 className="mg-overline mb-2">Redeemers ({redeemers.length})</h3>
+          <h3 className="mg-overline mb-2">
+            <SemanticLabel kind="script" label={`Redeemers (${redeemers.length})`} />
+          </h3>
           <div className="space-y-3">
             {redeemers.map((redeemer, i) => (
               <div key={i} className="space-y-1.5">
@@ -153,23 +184,28 @@ export function WitnessPanel({
                       purpose not readable
                       <InfoTip
                         subject="redeemer purpose"
-                        explain="Midgard does not define a redeemer layout, so a redeemer whose bytes do not match the standard shape is reported as bytes alone."
+                        explain="Midgard does not define a redeemer layout, so a redeemer whose bytes do not match the standard shape is reported as bytes alone. Do not infer a purpose from undecoded bytes."
                       />
                     </span>
                   ) : (
                     <span>
-                      tag <span className="font-mono">{redeemer.tag}</span>, index{" "}
+                      purpose <span className="font-mono">{redeemer.purpose}</span>, index{" "}
                       <span className="font-mono">{redeemer.index}</span>
                     </span>
                   )}
                   {redeemer.exUnits ? (
-                    <span className="text-text-3">
-                      {Number(redeemer.exUnits.mem).toLocaleString()} mem,{" "}
-                      {Number(redeemer.exUnits.steps).toLocaleString()} steps
+                    <span className="inline-flex items-center gap-1 text-text-3">
+                      {Number(redeemer.exUnits.mem).toLocaleString("en-US")} mem,{" "}
+                      {Number(redeemer.exUnits.steps).toLocaleString("en-US")} steps
+                      <InfoTip term="executionUnits" subject="execution units" />
                     </span>
                   ) : null}
                 </div>
-                <Payload cborHex={redeemer.cborHex} label={`Redeemer ${i}`} />
+                <Payload
+                  cborHex={redeemer.cborHex}
+                  json={redeemer.data ?? undefined}
+                  label={`Redeemer ${i}`}
+                />
               </div>
             ))}
           </div>
@@ -194,7 +230,9 @@ export function RawCbor({
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-        <h2 className="font-display text-[15px] font-semibold text-text">Transaction CBOR</h2>
+        <h2 className="text-[15px] font-semibold text-text">
+          <SemanticLabel kind="cbor" label="Transaction CBOR" />
+        </h2>
         <div className="flex items-center gap-2">
           <span className="font-mono text-[11px] text-text-3">{size} bytes</span>
           <CopyButton value={cborHex} />

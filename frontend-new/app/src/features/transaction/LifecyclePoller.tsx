@@ -26,7 +26,7 @@ export function LifecyclePoller() {
   }, [router]);
 
   return (
-    <p aria-live="polite" className="mb-4 text-sm text-text-3">
+    <p aria-live="polite" className="mb-4 text-sm text-page-copy">
       Watching for status updates…
     </p>
   );
