@@ -16,7 +16,10 @@ export async function getBlock(headerHash: string) {
       time_stamp_tz: Date;
       tx: Uint8Array | null;
     }>
-  >`SELECT b.height,
+  // Every row carries the block's height, not its own row id, so the page
+  // reads the same number whichever transaction it takes it from. See
+  // `getLastBlocks` for why those differ.
+  >`SELECT MIN(b.height) OVER ()::int AS height,
       b.header_hash,
       b.tx_id,
       b.time_stamp_tz,
@@ -31,7 +34,22 @@ export async function getBlock(headerHash: string) {
 }
 
 /** One row per block, same shape as the blocks list so the overview panel and
- * the list page say the same things about a block. */
+ * the list page say the same things about a block.
+ *
+ * A block is a `header_hash`, and nothing else. `blocks.height` is an
+ * autoincrement row id over block-transaction pairs, not a block height: a
+ * block holding six transactions occupies six consecutive `height` values.
+ * Grouping by `(height, header_hash)` therefore made every transaction its own
+ * one-transaction "block", which is why this groups by the hash alone.
+ *
+ * The displayed height is the lowest row id in the block. It is monotonic with
+ * block order, and `getBlockHashByHeight` resolves any row id in a block to
+ * that block, so a height rendered here still opens the right page.
+ *
+ * `MIN(tx_id)` was not merely redundant, it was invalid: Postgres has no
+ * `min(bytea)`, so this query returned a 500 against every real node. Only the
+ * fixture backend, which runs no SQL, ever answered it.
+ */
 export async function getLastBlocks(count: number) {
   return prisma.$queryRaw<
     Array<{
@@ -42,17 +60,17 @@ export async function getLastBlocks(count: number) {
       tx_count: bigint;
       finalization_status: string | null;
     }>
-  >`SELECT b.height,
+  >`SELECT MIN(b.height)::int AS height,
       b.header_hash,
-      MIN(b.tx_id) AS tx_id,
+      (array_agg(b.tx_id ORDER BY b.height))[1] AS tx_id,
       MAX(b.time_stamp_tz) AS time_stamp_tz,
       COUNT(*)::bigint AS tx_count,
       MAX(f.status) AS finalization_status
     FROM blocks AS b
     LEFT JOIN pending_block_finalizations AS f
       ON f.header_hash = b.header_hash
-    GROUP BY b.height, b.header_hash
-    ORDER BY b.height DESC
+    GROUP BY b.header_hash
+    ORDER BY MIN(b.height) DESC
     LIMIT ${count};`;
 }
 
@@ -65,7 +83,9 @@ export async function getLastTransactions(count: number) {
       time_stamp_tz: Date;
       in_immutable: boolean;
     }>
-  >`SELECT b.height,
+  // The block's height, not the transaction's row id: see `getLastBlocks`. A
+  // window function gives it per row without collapsing the transactions.
+  >`SELECT MIN(b.height) OVER (PARTITION BY b.header_hash)::int AS height,
       b.header_hash,
       b.tx_id,
       b.time_stamp_tz,
@@ -183,7 +203,12 @@ export async function getBlocksPage(page: number, status?: string) {
         tx_count: bigint;
         finalization_status: string | null;
       }>
-    >`SELECT b.height,
+    // Grouped by hash alone, for the reason given on `getLastBlocks`: a height
+    // is a row id over block-transaction pairs. Grouping by it too listed one
+    // row per transaction while `total` below counted distinct hashes, so the
+    // page said "6 blocks" and then rendered 21 of them, and every page after
+    // the first was offset against a count that did not describe the rows.
+    >`SELECT MIN(b.height)::int AS height,
         b.header_hash,
         MAX(b.time_stamp_tz) AS time_stamp_tz,
         COUNT(*)::bigint AS tx_count,
@@ -192,8 +217,8 @@ export async function getBlocksPage(page: number, status?: string) {
       LEFT JOIN pending_block_finalizations AS f
         ON f.header_hash = b.header_hash
       WHERE ${filter}::text IS NULL OR f.status = ${filter}
-      GROUP BY b.height, b.header_hash
-      ORDER BY b.height DESC
+      GROUP BY b.header_hash
+      ORDER BY MIN(b.height) DESC
       OFFSET ${offset}
       LIMIT ${limit};`,
     prisma.$queryRaw<Array<{ n: bigint }>>`
@@ -207,4 +232,57 @@ export async function getBlocksPage(page: number, status?: string) {
   ]);
   const hasNextPage = safePage * limit < total;
   return { rows, hasNextPage, total, limit };
+}
+
+export type BlockNeighbours = {
+  prev: { height: number; header_hash: Uint8Array } | null;
+  next: { height: number; header_hash: Uint8Array } | null;
+};
+
+/** The blocks either side of this one.
+ *
+ * Not arithmetic on the height: heights are row ids, so a block's neighbours
+ * are rarely one apart (the real chain here runs 1, 4, 5, 8, 14, 20). The
+ * neighbour is the nearest row belonging to a different block, and its height
+ * is that block's own lowest row id, so the number matches every listing.
+ */
+export async function getBlockNeighbours(headerHash: string): Promise<BlockNeighbours> {
+  const key = Buffer.from(headerHash, "hex");
+  const rows = await prisma.$queryRaw<
+    Array<{
+      prev_hash: Uint8Array | null;
+      prev_height: number | null;
+      next_hash: Uint8Array | null;
+      next_height: number | null;
+    }>
+  >`WITH here AS (
+      SELECT MIN(height) AS h FROM blocks WHERE header_hash = ${key}
+    ),
+    prev AS (
+      SELECT header_hash FROM blocks
+       WHERE header_hash <> ${key} AND height < (SELECT h FROM here)
+       ORDER BY height DESC LIMIT 1
+    ),
+    nxt AS (
+      SELECT header_hash FROM blocks
+       WHERE header_hash <> ${key} AND height > (SELECT h FROM here)
+       ORDER BY height ASC LIMIT 1
+    )
+    SELECT
+      (SELECT header_hash FROM prev) AS prev_hash,
+      (SELECT MIN(height)::int FROM blocks WHERE header_hash = (SELECT header_hash FROM prev)) AS prev_height,
+      (SELECT header_hash FROM nxt) AS next_hash,
+      (SELECT MIN(height)::int FROM blocks WHERE header_hash = (SELECT header_hash FROM nxt)) AS next_height;`;
+  const row = rows[0];
+  if (!row) return { prev: null, next: null };
+  return {
+    prev:
+      row.prev_hash && row.prev_height !== null
+        ? { height: row.prev_height, header_hash: row.prev_hash }
+        : null,
+    next:
+      row.next_hash && row.next_height !== null
+        ? { height: row.next_height, header_hash: row.next_hash }
+        : null,
+  };
 }

@@ -3,8 +3,10 @@ export type Config = {
   CORS_ORIGIN: string;
   POSTGRES_URL: string;
   LOG_LOCATION: string;
-  NODE_RPC_HOST: string;
-  NODE_RPC_PORT: number;
+  // Unset in every current deployment: the explorer reads the node's Postgres
+  // directly rather than calling it over HTTP. Validated when present.
+  NODE_RPC_HOST?: string;
+  NODE_RPC_PORT?: number;
   POSTGRES_HOST: string;
   POSTGRES_PORT: number;
   POSTGRES_USER: string;

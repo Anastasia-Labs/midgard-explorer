@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { getSpendableLedger } from "../../db/asset";
 import { getCodec } from "../../decode/codec";
 import { isHexOfLength } from "../../utils";
+import { cached } from "../cache";
 
 /** Where a native asset currently sits, and the whole ledger's asset roster.
  *
@@ -18,7 +19,7 @@ import { isHexOfLength } from "../../utils";
 
 type Holder = { address: string; quantity: string; utxoCount: number };
 
-async function scanLedger() {
+async function scanLedgerUncached() {
   const [{ rows, total, truncated }, codec] = await Promise.all([
     getSpendableLedger(),
     getCodec(),
@@ -43,6 +44,17 @@ async function scanLedger() {
     coverage: { scanned: rows.length, total, truncated, undecoded },
   };
 }
+
+/**
+ * Held for ten seconds, shared by both routes on this file.
+ *
+ * The scan decodes up to 20,000 UTxOs from canonical CBOR per call, so an
+ * uncached public route turned one request into that much work and let anyone
+ * multiply it by their request rate. The snapshot is the whole ledger at one
+ * moment, which is also the only self-consistent thing to serve: two routes
+ * answering from different scans could disagree about the same asset.
+ */
+const scanLedger = cached("ledger-scan", 10_000, scanLedgerUncached);
 
 export async function getAssetRoute(req: Request, res: Response) {
   const policyId = req.query.policy_id;

@@ -5,6 +5,7 @@ import {
   getBlockDaMetadata,
   getBlockHashByHeight,
   getBlockFinalization,
+  getBlockNeighbours,
   getBlocksPage,
   getLastBlocks,
   getTotalBlocks,
@@ -53,11 +54,26 @@ export async function getBlockRoute(req: Request, res: Response) {
       };
     }),
   );
-  const [da, finalization] = await Promise.all([
+  const [da, finalization, neighbours] = await Promise.all([
     getBlockDaMetadata(headerHash),
     getBlockFinalization(headerHash),
+    getBlockNeighbours(headerHash),
   ]);
-  return res.json({ rows: payload, da, finalization });
+  return res.json({
+    rows: payload,
+    da,
+    finalization,
+    // Additive and nullable: a chain of one block has neither neighbour, and
+    // the tip has no next.
+    neighbours: {
+      prev: neighbours.prev
+        ? { height: neighbours.prev.height, header_hash: toHex(neighbours.prev.header_hash) }
+        : null,
+      next: neighbours.next
+        ? { height: neighbours.next.height, header_hash: toHex(neighbours.next.header_hash) }
+        : null,
+    },
+  });
 }
 
 export async function getRecentBlocksRoute(_req: Request, res: Response) {

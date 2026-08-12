@@ -11,7 +11,8 @@
     "prisma:generate": "prisma generate",
     "indexer:migrate": "prisma migrate dev --config prisma.indexer.config.ts",
     "indexer:generate": "prisma generate --config prisma.indexer.config.ts",
-    "indexer:deploy": "prisma migrate deploy --config prisma.indexer.config.ts"
+    "indexer:deploy": "prisma migrate deploy --config prisma.indexer.config.ts",
+    "verify:vendor": "vitest run test/vendor-provenance.test.mts"
   },
   "author": "",
   "license": "ISC",
@@ -21,20 +22,20 @@
   },
   "dependencies": {
     "@al-ft/midgard-core": "file:vendor/al-ft-midgard-core.tgz",
-    "@prisma/adapter-pg": "^7.6.0",
-    "@prisma/client": "^7.6.0",
-    "dotenv": "^17.2.3",
-    "dotenv-expand": "^12.0.0",
+    "@lucid-evolution/lucid": "0.4.31",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "dotenv": "^17.4.2",
+    "dotenv-expand": "^12.0.3",
     "express": "^5.2.1",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@lucid-evolution/lucid": "0.4.31",
     "@types/express": "^5.0.6",
-    "@types/node": "^25.2.0",
-    "prisma": "^7.6.0",
+    "@types/node": "^25.9.1",
+    "prisma": "^7.8.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"

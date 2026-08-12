@@ -87,8 +87,14 @@ export function loadManifest(path: string) {
       ? raw.referenceScriptAuthPolicy.policyId
       : null;
 
+  // The deployment's own identity. With multiple manifests deferred, this is
+  // what tells a viewer which deployment the figures on the page describe.
+  const manifestId =
+    typeof raw.manifestId === "string" ? raw.manifestId : null;
+
   return {
     network,
+    manifestId,
     createdAt: String(raw.createdAt),
     validators,
     stubHashes,

@@ -13,14 +13,24 @@ import { prisma } from "../db";
 import { indexerPrisma } from "../indexer/db";
 import { startSync } from "../indexer/sync";
 import { reportDatabaseIdentity } from "../db/identity";
+import { mountRateLimits, startRateLimitSweeper } from "./rateLimit";
+import { resolveCorsOrigin, securityHeaders } from "./security";
 
 export const startServer = async () => {
   const app = express();
   const server = http.createServer(app);
 
-  // CORS: read-only public API, GET only. Origin configurable, defaults to "*".
+  app.use(securityHeaders);
+
+  // Refuses at boot rather than serving with a wildcard: see security.ts.
+  const corsOrigin = resolveCorsOrigin(
+    config.CORS_ORIGIN,
+    process.env.NODE_ENV ?? "development",
+  );
+
+  // CORS: read-only public API, GET only.
   app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", config.CORS_ORIGIN);
+    res.header("Access-Control-Allow-Origin", corsOrigin);
     res.header("Access-Control-Allow-Methods", "GET, OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type");
     if (req.method === "OPTIONS") {
@@ -40,9 +50,10 @@ export const startServer = async () => {
     next();
   });
 
-  app.get("/healthz", (_req, res) => {
-    res.json({ status: "ok", now: new Date().toISOString() });
-  });
+  // `/healthz` is in the endpoint catalogue with everything else, so it is
+  // registered by `registerRoutes` below rather than declared here.
+  mountRateLimits(app, { limit: 60, windowMs: 60_000 });
+  startRateLimitSweeper();
 
   registerRoutes(app);
 
