@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { PUBLIC_API_BASE } from "../../lib/env";
+import { SemanticLabel } from "./semantic";
 
 /** The exact call that produced this page.
  *
@@ -25,7 +26,9 @@ export function ApiExample({ path, note }: { path: string; note?: string }) {
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-        <h2 className="font-display text-[15px] font-semibold text-text">API</h2>
+        <h2 className="text-[15px] font-semibold text-text">
+          <SemanticLabel kind="api" label="API" />
+        </h2>
         <div className="flex gap-2">
           <button
             type="button"
@@ -43,7 +46,16 @@ export function ApiExample({ path, note }: { path: string; note?: string }) {
           </button>
         </div>
       </div>
-      <pre className="overflow-x-auto p-4 font-mono text-xs leading-relaxed wrap-anywhere">
+      {/* A scrollable region a mouse can pan but a keyboard cannot reach is a
+          WCAG 2.1.1 failure. The command overflows only on a narrow viewport,
+          which is why this went unnoticed until the Raw tab was audited at
+          mobile width. */}
+      <pre
+        tabIndex={0}
+        role="region"
+        aria-label="Example request"
+        className="overflow-x-auto p-4 font-mono text-xs leading-relaxed wrap-anywhere"
+      >
         {curl}
       </pre>
       <p className="border-t border-border px-4 py-2.5 mg-micro text-text-3">
