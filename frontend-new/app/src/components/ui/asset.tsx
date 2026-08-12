@@ -2,6 +2,7 @@ import type { AssetCoverage, AssetMap } from "@midgard-explorer/contracts";
 import Link from "next/link";
 import { assetFingerprint, assetLabel, assetUnit, formatQuantity } from "../../lib/asset";
 import { cn, truncateId } from "../../lib/format";
+import { Identicon } from "./identicon";
 import { Identifier } from "./identifier";
 import { Callout } from "./primitives";
 
@@ -14,6 +15,31 @@ import { Callout } from "./primitives";
  * fingerprint is offered as the thing to actually compare, because it is the
  * only one of the three that is unique.
  */
+
+/**
+ * The generated mark for an asset (4.3.4).
+ *
+ * Seeded on the unit, which is the asset's identity: two assets can share a
+ * display name and differ only in policy, and the mark has to differ with them.
+ * Circular, where an address mark is a rounded square, so the shape says which
+ * kind of thing is being looked at before the text is read.
+ *
+ * No registry logo. There is no offline token registry available here, and
+ * fetching artwork from a third party at render time would put an external
+ * dependency in front of every asset row. When a registry is available this is
+ * where its image goes, with this mark as the fallback it already is.
+ */
+export function AssetMark({
+  policyId,
+  nameHex,
+  size = 20,
+}: {
+  policyId: string;
+  nameHex: string;
+  size?: number;
+}) {
+  return <Identicon seed={assetUnit(policyId, nameHex)} size={size} className="rounded-full" />;
+}
 
 export function AssetName({ nameHex, className }: { nameHex: string; className?: string }) {
   const { label, canonical } = assetLabel(nameHex);
@@ -65,7 +91,7 @@ export function AssetHierarchy({ assets }: { assets: AssetMap }) {
               <li key={nameHex} className="flex items-baseline justify-between gap-4">
                 <Link
                   href={`/asset/${assetUnit(policyId, nameHex)}`}
-                  className="min-w-0 text-accent hover:underline"
+                  className="min-w-0 text-link hover:text-link-hover hover:underline"
                 >
                   <AssetName nameHex={nameHex} />
                 </Link>
@@ -90,10 +116,10 @@ export function CoverageNote({ coverage, subject }: { coverage: AssetCoverage; s
   const complete = !coverage.truncated && coverage.undecoded === 0;
   if (complete) {
     return (
-      <p className="mg-micro text-text-3">
-        Complete over the current ledger: all {coverage.total.toLocaleString()} spendable UTxOs were
-        read. Assets that were minted and fully spent leave no trace here, because this describes
-        the ledger now rather than its history.
+      <p className="mg-micro text-page-copy">
+        Complete over the current ledger: all {coverage.total.toLocaleString("en-US")} spendable
+        UTxOs were read. Assets that were minted and fully spent leave no trace here, because this
+        describes the ledger now rather than its history.
       </p>
     );
   }
@@ -101,10 +127,10 @@ export function CoverageNote({ coverage, subject }: { coverage: AssetCoverage; s
     <Callout tone="warning" title={`${subject} is a lower bound.`}>
       <p>
         {coverage.truncated
-          ? `Only ${coverage.scanned.toLocaleString()} of ${coverage.total.toLocaleString()} spendable UTxOs were read, so holdings beyond that point are not counted.`
+          ? `Only ${coverage.scanned.toLocaleString("en-US")} of ${coverage.total.toLocaleString("en-US")} spendable UTxOs were read, so holdings beyond that point are not counted.`
           : null}
         {coverage.undecoded > 0
-          ? ` ${coverage.undecoded.toLocaleString()} UTxO${coverage.undecoded === 1 ? "" : "s"} could not be decoded and contribute nothing to these figures.`
+          ? ` ${coverage.undecoded.toLocaleString("en-US")} UTxO${coverage.undecoded === 1 ? "" : "s"} could not be decoded and contribute nothing to these figures.`
           : null}
       </p>
     </Callout>

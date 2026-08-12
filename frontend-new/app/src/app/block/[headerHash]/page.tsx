@@ -5,6 +5,7 @@ import { AdaAmount, ValueCell } from "../../../components/ui/amount";
 import { ApiExample } from "../../../components/ui/apiexample";
 import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
 import { Identifier } from "../../../components/ui/identifier";
+import { BlockNav } from "../../../components/ui/blocknav";
 import { IdentityBar } from "../../../components/ui/identitybar";
 import { Journey } from "../../../components/ui/journey";
 import { PageError } from "../../../components/ui/pageerror";
@@ -19,6 +20,7 @@ import { api } from "../../../lib/api";
 import { formatDuration, formatTimestamp, truncateId } from "../../../lib/format";
 import { blockJourney } from "../../../lib/journey";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
+import { viewerInit } from "../../../lib/viewerInit";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +45,7 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
 
   let data;
   try {
-    data = await orNotFound(api.block(hash));
+    data = await orNotFound(api.block(hash, await viewerInit()));
   } catch (e) {
     return (
       <>
@@ -54,7 +56,7 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
             { label: "Block" },
           ]}
         />
-        <PageHeader title="Block" />
+        <PageHeader entity="block" title="Block" />
         <IdentityBar overline="Block header hash" value={hash} />
         <PageError message={listErrorMessage(e)} />
       </>
@@ -185,8 +187,11 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
           { label: first ? `Block #${first.height}` : "Block" },
         ]}
       />
-      <PageHeader title={`Block ${first ? `#${first.height}` : ""}`}>
-        {finalization ? <StatusBadge status={finalization.status} /> : null}
+      <PageHeader entity="block" title={`Block ${first ? `#${first.height}` : ""}`}>
+        <span className="flex flex-wrap items-center gap-2">
+          <BlockNav neighbours={data.neighbours} />
+          {finalization ? <StatusBadge status={finalization.status} /> : null}
+        </span>
       </PageHeader>
       <IdentityBar overline="Block header hash" value={hash} />
 

@@ -6,6 +6,7 @@ import { PageHeader } from "../../../../components/ui/primitives";
 import { api } from "../../../../lib/api";
 import { ApiError } from "../../../../lib/api";
 import { listErrorMessage } from "../../../../lib/serverErrors";
+import { viewerInit } from "../../../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Block by height",
@@ -29,7 +30,7 @@ export default async function BlockByHeightPage({
   let failure: string | null = null;
   if (valid) {
     try {
-      headerHash = (await api.blockByHeight(height)).header_hash;
+      headerHash = (await api.blockByHeight(height, await viewerInit())).header_hash;
     } catch (e) {
       failure =
         e instanceof ApiError && e.category === "http_404"

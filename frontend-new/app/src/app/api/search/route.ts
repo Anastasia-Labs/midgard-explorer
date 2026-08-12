@@ -1,4 +1,5 @@
 import { apiBase } from "../../../lib/env";
+import { forwardedForHeader } from "../../../lib/forwardClient";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,8 @@ export async function GET(request: Request) {
   try {
     const res = await fetch(`${apiBase()}/api/search?q=${encodeURIComponent(q)}`, {
       signal: AbortSignal.timeout(5_000),
+      // Without this the backend rate-limits every viewer as one client.
+      headers: forwardedForHeader(request),
     });
     if (!res.ok) return Response.json({ hits: [] }, { headers: { "cache-control": "no-store" } });
     return Response.json(await res.json(), { headers: { "cache-control": "no-store" } });

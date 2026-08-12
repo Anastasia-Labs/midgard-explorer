@@ -1,9 +1,10 @@
 /** Network identity is never guessed. A misconfigured deployment that silently
- * claims "Preprod" and links to the wrong Cardanoscan is a trust defect for an
- * explorer, so both values are explicit or absent.
+ * claims "Preprod" and links to the wrong explorer is a trust defect for an
+ * explorer, so every value is explicit or absent.
  *
- * Set MG_STRICT_CONFIG=1 in deployment environments to fail the build when
- * either value is missing. Local development renders "Network not configured".
+ * Set MG_STRICT_CONFIG=1 in deployment environments to fail the build when a
+ * required value is missing. Local development renders "Network not
+ * configured".
  */
 const clean = (s: string | undefined): string | null => {
   const t = s?.trim();
@@ -12,18 +13,62 @@ const clean = (s: string | undefined): string | null => {
 
 export const NETWORK_LABEL = clean(process.env.NEXT_PUBLIC_NETWORK_LABEL);
 
-const L1_EXPLORER_BASE =
-  clean(process.env.NEXT_PUBLIC_L1_EXPLORER_URL)?.replace(/\/+$/, "") ?? null;
+/** Where a Cardano transaction is read, as a whole URL with `{hash}` in it.
+ *
+ * A base URL plus a path this module chooses is not provider-neutral: it only
+ * addresses explorers that route transactions the way the one we happened to
+ * pick does. CExplorer serves `/tx/…` and Cardanoscan `/transaction/…`, so a
+ * deployment that switched provider produced links to pages that do not exist.
+ * The deployment supplies the whole shape.
+ */
+const PLACEHOLDER = "{hash}";
+
+const usableTemplate = (raw: string | null): string | null => {
+  if (raw === null || !raw.includes(PLACEHOLDER)) return null;
+  // A template with no placeholder would send every transaction to one page,
+  // and a non-http scheme is not somewhere a reader should be sent at all.
+  let parsed: URL;
+  try {
+    parsed = new URL(raw.replace(PLACEHOLDER, "placeholder"));
+  } catch {
+    return null;
+  }
+  return parsed.protocol === "https:" || parsed.protocol === "http:" ? raw : null;
+};
+
+const L1_EXPLORER_TX_TEMPLATE = usableTemplate(clean(process.env.NEXT_PUBLIC_L1_EXPLORER_TX_URL));
+
+const templateHost = (template: string | null): string | null => {
+  if (template === null) return null;
+  try {
+    return new URL(template.replace(PLACEHOLDER, "placeholder")).host;
+  } catch {
+    return null;
+  }
+};
+
+/** What to call the provider in a link. Named so the action can read "View on
+ * CExplorer" rather than "View on the configured Cardano explorer", which
+ * tells a reader nothing about where they are about to go. Falls back to the
+ * host, which is at least true. */
+export const L1_EXPLORER_NAME =
+  L1_EXPLORER_TX_TEMPLATE === null
+    ? null
+    : (clean(process.env.NEXT_PUBLIC_L1_EXPLORER_NAME) ?? templateHost(L1_EXPLORER_TX_TEMPLATE));
 
 export function l1TxUrl(hash: string): string | null {
-  return L1_EXPLORER_BASE === null ? null : `${L1_EXPLORER_BASE}/transaction/${hash}`;
+  if (L1_EXPLORER_TX_TEMPLATE === null) return null;
+  return L1_EXPLORER_TX_TEMPLATE.replace(PLACEHOLDER, encodeURIComponent(hash));
 }
 
 export function assertNetworkConfigured(): void {
   if (process.env.MG_STRICT_CONFIG !== "1") return;
   const missing: string[] = [];
   if (NETWORK_LABEL === null) missing.push("NEXT_PUBLIC_NETWORK_LABEL");
-  if (L1_EXPLORER_BASE === null) missing.push("NEXT_PUBLIC_L1_EXPLORER_URL");
+  // Also catches a template that is present but unusable, which reads as
+  // configured to anyone looking at the environment. That is the case a
+  // build-time check exists for.
+  if (L1_EXPLORER_TX_TEMPLATE === null) missing.push("NEXT_PUBLIC_L1_EXPLORER_TX_URL");
   if (missing.length > 0) {
     throw new Error(`Missing required deployment configuration: ${missing.join(", ")}`);
   }

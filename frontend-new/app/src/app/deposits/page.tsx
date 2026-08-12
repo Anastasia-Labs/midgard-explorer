@@ -15,6 +15,8 @@ import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
+import { AddressLink } from "../../components/ui/address";
+import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Deposits",
@@ -34,12 +36,12 @@ export default async function DepositsPage({
 
   let data;
   try {
-    data = await api.depositsPage(page);
+    data = await api.depositsPage(page, await viewerInit());
   } catch (e) {
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader title="Deposits" />
+        <PageHeader entity="deposit" title="Deposits" />
         <PageError message={listErrorMessage(e)} />
       </>
     );
@@ -49,6 +51,7 @@ export default async function DepositsPage({
     <>
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
+        entity="deposit"
         title="Deposits"
         subtitle="Funds locked on Cardano L1 and credited to an address on the Midgard ledger."
         meta={
@@ -73,7 +76,7 @@ export default async function DepositsPage({
           columns={[
             {
               header: "L1 tx",
-              cell: (r) => <L1TxLink hash={r.deposit_l1_tx_hash} />,
+              cell: (r) => <L1TxLink hash={r.deposit_l1_tx_hash} destination="midgard" />,
             },
             {
               header: "L2 ledger tx",
@@ -84,9 +87,7 @@ export default async function DepositsPage({
             },
             {
               header: "L2 recipient",
-              cell: (r) => (
-                <Identifier value={r.ledger_address} href={`/address/${r.ledger_address}`} />
-              ),
+              cell: (r) => <AddressLink address={r.ledger_address} />,
               hideBelow: "sm",
             },
             {
@@ -99,7 +100,8 @@ export default async function DepositsPage({
                     undecodable
                     <InfoTip
                       subject="undecodable value"
-                      explain="This row could not be decoded by the explorer, so its value is unavailable."
+                      term="partialDecode"
+                      explain="This deposit's value is one of the unavailable fields."
                     />
                   </span>
                 ),
@@ -130,14 +132,7 @@ export default async function DepositsPage({
             },
           ]}
           mobileRow={(r) => ({
-            primary: (
-              <Identifier
-                value={r.ledger_address}
-                href={`/address/${r.ledger_address}`}
-                head={10}
-                tail={6}
-              />
-            ),
+            primary: <AddressLink address={r.ledger_address} head={10} tail={6} />,
             status: <StatusCell status={r.status} />,
             meta: <Timestamp iso={r.inclusion_time} />,
             secondary: r.value ? (
@@ -146,7 +141,7 @@ export default async function DepositsPage({
               <span className="text-text-3">undecodable</span>
             ),
             details: [
-              { label: "L1 tx", value: <L1TxLink hash={r.deposit_l1_tx_hash} /> },
+              { label: "L1 tx", value: <L1TxLink hash={r.deposit_l1_tx_hash} destination="midgard" /> },
               {
                 label: "L2 ledger tx",
                 value: (

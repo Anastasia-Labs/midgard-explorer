@@ -20,6 +20,8 @@ import { Tabs } from "../../../components/ui/tabs";
 import { api } from "../../../lib/api";
 import { assetLabel, parseAssetUnit } from "../../../lib/asset";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
+import { AddressLink } from "../../../components/ui/address";
+import { viewerInit } from "../../../lib/viewerInit";
 
 export const dynamic = "force-dynamic";
 
@@ -51,12 +53,12 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
 
   let data;
   try {
-    data = await orNotFound(api.asset(policyId, nameHex));
+    data = await orNotFound(api.asset(policyId, nameHex, await viewerInit()));
   } catch (e) {
     return (
       <>
         <Breadcrumbs items={crumbs} />
-        <PageHeader title="Asset" />
+        <PageHeader entity="asset" title="Asset" />
         <IdentityBar overline="Asset unit" value={unit} />
         <PageError message={listErrorMessage(e)} />
       </>
@@ -68,7 +70,11 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
   return (
     <>
       <Breadcrumbs items={crumbs} />
-      <PageHeader title={label} subtitle="A native asset on the Midgard L2 ledger." />
+      <PageHeader
+        entity="asset"
+        title={label}
+        subtitle="A native asset on the Midgard L2 ledger."
+      />
       <IdentityBar overline="Asset unit (policy + name)" value={unit} />
 
       {/* Identity leads, because the first question about an asset is which
@@ -137,9 +143,7 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
                       columns={[
                         {
                           header: "Address",
-                          cell: (r) => (
-                            <Identifier value={r.address} href={`/address/${r.address}`} />
-                          ),
+                          cell: (r) => <AddressLink address={r.address} />,
                         },
                         {
                           header: "UTxOs",
@@ -154,14 +158,7 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
                         },
                       ]}
                       mobileRow={(r) => ({
-                        primary: (
-                          <Identifier
-                            value={r.address}
-                            href={`/address/${r.address}`}
-                            head={10}
-                            tail={6}
-                          />
-                        ),
+                        primary: <AddressLink address={r.address} head={10} tail={6} />,
                         secondary: <AssetQuantity quantity={r.quantity} />,
                         details: [{ label: "UTxOs", value: String(r.utxoCount) }],
                       })}

@@ -11,8 +11,16 @@ const loadNetwork = async (env: Record<string, string | undefined>) => {
   return await import("../src/lib/network");
 };
 
-const KEYS = ["NEXT_PUBLIC_NETWORK_LABEL", "NEXT_PUBLIC_L1_EXPLORER_URL", "MG_STRICT_CONFIG"];
+const KEYS = [
+  "NEXT_PUBLIC_NETWORK_LABEL",
+  "NEXT_PUBLIC_L1_EXPLORER_TX_URL",
+  "NEXT_PUBLIC_L1_EXPLORER_NAME",
+  "MG_STRICT_CONFIG",
+];
 let saved: Record<string, string | undefined> = {};
+
+const CEXPLORER = "https://preprod.cexplorer.io/tx/{hash}";
+const CARDANOSCAN = "https://preprod.cardanoscan.io/transaction/{hash}";
 
 beforeEach(() => {
   saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
@@ -30,7 +38,7 @@ describe("NETWORK_LABEL", () => {
   it("is null when unset, so the UI can say the network is not configured", async () => {
     const { NETWORK_LABEL } = await loadNetwork({
       NEXT_PUBLIC_NETWORK_LABEL: undefined,
-      NEXT_PUBLIC_L1_EXPLORER_URL: undefined,
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: undefined,
       MG_STRICT_CONFIG: undefined,
     });
     expect(NETWORK_LABEL).toBeNull();
@@ -64,26 +72,89 @@ describe("NETWORK_LABEL", () => {
 describe("l1TxUrl", () => {
   it("returns null when no L1 explorer is configured", async () => {
     const { l1TxUrl } = await loadNetwork({
-      NEXT_PUBLIC_L1_EXPLORER_URL: undefined,
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: undefined,
       MG_STRICT_CONFIG: undefined,
     });
     expect(l1TxUrl("abc")).toBeNull();
   });
 
-  it("builds a transaction URL from the configured base", async () => {
-    const { l1TxUrl } = await loadNetwork({
-      NEXT_PUBLIC_L1_EXPLORER_URL: "https://preprod.cardanoscan.io",
+  /* The whole point of a template. A configurable base with a fixed
+   * `/transaction/` path only ever addressed explorers that happen to use
+   * Cardanoscan's route, so pointing the deployment at CExplorer produced
+   * links to pages that do not exist. */
+  it("places the hash wherever the provider puts it", async () => {
+    const cexplorer = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
       MG_STRICT_CONFIG: undefined,
     });
-    expect(l1TxUrl("deadbeef")).toBe("https://preprod.cardanoscan.io/transaction/deadbeef");
+    expect(cexplorer.l1TxUrl("deadbeef")).toBe("https://preprod.cexplorer.io/tx/deadbeef");
+
+    const cardanoscan = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: CARDANOSCAN,
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(cardanoscan.l1TxUrl("deadbeef")).toBe(
+      "https://preprod.cardanoscan.io/transaction/deadbeef",
+    );
   });
 
-  it("tolerates trailing slashes in the configured base", async () => {
+  it("escapes the hash rather than trusting it into a URL", async () => {
     const { l1TxUrl } = await loadNetwork({
-      NEXT_PUBLIC_L1_EXPLORER_URL: "https://preprod.cardanoscan.io///",
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
       MG_STRICT_CONFIG: undefined,
     });
-    expect(l1TxUrl("deadbeef")).toBe("https://preprod.cardanoscan.io/transaction/deadbeef");
+    expect(l1TxUrl("a/b?c=d")).toBe("https://preprod.cexplorer.io/tx/a%2Fb%3Fc%3Dd");
+  });
+
+  /* A template without the placeholder would send every transaction to the
+   * same page. Silently linking the wrong record is worse for an explorer than
+   * not linking at all, so a malformed template counts as unconfigured. */
+  it("treats a template with no placeholder as unconfigured", async () => {
+    const { l1TxUrl } = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: "https://preprod.cexplorer.io/tx/",
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(l1TxUrl("deadbeef")).toBeNull();
+  });
+
+  it("refuses a template that is not http", async () => {
+    const { l1TxUrl } = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: "javascript:alert({hash})",
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(l1TxUrl("deadbeef")).toBeNull();
+  });
+});
+
+describe("L1_EXPLORER_NAME", () => {
+  it("names the provider so the action can say where it goes", async () => {
+    const { L1_EXPLORER_NAME } = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
+      NEXT_PUBLIC_L1_EXPLORER_NAME: "CExplorer",
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(L1_EXPLORER_NAME).toBe("CExplorer");
+  });
+
+  /* "View on preprod.cexplorer.io" is worse copy than "View on CExplorer" and
+   * better than "View on the configured Cardano explorer", which names
+   * nothing. A deployment that skips the name still gets a truthful link. */
+  it("falls back to the host rather than to an anonymous phrase", async () => {
+    const { L1_EXPLORER_NAME } = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
+      NEXT_PUBLIC_L1_EXPLORER_NAME: undefined,
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(L1_EXPLORER_NAME).toBe("preprod.cexplorer.io");
+  });
+
+  it("is null when there is no explorer to name", async () => {
+    const { L1_EXPLORER_NAME } = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: undefined,
+      NEXT_PUBLIC_L1_EXPLORER_NAME: undefined,
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(L1_EXPLORER_NAME).toBeNull();
   });
 });
 
@@ -91,7 +162,7 @@ describe("assertNetworkConfigured", () => {
   it("is a no-op when strict config is off", async () => {
     const { assertNetworkConfigured } = await loadNetwork({
       NEXT_PUBLIC_NETWORK_LABEL: undefined,
-      NEXT_PUBLIC_L1_EXPLORER_URL: undefined,
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: undefined,
       MG_STRICT_CONFIG: undefined,
     });
     expect(() => assertNetworkConfigured()).not.toThrow();
@@ -100,7 +171,7 @@ describe("assertNetworkConfigured", () => {
   it("fails the build when strict and both values are missing", async () => {
     const { assertNetworkConfigured } = await loadNetwork({
       NEXT_PUBLIC_NETWORK_LABEL: undefined,
-      NEXT_PUBLIC_L1_EXPLORER_URL: undefined,
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: undefined,
       MG_STRICT_CONFIG: "1",
     });
     expect(() => assertNetworkConfigured()).toThrow(/NEXT_PUBLIC_NETWORK_LABEL/);
@@ -109,16 +180,27 @@ describe("assertNetworkConfigured", () => {
   it("names the one missing value when the other is present", async () => {
     const { assertNetworkConfigured } = await loadNetwork({
       NEXT_PUBLIC_NETWORK_LABEL: "Preprod",
-      NEXT_PUBLIC_L1_EXPLORER_URL: undefined,
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: undefined,
       MG_STRICT_CONFIG: "1",
     });
-    expect(() => assertNetworkConfigured()).toThrow(/NEXT_PUBLIC_L1_EXPLORER_URL/);
+    expect(() => assertNetworkConfigured()).toThrow(/NEXT_PUBLIC_L1_EXPLORER_TX_URL/);
+  });
+
+  /* A malformed template reads as configured to anyone looking at the
+   * environment, which is exactly the case a build-time check is for. */
+  it("fails the build on a template it cannot use", async () => {
+    const { assertNetworkConfigured } = await loadNetwork({
+      NEXT_PUBLIC_NETWORK_LABEL: "Preprod",
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: "https://preprod.cexplorer.io/tx/",
+      MG_STRICT_CONFIG: "1",
+    });
+    expect(() => assertNetworkConfigured()).toThrow(/NEXT_PUBLIC_L1_EXPLORER_TX_URL/);
   });
 
   it("passes when strict and both values are declared", async () => {
     const { assertNetworkConfigured } = await loadNetwork({
       NEXT_PUBLIC_NETWORK_LABEL: "Preprod",
-      NEXT_PUBLIC_L1_EXPLORER_URL: "https://preprod.cardanoscan.io",
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
       MG_STRICT_CONFIG: "1",
     });
     expect(() => assertNetworkConfigured()).not.toThrow();

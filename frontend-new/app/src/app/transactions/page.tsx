@@ -14,6 +14,7 @@ import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { legendFor } from "../../lib/status-registry";
 import { listErrorMessage } from "../../lib/serverErrors";
+import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Transactions",
@@ -35,12 +36,12 @@ export default async function TransactionsPage({
 
   let data;
   try {
-    data = await api.txsPage(page, status);
+    data = await api.txsPage(page, status, await viewerInit());
   } catch (e) {
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader title="Transactions" />
+        <PageHeader entity="transaction" title="Transactions" />
         <PageError message={listErrorMessage(e)} />
       </>
     );
@@ -50,6 +51,7 @@ export default async function TransactionsPage({
     <>
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
+        entity="transaction"
         title="Transactions"
         subtitle="Transactions processed by the Midgard ledger, newest first. Open one for its journey, ledger equation, and raw data."
         meta={
@@ -100,7 +102,7 @@ export default async function TransactionsPage({
               cell: (r) => (
                 <Link
                   href={`/block/${r.header_hash}`}
-                  className="font-display font-semibold tabular-nums text-accent hover:underline"
+                  className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
                 >
                   #{r.height}
                 </Link>
@@ -156,7 +158,7 @@ export default async function TransactionsPage({
               {
                 label: "Block",
                 value: (
-                  <Link href={`/block/${r.header_hash}`} className="tabular-nums text-accent">
+                  <Link href={`/block/${r.header_hash}`} className="tabular-nums text-link">
                     #{r.height}
                   </Link>
                 ),

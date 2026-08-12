@@ -246,7 +246,8 @@ export function DecodeWarn({ error }: { error: string | null }) {
       </span>
       <InfoTip
         subject="partial decode"
-        explain="This row could not be decoded by the explorer, so some of its fields are missing."
+        term="partialDecode"
+        explain="This specific row has one or more unavailable fields."
       />
     </span>
   );

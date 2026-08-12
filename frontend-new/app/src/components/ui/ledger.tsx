@@ -2,7 +2,7 @@ import type { TransactionView } from "@midgard-explorer/contracts";
 import { addressDeltas, ledgerEquation } from "../../lib/ledger";
 import { cn, formatAda, truncateId } from "../../lib/format";
 import { AssetName } from "./asset";
-import { Identifier } from "./identifier";
+import { AddressLink } from "./address";
 
 /** What a transaction did, stated as arithmetic.
  *
@@ -153,7 +153,7 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
                   key={d.address}
                   className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2.5"
                 >
-                  <Identifier value={d.address} href={`/address/${d.address}`} head={12} tail={8} />
+                  <AddressLink address={d.address} head={12} tail={8} />
                   {d.exact ? (
                     <Amount lovelace={net} tone={net >= 0n ? "positive" : "negative"} />
                   ) : (

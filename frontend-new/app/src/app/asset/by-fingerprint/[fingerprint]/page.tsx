@@ -5,6 +5,7 @@ import { Callout, PageHeader } from "../../../../components/ui/primitives";
 import { api } from "../../../../lib/api";
 import { assetFingerprint, assetUnit } from "../../../../lib/asset";
 import { listErrorMessage } from "../../../../lib/serverErrors";
+import { viewerInit } from "../../../../lib/viewerInit";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export default async function ByFingerprintPage({
 
   let roster;
   try {
-    roster = await api.assets();
+    roster = await api.assets(await viewerInit());
   } catch (e) {
     return (
       <>

@@ -13,6 +13,7 @@ import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
+import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Forced transactions",
@@ -32,12 +33,12 @@ export default async function ForcedTransactionsPage({
 
   let data;
   try {
-    data = await api.forcedTxsPage(page);
+    data = await api.forcedTxsPage(page, await viewerInit());
   } catch (e) {
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader title="Forced transactions" />
+        <PageHeader entity="forcedTransaction" title="Forced transactions" />
         <PageError message={listErrorMessage(e)} />
       </>
     );
@@ -47,6 +48,7 @@ export default async function ForcedTransactionsPage({
     <>
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
+        entity="forcedTransaction"
         title="Forced transactions"
         subtitle="Transaction orders escrowed on Cardano L1 that the Midgard operator is obliged to include."
         meta={
@@ -78,7 +80,7 @@ export default async function ForcedTransactionsPage({
               headerNote: "on Cardano",
               cell: (r) => (
                 <span className="inline-flex items-center gap-1.5">
-                  <L1TxLink hash={r.tx_order_l1_tx_hash} />
+                  <L1TxLink hash={r.tx_order_l1_tx_hash} destination="midgard" />
                   <span className="font-mono text-[11px] text-text-3">
                     #{r.tx_order_l1_output_index}
                     <span className="sr-only"> (L1 output index)</span>
@@ -134,7 +136,7 @@ export default async function ForcedTransactionsPage({
                 label: "L1 tx",
                 value: (
                   <span className="inline-flex items-center gap-1.5">
-                    <L1TxLink hash={r.tx_order_l1_tx_hash} />
+                    <L1TxLink hash={r.tx_order_l1_tx_hash} destination="midgard" />
                     <span className="font-mono text-[11px] text-text-3">
                       #{r.tx_order_l1_output_index}
                     </span>

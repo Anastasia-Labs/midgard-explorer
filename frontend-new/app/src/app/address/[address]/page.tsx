@@ -20,6 +20,7 @@ import { api } from "../../../lib/api";
 import { classify } from "../../../lib/classify";
 import { assetCount, truncateId } from "../../../lib/format";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
+import { viewerInit } from "../../../lib/viewerInit";
 
 export const dynamic = "force-dynamic";
 
@@ -43,12 +44,12 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
 
   let data;
   try {
-    data = await orNotFound(api.address(address));
+    data = await orNotFound(api.address(address, await viewerInit()));
   } catch (e) {
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader title="Address" />
+        <PageHeader entity="address" title="Address" />
         <IdentityBar overline="L2 address" value={address} />
         <PageError message={listErrorMessage(e)} />
       </>
@@ -97,7 +98,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
               ) : (
                 <Link
                   href={`/block/${r.header_hash}`}
-                  className="font-display font-semibold tabular-nums text-accent hover:underline"
+                  className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
                 >
                   #{r.height}
                 </Link>
@@ -124,7 +125,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
                   Inputs pruned
                   <InfoTip
                     subject="pruned inputs"
-                    explain="Some inputs of this transaction are no longer in the ledger, so the amount spent from this address cannot be determined."
+                    explain="Some inputs of this transaction are no longer in the ledger, so the amount spent from this address cannot be determined. Treat its net address movement as unknown, not zero."
                   />
                 </span>
               ),
@@ -269,7 +270,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
   return (
     <>
       <Breadcrumbs items={CRUMBS} />
-      <PageHeader title="Address" />
+      <PageHeader entity="address" title="Address" />
       <IdentityBar overline="L2 address" value={address} />
 
       {data.undecodedOutputs > 0 ? (

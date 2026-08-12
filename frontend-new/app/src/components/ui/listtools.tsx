@@ -102,7 +102,7 @@ export function ListTools<Row>({
           id={`filter-${filterKey}`}
           value={active}
           onChange={(e) => setFilter(e.target.value)}
-          className="h-9 min-w-0 flex-1 rounded border border-border-strong bg-bg px-2 text-sm text-text sm:flex-none"
+          className="h-9 min-w-0 flex-1 rounded border border-border-strong bg-(--mg-control-bg) px-2 text-sm text-text sm:flex-none"
         >
           <option value="">All</option>
           {options.map((o) => (

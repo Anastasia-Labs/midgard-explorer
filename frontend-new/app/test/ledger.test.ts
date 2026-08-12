@@ -198,9 +198,7 @@ describe("per-address movement, per asset", () => {
       }),
     );
     const to = deltas.find((d) => d.address === B);
-    expect(to?.assets).toEqual([
-      { policyId: POLICY, assetName: NAME, received: 10n, spent: 0n },
-    ]);
+    expect(to?.assets).toEqual([{ policyId: POLICY, assetName: NAME, received: 10n, spent: 0n }]);
   });
 
   it("reports a token spent by the address that held it", () => {
@@ -220,7 +218,10 @@ describe("per-address movement, per asset", () => {
       assetTx({
         fee: "0",
         inputs: [{ address: A, lovelace: "2000000", assets: { [POLICY]: { [NAME]: "1" } } }],
-        outputs: [{ address: A, lovelace: "2000000", assets: {} }, { address: B, lovelace: "0", assets: { [POLICY]: { [NAME]: "1" } } }],
+        outputs: [
+          { address: A, lovelace: "2000000", assets: {} },
+          { address: B, lovelace: "0", assets: { [POLICY]: { [NAME]: "1" } } },
+        ],
       }),
     );
     const from = deltas.find((d) => d.address === A);

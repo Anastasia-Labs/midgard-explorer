@@ -57,6 +57,15 @@ describe("registry coverage", () => {
       expect(entry.explain.length, code).toBeGreaterThan(0);
     }
   });
+
+  it("states both meaning and consequence for every status", () => {
+    for (const [code, entry] of Object.entries(STATUS_REGISTRY)) {
+      expect(
+        entry.explain.split(/[.!?]+/).filter((sentence) => sentence.trim().length > 0).length,
+        code,
+      ).toBeGreaterThanOrEqual(2);
+    }
+  });
 });
 
 describe("tone semantics", () => {

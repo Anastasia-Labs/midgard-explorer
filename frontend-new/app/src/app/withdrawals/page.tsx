@@ -15,6 +15,7 @@ import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
+import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Withdrawals",
@@ -34,12 +35,12 @@ export default async function WithdrawalsPage({
 
   let data;
   try {
-    data = await api.withdrawalsPage(page);
+    data = await api.withdrawalsPage(page, await viewerInit());
   } catch (e) {
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader title="Withdrawals" />
+        <PageHeader entity="withdrawal" title="Withdrawals" />
         <PageError message={listErrorMessage(e)} />
       </>
     );
@@ -49,6 +50,7 @@ export default async function WithdrawalsPage({
     <>
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
+        entity="withdrawal"
         title="Withdrawals"
         subtitle="Funds leaving the Midgard ledger back to Cardano L1. A withdrawal can be valid and still be waiting, so validity and status are shown separately."
         meta={
@@ -76,7 +78,7 @@ export default async function WithdrawalsPage({
               headerNote: "on Cardano",
               cell: (r) => (
                 <span className="inline-flex items-center gap-1.5">
-                  <L1TxLink hash={r.withdrawal_l1_tx_hash} />
+                  <L1TxLink hash={r.withdrawal_l1_tx_hash} destination="midgard" />
                   <span className="font-mono text-[11px] text-text-3">
                     #{r.withdrawal_l1_output_index}
                     <span className="sr-only"> (L1 output index)</span>
@@ -104,7 +106,8 @@ export default async function WithdrawalsPage({
                     undecodable
                     <InfoTip
                       subject="undecodable value"
-                      explain="This row could not be decoded by the explorer, so its value is unavailable."
+                      term="partialDecode"
+                      explain="This withdrawal's L2 value is one of the unavailable fields."
                     />
                   </span>
                 ),
@@ -119,7 +122,7 @@ export default async function WithdrawalsPage({
                     Not yet
                     <InfoTip
                       subject="validity"
-                      explain="The node has not validated this withdrawal yet, so it has no validity result."
+                      explain="The node has not validated this withdrawal yet, so it has no validity result. It can still become valid or fail a specific check."
                     />
                   </span>
                 ) : (
@@ -165,7 +168,7 @@ export default async function WithdrawalsPage({
                 label: "L1 tx",
                 value: (
                   <span className="inline-flex items-center gap-1.5">
-                    <L1TxLink hash={r.withdrawal_l1_tx_hash} />
+                    <L1TxLink hash={r.withdrawal_l1_tx_hash} destination="midgard" />
                     <span className="font-mono text-[11px] text-text-3">
                       #{r.withdrawal_l1_output_index}
                     </span>

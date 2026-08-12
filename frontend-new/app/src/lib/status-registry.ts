@@ -46,15 +46,25 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "tx_lifecycle",
     "neutral",
     "Queued",
-    "Received by the node and waiting for validation.",
+    "Received by the node and waiting for validation. It can still be rejected before entering the mempool.",
   ),
-  validating: e("tx_lifecycle", "info", "Validating", "Being checked by the node right now."),
-  accepted: e("tx_lifecycle", "info", "Accepted", "Validated and admitted to the mempool."),
+  validating: e(
+    "tx_lifecycle",
+    "info",
+    "Validating",
+    "Being checked by the node right now. It has not yet been accepted or included in a block.",
+  ),
+  accepted: e(
+    "tx_lifecycle",
+    "info",
+    "Accepted",
+    "Validated and admitted to the mempool. It can still be dropped or rejected before block inclusion.",
+  ),
   pending_commit: e(
     "tx_lifecycle",
     "warning",
     "Pending commit",
-    "Processed and waiting to be merged into a Midgard block.",
+    "Processed and waiting to be merged into a Midgard block. It is not yet part of the ledger history.",
   ),
   committed: e(
     "tx_lifecycle",
@@ -62,20 +72,25 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "Committed",
     "Included in a Midgard block. Reversible until that block is final on Cardano L1.",
   ),
-  rejected: e("tx_lifecycle", "danger", "Rejected", "Failed validation and will not be included."),
+  rejected: e(
+    "tx_lifecycle",
+    "danger",
+    "Rejected",
+    "Failed validation and will not be included. A corrected transaction must be submitted under a new hash.",
+  ),
 
   // --- bridge event status ---------------------------------------------
   awaiting: e(
     "bridge_status",
     "warning",
     "Awaiting",
-    "Observed on Cardano L1, waiting for its inclusion window.",
+    "Observed on Cardano L1, waiting for its inclusion window. It has not yet changed the Midgard ledger.",
   ),
   projected: e(
     "bridge_status",
     "info",
     "Projected",
-    "Reflected in the L2 ledger; the containing block is not final on L1 yet.",
+    "Reflected in the L2 ledger; the containing block is not final on L1 yet. The projected effect can still be reversed.",
   ),
   consumed: e(
     "bridge_status",
@@ -89,86 +104,101 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "finalization",
     "neutral",
     "Pending submission",
-    "The finalization transaction has not been submitted to L1 yet.",
+    "The finalization transaction has not been submitted to L1 yet. Every transaction in this block remains reversible.",
   ),
   submitted_local_finalization_pending: e(
     "finalization",
     "info",
     "Submitted (local pending)",
-    "Finalization submitted; the node's local confirmation is still pending.",
+    "Finalization submitted; the node's local confirmation is still pending. Do not treat the block as settled yet.",
   ),
   submitted_unconfirmed: e(
     "finalization",
     "info",
     "Submitted (unconfirmed)",
-    "Finalization submitted to Cardano L1 and not yet confirmed.",
+    "Finalization submitted to Cardano L1 and not yet confirmed. The submission may still fail or be replaced.",
   ),
   observed_waiting_stability: e(
     "finalization",
     "warning",
     "Awaiting stability",
-    "Seen on L1; waiting for the required chain-stability depth.",
+    "Seen on L1; waiting for the required chain-stability depth. A short Cardano rollback could still remove it.",
   ),
-  finalized: e("finalization", "success", "Finalized", "Settled on Cardano L1."),
+  finalized: e(
+    "finalization",
+    "success",
+    "Finalized",
+    "Settled on Cardano L1. The explorer now treats the containing Midgard block as irreversible.",
+  ),
   abandoned: e(
     "finalization",
     "danger",
     "Abandoned",
-    "The finalization attempt was abandoned; this block did not settle.",
+    "The finalization attempt was abandoned; this block did not settle. Its Midgard transactions must not be treated as final.",
   ),
 
   // --- transaction validity --------------------------------------------
-  TxIsValid: e("tx_validity", "success", "Valid", "The transaction passed validation."),
-  TxIsInvalid: e("tx_validity", "danger", "Invalid", "The transaction failed validation."),
+  TxIsValid: e(
+    "tx_validity",
+    "success",
+    "Valid",
+    "The transaction passed validation. Its state change applies if the containing block remains in the chain.",
+  ),
+  TxIsInvalid: e(
+    "tx_validity",
+    "danger",
+    "Invalid",
+    "The transaction failed validation. Its ordinary outputs do not become spendable ledger state.",
+  ),
 
   // --- withdrawal validity (8 codes) -----------------------------------
   WithdrawalIsValid: e(
     "withdrawal_validity",
     "success",
     "Valid",
-    "The withdrawal passed validation.",
+    "The withdrawal passed validation. It may proceed to projection and Cardano L1 settlement.",
   ),
   NonExistentWithdrawalUtxo: e(
     "withdrawal_validity",
     "danger",
     "Non-existent UTxO",
-    "The referenced L2 UTxO does not exist.",
+    "The referenced L2 UTxO does not exist. No value can be withdrawn from that reference.",
   ),
   SpentWithdrawalUtxo: e(
     "withdrawal_validity",
     "danger",
     "Spent UTxO",
-    "The referenced L2 UTxO was already spent.",
+    "The referenced L2 UTxO was already spent. Reusing it would be a double spend, so the withdrawal cannot proceed.",
   ),
   IncorrectWithdrawalOwner: e(
     "withdrawal_validity",
     "danger",
     "Wrong owner",
-    "The withdrawal is not signed by the owner of the UTxO.",
+    "The withdrawal is not signed by the owner of the UTxO. The node will not authorize its payout.",
   ),
   IncorrectWithdrawalValue: e(
     "withdrawal_validity",
     "danger",
     "Wrong value",
-    "The withdrawal value does not match the referenced UTxO.",
+    "The withdrawal value does not match the referenced UTxO. The request must be corrected before it can proceed.",
   ),
   IncorrectWithdrawalSignature: e(
     "withdrawal_validity",
     "danger",
     "Bad signature",
-    "The withdrawal signature is invalid.",
+    "The withdrawal signature is invalid. Ownership has not been proven, so the withdrawal cannot proceed.",
   ),
   TooManyTokensInWithdrawal: e(
     "withdrawal_validity",
     "danger",
     "Too many tokens",
-    "The withdrawal exceeds the permitted token count.",
+    "The withdrawal exceeds the permitted token count. Split or reduce the value before submitting another request.",
   ),
   UnpayableWithdrawalValue: e(
     "withdrawal_validity",
     "danger",
     "Unpayable value",
-    "The value cannot be paid out on Cardano L1.",
+    "The value cannot be paid out on Cardano L1. Its amount or asset bundle must be changed to form a valid output.",
   ),
 
   // --- forced-transaction operator validity (6 codes) -------------------
@@ -176,31 +206,31 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "forced_validity",
     "danger",
     "Non-existent input",
-    "An input UTxO referenced by the forced transaction does not exist.",
+    "An input UTxO referenced by the forced transaction does not exist. The forced transaction cannot be applied.",
   ),
   InvalidSignature: e(
     "forced_validity",
     "danger",
     "Invalid signature",
-    "A required signature on the forced transaction is invalid.",
+    "A required signature on the forced transaction is invalid. The claimed authorization is not accepted.",
   ),
   FailedScript: e(
     "forced_validity",
     "danger",
     "Script failed",
-    "A Plutus script in the forced transaction failed to validate.",
+    "A Plutus script in the forced transaction failed to validate. Its requested state transition cannot be applied.",
   ),
   FeeTooLow: e(
     "forced_validity",
     "danger",
     "Fee too low",
-    "The forced transaction's fee is below the required minimum.",
+    "The forced transaction's fee is below the required minimum. It must pay a sufficient fee under the active parameters.",
   ),
   UnbalancedTx: e(
     "forced_validity",
     "danger",
     "Unbalanced",
-    "The forced transaction's inputs and outputs do not balance.",
+    "The forced transaction's inputs and outputs do not balance. It would create or destroy unaccounted value, so it is rejected.",
   ),
 };
 
@@ -221,7 +251,8 @@ export function statusOf(status: string): ResolvedStatus {
     kind: "tx_lifecycle",
     tone: "neutral",
     label: status,
-    explain: "Unrecognized status reported by the backend.",
+    explain:
+      "The backend reported a status this explorer does not recognize. Treat it as unresolved and inspect the raw response before relying on it.",
     known: false,
   };
 }

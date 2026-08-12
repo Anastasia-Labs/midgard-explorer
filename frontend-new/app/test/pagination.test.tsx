@@ -11,11 +11,23 @@ const notFound = vi.hoisted(() =>
 
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("next/link", () => ({
-  default: ({ children, href, ...rest }: { children: React.ReactNode; href: string }) => (
-    <a href={href} {...rest}>
-      {children}
-    </a>
-  ),
+  default: ({
+    children,
+    href,
+    prefetch: _prefetch,
+    ...rest
+  }: {
+    children: React.ReactNode;
+    href: string;
+    prefetch?: boolean;
+  }) => {
+    void _prefetch;
+    return (
+      <a href={href} {...rest}>
+        {children}
+      </a>
+    );
+  },
 }));
 
 afterEach(() => {

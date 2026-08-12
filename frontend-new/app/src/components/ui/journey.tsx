@@ -87,6 +87,20 @@ function elapsed(stage: JourneyStage, previous: string | null): string | null {
   return `+${formatDuration(ms)}`;
 }
 
+/** Each stage's wait, in order, against the last stage that has a recorded
+ * moment rather than against the stage immediately before it. */
+function stageDeltas(stages: readonly JourneyStage[]): (string | null)[] {
+  const deltas: (string | null)[] = [];
+  let previous: string | null = null;
+  for (const stage of stages) {
+    deltas.push(elapsed(stage, previous));
+    if (stage.timestampKind === "recorded" && stage.occurredAt !== null) {
+      previous = stage.occurredAt;
+    }
+  }
+  return deltas;
+}
+
 const PROGRESS_FILL = {
   active: "bg-info",
   complete: "bg-success",
@@ -151,12 +165,11 @@ export function Journey({
   // Each stage's wait is measured against the last stage that actually has a
   // recorded moment, so a gap in the node's records shifts the baseline rather
   // than silently absorbing the missing interval.
-  let previous: string | null = null;
-  const deltas = model.stages.map((s) => {
-    const d = elapsed(s, previous);
-    if (s.timestampKind === "recorded" && s.occurredAt !== null) previous = s.occurredAt;
-    return d;
-  });
+  //
+  // Written as a loop rather than a `map` over a closure that reassigns the
+  // running baseline: the two compute the same thing, but only the loop keeps
+  // the mutation provably local to this render.
+  const deltas = stageDeltas(model.stages);
 
   return (
     <section
@@ -165,7 +178,7 @@ export function Journey({
       className="mb-4 overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)"
     >
       <div className="px-4 pt-3">
-        <h2 className={cn("font-display text-[15px] font-semibold", OUTCOME_TONE[model.outcome])}>
+        <h2 className={cn("text-[15px] font-semibold", OUTCOME_TONE[model.outcome])}>
           {model.headline}
         </h2>
       </div>
@@ -217,7 +230,7 @@ export function Journey({
                 <dd className="mt-1 mg-micro">
                   <Link
                     href={`/block/${s.evidence.blockHash}`}
-                    className="inline-flex items-center gap-1 text-accent hover:underline"
+                    className="inline-flex items-center gap-1 text-link hover:text-link-hover hover:underline"
                   >
                     Block #{s.evidence.blockHeight}
                     <Icon name="arrowRight" size={11} />
@@ -226,7 +239,7 @@ export function Journey({
               ) : null}
               {s.evidence?.l1TxHash ? (
                 <dd className="mt-1 mg-micro">
-                  L1 tx: <L1TxLink hash={s.evidence.l1TxHash} />
+                  L1 tx: <L1TxLink hash={s.evidence.l1TxHash} destination="midgard" />
                 </dd>
               ) : null}
               <dd className="mt-1 font-mono text-[11px] text-text-3">source: {s.source}</dd>

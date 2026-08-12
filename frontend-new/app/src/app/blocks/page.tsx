@@ -13,6 +13,7 @@ import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { legendFor } from "../../lib/status-registry";
 import { listErrorMessage } from "../../lib/serverErrors";
+import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Blocks",
@@ -34,12 +35,12 @@ export default async function BlocksPage({
 
   let data;
   try {
-    data = await api.blocksPage(page, status);
+    data = await api.blocksPage(page, status, await viewerInit());
   } catch (e) {
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader title="Blocks" />
+        <PageHeader entity="block" title="Blocks" />
         <PageError message={listErrorMessage(e)} />
       </>
     );
@@ -49,6 +50,7 @@ export default async function BlocksPage({
     <>
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
+        entity="block"
         title="Blocks"
         subtitle="Blocks produced on Midgard, newest first. Open a block to see whether it has settled on Cardano L1, and what it carries."
         meta={
@@ -84,7 +86,7 @@ export default async function BlocksPage({
               cell: (r) => (
                 <Link
                   href={`/block/${r.header_hash}`}
-                  className="font-display font-semibold tabular-nums text-accent hover:underline"
+                  className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
                 >
                   #{r.height}
                 </Link>
@@ -120,7 +122,7 @@ export default async function BlocksPage({
             primary: (
               <Link
                 href={`/block/${r.header_hash}`}
-                className="font-display font-semibold tabular-nums text-accent"
+                className="font-mono font-semibold tabular-nums text-link"
               >
                 #{r.height}
               </Link>

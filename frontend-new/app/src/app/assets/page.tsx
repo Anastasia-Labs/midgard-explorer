@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import {
   AssetFingerprint,
+  AssetMark,
   AssetName,
   AssetQuantity,
   CoverageNote,
@@ -13,6 +14,7 @@ import { DataTable } from "../../components/ui/table";
 import { api } from "../../lib/api";
 import { assetUnit } from "../../lib/asset";
 import { listErrorMessage } from "../../lib/serverErrors";
+import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Native assets",
@@ -26,12 +28,12 @@ const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Assets" }];
 export default async function AssetsPage() {
   let data;
   try {
-    data = await api.assets();
+    data = await api.assets(await viewerInit());
   } catch (e) {
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader title="Native assets" />
+        <PageHeader entity="asset" title="Native assets" />
         <PageError message={listErrorMessage(e)} />
       </>
     );
@@ -41,6 +43,7 @@ export default async function AssetsPage() {
     <>
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
+        entity="asset"
         title="Native assets"
         subtitle="Every asset carried by a spendable UTxO in the current ledger. Mint and burn history is not tracked here."
         meta={
@@ -64,8 +67,9 @@ export default async function AssetsPage() {
               cell: (r) => (
                 <a
                   href={`/asset/${assetUnit(r.policyId, r.assetName)}`}
-                  className="text-accent hover:underline"
+                  className="inline-flex min-w-0 items-center gap-2 text-link hover:text-link-hover hover:underline"
                 >
+                  <AssetMark policyId={r.policyId} nameHex={r.assetName} />
                   <AssetName nameHex={r.assetName} />
                 </a>
               ),
@@ -94,7 +98,11 @@ export default async function AssetsPage() {
           ]}
           mobileRow={(r) => ({
             primary: (
-              <a href={`/asset/${assetUnit(r.policyId, r.assetName)}`} className="text-accent">
+              <a
+                href={`/asset/${assetUnit(r.policyId, r.assetName)}`}
+                className="inline-flex min-w-0 items-center gap-2 text-link"
+              >
+                <AssetMark policyId={r.policyId} nameHex={r.assetName} />
                 <AssetName nameHex={r.assetName} />
               </a>
             ),
@@ -121,7 +129,7 @@ export default async function AssetsPage() {
           comparing two assets, which is worth a screen whether the list is
           five rows or five hundred. */}
       <section className="mt-4 overflow-hidden rounded-lg border border-border bg-surface">
-        <h2 className="border-b border-border px-4 py-3 font-display text-[15px] font-semibold text-text">
+        <h2 className="border-b border-border px-4 py-3 text-[15px] font-semibold text-text">
           Reading an asset
         </h2>
         <dl className="grid gap-px bg-border sm:grid-cols-3">
