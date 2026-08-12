@@ -146,12 +146,67 @@ export function parseTxInfo(json: unknown): KoiosTxInfo[] {
   return z.array(txInfoSchema).parse(json);
 }
 
-async function post(path: string, body: unknown): Promise<unknown> {
-  const res = await fetch(`${config.KOIOS_BASE_URL}${path}`, {
+/** Koios is a shared public service. A request that hangs would stall the sync
+ * tick behind it, and the tick is what keeps the index current. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Above this a response is not a transaction list, it is a problem. Reading
+ * it into memory on a 2 core box with 1GB free is how the process dies.
+ *
+ * Measured on the decoded body rather than content-length: Koios gzips and
+ * chunks its responses, so that header is usually absent and a guard reading it
+ * would report success while protecting nothing. */
+const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
+
+/** Rate limiting and 5xx are both worth retrying, and both are worse if every
+ * client retries immediately. Three attempts at 1s, 2s, 4s. */
+const RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Exported so the threshold can be tested without allocating a 32MB string on
+ * a box with a gigabyte free, which is the machine this guard protects. */
+export const isOverSizeLimit = (
+  byteLength: number,
+  limit: number = MAX_RESPONSE_BYTES,
+): boolean => byteLength > limit;
+
+async function postOnce(path: string, body: unknown): Promise<Response> {
+  return fetch(`${config.KOIOS_BASE_URL}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
+}
+
+/** Retryable: the service is busy or briefly broken, not the request is wrong.
+ * A 400 retried three times is three wrong answers instead of one. */
+const isRetryable = (status: number) => status === 429 || status >= 500;
+
+async function post(path: string, body: unknown): Promise<unknown> {
+  let res: Response | null = null;
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      res = await postOnce(path, body);
+      if (!isRetryable(res.status)) break;
+      lastError = new Error(`Koios ${path} responded ${res.status}`);
+    } catch (err) {
+      // A timeout or a dropped connection. Same treatment as a 503.
+      res = null;
+      lastError = err;
+    }
+    const delay = RETRY_DELAYS_MS[attempt];
+    if (delay === undefined) break;
+    await sleep(delay);
+  }
+
+  if (!res) {
+    throw new Error(`Koios ${path} failed after retries: ${String(lastError)}`);
+  }
+
   if (!res.ok) {
     // Koios puts the actual reason (rate limit, malformed request) in the body.
     // Dropping it makes production failures far harder to read from logs.
@@ -160,7 +215,47 @@ async function post(path: string, body: unknown): Promise<unknown> {
       `Koios ${path} responded ${res.status} ${res.statusText}: ${body.slice(0, 500)}`,
     );
   }
-  return res.json();
+
+  return JSON.parse(await readBounded(res, MAX_RESPONSE_BYTES, path));
+}
+
+/**
+ * Reads a body and gives up the moment it grows past `limit`, cancelling the
+ * rest.
+ *
+ * Measuring after `res.text()` returns cannot bound anything: the string is
+ * already allocated by the time its length is known, which is the outcome the
+ * limit exists to prevent. The size is measured on the decoded bytes as they
+ * arrive rather than on content-length, because Koios gzips and chunks, so that
+ * header is usually absent and a guard reading it would report success while
+ * protecting nothing.
+ */
+export async function readBounded(
+  res: Response,
+  limit: number,
+  path: string,
+): Promise<string> {
+  if (!res.body) return res.text();
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let out = "";
+  let bytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (isOverSizeLimit(bytes, limit)) {
+      await reader.cancel();
+      throw new Error(
+        `Koios ${path} returned over the ${limit} byte limit; stopped reading`,
+      );
+    }
+    out += decoder.decode(value, { stream: true });
+  }
+
+  return out + decoder.decode();
 }
 
 export async function fetchAddressTxs(
@@ -191,6 +286,12 @@ export async function fetchTxInfo(txHashes: string[]): Promise<KoiosTxInfo[]> {
       _metadata: true,
       _withdrawals: true,
       _certs: true,
+      // Same trap, different section: without this every inline_datum.bytes
+      // comes back null while inline_datum.value is populated, so anything
+      // decoding from authoritative CBOR has nothing to read and cannot tell
+      // that apart from a UTxO with no datum. Measured on preprod 2026-08-07:
+      // bytes length 0 without the flag, 50/746/806 with it.
+      _bytecode: true,
     }),
   );
 }

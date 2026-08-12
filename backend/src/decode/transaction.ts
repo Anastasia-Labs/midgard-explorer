@@ -1,6 +1,7 @@
 import { getCodec } from "./codec";
 import type {
   AddressKind,
+  AddressIdentityView,
   AssetMap,
   DatumView,
   InputView,
@@ -43,6 +44,33 @@ export type DecodeOptions = { includeCbor?: boolean };
  * than no hex at all: it looks decodable and is not.
  */
 export const MAX_INLINE_CBOR_BYTES = 64 * 1024;
+
+/** A transaction can carry many inputs and outputs. Each live-state resolution
+ * is one database query, so firing all of them simultaneously lets one valid
+ * transaction monopolize the connection pool. */
+export const MAX_LEDGER_LOOKUP_CONCURRENCY = 8;
+
+async function mapBounded<A, B>(
+  values: readonly A[],
+  project: (value: A, index: number) => Promise<B>,
+): Promise<B[]> {
+  const result = new Array<B>(values.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < values.length) {
+      const index = cursor;
+      cursor += 1;
+      result[index] = await project(values[index]!, index);
+    }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(values.length, MAX_LEDGER_LOOKUP_CONCURRENCY) },
+      worker,
+    ),
+  );
+  return result;
+}
 
 /** CBOR that will not render to JSON degrades to hex rather than throwing: a
  * datum shape the codec cannot read must not take a whole page down. */
@@ -87,7 +115,9 @@ const readRedeemer = (
   const view: RedeemerView = {
     cborHex: toHex(item),
     tag: null,
+    purpose: null,
     index: null,
+    data: null,
     exUnits: null,
   };
   let parsed: unknown;
@@ -97,7 +127,12 @@ const readRedeemer = (
     return view;
   }
   if (!Array.isArray(parsed) || parsed.length < 4) return view;
-  const [tag, index, , units] = parsed as [unknown, unknown, unknown, unknown];
+  const [tag, index, data, units] = parsed as [
+    unknown,
+    unknown,
+    unknown,
+    unknown,
+  ];
   const numeric = (v: unknown): number | null =>
     typeof v === "bigint" || typeof v === "number" ? Number(v) : null;
   const exUnits =
@@ -107,7 +142,31 @@ const readRedeemer = (
           steps: BigInt(units[1] as number | bigint),
         }
       : null;
-  return { ...view, tag: numeric(tag), index: numeric(index), exUnits };
+  const numericTag = numeric(tag);
+  return {
+    ...view,
+    tag: numericTag,
+    purpose: numericTag === null ? null : redeemerPurpose(numericTag),
+    index: numeric(index),
+    data: jsonSafe(data),
+    exUnits,
+  };
+};
+
+export const redeemerPurpose = (tag: number): string => {
+  const purposes: Record<number, string> = {
+    0: "spend",
+    1: "mint",
+    2: "certificate",
+    3: "reward",
+    4: "vote",
+    5: "propose",
+    // Midgard extends the Cardano redeemer tags with a receiving-script
+    // purpose for protected outputs. It is evaluated by phase B and must not
+    // surface as an opaque "tag 6" in the explorer.
+    6: "receive",
+  };
+  return purposes[tag] ?? `tag ${tag}`;
 };
 
 const toHex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
@@ -156,6 +215,24 @@ export async function decodeTransaction(
     );
   }
 
+  const identityFromText = (address: string): AddressIdentityView => {
+    const decoded = codec.decodeMidgardAddressText(address);
+    return {
+      payment: {
+        kind: decoded.paymentCredential.kind as AddressKind,
+        hash: toHex(decoded.paymentCredential.hash),
+      },
+      stake: decoded.stakeCredential
+        ? {
+            kind: decoded.stakeCredential.kind as AddressKind,
+            hash: toHex(decoded.stakeCredential.hash),
+          }
+        : null,
+      protected: decoded.protected,
+      networkId: decoded.networkId,
+    };
+  };
+
   // Each spend/reference input preimage item is a standard CBOR [txid, index] pair.
   const decodeOutRef = (bytes: Uint8Array): OutRef => {
     const [txId, index] = codec.decodeSingleCbor(bytes) as [
@@ -165,36 +242,46 @@ export async function decodeTransaction(
     return { txId: toHex(txId), index: Number(index) };
   };
 
-  const inputs = await Promise.all(
-    codec
-      .decodeMidgardNativeByteListPreimage(full.body.spendInputsPreimageCbor)
-      .map(async (item): Promise<InputView> => {
-        const ref = decodeOutRef(item);
-        if (!lookup) return { ...ref, resolved: null };
-        // The raw preimage item is the canonical outref key used by the ledger.
-        const hit = await lookup(item);
-        if (!hit) return { ...ref, resolved: null };
-        const output = codec.decodeMidgardTxOutput(Buffer.from(hit.output));
-        return {
-          ...ref,
-          resolved: {
-            address: hit.address,
-            addressKind: codec.decodeMidgardAddressText(hit.address)
-              .paymentCredential.kind as AddressKind,
-            value: toValueView(output.value),
-          },
-        };
-      }),
+  const resolveInput = async (item: Uint8Array): Promise<InputView> => {
+    const ref = decodeOutRef(item);
+    if (!lookup) return { ...ref, resolved: null };
+    // The raw preimage item is the canonical outref key used by the ledger.
+    const hit = await lookup(item);
+    if (!hit) return { ...ref, resolved: null };
+    const output = codec.decodeMidgardTxOutput(Buffer.from(hit.output));
+    return {
+      ...ref,
+      resolved: {
+        address: hit.address,
+        addressKind: codec.decodeMidgardAddressText(hit.address)
+          .paymentCredential.kind as AddressKind,
+        identity: identityFromText(hit.address),
+        value: toValueView(output.value),
+      },
+    };
+  };
+
+  const inputs = await mapBounded(
+    codec.decodeMidgardNativeByteListPreimage(
+      full.body.spendInputsPreimageCbor,
+    ),
+    resolveInput,
   );
 
-  const referenceInputs = codec
-    .decodeMidgardNativeByteListPreimage(full.body.referenceInputsPreimageCbor)
-    .map(decodeOutRef);
+  const referenceInputs = await mapBounded(
+    codec.decodeMidgardNativeByteListPreimage(
+      full.body.referenceInputsPreimageCbor,
+    ),
+    resolveInput,
+  );
 
-  const outputs: OutputView[] = codec
-    .decodeMidgardNativeByteListPreimage(full.body.outputsPreimageCbor)
-    .map((item) => {
+  const txIdBytes = codec.computeMidgardNativeTxId(full);
+  const txId = toHex(txIdBytes);
+  const outputs: OutputView[] = await mapBounded(
+    codec.decodeMidgardNativeByteListPreimage(full.body.outputsPreimageCbor),
+    async (item, index) => {
       const output = codec.decodeMidgardTxOutput(item);
+      const address = codec.encodeMidgardAddressText(output.address);
       const datum: DatumView | null =
         output.datum === undefined
           ? null
@@ -214,18 +301,33 @@ export async function decodeTransaction(
               cborHex: toHex(
                 codec.encodeMidgardVersionedScript(output.script_ref),
               ),
+              source: "reference_output",
+              hashVerified: true,
             };
+      const outref = codec.encodeCbor([txIdBytes, BigInt(index)]);
+      const current = lookup ? await lookup(outref) : null;
       return {
-        address: codec.encodeMidgardAddressText(output.address),
+        index,
+        address,
         addressKind: codec.paymentCredentialFromMidgardAddress(output.address)
           .kind as AddressKind,
+        identity: identityFromText(address),
         value: toValueView(output.value),
         hasDatum: output.datum !== undefined,
         hasScriptRef: output.script_ref !== undefined,
         datum,
         scriptRef,
+        state: {
+          status: lookup
+            ? current
+              ? "unspent"
+              : "not_in_current_ledger"
+            : "unknown",
+          consumedBy: null,
+        },
       };
-    });
+    },
+  );
 
   const decodedMint = codec.decodeMidgardNativeMint(full.body.mintPreimageCbor);
   // A mint's own map is the only place the per-asset quantities live, and a
@@ -270,6 +372,9 @@ export async function decodeTransaction(
     .map((script) => ({
       hash: codec.hashMidgardVersionedScript(script),
       language: script.language as ScriptLanguage,
+      cborHex: toHex(codec.encodeMidgardVersionedScript(script)),
+      source: "witness_set" as const,
+      hashVerified: true as const,
     }));
 
   const redeemers: RedeemerView[] = codec
@@ -281,9 +386,20 @@ export async function decodeTransaction(
   const noneTime = codec.MIDGARD_POSIX_TIME_NONE;
   const noneNetwork = codec.MIDGARD_NATIVE_NETWORK_ID_NONE;
   const { body } = full;
+  const hashOrNull = (hash: Uint8Array): string | null =>
+    Buffer.from(hash).equals(Buffer.from(codec.EMPTY_NULL_ROOT))
+      ? null
+      : toHex(hash);
+  const requiredObservers = codec
+    .decodeMidgardNativeByteListPreimage(body.requiredObserversPreimageCbor)
+    .map(toHex);
+  const requiredSigners = codec
+    .decodeMidgardNativeByteListPreimage(body.requiredSignersPreimageCbor)
+    .map(toHex);
+  const auxiliaryDataHash = hashOrNull(body.auxiliaryDataHash);
 
   return {
-    txId: toHex(codec.computeMidgardNativeTxId(full)),
+    txId,
     formatVersion: Number(full.version),
     validity: full.validity,
     fee: body.fee,
@@ -300,6 +416,56 @@ export async function decodeTransaction(
     referenceInputs,
     outputs,
     mint,
+    requiredObservers,
+    requiredSigners,
+    scriptIntegrityHash: hashOrNull(body.scriptIntegrityHash),
+    auxiliaryDataHash,
+    capabilities: {
+      collateral: {
+        state: "not_supported",
+        reason:
+          "Midgard native transaction version 1 rejects Cardano collateral inputs, total collateral, and collateral return.",
+      },
+      metadata: {
+        state: auxiliaryDataHash === null ? "not_present" : "hash_only",
+        reason:
+          auxiliaryDataHash === null
+            ? "No auxiliary-data hash is declared."
+            : "The native body commits to auxiliary data by hash but does not carry the metadata body, so CIP-20 text cannot be decoded here.",
+      },
+      certificates: {
+        state: "not_supported",
+        reason:
+          "Midgard native transaction version 1 rejects Cardano certificates.",
+      },
+      withdrawals: {
+        state: requiredObservers.length === 0 ? "not_present" : "available",
+        reason:
+          requiredObservers.length === 0
+            ? "No required withdrawal observers are declared."
+            : "Midgard preserves zero-value Cardano withdrawal scripts as required observers; it does not carry a withdrawal amount.",
+      },
+      governance: {
+        state: "not_supported",
+        reason:
+          "Midgard native transaction version 1 rejects voting procedures, proposals, treasury values, and donations.",
+      },
+      protocolEvents: {
+        state: "not_emitted",
+        reason:
+          "The L2 transaction format emits no event-log collection; datums, redeemers, and state changes are shown instead.",
+      },
+      executionTrace: {
+        state: "commitment_only",
+        reason:
+          "The node commits a transition-trace root at block level but does not expose an authoritative per-transaction execution trace.",
+      },
+      consumedBy: {
+        state: "not_indexed",
+        reason:
+          "The node exposes the current UTxO ledger but no historical outref-to-spending-transaction index.",
+      },
+    },
     witnesses: {
       vkeyCount: countItems(full.witnessSet.addrTxWitsPreimageCbor),
       scriptCount: countItems(full.witnessSet.scriptTxWitsPreimageCbor),

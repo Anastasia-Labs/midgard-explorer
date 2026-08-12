@@ -1,4 +1,4 @@
-import { indexerPrisma } from "./db";
+import { indexerPrisma, type IndexerTx } from "./db";
 import type { KoiosAsset, KoiosPlutusContract, KoiosTxInfo, KoiosUtxo } from "./koios";
 import type { ValidatorEntry } from "./manifest";
 import { decodeStateQueueDatum } from "./stateQueueDatum";
@@ -23,18 +23,22 @@ const big = (v: string | number | null | undefined): bigint =>
  * upsert: a reorged transaction can come back with fewer inputs than before,
  * and an upsert would leave the surplus rows behind forever. The rows have no
  * stable natural key of their own, so there is nothing to upsert against. */
-async function writeTxDetail(info: KoiosTxInfo): Promise<{
+async function writeTxDetail(info: KoiosTxInfo, tx: IndexerTx): Promise<{
   ios: number; assets: number; redeemers: number;
 }> {
-  await indexerPrisma.l1TxIo.deleteMany({ where: { txHash: info.tx_hash } });
-  await indexerPrisma.l1TxAsset.deleteMany({ where: { txHash: info.tx_hash } });
-  await indexerPrisma.l1Redeemer.deleteMany({ where: { txHash: info.tx_hash } });
+  await tx.l1TxIo.deleteMany({ where: { txHash: info.tx_hash } });
+  await tx.l1TxAsset.deleteMany({ where: { txHash: info.tx_hash } });
+  await tx.l1Redeemer.deleteMany({ where: { txHash: info.tx_hash } });
 
   const sections: Array<[string, KoiosUtxo[]]> = [
     ["input", info.inputs],
     ["output", info.outputs],
     ["reference", info.reference_inputs],
     ["collateral", info.collateral_inputs],
+    // The change returned when collateral is consumed. Koios reports it as a
+    // single nullable UTxO rather than an array, which is how it stayed
+    // validated but unread while every array section above was stored.
+    ["collateral_output", info.collateral_output ? [info.collateral_output] : []],
   ];
 
   let ios = 0;
@@ -42,7 +46,7 @@ async function writeTxDetail(info: KoiosTxInfo): Promise<{
 
   for (const [kind, utxos] of sections) {
     for (const [position, u] of utxos.entries()) {
-      const io = await indexerPrisma.l1TxIo.create({
+      const io = await tx.l1TxIo.create({
         data: {
           txHash: info.tx_hash,
           kind,
@@ -60,7 +64,7 @@ async function writeTxDetail(info: KoiosTxInfo): Promise<{
       });
       ios += 1;
       for (const a of u.asset_list) {
-        await indexerPrisma.l1TxAsset.create({
+        await tx.l1TxAsset.create({
           data: {
             txHash: info.tx_hash, ioId: io.id, kind,
             policyId: a.policy_id, assetName: a.asset_name ?? "",
@@ -74,7 +78,7 @@ async function writeTxDetail(info: KoiosTxInfo): Promise<{
 
   // Mints belong to the transaction, not to any one UTxO, so ioId stays null.
   for (const a of info.assets_minted) {
-    await indexerPrisma.l1TxAsset.create({
+    await tx.l1TxAsset.create({
       data: {
         txHash: info.tx_hash, ioId: null, kind: "mint",
         policyId: a.policy_id, assetName: a.asset_name ?? "",
@@ -88,7 +92,7 @@ async function writeTxDetail(info: KoiosTxInfo): Promise<{
   for (const c of info.plutus_contracts as KoiosPlutusContract[]) {
     const r = c.input?.redeemer;
     if (!r) continue;
-    await indexerPrisma.l1Redeemer.create({
+    await tx.l1Redeemer.create({
       data: {
         txHash: info.tx_hash,
         scriptHash: c.script_hash,
@@ -112,6 +116,7 @@ async function writeTxDetail(info: KoiosTxInfo): Promise<{
 export async function ingestTxInfos(
   infos: KoiosTxInfo[],
   validators: ValidatorEntry[],
+  tx: IndexerTx = indexerPrisma,
 ): Promise<{
   txs: number; events: number; headers: number;
   ios: number; assets: number; redeemers: number;
@@ -161,14 +166,14 @@ export async function ingestTxInfos(
       metadata: (info.metadata ?? null) as never,
     };
 
-    await indexerPrisma.l1Tx.upsert({
+    await tx.l1Tx.upsert({
       where: { txHash: info.tx_hash },
       create: { txHash: info.tx_hash, ...scalars },
       update: scalars,
     });
     txs += 1;
 
-    const detail = await writeTxDetail(info);
+    const detail = await writeTxDetail(info, tx);
     ios += detail.ios;
     assetRows += detail.assets;
     redeemerRows += detail.redeemers;
@@ -204,7 +209,7 @@ export async function ingestTxInfos(
         );
       }
 
-      await indexerPrisma.l1Event.upsert({
+      await tx.l1Event.upsert({
         where: {
           txHash_outputIndex: { txHash: info.tx_hash, outputIndex: index },
         },
@@ -227,7 +232,7 @@ export async function ingestTxInfos(
 
       if (header) {
         const isHead = !carriedForward.has(header.utxosRoot);
-        await indexerPrisma.l1BlockHeader.upsert({
+        await tx.l1BlockHeader.upsert({
           where: { headerHash: header.utxosRoot },
           create: {
             headerHash: header.utxosRoot,
@@ -252,16 +257,19 @@ export async function ingestTxInfos(
 
 /** Reorg reconciliation: drop everything at or above a height so it can be
  * re-ingested from the chain's current view. Events cascade with their tx. */
-export async function deleteFromBlockHeight(height: number): Promise<number> {
+export async function deleteFromBlockHeight(
+  height: number,
+  tx: IndexerTx = indexerPrisma,
+): Promise<number> {
   // Headers carry their own blockHeight rather than relying on a foreign key,
   // because l1TxHash is null for a header only ever seen as carried forward.
   // Deleting by height reconciles a reorg without depending on attribution
   // being present. Headers with a null blockHeight are blocks learned about
   // indirectly, below the scan floor, and are deliberately kept.
-  await indexerPrisma.l1BlockHeader.deleteMany({
+  await tx.l1BlockHeader.deleteMany({
     where: { blockHeight: { gte: height } },
   });
-  const { count } = await indexerPrisma.l1Tx.deleteMany({
+  const { count } = await tx.l1Tx.deleteMany({
     where: { blockHeight: { gte: height } },
   });
   return count;

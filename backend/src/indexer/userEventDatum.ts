@@ -148,11 +148,12 @@ export type WithdrawalFields = {
 /** withdrawal.Datum = user_events.OptimisticDatum<WithdrawalEvent>, five
  * fields: event, inclusion_time, witness, refund_address, refund_datum.
  *
- * UNVERIFIED against real data. There are no withdrawal events on preprod as
- * of 2026-08-07, so this is written from withdrawal.ak and ledger-state.ak
- * alone. It returns null on any mismatch, which surfaces as an undecoded event
- * rather than as a wrong one. Re-anchor it against a real datum before
- * trusting its output.
+ * Checked field for field against the on-chain types on 2026-08-08:
+ * OptimisticDatum (5), WithdrawalEvent (2), WithdrawalInfo (3) and
+ * WithdrawalBody (5) all match, and the tests build a datum from those types
+ * rather than from this code. Still never seen a real preprod withdrawal,
+ * because none exists. It returns null on any mismatch, which surfaces as an
+ * undecoded event rather than as a wrong one.
  */
 export function decodeWithdrawalDatum(v: unknown): WithdrawalFields | null {
   const top = ctor(v, 0, 5);

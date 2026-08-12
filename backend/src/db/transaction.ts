@@ -158,14 +158,23 @@ export type TxInclusion = {
 
 /** The L2 block carrying this transaction. `blocks` holds one row per
  * block-tx pair, so this is the transaction's side of that join and the only
- * path from a transaction to its L1 settlement state. */
+ * path from a transaction to its L1 settlement state.
+ *
+ * `height` is the block's height, meaning the lowest row id among the block's
+ * rows, and not this transaction's own row id. Returning the row id made the
+ * journey label a transaction as being in "block #21" while the blocks list
+ * called the same block #20. */
 export async function getTxInclusion(txId: string): Promise<TxInclusion | null> {
-  const rows = await prisma.blocks.findMany({
-    where: { tx_id: toBytes(txId) },
-    orderBy: { height: "desc" },
-    take: 1,
-    select: { height: true, header_hash: true, time_stamp_tz: true },
-  });
+  const rows = await prisma.$queryRaw<
+    Array<{ height: number; header_hash: Uint8Array; time_stamp_tz: Date }>
+  >`SELECT MIN(peer.height)::int AS height,
+      b.header_hash,
+      b.time_stamp_tz
+    FROM blocks AS b
+    JOIN blocks AS peer
+      ON peer.header_hash = b.header_hash
+    WHERE b.tx_id = ${toBytes(txId)}
+    GROUP BY b.header_hash, b.time_stamp_tz;`;
   return rows[0] ?? null;
 }
 
@@ -195,7 +204,11 @@ export async function getTransactionsPage(page: number, status?: string) {
         in_immutable: boolean;
         finalization_status: string | null;
       }>
-    >`SELECT b.height,
+    // `b.height` is a row id over block-transaction pairs, so a transaction's
+    // own row id is not the height of the block carrying it. The block's height
+    // is the lowest row id among its rows, which is what the block listings
+    // report; a window function gives it here without collapsing the rows.
+    >`SELECT MIN(b.height) OVER (PARTITION BY b.header_hash)::int AS height,
         b.header_hash,
         b.tx_id,
         b.time_stamp_tz,

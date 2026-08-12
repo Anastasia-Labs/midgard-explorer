@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { indexerPrisma } from "../src/indexer/db.js";
 import { deleteFromBlockHeight } from "../src/indexer/ingest.js";
 import { getSyncCursor } from "../src/indexer/db.js";
+import { parseTxInfo } from "../src/indexer/koios.js";
 import { syncOnce, warnOnPreDeploymentActivity } from "../src/indexer/sync.js";
 import { truncateL1 } from "./helpers/truncate.mjs";
 
@@ -19,7 +20,11 @@ const load = (n: string) =>
   );
 
 const addressTxs = load("address-txs.json");
-const txInfo = load("tx-info-state-queue.json");
+// Parsed exactly as the real fetchTxInfo parses it. Injecting the raw file
+// instead fed writeTxDetail shapes Koios never reaches it with: this
+// transaction's collateral_output carries asset_list as the string "[]", which
+// only becomes an array at the Zod boundary.
+const txInfo = parseTxInfo(load("tx-info-state-queue.json"));
 
 let reachable = false;
 

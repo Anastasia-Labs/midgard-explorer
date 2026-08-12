@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { decodeTransaction } from "../src/decode/transaction.js";
+import {
+  decodeTransaction,
+  redeemerPurpose,
+} from "../src/decode/transaction.js";
 
 /**
  * Phase 1: the fields a developer needs that the contract used to reduce to
@@ -108,6 +111,17 @@ describe("address kind", () => {
       expect(["Script", "PubKey"]).toContain(output.addressKind);
     }
   });
+
+  it("carries payment and optional stake credential hashes", async () => {
+    const view = await decode("multi-output");
+    for (const output of view.outputs) {
+      expect(output.identity.payment.hash).toMatch(/^[0-9a-f]{56}$/);
+      expect(["Script", "PubKey"]).toContain(output.identity.payment.kind);
+      if (output.identity.stake) {
+        expect(output.identity.stake.hash).toMatch(/^[0-9a-f]{56}$/);
+      }
+    }
+  });
 });
 
 describe("mint detail", () => {
@@ -133,6 +147,10 @@ describe("mint detail", () => {
 });
 
 describe("witnesses", () => {
+  it("names Midgard's protected-output receiving redeemer", () => {
+    expect(redeemerPurpose(6)).toBe("receive");
+  });
+
   it("lists scripts with their hash and language, keeping the count", async () => {
     const view = await decode("script-ref");
     expect(view.witnesses.scripts.length).toBe(view.witnesses.scriptCount);
@@ -141,6 +159,9 @@ describe("witnesses", () => {
       expect(["NativeCardano", "PlutusV3", "MidgardV1"]).toContain(
         script.language,
       );
+      expect(script.cborHex).toMatch(/^[0-9a-f]+$/);
+      expect(script.hashVerified).toBe(true);
+      expect(script.source).toBe("witness_set");
     }
   });
 
@@ -152,6 +173,8 @@ describe("witnesses", () => {
       );
       for (const redeemer of view.witnesses.redeemers) {
         expect(redeemer.cborHex).toMatch(/^[0-9a-f]+$/);
+        expect(redeemer).toHaveProperty("purpose");
+        expect(redeemer).toHaveProperty("data");
       }
     }
   });
@@ -161,5 +184,25 @@ describe("witnesses", () => {
     expect(typeof view.witnesses.vkeyCount).toBe("number");
     expect(typeof view.witnesses.scriptCount).toBe("number");
     expect(typeof view.witnesses.redeemerCount).toBe("number");
+  });
+});
+
+describe("native-format evidence and exclusions", () => {
+  it("exposes required signers, observers, and integrity commitments", async () => {
+    const view = await decode("script-ref");
+    expect(Array.isArray(view.requiredSigners)).toBe(true);
+    expect(Array.isArray(view.requiredObservers)).toBe(true);
+    expect(view).toHaveProperty("scriptIntegrityHash");
+    expect(view).toHaveProperty("auxiliaryDataHash");
+  });
+
+  it("states unsupported sections instead of fabricating Cardano fields", async () => {
+    const view = await decode("multi-output");
+    expect(view.capabilities.collateral.state).toBe("not_supported");
+    expect(view.capabilities.certificates.state).toBe("not_supported");
+    expect(view.capabilities.governance.state).toBe("not_supported");
+    expect(view.capabilities.protocolEvents.state).toBe("not_emitted");
+    expect(view.capabilities.executionTrace.state).toBe("commitment_only");
+    expect(view.capabilities.consumedBy.state).toBe("not_indexed");
   });
 });

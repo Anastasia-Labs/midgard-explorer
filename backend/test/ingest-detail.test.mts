@@ -101,6 +101,30 @@ describe("ingestTxInfos full detail", () => {
     expect(r!.validContract).toBe(true);
   });
 
+  // Koios reports this one as a single nullable object rather than an array,
+  // which is exactly how it went unread while every array section was handled.
+  it("stores the collateral output, which is one UTxO and not a list", async () => {
+    await ingestTxInfos(
+      [
+        {
+          ...(tx as Record<string, unknown>),
+          collateral_output: {
+            payment_addr: { bech32: "addr_test1_colret", cred: "c9" },
+            stake_addr: null, tx_hash: "a".repeat(64), tx_index: 3,
+            value: "2684266094", datum_hash: null, inline_datum: null,
+            reference_script: null, asset_list: [],
+          },
+        },
+      ] as never,
+      [],
+    );
+    const rows = await indexerPrisma.l1TxIo.findMany({ where: { kind: "collateral_output" } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.position).toBe(0);
+    expect(rows[0]!.lovelace).toBe(2684266094n);
+    expect(rows[0]!.address).toBe("addr_test1_colret");
+  });
+
   it("is idempotent, so a reorg rescan does not duplicate rows", async () => {
     await ingestTxInfos([tx], []);
     await ingestTxInfos([tx], []);

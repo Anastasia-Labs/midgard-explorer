@@ -32,22 +32,47 @@ export type ScriptRefView = {
   hash: string;
   language: ScriptLanguage;
   cborHex: string;
+  source: "reference_output";
+  hashVerified: true;
 };
 
 /** Whether an address pays a script or a public key. Drives the UTxO flow
  * graph's script/key distinction and the script marker in lists. */
 export type AddressKind = "Script" | "PubKey";
 
+export type CredentialView = {
+  kind: AddressKind;
+  hash: string;
+};
+
+export type AddressIdentityView = {
+  payment: CredentialView;
+  stake: CredentialView | null;
+  protected: boolean;
+  networkId: number;
+};
+
+export type OutputStateView = {
+  /** `not_in_current_ledger` is deliberately not called `consumed`: the node
+   * keeps no historical outref-to-spender index, so pruning and consumption
+   * cannot be distinguished from the current ledger tables alone. */
+  status: "unspent" | "not_in_current_ledger" | "unknown";
+  consumedBy: OutRef | null;
+};
+
 export type OutputView = {
+  index: number;
   /** bech32, computed with Midgard protected-header awareness (not @emurgo CSL). */
   address: string;
   addressKind: AddressKind;
+  identity: AddressIdentityView;
   value: ValueView;
   /** Kept alongside `datum` so nothing reading the boolean breaks. */
   hasDatum: boolean;
   hasScriptRef: boolean;
   datum: DatumView | null;
   scriptRef: ScriptRefView | null;
+  state: OutputStateView;
 };
 
 export type InputView = OutRef & {
@@ -58,11 +83,18 @@ export type InputView = OutRef & {
   resolved: {
     address: string;
     addressKind: AddressKind;
+    identity: AddressIdentityView;
     value: ValueView;
   } | null;
 };
 
-export type ScriptWitnessView = { hash: string; language: ScriptLanguage };
+export type ScriptWitnessView = {
+  hash: string;
+  language: ScriptLanguage;
+  cborHex: string;
+  source: "witness_set";
+  hashVerified: true;
+};
 
 /**
  * A redeemer as it sits in the witness set.
@@ -75,7 +107,9 @@ export type ScriptWitnessView = { hash: string; language: ScriptLanguage };
 export type RedeemerView = {
   cborHex: string;
   tag: number | null;
+  purpose: string | null;
   index: number | null;
+  data: unknown | null;
   exUnits: { mem: bigint; steps: bigint } | null;
 };
 
@@ -98,9 +132,23 @@ export type TransactionView = {
   validityInterval: { start: bigint | null; end: bigint | null };
   networkId: number | null;
   inputs: InputView[];
-  referenceInputs: OutRef[];
+  referenceInputs: InputView[];
   outputs: OutputView[];
   mint: MintView | null;
+  requiredObservers: string[];
+  requiredSigners: string[];
+  scriptIntegrityHash: string | null;
+  auxiliaryDataHash: string | null;
+  capabilities: {
+    collateral: CapabilityView;
+    metadata: CapabilityView;
+    certificates: CapabilityView;
+    withdrawals: CapabilityView;
+    governance: CapabilityView;
+    protocolEvents: CapabilityView;
+    executionTrace: CapabilityView;
+    consumedBy: CapabilityView;
+  };
   witnesses: WitnessSummary;
   /**
    * The transaction's own canonical CBOR, hex encoded, and its size in bytes.
@@ -114,6 +162,18 @@ export type TransactionView = {
    * a shortened hex string for a complete one. */
   cborTruncated: boolean;
   size: number;
+};
+
+export type CapabilityView = {
+  state:
+    | "available"
+    | "not_present"
+    | "hash_only"
+    | "not_supported"
+    | "not_emitted"
+    | "not_indexed"
+    | "commitment_only";
+  reason: string;
 };
 
 /** A single minted or burned asset. A negative quantity is a burn. */

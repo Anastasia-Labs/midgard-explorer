@@ -47,10 +47,6 @@ export async function syncOnce(
 
   const rows = await fetchAddressTxs(addresses, scanFloor);
 
-  // Delete before writing: a transaction that vanished from the chain has no
-  // row in `rows` and would otherwise survive forever.
-  await deleteFromBlockHeight(scanFloor);
-
   const hashes = new Set(rows.map((r) => r.tx_hash));
 
   // Address scanning alone misses the transactions that PUT Midgard on chain.
@@ -83,7 +79,6 @@ export async function syncOnce(
   }
   const hashList = [...hashes];
   const infos = hashList.length > 0 ? await fetchTxInfo(hashList) : [];
-  const result = await ingestTxInfos(infos, validators);
 
   // Never let an empty window move the cursor. Seeding the reduce with
   // scanFloor would write back (cursor - lookback) whenever the scan finds
@@ -93,7 +88,26 @@ export async function syncOnce(
     rows.length > 0
       ? rows.reduce((max, r) => Math.max(max, r.block_height), scanFloor)
       : (cursor?.lastBlockHeight ?? scanFloor);
-  await setSyncCursor(SOURCE, tip);
+
+  // Everything above is network and pure computation. Everything below is one
+  // unit of work: clear the reorg window, rewrite it, move the cursor. The
+  // delete used to run before the fetch, so a full rescan emptied the index and
+  // only refilled it if Koios answered. A reader never sees that window now,
+  // and a failed pass rolls back to the previous index rather than a hole.
+  const result = await indexerPrisma.$transaction(
+    async (tx) => {
+      // A transaction that vanished from the chain has no row in `rows` and
+      // would otherwise survive forever, so the window is still cleared first,
+      // just inside the boundary.
+      await deleteFromBlockHeight(scanFloor, tx);
+      const written = await ingestTxInfos(infos, validators, tx);
+      await setSyncCursor(SOURCE, tip, tx);
+      return written;
+    },
+    // A full rescan writes every transaction, utxo, asset and redeemer in one
+    // go. Prisma's 5 second default would abort it part way through.
+    { maxWait: 15_000, timeout: 180_000 },
+  );
 
   logger.info(
     `L1 sync: scanned ${rows.length} rows from height ${scanFloor}, wrote ` +

@@ -60,6 +60,28 @@ describe("parseTxInfo", () => {
     expect(withValue.length).toBeGreaterThanOrEqual(2);
   });
 
+  /**
+   * Koios has been observed returning collateral_output.asset_list as the
+   * JSON-encoded string "[]" rather than an array, while every other utxo's
+   * asset_list is a real array. Live-checked against preprod tx
+   * 9152dc88...ddf92, whose fixture still carries the string form.
+   */
+  it("accepts asset_list as a JSON-encoded string", () => {
+    expect(infos[0].collateral_output).not.toBeNull();
+    expect(infos[0].collateral_output!.asset_list).toEqual([]);
+  });
+
+  it("fails a malformed asset_list as a ZodError, not a raw SyntaxError", () => {
+    const raw = load("tx-info-state-queue.json") as Array<Record<string, unknown>>;
+    (raw[0]!.collateral_output as Record<string, unknown>).asset_list = "[not json";
+    // The distinction matters: every other boundary failure here is a
+    // ZodError, and a lone SyntaxError escaping .parse() would not be caught
+    // by a caller that handles validation failures.
+    expect(() => parseTxInfo(raw)).toThrowError(
+      expect.objectContaining({ name: "ZodError" }),
+    );
+  });
+
   it("exposes a datum shaped like a Plutus constructor", () => {
     const first = infos[0].outputs.find(
       (o) => o.inline_datum != null && o.inline_datum.value != null,

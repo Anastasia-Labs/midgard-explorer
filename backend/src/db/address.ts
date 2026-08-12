@@ -37,10 +37,14 @@ export async function getAddressHistory(address: string) {
       time_stamp_tz: Date | null;
       in_immutable: boolean;
     }>
+  // The block's height, not the transaction's row id: see `getLastBlocks`.
+  // A correlated minimum rather than a window function, because the LEFT JOIN
+  // leaves a null header hash for anything not yet in a block.
   >`SELECT ah.tx_id,
       ah.address,
       tx_union.tx,
-      b.height,
+      (SELECT MIN(peer.height)::int FROM blocks AS peer
+        WHERE peer.header_hash = b.header_hash) AS height,
       b.header_hash,
       b.time_stamp_tz,
       (i.tx_id IS NOT NULL) AS in_immutable

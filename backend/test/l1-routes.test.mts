@@ -8,7 +8,11 @@ import {
   getL1TransactionsPage,
   getL1Transaction,
   getL1BlockHeaders,
+  getL1Deposits,
   getL1Summary,
+  getSourceIdentity,
+  isFixtureDatabase,
+  resetSourceIdentity,
 } from "../src/db/l1.js";
 import { truncateL1 } from "./helpers/truncate.mjs";
 
@@ -75,6 +79,40 @@ describe("L1 read queries", () => {
     expect(Array.isArray(tx!.events)).toBe(true);
   });
 
+  // The counts below are what this real preprod transaction actually holds.
+  // It was captured before the detail flags were added, so its input,
+  // reference and collateral arrays are genuinely empty, and asserting
+  // otherwise would be asserting against a fixture rather than against Koios.
+  it("returns every stored section of a transaction, not just its events", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const tx = (await getL1Transaction(
+      "9152dc88611dc2a23c723689e5cca8efc34719c6567cc1f95d40eadb534ddf92",
+    ))!;
+    expect(tx.outputs).toHaveLength(4);
+    expect(tx.redeemers).toHaveLength(3);
+    expect(tx.inputs).toEqual([]);
+    expect(tx.referenceInputs).toEqual([]);
+    expect(tx.collateral).toEqual([]);
+    expect(tx.mints).toEqual([]);
+  });
+
+  it("returns the collateral output as one UTxO rather than a list", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const tx = (await getL1Transaction(
+      "9152dc88611dc2a23c723689e5cca8efc34719c6567cc1f95d40eadb534ddf92",
+    ))!;
+    expect(tx.collateralOutput).not.toBeNull();
+    expect(tx.collateralOutput!.lovelace).toBe(2684266094n);
+  });
+
+  it("hangs native assets off the UTxO they were found in", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const tx = (await getL1Transaction(
+      "9152dc88611dc2a23c723689e5cca8efc34719c6567cc1f95d40eadb534ddf92",
+    ))!;
+    for (const out of tx.outputs) expect(Array.isArray(out.assets)).toBe(true);
+  });
+
   it("returns null for an unknown transaction", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
     expect(await getL1Transaction("f".repeat(64))).toBeNull();
@@ -85,11 +123,209 @@ describe("L1 read queries", () => {
     expect((await getL1BlockHeaders(10)).length).toBeGreaterThanOrEqual(1);
   });
 
+  // The two conventions in routes/l1.ts, pinned. A page number is a
+  // navigation hint and coerces; an identifier names a resource and 400s.
+  // Without a test, "consistent" drifts back to whichever a future edit
+  // happens to prefer.
+  it("coerces a nonsense page to the first page rather than failing", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const bad = await getL1TransactionsPage(Number.NaN);
+    const first = await getL1TransactionsPage(1);
+    expect(bad.rows.map((r: { txHash: string }) => r.txHash)).toEqual(
+      first.rows.map((r: { txHash: string }) => r.txHash),
+    );
+  });
+
+  it("caps the block header limit so one request cannot ask for the table", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    expect((await getL1BlockHeaders(100000)).length).toBeLessThanOrEqual(100);
+  });
+
   it("summarises counts by validator", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
     const s = await getL1Summary();
     expect(s.transactions).toBeGreaterThanOrEqual(1);
     expect(s.byValidator.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+/** Preprod's 6 real deposits live in the node database, not in this fixture,
+ * so the row is seeded. What is under test is the query and its ordering, not
+ * the decoder, which has its own tests against a real preprod datum. */
+/**
+ * The worst bug this project had was invisible in every diff: the explorer read
+ * a phase-4 test database for weeks and presented it as the live chain. A code
+ * review cannot catch that. Naming the source in the payload can.
+ */
+describe("source identity", () => {
+  /** The one fact the banner exists to state: which database answered. Asking
+   * `config` re-reads the name under suspicion, because the incident was a
+   * .env whose name did not match the connection. Only the server can say. */
+  it("reports the database the connection reached, not the one config names", async () => {
+    const { prisma } = await import("../src/db.js");
+    let nodeReachable = false;
+    try {
+      await Promise.race([
+        prisma.$queryRaw`SELECT 1;`,
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error("probe timed out after 3000ms")),
+            3000,
+          ),
+        ),
+      ]);
+      nodeReachable = true;
+    } catch {
+      /* falls through to the skip below */
+    }
+    if (!nodeReachable) return;
+
+    const [{ db }] = await prisma.$queryRaw<Array<{ db: string }>>`
+      SELECT current_database() AS db;`;
+    const { config } = await import("../src/config.js");
+    const original = config.POSTGRES_DB;
+    resetSourceIdentity();
+    (config as { POSTGRES_DB: string }).POSTGRES_DB =
+      "midgard_phase4_process_txcoverage";
+    try {
+      const s = await getSourceIdentity();
+      expect(s!.l2Database).toBe(db);
+      expect(s!.isFixture).toBe(isFixtureDatabase(db));
+    } finally {
+      (config as { POSTGRES_DB: string }).POSTGRES_DB = original;
+      resetSourceIdentity();
+    }
+  });
+
+  /** A memoised failure outlives its cause. One unreadable read at boot would
+   * otherwise pin "Data source unconfirmed" on every page until a restart. */
+  it("retries after a failed read instead of memoising the failure", async () => {
+    const { config } = await import("../src/config.js");
+    const original = config.MIDGARD_MANIFEST_PATH;
+    resetSourceIdentity();
+    (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+      "/nonexistent/manifest.json";
+    try {
+      expect(await getSourceIdentity()).toBeNull();
+      (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+        original;
+      expect(await getSourceIdentity()).not.toBeNull();
+    } finally {
+      (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+        original;
+      resetSourceIdentity();
+    }
+  });
+
+  it("names the deployment, the network and the L2 database", async () => {
+    const s = await getSourceIdentity();
+    expect(s).not.toBeNull();
+    expect(s!.deployment).toMatch(/^[0-9a-f]{64}$/);
+    expect(s!.network).toBe("preprod");
+    expect(s!.l2Database.length).toBeGreaterThan(0);
+    expect(typeof s!.isFixture).toBe("boolean");
+    expect(s!.validators.length).toBeGreaterThan(0);
+    expect(
+      s!.validators.every((validator) => validator.address.startsWith("addr")),
+    ).toBe(true);
+  });
+
+  // The summary route is documented to answer whether or not anything else is
+  // up, so an unreadable manifest must degrade to an unconfirmed source rather
+  // than a 500. The consumer contract has a null case for exactly this.
+  it("returns null rather than throwing when the manifest cannot be read", async () => {
+    const { config } = await import("../src/config.js");
+    const original = config.MIDGARD_MANIFEST_PATH;
+    resetSourceIdentity();
+    (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+      "/nonexistent/manifest.json";
+    try {
+      expect(await getSourceIdentity()).toBeNull();
+    } finally {
+      (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+        original;
+      resetSourceIdentity();
+    }
+  });
+
+  it("calls anything that is not the live node database a fixture", () => {
+    expect(isFixtureDatabase("midgard")).toBe(false);
+    expect(isFixtureDatabase("midgard_phase4_process_txcoverage")).toBe(true);
+    // Not an allowlist: an unknown database is a fixture until proven live,
+    // which is the opposite of how this went wrong before.
+    expect(isFixtureDatabase("midgard_something_new")).toBe(true);
+  });
+
+  it("carries the source on the summary a viewer actually reads", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const s = await getL1Summary();
+    expect(s.source?.l2Database).toBe((await getSourceIdentity())?.l2Database);
+  });
+});
+
+describe("L1 deposits", () => {
+  const DEPOSIT_TX = "d".repeat(64);
+
+  beforeAll(async () => {
+    if (!reachable) return;
+    await indexerPrisma.l1Tx.create({
+      data: {
+        txHash: DEPOSIT_TX,
+        blockHeight: 4980000,
+        blockHash: "e".repeat(64),
+        slot: 128000000,
+        epoch: 303,
+        txTime: new Date("2026-07-20T00:00:00Z"),
+        fee: 1000n,
+        size: 500,
+        totalOutput: 2000000n,
+        blockIndex: 0,
+        certDeposit: 0n,
+        events: {
+          create: [
+            {
+              validator: "deposit",
+              eventType: "deposit",
+              outputIndex: 0,
+              lovelace: 2000000n,
+              decoded: {
+                l2PaymentCredential: "d7cb",
+                inclusionTime: "1784138246999",
+              },
+            },
+            {
+              validator: "deposit",
+              eventType: "unknown",
+              outputIndex: 1,
+              lovelace: 3000000n,
+              decoded: undefined,
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it("lists deposits with the transaction they arrived in", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const deposits = await getL1Deposits(10);
+    expect(deposits.length).toBe(2);
+    expect(deposits[0]!.tx.txHash).toBe(DEPOSIT_TX);
+  });
+
+  // A decoder gap must be visible. Filtering undecoded deposits out would make
+  // the list quietly shorter than the chain, which is the failure mode this
+  // project has already had once.
+  it("lists a deposit whose datum did not decode", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const deposits = await getL1Deposits(10);
+    expect(deposits.some((d) => d.decoded === null)).toBe(true);
+  });
+
+  it("caps the limit so one request cannot ask for the whole table", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    expect((await getL1Deposits(100000)).length).toBeLessThanOrEqual(100);
+    expect((await getL1Deposits(Number.NaN)).length).toBeGreaterThan(0);
   });
 });
 

@@ -19,7 +19,14 @@ describe("fetchTxInfo request flags", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   // One assertion per flag, so a dropped flag names itself in the failure.
-  for (const flag of ["_scripts", "_inputs", "_assets", "_metadata", "_withdrawals", "_certs"]) {
+  // `_bytecode` is the same trap in a different place: without it every
+  // inline_datum.bytes comes back null while inline_datum.value is populated,
+  // so a decoder working from authoritative CBOR silently has nothing to read.
+  // Measured on preprod 2026-08-07: bytes length 0 without it, 50/746/806 with.
+  for (const flag of [
+    "_scripts", "_inputs", "_assets", "_metadata", "_withdrawals", "_certs",
+    "_bytecode",
+  ]) {
     it(`requests ${flag}, without which Koios returns that section empty`, async () => {
       const { fetchTxInfo } = await import("../src/indexer/koios.js");
       await fetchTxInfo(["9152dc88611dc2a23c723689e5cca8efc34719c6567cc1f95d40eadb534ddf92"]);
