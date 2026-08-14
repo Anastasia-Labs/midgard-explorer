@@ -35,7 +35,8 @@ type TipProps = {
  *
  * The panel is portalled to `body` and uses fixed coordinates. That keeps it
  * out of clipped tables, cards, tabs, and sticky headers while the positioning
- * pass flips it above the trigger and clamps both axes to the viewport.
+ * pass places it above the trigger, flips it below only when there is no room,
+ * and clamps both axes to the viewport.
  */
 export function InfoTip({ explain, term, subject, className }: TipProps) {
   const id = useId();
@@ -86,15 +87,19 @@ export function InfoTip({ explain, term, subject, className }: TipProps) {
       Math.max(anchor.left + anchor.width / 2 - width / 2, VIEWPORT_MARGIN),
       window.innerWidth - width - VIEWPORT_MARGIN,
     );
-    const below = anchor.bottom + GAP;
     const above = anchor.top - GAP - box.height;
+    const below = anchor.bottom + GAP;
+    // Above by preference. A tip opening downward covers the rows under the
+    // label it describes, which on a detail grid or a table is the data the
+    // reader is trying to read. Opening upward covers what they have already
+    // passed. Below is the fallback when there is no room above.
     const top =
-      below + box.height <= window.innerHeight - VIEWPORT_MARGIN
-        ? below
-        : above >= VIEWPORT_MARGIN
-          ? above
+      above >= VIEWPORT_MARGIN
+        ? above
+        : below + box.height <= window.innerHeight - VIEWPORT_MARGIN
+          ? below
           : Math.min(
-              Math.max(below, VIEWPORT_MARGIN),
+              Math.max(above, VIEWPORT_MARGIN),
               window.innerHeight - box.height - VIEWPORT_MARGIN,
             );
     setPosition({ left, top, ready: true });
@@ -162,9 +167,12 @@ export function InfoTip({ explain, term, subject, className }: TipProps) {
             <>
               <span className="font-semibold text-text">{entry.meaning}</span>{" "}
               <span>{entry.consequence}</span>
+              {/* The rule separates the record-specific note from the shared
+                  definition, so it carries no "Context:" label: a word naming
+                  the kind of information is not information. */}
               {explain ? (
                 <span className="mt-1.5 block border-t border-border pt-1.5 text-text-3">
-                  Context: {explain}
+                  {explain}
                 </span>
               ) : null}
             </>

@@ -23,21 +23,21 @@ export const GLOSSARY = {
     category: "Explorer",
     meaning: "The number of Midgard blocks produced in the stated observation window.",
     consequence:
-      "A sustained zero can indicate an idle or stalled chain, while a short window may be inconclusive.",
+      "A sustained zero means no block was produced in that window.",
   },
   transactionThroughput: {
     label: "Transaction throughput",
     category: "Explorer",
     meaning: "The number of Midgard transactions included during the stated observation window.",
     consequence:
-      "Interpret it with the window and block count because low activity is not by itself a fault.",
+      "Read it against the window and block count beside it.",
   },
   admissionLatency: {
     label: "Admission latency",
     category: "Explorer",
     meaning:
       "The measured time from first receipt until the node accepts or rejects a transaction.",
-    consequence: "Rising percentiles or a thin sample can make current responsiveness uncertain.",
+    consequence: "Rising percentiles mean the node is taking longer to decide.",
   },
   admissionQueue: {
     label: "Admission queue",
@@ -50,7 +50,7 @@ export const GLOSSARY = {
     label: "Block height",
     category: "Ledger",
     meaning: "The block's sequential position in the Midgard chain.",
-    consequence: "A greater height is newer, but height alone does not prove Cardano L1 finality.",
+    consequence: "A greater height is newer, but height alone does not prove Cardano finality.",
   },
   blockHash: {
     label: "Block hash",
@@ -62,7 +62,7 @@ export const GLOSSARY = {
   slot: {
     label: "Slot",
     category: "Ledger",
-    meaning: "The Cardano time slot in which the containing L1 block was produced.",
+    meaning: "The Cardano time slot in which the containing block was produced.",
     consequence: "Validity bounds expressed in slots decide whether a transaction can be accepted.",
   },
   epoch: {
@@ -77,7 +77,7 @@ export const GLOSSARY = {
     meaning:
       "The Midgard block has been committed to Cardano and reached the required stability depth.",
     consequence:
-      "Before settlement, its L2 transactions remain reversible if the commitment is abandoned.",
+      "Before settlement, its Midgard transactions remain reversible if the commitment is abandoned.",
   },
   transactionHash: {
     label: "Transaction hash",
@@ -250,7 +250,7 @@ export const GLOSSARY = {
     category: "Script",
     meaning: "A Midgard action classified from an authoritative validator output and its datum.",
     consequence:
-      "An unknown event remains visible as raw data instead of being guessed or silently omitted.",
+      "An event the explorer cannot classify is still shown, with its raw datum.",
   },
   mintBurn: {
     label: "Mint / burn",
@@ -284,14 +284,14 @@ export const GLOSSARY = {
     category: "Explorer",
     meaning:
       "The schema-validated response returned by the explorer API without presentation changes.",
-    consequence: "Use it to audit the rendered view or integrate without scraping the page.",
+    consequence: "Use it to check a value on this page against its source.",
   },
   apiRequest: {
     label: "API request",
     category: "Explorer",
     meaning: "The public HTTP request the explorer used to load this record.",
     consequence:
-      "It can be reused for integration and returns schema-validated JSON rather than page markup.",
+      "Reuse it to fetch the same record yourself. It returns schema-validated JSON.",
   },
   cbor: {
     label: "CBOR",
@@ -311,7 +311,7 @@ export const GLOSSARY = {
     label: "Address mark",
     category: "Explorer",
     meaning: "A deterministic visual mark generated from the full address.",
-    consequence: "It helps spot repeated addresses but never replaces comparing the address text.",
+    consequence: "It helps spot a repeated address at a glance. Compare the text to be certain.",
   },
   scriptMark: {
     label: "Script credential mark",
@@ -324,14 +324,14 @@ export const GLOSSARY = {
     label: "Asset mark",
     category: "Explorer",
     meaning: "A deterministic circular mark generated from an asset's policy and name bytes.",
-    consequence: "It helps distinguish nearby rows but is not a verified token logo.",
+    consequence: "It helps distinguish nearby rows. It is generated from the bytes, not supplied by the issuer.",
   },
   statusMarker: {
     label: "Status marker",
     category: "Explorer",
     meaning:
-      "The shape beside a status label distinguishes progress, waiting, success, and failure without color.",
-    consequence: "Read the text and explanation for the exact protocol state before acting.",
+      "The shape beside a status label carries the same distinction its color does.",
+    consequence: "Four shapes: progress, waiting, success, and failure.",
   },
 } as const satisfies Record<string, GlossaryEntry>;
 
