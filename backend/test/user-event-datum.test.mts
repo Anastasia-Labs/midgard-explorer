@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyEvent,
   decodeDepositDatum,
+  decodeSchedulerDatum,
   decodeWithdrawalDatum,
 } from "../src/indexer/userEventDatum.js";
 
@@ -271,5 +272,76 @@ describe("decodeWithdrawalDatum", () => {
     expect(c.decoded?.l2Owner).toBe(L2_OWNER);
     // BigInt does not survive JSON.stringify, so it crosses as a string.
     expect(c.decoded?.inclusionTime).toBe("1784138246999");
+  });
+});
+
+/** Read from preprod on 2026-08-14, from the scheduler validator's output in
+ * transaction c934b1a42154db5a40e75158527aef2ef3f82a7e86b65103de3228c629346e10.
+ * Ground truth, matched field for field against `SchedDatum` in
+ * midgard/onchain/aiken/lib/midgard/scheduler.ak. */
+const realScheduler: { constructor: number; fields: PlutusJson[] } = {
+  constructor: 1,
+  fields: [
+    { bytes: "2de3134c86f4b08bcf27b621d9e552c735a21e2c0dedca43435b09d5" },
+    { int: 1786642920000 },
+  ],
+};
+
+describe("decodeSchedulerDatum", () => {
+  it("reads ActiveOperator from the live preprod datum", () => {
+    expect(decodeSchedulerDatum(realScheduler)).toEqual({
+      state: "activeOperator",
+      operator: "2de3134c86f4b08bcf27b621d9e552c735a21e2c0dedca43435b09d5",
+      startTime: 1786642920000n,
+    });
+  });
+
+  it("reads NoActiveOperators", () => {
+    expect(decodeSchedulerDatum({ constructor: 0, fields: [] })).toEqual({
+      state: "noActiveOperators",
+    });
+  });
+
+  /* Arity is what separates the two constructors from anything else wearing
+   * the same shape, so a wrong count must not fall through to a guess. */
+  it("returns null when ActiveOperator has the wrong field count", () => {
+    expect(decodeSchedulerDatum({ constructor: 1, fields: [{ int: 1 }] })).toBeNull();
+  });
+
+  it("returns null when the operator is not a 28-byte hash", () => {
+    expect(
+      decodeSchedulerDatum({ constructor: 1, fields: [{ bytes: "ab" }, { int: 1 }] }),
+    ).toBeNull();
+  });
+
+  it("returns null on an unknown constructor", () => {
+    expect(decodeSchedulerDatum({ constructor: 9, fields: [] })).toBeNull();
+  });
+});
+
+describe("classifyEvent for the scheduler family", () => {
+  it("names the event and stringifies startTime for the Json column", () => {
+    expect(classifyEvent("scheduler", realScheduler)).toEqual({
+      eventType: "scheduler",
+      decoded: {
+        state: "activeOperator",
+        operator: "2de3134c86f4b08bcf27b621d9e552c735a21e2c0dedca43435b09d5",
+        startTime: "1786642920000",
+      },
+    });
+  });
+
+  it("carries no startTime when there is no active operator", () => {
+    expect(classifyEvent("scheduler", { constructor: 0, fields: [] })).toEqual({
+      eventType: "scheduler",
+      decoded: { state: "noActiveOperators" },
+    });
+  });
+
+  it("leaves an undecodable scheduler datum unknown rather than guessing", () => {
+    expect(classifyEvent("scheduler", { constructor: 9, fields: [] })).toEqual({
+      eventType: "unknown",
+      decoded: null,
+    });
   });
 });

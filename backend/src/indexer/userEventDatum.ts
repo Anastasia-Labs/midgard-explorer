@@ -182,6 +182,32 @@ export function decodeWithdrawalDatum(v: unknown): WithdrawalFields | null {
   return { l1OutRef, l2OutRef, l2Owner, inclusionTime, witness };
 }
 
+export type SchedulerFields =
+  | { state: "noActiveOperators" }
+  | { state: "activeOperator"; operator: string; startTime: bigint };
+
+/** SchedDatum, from midgard/onchain/aiken/lib/midgard/scheduler.ak.
+ *
+ * Two constructors: NoActiveOperators carries nothing, ActiveOperator carries
+ * the operator's verification-key hash and the POSIX millisecond start of its
+ * shift. Checked field for field against the on-chain type and against live
+ * preprod tx c934b1a4...46e10 on 2026-08-14.
+ *
+ * This says what the schedule became. It does not say what happened, which
+ * lives in the spend redeemer, so a page that reads only this can name the
+ * current operator but not the operation. */
+export function decodeSchedulerDatum(v: unknown): SchedulerFields | null {
+  if (ctor(v, 0, 0)) return { state: "noActiveOperators" };
+
+  const active = ctor(v, 1, 2);
+  if (!active) return null;
+
+  const operator = bytes(active[0], HASH28);
+  const startTime = int(active[1]);
+  if (operator === null || startTime === null) return null;
+  return { state: "activeOperator", operator, startTime };
+}
+
 /** A validator family plus its datum becomes a named event. `unknown` means the
  * datum did not decode, never that the event has no meaning: a decoder that
  * cannot prove the shape returns null instead of guessing. */
@@ -202,6 +228,20 @@ export function classifyEvent(
     return d
       ? { eventType: "withdrawal", decoded: { ...d, inclusionTime: d.inclusionTime.toString() } }
       : { eventType: "unknown", decoded: null };
+  }
+  if (family === "scheduler") {
+    const d = decodeSchedulerDatum(datum);
+    if (!d) return { eventType: "unknown", decoded: null };
+    // Same bigint rule as the events above: startTime crosses into the Json
+    // column as a decimal string, and is absent rather than zero when there is
+    // no active operator to have started a shift.
+    return {
+      eventType: "scheduler",
+      decoded:
+        d.state === "activeOperator"
+          ? { state: d.state, operator: d.operator, startTime: d.startTime.toString() }
+          : { state: d.state },
+    };
   }
   return { eventType: "unknown", decoded: null };
 }
