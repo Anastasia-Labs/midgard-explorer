@@ -4,11 +4,9 @@ import { rateLimitedPaths } from "./catalogue";
 /**
  * A fixed-window request limiter, per client, per limiter instance.
  *
- * In-process for the same reason the response cache is: the explorer runs as
- * one process, so a shared store would add a dependency and a protocol to
- * solve a problem this deployment does not have. Several processes would each
- * enforce their own share of the limit, which is a weaker guarantee but never
- * a wrong answer to a legitimate request.
+ * In-process because one backend process sits behind the bundled reverse
+ * proxy. A multi-instance deployment must also enforce a global budget at its
+ * CDN/gateway; each process would otherwise provide its own allowance.
  *
  * Fixed window rather than a sliding one: at these limits the boundary burst a
  * fixed window permits is not worth the extra state. The point is to stop one
@@ -55,7 +53,8 @@ function isTrustedProxy(address: string | undefined): boolean {
   if (ip === "::1" || ip === "localhost") return true;
   if (ip.startsWith("fc") || ip.startsWith("fd")) return true; // unique local
   const [a, b] = ip.split(".").map(Number);
-  if (a === undefined || b === undefined || Number.isNaN(a) || Number.isNaN(b)) return false;
+  if (a === undefined || b === undefined || Number.isNaN(a) || Number.isNaN(b))
+    return false;
   if (a === 127 || a === 10) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
@@ -85,18 +84,24 @@ export function rateLimiter({ limit, windowMs }: RateLimitOptions) {
   // asset budget are independent.
   const namespace = `rl${(sequence += 1)}`;
 
-  return function limitRequests(req: Request, res: Response, next: NextFunction) {
+  return function limitRequests(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
     const key = `${namespace}:${clientAddress(req)}`;
     const now = Date.now();
     const bucket = buckets.get(key);
 
     if (!bucket || bucket.resetAt <= now) {
       buckets.set(key, { count: 1, resetAt: now + windowMs });
+      setBudgetHeaders(res, limit, limit - 1, now + windowMs);
       return next();
     }
 
     if (bucket.count >= limit) {
       const retryAfter = Math.ceil((bucket.resetAt - now) / 1000);
+      setBudgetHeaders(res, limit, 0, bucket.resetAt);
       res.setHeader("Retry-After", String(retryAfter));
       return res.status(429).json({
         error: "Too many requests.",
@@ -105,8 +110,23 @@ export function rateLimiter({ limit, windowMs }: RateLimitOptions) {
     }
 
     bucket.count += 1;
+    setBudgetHeaders(res, limit, limit - bucket.count, bucket.resetAt);
     return next();
   };
+}
+
+function setBudgetHeaders(
+  res: Response,
+  limit: number,
+  remaining: number,
+  resetAt: number,
+): void {
+  res.setHeader("RateLimit-Limit", String(limit));
+  res.setHeader("RateLimit-Remaining", String(Math.max(0, remaining)));
+  res.setHeader(
+    "RateLimit-Reset",
+    String(Math.max(1, Math.ceil((resetAt - Date.now()) / 1_000))),
+  );
 }
 
 /** Which routes do real work per request is a property of the route, so it is

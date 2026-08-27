@@ -10,8 +10,12 @@ export async function getForcedTransactionsPageRoute(
   if (!Number.isFinite(page) || page < 1) {
     return res.status(400).json({ error: "Invalid page." });
   }
+  const id = typeof req.query.id === "string" ? req.query.id.toLowerCase() : undefined;
+  if (id !== undefined && !/^[0-9a-f]+$/.test(id)) {
+    return res.status(400).json({ error: "id must be hexadecimal." });
+  }
   const { rows, hasNextPage, total, limit } =
-    await getForcedTransactionsPage(page);
+    await getForcedTransactionsPage(page, id);
   const payload = rows.map((row) => ({
     tx_order_id: toHex(row.tx_order_id),
     tx_order_l1_tx_hash: toHex(row.tx_order_l1_tx_hash),

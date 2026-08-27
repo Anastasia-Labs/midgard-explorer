@@ -19,14 +19,22 @@ import { getForcedTransactionsPageRoute } from "./routes/forcedTransactions";
 import { getMetricsRoute } from "./routes/metrics";
 import { getAssetRoute, getAssetsRoute } from "./routes/asset";
 import { getSearchRoute } from "./routes/search";
+import { prisma } from "../db";
+import { indexerPrisma } from "../indexer/db";
+import { logger } from "../logger";
+import { readinessRoute } from "./readiness";
 import {
   getL1SummaryRoute,
   getL1TransactionsPageRoute,
   getL1TransactionRoute,
   getL1BlockHeadersRoute,
+  getL1BlockHeaderRoute,
   getL1DepositsRoute,
+  getL1ValidatorRoute,
 } from "./routes/l1";
 import { buildOpenApiDocument, type OpenApiDocument } from "./openapi";
+import { cachePublicJson } from "./cache";
+import { config } from "../config";
 
 /**
  * The one place a public route exists.
@@ -65,6 +73,8 @@ export type Endpoint = {
   /** Whether this route answers 404 for a well-formed identifier that misses. */
   notFound: boolean;
   rateLimited: boolean;
+  /** Shared-cache lifetime. Zero means do not cache this route. */
+  cacheSeconds: number;
   handler: RequestHandler;
 };
 
@@ -96,6 +106,7 @@ const endpoint = (
     parameters?: EndpointParameter[];
     notFound?: boolean;
     rateLimited?: boolean;
+    cacheSeconds?: number;
   } = {},
 ): Endpoint => ({
   method: "get",
@@ -104,13 +115,35 @@ const endpoint = (
   summary,
   parameters: options.parameters ?? [],
   notFound: options.notFound ?? false,
-  rateLimited: options.rateLimited ?? false,
+  // Every public API route is limited by default. Opting a future endpoint out
+  // must therefore be a visible decision rather than an easy omission.
+  rateLimited: options.rateLimited ?? path.startsWith("/api/"),
+  // All API responses are public. Five seconds protects the node from bursts
+  // while keeping mutable lifecycle state fresh; immutable/expensive routes
+  // override this below.
+  cacheSeconds: options.cacheSeconds ?? (path.startsWith("/api/") ? 5 : 0),
   handler,
 });
 
 const healthRoute: RequestHandler = (_req, res) => {
   res.json({ status: "ok", now: new Date().toISOString() });
 };
+
+/* Both databases, because the explorer serves nothing useful without either:
+ * the node's Postgres holds every L2 record and the explorer's own index holds
+ * everything observed on Cardano. `SELECT 1` costs a round trip and proves the
+ * pool can still hand out a working connection, which is the part a process
+ * that booted hours ago can no longer assume. */
+const readyRoute = readinessRoute(
+  {
+    "midgard-node": () => prisma.$queryRaw`SELECT 1`,
+    "explorer-index": () => indexerPrisma.$queryRaw`SELECT 1`,
+  },
+  {
+    onFailure: (name, error) =>
+      logger.error(`Readiness probe failed for ${name}: ${String(error)}`),
+  },
+);
 
 /* Lazy on purpose: the document is generated from this array, so it cannot be
  * built while the array is still being defined. It is built per request, which
@@ -121,21 +154,50 @@ const openApiRoute: RequestHandler = (_req, res) => {
 };
 
 export const ENDPOINTS: readonly Endpoint[] = [
-  endpoint("/healthz", "System", "Report backend health", healthRoute),
-  endpoint("/api/openapi.json", "System", "Return this OpenAPI document", openApiRoute),
+  endpoint("/healthz", "System", "Report that the process is alive", healthRoute),
+  endpoint(
+    "/readyz",
+    "System",
+    "Report whether both databases can serve a request",
+    readyRoute,
+  ),
+  endpoint(
+    "/api/openapi.json",
+    "System",
+    "Return this OpenAPI document",
+    openApiRoute,
+    { cacheSeconds: 3_600 },
+  ),
 
-  endpoint("/api/metrics", "System", "Return explorer metrics", getMetricsRoute, {
-    rateLimited: true,
-  }),
-  endpoint("/api/search", "Discovery", "Search indexed identifiers by prefix", getSearchRoute, {
-    parameters: [
-      query("q", "Hex identifier prefix; six or more characters returns matches."),
-    ],
-    rateLimited: true,
-  }),
+  endpoint(
+    "/api/metrics",
+    "System",
+    "Return explorer metrics",
+    getMetricsRoute,
+    {
+      rateLimited: true,
+      cacheSeconds: 10,
+    },
+  ),
+  endpoint(
+    "/api/search",
+    "Discovery",
+    "Search indexed identifiers by prefix",
+    getSearchRoute,
+    {
+      parameters: [
+        query(
+          "q",
+          "Indexed identifier prefix (six or more hex characters) or a complete Bech32 address.",
+        ),
+      ],
+      rateLimited: true,
+    },
+  ),
 
   endpoint("/api/assets", "Ledger", "List indexed assets", getAssetsRoute, {
     rateLimited: true,
+    cacheSeconds: 10,
   }),
   endpoint("/api/asset", "Ledger", "Return one asset", getAssetRoute, {
     parameters: [
@@ -148,6 +210,7 @@ export const ENDPOINTS: readonly Endpoint[] = [
     ],
     notFound: true,
     rateLimited: true,
+    cacheSeconds: 10,
   }),
   endpoint(
     "/api/address",
@@ -155,17 +218,32 @@ export const ENDPOINTS: readonly Endpoint[] = [
     "Return address balance, UTxOs, and history",
     getAddressRoute,
     {
-      parameters: [query("address", "Midgard address in Bech32 form.")],
+      parameters: [
+        query("address", "Midgard address in Bech32 form."),
+        query("page", "One-based address-history page.", {
+          type: "integer",
+          minimum: 1,
+          default: 1,
+        }),
+      ],
       notFound: true,
       rateLimited: true,
     },
   ),
 
-  endpoint("/api/block", "Blocks", "Return one block by header hash", getBlockRoute, {
-    parameters: [query("header_hash", "56-character block header hash.", hex56)],
-    notFound: true,
-    rateLimited: true,
-  }),
+  endpoint(
+    "/api/block",
+    "Blocks",
+    "Return one block by header hash",
+    getBlockRoute,
+    {
+      parameters: [
+        query("header_hash", "56-character block header hash.", hex56),
+      ],
+      notFound: true,
+      rateLimited: true,
+    },
+  ),
   endpoint(
     "/api/blocks/by-height/:height",
     "Blocks",
@@ -173,7 +251,7 @@ export const ENDPOINTS: readonly Endpoint[] = [
     getBlockByHeightRoute,
     {
       parameters: [
-        pathParam("height", "Non-negative Midgard block height.", {
+        pathParam("height", "Non-negative legacy blocks-row identifier.", {
           type: "integer",
           minimum: 0,
         }),
@@ -182,16 +260,31 @@ export const ENDPOINTS: readonly Endpoint[] = [
       rateLimited: true,
     },
   ),
-  endpoint("/api/blocks/recent", "Blocks", "List recent blocks", getRecentBlocksRoute, {
-    rateLimited: true,
-  }),
+  endpoint(
+    "/api/blocks/recent",
+    "Blocks",
+    "List recent blocks",
+    getRecentBlocksRoute,
+    {
+      rateLimited: true,
+    },
+  ),
   endpoint("/api/blocks/total", "Blocks", "Count blocks", getTotalBlocksRoute, {
     rateLimited: true,
   }),
-  endpoint("/api/blocks/:page", "Blocks", "List blocks by page", getBlocksPageRoute, {
-    parameters: [pageParam, query("status", "Optional finalization-status filter.")],
-    rateLimited: true,
-  }),
+  endpoint(
+    "/api/blocks/:page",
+    "Blocks",
+    "List blocks by page",
+    getBlocksPageRoute,
+    {
+      parameters: [
+        pageParam,
+        query("status", "Optional finalization-status filter."),
+      ],
+      rateLimited: true,
+    },
+  ),
 
   endpoint(
     "/api/transaction",
@@ -224,27 +317,36 @@ export const ENDPOINTS: readonly Endpoint[] = [
     "List transactions by page",
     getTransactionsPageRoute,
     {
-      parameters: [pageParam, query("status", "Optional transaction-status filter.")],
+      parameters: [
+        pageParam,
+        query("status", "Optional transaction-status filter."),
+      ],
       rateLimited: true,
     },
   ),
 
-  endpoint("/api/deposits/:page", "Bridge", "List Midgard deposits by page", getDepositsPageRoute, {
-    parameters: [pageParam],
-  }),
+  endpoint(
+    "/api/deposits/:page",
+    "Bridge",
+    "List Midgard deposits by page",
+    getDepositsPageRoute,
+    {
+      parameters: [pageParam, query("id", "Optional exact deposit event id.")],
+    },
+  ),
   endpoint(
     "/api/withdrawals/:page",
     "Bridge",
     "List Midgard withdrawals by page",
     getWithdrawalsPageRoute,
-    { parameters: [pageParam] },
+    { parameters: [pageParam, query("id", "Optional exact withdrawal event id.")] },
   ),
   endpoint(
     "/api/forced-transactions/:page",
     "Bridge",
     "List forced transactions by page",
     getForcedTransactionsPageRoute,
-    { parameters: [pageParam] },
+    { parameters: [pageParam, query("id", "Optional exact forced-transaction order id.")] },
   ),
 
   endpoint(
@@ -259,7 +361,9 @@ export const ENDPOINTS: readonly Endpoint[] = [
     "Return one Cardano transaction touching Midgard",
     getL1TransactionRoute,
     {
-      parameters: [query("txHash", "64-character Cardano transaction hash.", hex64)],
+      parameters: [
+        query("txHash", "64-character Cardano transaction hash.", hex64),
+      ],
       notFound: true,
       rateLimited: true,
     },
@@ -269,7 +373,31 @@ export const ENDPOINTS: readonly Endpoint[] = [
     "Cardano L1",
     "List indexed Midgard block headers",
     getL1BlockHeadersRoute,
-    { parameters: [query("limit", "Maximum rows; capped at 100.", limitSchema)] },
+    {
+      parameters: [query("limit", "Maximum rows; capped at 100.", limitSchema)],
+    },
+  ),
+  endpoint(
+    "/api/l1/block-header",
+    "Cardano L1",
+    "Return one Midgard header observed on Cardano",
+    getL1BlockHeaderRoute,
+    {
+      parameters: [query("headerHash", "56-character Midgard header hash.", hex56)],
+      notFound: true,
+      cacheSeconds: 30,
+    },
+  ),
+  endpoint(
+    "/api/l1/validator",
+    "Cardano L1",
+    "Return indexed evidence for one Midgard validator",
+    getL1ValidatorRoute,
+    {
+      parameters: [query("scriptHash", "56-character validator script hash.", hex56)],
+      notFound: true,
+      cacheSeconds: 30,
+    },
   ),
   endpoint(
     "/api/l1/transactions/:page",
@@ -283,7 +411,9 @@ export const ENDPOINTS: readonly Endpoint[] = [
     "Cardano L1",
     "List Cardano deposit events",
     getL1DepositsRoute,
-    { parameters: [query("limit", "Maximum rows; capped at 100.", limitSchema)] },
+    {
+      parameters: [query("limit", "Maximum rows; capped at 100.", limitSchema)],
+    },
   ),
 ];
 
@@ -293,7 +423,17 @@ export function documentationPath(path: string): string {
 }
 
 export function registerCatalogue(app: Express): void {
-  for (const route of ENDPOINTS) app.get(route.path, route.handler);
+  for (const route of ENDPOINTS) {
+    app.get(
+      route.path,
+      cachePublicJson(
+        route.cacheSeconds * 1_000,
+        config.RESPONSE_CACHE_MAX_ENTRIES,
+        config.RESPONSE_CACHE_MAX_BYTES,
+      ),
+      route.handler,
+    );
+  }
 }
 
 export function openApiDocument(): OpenApiDocument {
@@ -303,12 +443,18 @@ export function openApiDocument(): OpenApiDocument {
 /**
  * Where the limiter mounts, derived rather than listed.
  *
- * Express matches `app.use(prefix)` against a path prefix, so a mount is the
- * static head of a route: `/api/blocks/:page` is limited by mounting
- * `/api/blocks`. Descendants of another mount are dropped, or a request to
- * `/api/blocks/recent` would spend two budgets for one call.
+ * Every `/api` route is limited, so one `/api` mount provides a real aggregate
+ * budget. A separate limiter per endpoint would let a crawler multiply its
+ * allowance by walking every route family.
  */
 export function rateLimitedPaths(): string[] {
+  const publicApi = ENDPOINTS.filter((route) => route.path.startsWith("/api/"));
+  if (publicApi.length > 0 && publicApi.every((route) => route.rateLimited)) {
+    return ["/api"];
+  }
+
+  // Retained for a future mixed public/private catalogue: never put an
+  // unlimited route underneath a broad limiter and then document it as free.
   const prefixes = new Set(
     ENDPOINTS.filter((route) => route.rateLimited).map((route) => {
       const segments = route.path.split("/");

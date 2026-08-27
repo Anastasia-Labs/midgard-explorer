@@ -108,7 +108,7 @@ export function buildOpenApiDocument(
       title: "Midgard Explorer API",
       version: "1.0.0",
       description:
-        "Read-only JSON access to the Midgard L2 ledger and the explorer's Cardano L1 index. Integer ledger quantities are returned as decimal strings when precision must be preserved. Expensive routes are rate limited per client and answer 429 with Retry-After.",
+        "Read-only JSON access to the Midgard L2 ledger and the explorer's Cardano L1 index. Integer ledger quantities are returned as decimal strings when precision must be preserved. Public API routes are rate limited per client and answer 429 with Retry-After.",
     },
     servers: [{ url: "/", description: "This explorer backend" }],
     tags: [...new Set(endpoints.map((route) => route.group))].map((name) => ({

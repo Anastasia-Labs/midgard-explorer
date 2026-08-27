@@ -32,7 +32,18 @@ describe("endpoint catalogue", () => {
       expect(endpoint.summary.length, endpoint.path).toBeGreaterThan(0);
       expect(endpoint.group.length, endpoint.path).toBeGreaterThan(0);
       expect(typeof endpoint.handler, endpoint.path).toBe("function");
+      expect(endpoint.cacheSeconds, endpoint.path).toBeGreaterThanOrEqual(0);
     }
+  });
+
+  it("limits and caches every public API route by default", () => {
+    for (const endpoint of ENDPOINTS.filter((e) =>
+      e.path.startsWith("/api/"),
+    )) {
+      expect(endpoint.rateLimited, endpoint.path).toBe(true);
+      expect(endpoint.cacheSeconds, endpoint.path).toBeGreaterThan(0);
+    }
+    expect(rateLimitedPaths()).toEqual(["/api"]);
   });
 
   /** A path parameter that the express route captures but the document never
@@ -40,7 +51,9 @@ describe("endpoint catalogue", () => {
    * never captures is a lie. Both are caught by comparing the route to itself. */
   it("documents every parameter its express path captures", () => {
     for (const endpoint of ENDPOINTS) {
-      const captured = [...endpoint.path.matchAll(/:(\w+)/g)].map((m) => m[1]).sort();
+      const captured = [...endpoint.path.matchAll(/:(\w+)/g)]
+        .map((m) => m[1])
+        .sort();
       const documented = endpoint.parameters
         .filter((p) => p.in === "path")
         .map((p) => p.name)
@@ -90,9 +103,10 @@ describe("generated OpenAPI document", () => {
 
     for (const route of ENDPOINTS) {
       const matched = mounts.filter((mount) => covers(mount, route.path));
-      expect(matched.length, `${route.path} matched ${JSON.stringify(matched)}`).toBe(
-        route.rateLimited ? 1 : 0,
-      );
+      expect(
+        matched.length,
+        `${route.path} matched ${JSON.stringify(matched)}`,
+      ).toBe(route.rateLimited ? 1 : 0);
     }
   });
 });

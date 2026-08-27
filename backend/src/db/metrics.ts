@@ -39,6 +39,7 @@ export type MetricsResponse = {
     partial: boolean;
   };
   tip: {
+    headerHash: string | null;
     height: number | null;
     at: string | null;
     ageSeconds: number | null;
@@ -119,41 +120,47 @@ export async function getMetrics(): Promise<MetricsResponse> {
     admissionBreakdown,
     seriesRows,
   ] = await Promise.all([
-    // Tip: `blocks` holds one row per block-tx pair and `height` is an
-    // autoincrement row id, so `MAX(height)` is the newest *transaction*, not
-    // the newest block's height. The tip is the block holding that row, and its
-    // height is the lowest row id in it, which is what every listing reports.
-    // Reading the maximum made the panel say "chain tip #21" for a block the
-    // list beneath it called #20.
-    prisma.$queryRaw<Array<{ height: number | null; at: Date | null }>>`
-      SELECT MIN(height)::int AS height, MAX(time_stamp_tz) AS at
-        FROM blocks
-       WHERE header_hash = (
-         SELECT header_hash FROM blocks ORDER BY height DESC LIMIT 1
-       );`,
+    // A chain tip is finalized journal evidence, not merely the newest
+    // transaction row. Height remains a nullable legacy aid.
+    prisma.$queryRaw<
+      Array<{
+        header_hash: Uint8Array | null;
+        height: number | null;
+        at: Date | null;
+      }>
+    >`
+      WITH legacy AS (
+        SELECT header_hash, MIN(height)::int AS height FROM blocks GROUP BY header_hash
+      )
+      SELECT f.header_hash, l.height, f.block_end_time AS at
+        FROM pending_block_finalizations AS f
+        LEFT JOIN legacy AS l ON l.header_hash = f.header_hash
+       WHERE f.status = 'finalized'
+       ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC
+       LIMIT 1;`,
 
     prisma.$queryRaw<Array<{ at: Date | null }>>`
-      SELECT MIN(time_stamp_tz) AS at FROM blocks;`,
+      SELECT MIN(block_end_time) AS at
+        FROM pending_block_finalizations WHERE status = 'finalized';`,
 
     prisma.$queryRaw<Array<{ txs: bigint; blocks: bigint }>>`
-      SELECT COUNT(*)::bigint AS txs,
-             COUNT(DISTINCT header_hash)::bigint AS blocks
-        FROM blocks
-       WHERE time_stamp_tz >= ${start};`,
+      SELECT COUNT(j.member_id)::bigint AS txs,
+             COUNT(DISTINCT f.header_hash)::bigint AS blocks
+        FROM pending_block_finalizations AS f
+        LEFT JOIN pending_block_finalization_txs AS j
+          ON j.header_hash = f.header_hash
+       WHERE f.status = 'finalized' AND f.block_end_time >= ${start};`,
 
-    // Interval between consecutive block closes. One row per block, so the
-    // per-tx duplication in `blocks` cannot inflate the sample.
+    // Interval between consecutive finalized header closes.
     prisma.$queryRaw<
       Array<{ p50: number | null; p95: number | null; n: bigint }>
     >`
-      WITH per_block AS (
-        SELECT header_hash, MAX(time_stamp_tz) AS closed_at
-          FROM blocks
-         WHERE time_stamp_tz >= ${start}
-         GROUP BY header_hash
-      ), gaps AS (
-        SELECT EXTRACT(EPOCH FROM closed_at - LAG(closed_at) OVER (ORDER BY closed_at)) AS gap
-          FROM per_block
+      WITH gaps AS (
+        SELECT EXTRACT(EPOCH FROM block_end_time - LAG(block_end_time) OVER (
+                 ORDER BY block_end_time, encode(header_hash, 'hex')
+               )) AS gap
+          FROM pending_block_finalizations
+         WHERE status = 'finalized' AND block_end_time >= ${start}
       )
       SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY gap) AS p50,
              percentile_cont(0.95) WITHIN GROUP (ORDER BY gap) AS p95,
@@ -255,16 +262,19 @@ export async function getMetrics(): Promise<MetricsResponse> {
           interval '1 hour') AS hour
       )
       SELECT h.hour,
-             COALESCE(COUNT(DISTINCT b.header_hash), 0)::bigint AS blocks,
-             COALESCE(COUNT(b.tx_id), 0)::bigint AS txs
+             COALESCE(COUNT(DISTINCT f.header_hash), 0)::bigint AS blocks,
+             COALESCE(COUNT(j.member_id), 0)::bigint AS txs
         FROM hours AS h
-        LEFT JOIN blocks AS b
-          ON date_trunc('hour', b.time_stamp_tz) = h.hour
+        LEFT JOIN pending_block_finalizations AS f
+          ON f.status = 'finalized'
+         AND date_trunc('hour', f.block_end_time) = h.hour
+        LEFT JOIN pending_block_finalization_txs AS j
+          ON j.header_hash = f.header_hash
        GROUP BY h.hour
        ORDER BY h.hour ASC;`,
   ]);
 
-  const tip = tipRows[0] ?? { height: null, at: null };
+  const tip = tipRows[0] ?? { header_hash: null, height: null, at: null };
   const observedFrom = firstRows[0]?.at ?? null;
   const throughput = throughputRows[0] ?? { txs: 0n, blocks: 0n };
   const interval = intervalRows[0] ?? { p50: null, p95: null, n: 0n };
@@ -300,13 +310,15 @@ export async function getMetrics(): Promise<MetricsResponse> {
       partial: observedFrom !== null && observedFrom > start,
     },
     tip: {
+      headerHash: tip.header_hash === null ? null : toHex(tip.header_hash),
       height: num(tip.height),
       at: tip.at === null ? null : tip.at.toISOString(),
       ageSeconds:
         tip.at === null
           ? null
           : Math.max(0, Math.round((end.getTime() - tip.at.getTime()) / 1000)),
-      source: "blocks.height, blocks.time_stamp_tz",
+      source:
+        "pending_block_finalizations.status, pending_block_finalizations.block_end_time, blocks.height",
     },
     throughput: {
       transactions: txCount,
@@ -317,7 +329,8 @@ export async function getMetrics(): Promise<MetricsResponse> {
         p95: interval.p95 === null ? null : Number(interval.p95),
         sampleCount: Number(interval.n),
       },
-      source: "blocks.time_stamp_tz, blocks.header_hash",
+      source:
+        "pending_block_finalizations.block_end_time, pending_block_finalization_txs.member_id",
     },
     admission: {
       latency: {

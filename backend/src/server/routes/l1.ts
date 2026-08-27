@@ -1,10 +1,12 @@
 import { Request, Response } from "express";
 import {
   getL1BlockHeaders,
+  getL1BlockHeader,
   getL1Deposits,
   getL1Summary,
   getL1Transaction,
   getL1TransactionsPage,
+  getL1Validator,
 } from "../../db/l1";
 
 /** Midgard's on-chain footprint on Cardano, read from the explorer's own
@@ -46,6 +48,26 @@ export async function getL1TransactionRoute(req: Request, res: Response) {
 export async function getL1BlockHeadersRoute(req: Request, res: Response) {
   const limit = Number(req.query.limit ?? 25);
   return res.json(await getL1BlockHeaders(limit));
+}
+
+export async function getL1BlockHeaderRoute(req: Request, res: Response) {
+  const headerHash = String(req.query.headerHash ?? "").toLowerCase();
+  if (!/^[0-9a-f]{56}$/.test(headerHash)) {
+    return res.status(400).json({ error: "headerHash must be 56 hex characters." });
+  }
+  const header = await getL1BlockHeader(headerHash);
+  if (!header) return res.status(404).json({ error: "Not found." });
+  return res.json(header);
+}
+
+export async function getL1ValidatorRoute(req: Request, res: Response) {
+  const scriptHash = String(req.query.scriptHash ?? "").toLowerCase();
+  if (!/^[0-9a-f]{56}$/.test(scriptHash)) {
+    return res.status(400).json({ error: "scriptHash must be 56 hex characters." });
+  }
+  const validator = await getL1Validator(scriptHash);
+  if (!validator) return res.status(404).json({ error: "Not found." });
+  return res.json(validator);
 }
 
 /** Midgard's deposits, newest first. The decoded datum is what makes a row

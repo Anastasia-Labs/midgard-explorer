@@ -204,5 +204,12 @@ describe("native-format evidence and exclusions", () => {
     expect(view.capabilities.protocolEvents.state).toBe("not_emitted");
     expect(view.capabilities.executionTrace.state).toBe("commitment_only");
     expect(view.capabilities.consumedBy.state).toBe("not_indexed");
+
+    // The API states a capability, it does not narrate one. Eight English
+    // sentences used to ride along here and nothing rendered them, which made
+    // the backend the author of copy it could not see.
+    for (const capability of Object.values(view.capabilities)) {
+      expect(capability).not.toHaveProperty("reason");
+    }
   });
 });

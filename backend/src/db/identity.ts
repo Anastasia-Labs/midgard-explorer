@@ -1,6 +1,7 @@
 import { prisma } from "../db";
 import { indexerPrisma } from "../indexer/db";
 import { logger } from "../logger";
+import { config } from "../config";
 
 /** Say out loud which databases we actually connected to, at boot.
  *
@@ -27,10 +28,12 @@ export async function reportDatabaseIdentity(): Promise<void> {
       Array<{ db: string; blocks: bigint; latest: Date | null }>
     >`
       SELECT current_database() AS db,
-             (SELECT COUNT(DISTINCT header_hash) FROM blocks)::bigint AS blocks,
-             (SELECT MAX(time_stamp_tz) FROM blocks) AS latest;`;
+             (SELECT COUNT(*) FROM pending_block_finalizations)::bigint AS blocks,
+             (SELECT MAX(block_end_time) FROM pending_block_finalizations) AS latest;`;
     logger.info(
-      `Node database: "${row?.db}" (read-only) with ${row?.blocks ?? 0} blocks, ` +
+      `Node database: "${row?.db}" (read-only ${
+        config.MIDGARD_READ_REPLICA_URL ? "replica" : "primary fallback"
+      }) with ${row?.blocks ?? 0} blocks, ` +
         `newest ${row?.latest ? row.latest.toISOString() : "none"}`,
     );
   } catch (err) {
@@ -41,7 +44,9 @@ export async function reportDatabaseIdentity(): Promise<void> {
     const [row] = await indexerPrisma.$queryRaw<Array<{ db: string }>>`
       SELECT current_database() AS db;`;
     const txs = await indexerPrisma.l1Tx.count();
-    logger.info(`Explorer database: "${row?.db}" (read-write) with ${txs} indexed L1 transactions`);
+    logger.info(
+      `Explorer database: "${row?.db}" (read-write) with ${txs} indexed L1 transactions`,
+    );
   } catch (err) {
     logger.error(`Could not identify the explorer database: ${String(err)}`);
   }

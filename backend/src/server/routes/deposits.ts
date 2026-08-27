@@ -8,7 +8,11 @@ export async function getDepositsPageRoute(req: Request, res: Response) {
   if (!Number.isFinite(page) || page < 1) {
     return res.status(400).json({ error: "Invalid page." });
   }
-  const { rows, hasNextPage, total, limit } = await getDepositsPage(page);
+  const id = typeof req.query.id === "string" ? req.query.id.toLowerCase() : undefined;
+  if (id !== undefined && !/^[0-9a-f]+$/.test(id)) {
+    return res.status(400).json({ error: "id must be hexadecimal." });
+  }
+  const { rows, hasNextPage, total, limit } = await getDepositsPage(page, id);
   const payload = await Promise.all(
     rows.map(async (row) => {
       // Decode failure on this row: return null for value only.

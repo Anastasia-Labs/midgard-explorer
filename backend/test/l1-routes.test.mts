@@ -8,9 +8,11 @@ import {
   getL1TransactionsPage,
   getL1Transaction,
   getL1BlockHeaders,
+  getL1BlockHeader,
   getL1Deposits,
   getL1Summary,
   getSourceIdentity,
+  getL1Validator,
   isFixtureDatabase,
   resetSourceIdentity,
 } from "../src/db/l1.js";
@@ -70,13 +72,14 @@ describe("L1 read queries", () => {
     expect(p.limit).toBeGreaterThan(0);
   });
 
-  it("returns a single transaction with its events", async (ctx) => {
+  it("returns a single transaction with its Midgard actions", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
     const tx = (await getL1Transaction(
       "9152dc88611dc2a23c723689e5cca8efc34719c6567cc1f95d40eadb534ddf92",
-    )) as { events: unknown[] } | null;
+    )) as { events: unknown[]; actions: Array<{ kind: string }> } | null;
     expect(tx).not.toBeNull();
     expect(Array.isArray(tx!.events)).toBe(true);
+    expect(tx!.actions.some((action) => action.kind === "block_commitment")).toBe(true);
   });
 
   // The counts below are what this real preprod transaction actually holds.
@@ -121,6 +124,25 @@ describe("L1 read queries", () => {
   it("returns block headers", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
     expect((await getL1BlockHeaders(10)).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("returns one Cardano-observed header with protocol evidence", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const first = (await getL1BlockHeaders(1))[0]!;
+    const header = await getL1BlockHeader(first.headerHash);
+    expect(header?.headerHash).toBe(first.headerHash);
+    expect(header?.operatorVkey).toMatch(/^[0-9a-f]{56}$/);
+    expect(header?.protocolVersion).toBeGreaterThanOrEqual(0n);
+  });
+
+  it("builds validator UTxOs, history and operation groups from indexed rows", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const validator = validators.find((row) => row.scriptHash.length === 56)!;
+    const detail = await getL1Validator(validator.scriptHash);
+    expect(detail?.validator.scriptHash).toBe(validator.scriptHash);
+    expect(Array.isArray(detail?.utxos)).toBe(true);
+    expect(Array.isArray(detail?.history)).toBe(true);
+    expect(Array.isArray(detail?.operations)).toBe(true);
   });
 
   // The two conventions in routes/l1.ts, pinned. A page number is a
@@ -289,6 +311,7 @@ describe("L1 deposits", () => {
               outputIndex: 0,
               lovelace: 2000000n,
               decoded: {
+                l1OutRef: { txHash: "a".repeat(64), index: 1 },
                 l2PaymentCredential: "d7cb",
                 inclusionTime: "1784138246999",
               },
@@ -302,6 +325,16 @@ describe("L1 deposits", () => {
             },
           ],
         },
+        ios: {
+          create: {
+            kind: "input",
+            position: 0,
+            sourceTxHash: "a".repeat(64),
+            sourceIndex: 1,
+            address: "addr_test1vr8canonicalfundingaddress",
+            lovelace: 2000000n,
+          },
+        },
       },
     });
   });
@@ -311,6 +344,9 @@ describe("L1 deposits", () => {
     const deposits = await getL1Deposits(10);
     expect(deposits.length).toBe(2);
     expect(deposits[0]!.tx.txHash).toBe(DEPOSIT_TX);
+    expect(deposits.find((row) => row.decoded !== null)!.fundingAddresses).toEqual([
+      "addr_test1vr8canonicalfundingaddress",
+    ]);
   });
 
   // A decoder gap must be visible. Filtering undecoded deposits out would make
@@ -425,5 +461,71 @@ describe("L1 transaction paging across a same-block tie", () => {
     expect(page.rows.map((r: { txHash: string }) => r.txHash)).toEqual(
       [...hashes].reverse(),
     );
+  });
+});
+
+/** Who spent an output is a fact the index holds and never answered: an input
+ * row already points at the UTxO it consumed, and the transaction page that
+ * produced that UTxO never looked. */
+describe("consumed-by attribution", () => {
+  const SPENT = "9152dc88611dc2a23c723689e5cca8efc34719c6567cc1f95d40eadb534ddf92";
+  const SPENDER = "b".repeat(64);
+
+  // The paging suite above empties the index in its own hooks, so this one
+  // seeds what it needs rather than reading whatever survived.
+  beforeAll(async () => {
+    if (!reachable) return;
+    await truncateL1();
+    await ingestTxInfos(infos, validators);
+  });
+
+  afterAll(async () => {
+    if (reachable) await indexerPrisma.l1Tx.deleteMany({ where: { txHash: SPENDER } });
+  });
+
+  it("names the transaction that spent an output, and answers null for the rest", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const before = (await getL1Transaction(SPENT))!;
+    expect(before.outputs.length).toBeGreaterThan(1);
+    expect(before.outputs.every((out) => out.spentBy === null)).toBe(true);
+
+    const target = before.outputs[0]!;
+    await indexerPrisma.l1Tx.create({
+      data: {
+        txHash: SPENDER,
+        blockHeight: 4980999,
+        blockHash: "e".repeat(64),
+        slot: 128459999,
+        epoch: 303,
+        txTime: new Date("2026-08-01T00:00:00Z"),
+        fee: 0n,
+        size: 0,
+        totalOutput: 0n,
+        blockIndex: 0,
+        certDeposit: 0n,
+        ios: {
+          create: {
+            kind: "input",
+            position: 0,
+            sourceTxHash: SPENT,
+            sourceIndex: target.sourceIndex,
+            lovelace: target.lovelace,
+          },
+        },
+      },
+    });
+
+    const after = (await getL1Transaction(SPENT))!;
+    const spent = after.outputs.find((out) => out.sourceIndex === target.sourceIndex)!;
+    expect(spent.spentBy).toBe(SPENDER);
+    expect(
+      after.outputs
+        .filter((out) => out.sourceIndex !== target.sourceIndex)
+        .every((out) => out.spentBy === null),
+    ).toBe(true);
+
+    // An input carries no spender at all. Its consumer is the transaction the
+    // reader is already looking at, so the field would restate the page.
+    expect(after.inputs.every((io) => !("spentBy" in io))).toBe(true);
   });
 });

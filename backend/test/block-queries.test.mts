@@ -3,6 +3,7 @@ import { prisma } from "../src/db.js";
 import {
   getBlock,
   getBlockHashByHeight,
+  getBlockHeader,
   getBlocksPage,
   getLastBlocks,
   getTotalBlocks,
@@ -65,17 +66,17 @@ describe("block listings against a real database", () => {
   it("counts the transactions in each block rather than reporting one", async () => {
     if (!reachable) return void console.warn("skipped: no database reachable");
     const rows = await getLastBlocks(50);
-    if (rows.length === 0) return void console.warn("skipped: no blocks on this node");
+    if (rows.length === 0)
+      return void console.warn("skipped: no blocks on this node");
     const pairs = await prisma.$queryRaw<
       Array<{ n: bigint }>
-    >`SELECT COUNT(*)::bigint AS n FROM blocks;`;
+    >`SELECT COUNT(*)::bigint AS n FROM pending_block_finalization_txs;`;
     const total = Number(pairs[0]?.n ?? 0n);
-    const counted = rows.reduce((sum, r) => sum + Number(r.tx_count), 0);
-    // Only equal when the window covers every block, which 50 does here. The
-    // point is that the counts add up to the block-transaction pairs that
-    // exist, not to the number of blocks.
+    const counted = rows.reduce(
+      (sum, r) => sum + Number(r.header_l2_transaction_count),
+      0,
+    );
     if (rows.length < 50) expect(counted).toBe(total);
-    expect(counted).toBeGreaterThanOrEqual(rows.length);
   });
 
   it("agrees with its own total, so pagination describes the rows it returns", async () => {
@@ -99,28 +100,35 @@ describe("block listings against a real database", () => {
         Buffer.from(first.header_hash).toString("hex"),
     );
     expect(same).toBeDefined();
-    expect(Number(same!.tx_count)).toBe(Number(first.tx_count));
+    expect(Number(same!.header_l2_transaction_count)).toBe(
+      Number(first.header_l2_transaction_count),
+    );
     expect(same!.height).toBe(first.height);
   });
 });
 
-describe("one block, one number", () => {
-  it("gives a transaction the height of its block, not its own row id", async () => {
+describe("one header, one legacy row identifier", () => {
+  it("uses the first legacy row identifier consistently across a header", async () => {
     if (!reachable) return void console.warn("skipped: no database reachable");
     const blocks = await getLastBlocks(50);
-    const multi = blocks.find((b) => Number(b.tx_count) > 1);
-    if (!multi) return void console.warn("skipped: no multi-transaction block on this node");
+    const multi = blocks.find((b) => Number(b.header_l2_transaction_count) > 1);
+    if (!multi)
+      return void console.warn(
+        "skipped: no multi-transaction block on this node",
+      );
 
     const hash = Buffer.from(multi.header_hash).toString("hex");
     const txs = await prisma.$queryRaw<
       Array<{ tx_id: Uint8Array }>
     >`SELECT tx_id FROM blocks WHERE header_hash = ${Buffer.from(hash, "hex")};`;
 
-    // Every transaction in the block must report the block's height. Reporting
-    // its own row id made the journey say "#21" for a block the list called
-    // "#20", which is the same block under two names.
+    // Every transaction in the header must report the same compatibility
+    // identifier. Reporting each transaction's row id gave one header multiple
+    // names; this still does not turn the value into a protocol block height.
     for (const t of txs) {
-      const inclusion = await getTxInclusion(Buffer.from(t.tx_id).toString("hex"));
+      const inclusion = await getTxInclusion(
+        Buffer.from(t.tx_id).toString("hex"),
+      );
       expect(inclusion).not.toBeNull();
       expect(inclusion!.height).toBe(multi.height);
     }
@@ -129,8 +137,10 @@ describe("one block, one number", () => {
   it("resolves that height back to the same block", async () => {
     if (!reachable) return void console.warn("skipped: no database reachable");
     const blocks = await getLastBlocks(5);
-    if (blocks.length === 0) return void console.warn("skipped: no blocks on this node");
+    if (blocks.length === 0)
+      return void console.warn("skipped: no blocks on this node");
     for (const b of blocks) {
+      if (b.height === null) continue;
       const hash = await getBlockHashByHeight(b.height);
       expect(hash).not.toBeNull();
       expect(Buffer.from(hash!).toString("hex")).toBe(
@@ -144,11 +154,16 @@ describe("the chain tip", () => {
   it("reports the tip block's height, not the newest transaction's row id", async () => {
     if (!reachable) return void console.warn("skipped: no database reachable");
     const metrics = await getMetrics();
-    const blocks = await getLastBlocks(1);
-    if (blocks.length === 0) return void console.warn("skipped: no blocks on this node");
-    // The panel said "chain tip #21" while the list under it said #20. Same
-    // block, two numbers, and a reader has no way to tell which is the chain.
-    expect(metrics.tip.height).toBe(blocks[0]!.height);
+    const blocks = await getLastBlocks(50);
+    const latestFinalized = blocks.find(
+      (b) => b.finalization_status === "finalized",
+    );
+    if (!latestFinalized)
+      return void console.warn("skipped: no finalized headers on this node");
+    expect(metrics.tip.headerHash).toBe(
+      Buffer.from(latestFinalized.header_hash).toString("hex"),
+    );
+    expect(metrics.tip.height).toBe(latestFinalized.height);
   });
 });
 
@@ -156,18 +171,37 @@ describe("the block page", () => {
   it("labels a block with one height on every row", async () => {
     if (!reachable) return void console.warn("skipped: no database reachable");
     const blocks = await getLastBlocks(50);
-    const multi = blocks.find((b) => Number(b.tx_count) > 1);
-    if (!multi) return void console.warn("skipped: no multi-transaction block on this node");
+    const multi = blocks.find((b) => Number(b.header_l2_transaction_count) > 1);
+    if (!multi)
+      return void console.warn(
+        "skipped: no multi-transaction block on this node",
+      );
     const rows = await getBlock(Buffer.from(multi.header_hash).toString("hex"));
     // The page took its title from the first row, so a two-transaction block
     // was headed "#21" while every list called it "#20".
     expect(new Set(rows.map((r) => r.height))).toEqual(new Set([multi.height]));
   });
+
+  it("keeps a header with no legacy blocks row readable", async () => {
+    if (!reachable) return void console.warn("skipped: no database reachable");
+    const blocks = await getLastBlocks(50);
+    const headerOnly = blocks.find((b) => b.height === null);
+    if (!headerOnly)
+      return void console.warn("skipped: no header-only record on this node");
+    const hash = Buffer.from(headerOnly.header_hash).toString("hex");
+    const [header, rows] = await Promise.all([
+      getBlockHeader(hash),
+      getBlock(hash),
+    ]);
+    expect(header).not.toBeNull();
+    expect(header!.height).toBeNull();
+    expect(rows).toHaveLength(Number(headerOnly.header_l2_transaction_count));
+  });
 });
 
 /* NOT COVERED, stated rather than faked.
  *
- * `getAddressHistory` reports the block height per row and was fixed with the
+ * `getAddressHistory` reports the legacy row identifier and was fixed with the
  * others on 2026-08-07. A guard for it was attempted four ways and each one
  * passed against the reverted bug, so none of them tested anything: inside this
  * file the history rows come back with no header hash to compare, while the

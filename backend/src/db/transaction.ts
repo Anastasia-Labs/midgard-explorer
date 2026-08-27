@@ -40,8 +40,21 @@ export async function getTransaction(txId: string) {
   const mempoolRow = await prisma.mempoolTx.findUnique({
     where: { tx_id: txBytes },
   });
-  return mempoolRow
-    ? { ...mempoolRow, pending: true, source: "mempool" as const }
+  if (mempoolRow) {
+    return { ...mempoolRow, pending: true, source: "mempool" as const };
+  }
+
+  // The journal payload survives merge even when `blocks` no longer does.
+  const journalRows = await prisma.$queryRaw<
+    Array<{ tx_id: Uint8Array; tx: Uint8Array; time_stamp_tz: Date }>
+  >`SELECT member_id AS tx_id, payload_cbor AS tx,
+           source_time_stamp_tz AS time_stamp_tz
+      FROM pending_block_finalization_txs
+     WHERE member_id = ${txBytes}
+     ORDER BY source_time_stamp_tz DESC LIMIT 1;`;
+  const journal = journalRows[0];
+  return journal
+    ? { ...journal, pending: false, source: "journal" as const }
     : null;
 }
 
@@ -151,35 +164,37 @@ export async function getTxLifecycle(
 }
 
 export type TxInclusion = {
-  height: number;
+  height: number | null;
   header_hash: Uint8Array;
   time_stamp_tz: Date;
 };
 
-/** The L2 block carrying this transaction. `blocks` holds one row per
- * block-tx pair, so this is the transaction's side of that join and the only
- * path from a transaction to its L1 settlement state.
- *
- * `height` is the block's height, meaning the lowest row id among the block's
- * rows, and not this transaction's own row id. Returning the row id made the
- * journey label a transaction as being in "block #21" while the blocks list
- * called the same block #20. */
-export async function getTxInclusion(txId: string): Promise<TxInclusion | null> {
+/** Durable inclusion from the journal, with the old `blocks` row identifier
+ * retained only while it still exists. */
+export async function getTxInclusion(
+  txId: string,
+): Promise<TxInclusion | null> {
   const rows = await prisma.$queryRaw<
-    Array<{ height: number; header_hash: Uint8Array; time_stamp_tz: Date }>
-  >`SELECT MIN(peer.height)::int AS height,
-      b.header_hash,
-      b.time_stamp_tz
-    FROM blocks AS b
-    JOIN blocks AS peer
-      ON peer.header_hash = b.header_hash
-    WHERE b.tx_id = ${toBytes(txId)}
-    GROUP BY b.header_hash, b.time_stamp_tz;`;
+    Array<{
+      height: number | null;
+      header_hash: Uint8Array;
+      time_stamp_tz: Date;
+    }>
+  >`WITH legacy AS (
+      SELECT header_hash, MIN(height)::int AS height FROM blocks GROUP BY header_hash
+    )
+    SELECT l.height, j.header_hash, j.source_time_stamp_tz AS time_stamp_tz
+      FROM pending_block_finalization_txs AS j
+      LEFT JOIN legacy AS l ON l.header_hash = j.header_hash
+     WHERE j.member_id = ${toBytes(txId)}
+     ORDER BY j.source_time_stamp_tz DESC LIMIT 1;`;
   return rows[0] ?? null;
 }
 
 export async function getTotalTransactions() {
-  return prisma.blocks.count();
+  const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`
+    SELECT COUNT(*)::bigint AS n FROM pending_block_finalization_txs;`;
+  return Number(rows[0]?.n ?? 0n);
 }
 
 /** One page of transactions, optionally narrowed to a settlement status.
@@ -196,41 +211,36 @@ export async function getTransactionsPage(page: number, status?: string) {
   const [rows, total] = await Promise.all([
     prisma.$queryRaw<
       Array<{
-        height: number;
+        height: number | null;
         header_hash: Uint8Array;
         tx_id: Uint8Array;
         time_stamp_tz: Date;
         tx: Uint8Array | null;
-        in_immutable: boolean;
+        committed: boolean;
         finalization_status: string | null;
       }>
-    // `b.height` is a row id over block-transaction pairs, so a transaction's
-    // own row id is not the height of the block carrying it. The block's height
-    // is the lowest row id among its rows, which is what the block listings
-    // report; a window function gives it here without collapsing the rows.
-    >`SELECT MIN(b.height) OVER (PARTITION BY b.header_hash)::int AS height,
-        b.header_hash,
-        b.tx_id,
-        b.time_stamp_tz,
-        COALESCE(i.tx, m.tx) AS tx,
-        (i.tx IS NOT NULL) AS in_immutable,
+    >`WITH legacy AS (
+        SELECT header_hash, MIN(height)::int AS height FROM blocks GROUP BY header_hash
+      )
+      SELECT l.height,
+        j.header_hash,
+        j.member_id AS tx_id,
+        j.source_time_stamp_tz AS time_stamp_tz,
+        j.payload_cbor AS tx,
+        true AS committed,
         f.status AS finalization_status
-      FROM blocks AS b
-      LEFT JOIN immutable AS i
-        ON b.tx_id = i.tx_id
-      LEFT JOIN mempool AS m
-        ON b.tx_id = m.tx_id
-      LEFT JOIN pending_block_finalizations AS f
-        ON f.header_hash = b.header_hash
+      FROM pending_block_finalization_txs AS j
+      JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
+      LEFT JOIN legacy AS l ON l.header_hash = j.header_hash
       WHERE ${filter}::text IS NULL OR f.status = ${filter}
-      ORDER BY b.height DESC
+      ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC,
+               j.ordinal ASC
       OFFSET ${offset}
       LIMIT ${limit};`,
     prisma.$queryRaw<Array<{ n: bigint }>>`
       SELECT COUNT(*)::bigint AS n
-        FROM blocks AS b
-        LEFT JOIN pending_block_finalizations AS f
-          ON f.header_hash = b.header_hash
+        FROM pending_block_finalization_txs AS j
+        JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
        WHERE ${filter}::text IS NULL OR f.status = ${filter};`.then((r) =>
       Number(r[0]?.n ?? 0n),
     ),

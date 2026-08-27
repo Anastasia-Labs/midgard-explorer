@@ -1,105 +1,175 @@
-import { prisma } from "../db";
 import { config } from "../config";
+import { prisma } from "../db";
 import { toHex } from "../utils";
 
-export async function getAllBlocks() {
-  return prisma.blocks.findMany();
-}
+export type BlockTxRecord = {
+  height: number | null;
+  header_hash: Uint8Array;
+  tx_id: Uint8Array;
+  time_stamp_tz: Date;
+  tx: Uint8Array | null;
+  ordinal: number;
+};
 
+/** Durable transaction membership comes from the finalization journal. The
+ * legacy `blocks` table is only a source of its nullable row identifier; the
+ * node clears those rows after merge. The second arm preserves old block-only
+ * records without duplicating a transaction that already has journal evidence. */
 export async function getBlock(headerHash: string) {
-  const bytes = Buffer.from(headerHash, "hex");
-  return prisma.$queryRaw<
-    Array<{
-      height: number;
-      header_hash: Uint8Array;
-      tx_id: Uint8Array;
-      time_stamp_tz: Date;
-      tx: Uint8Array | null;
-    }>
-  // Every row carries the block's height, not its own row id, so the page
-  // reads the same number whichever transaction it takes it from. See
-  // `getLastBlocks` for why those differ.
-  >`SELECT MIN(b.height) OVER ()::int AS height,
-      b.header_hash,
-      b.tx_id,
-      b.time_stamp_tz,
-      COALESCE(i.tx, m.tx) AS tx
-    FROM blocks AS b
-    LEFT JOIN immutable AS i
-      ON b.tx_id = i.tx_id
-    LEFT JOIN mempool AS m
-      ON b.tx_id = m.tx_id
-    WHERE b.header_hash = ${bytes}
-    ORDER BY b.height DESC;`;
+  const key = Buffer.from(headerHash, "hex");
+  return prisma.$queryRaw<BlockTxRecord[]>`
+    WITH legacy AS (
+      SELECT header_hash, MIN(height)::int AS height
+        FROM blocks
+       WHERE header_hash = ${key}
+       GROUP BY header_hash
+    ), members AS (
+      SELECT l.height,
+             j.header_hash,
+             j.member_id AS tx_id,
+             j.source_time_stamp_tz AS time_stamp_tz,
+             j.payload_cbor AS tx,
+             j.ordinal
+        FROM pending_block_finalization_txs AS j
+        LEFT JOIN legacy AS l ON l.header_hash = j.header_hash
+       WHERE j.header_hash = ${key}
+      UNION ALL
+      SELECT MIN(peer.height)::int AS height,
+             b.header_hash,
+             b.tx_id,
+             b.time_stamp_tz,
+             COALESCE(i.tx, m.tx) AS tx,
+             b.height AS ordinal
+        FROM blocks AS b
+        JOIN blocks AS peer ON peer.header_hash = b.header_hash
+        LEFT JOIN immutable AS i ON i.tx_id = b.tx_id
+        LEFT JOIN mempool AS m ON m.tx_id = b.tx_id
+       WHERE b.header_hash = ${key}
+         AND NOT EXISTS (
+           SELECT 1 FROM pending_block_finalization_txs AS j
+            WHERE j.header_hash = b.header_hash AND j.member_id = b.tx_id
+         )
+       GROUP BY b.header_hash, b.tx_id, b.time_stamp_tz,
+                COALESCE(i.tx, m.tx), b.height
+    )
+    SELECT * FROM members ORDER BY ordinal ASC;`;
 }
 
-/** One row per block, same shape as the blocks list so the overview panel and
- * the list page say the same things about a block.
- *
- * A block is a `header_hash`, and nothing else. `blocks.height` is an
- * autoincrement row id over block-transaction pairs, not a block height: a
- * block holding six transactions occupies six consecutive `height` values.
- * Grouping by `(height, header_hash)` therefore made every transaction its own
- * one-transaction "block", which is why this groups by the hash alone.
- *
- * The displayed height is the lowest row id in the block. It is monotonic with
- * block order, and `getBlockHashByHeight` resolves any row id in a block to
- * that block, so a height rendered here still opens the right page.
- *
- * `MIN(tx_id)` was not merely redundant, it was invalid: Postgres has no
- * `min(bytea)`, so this query returned a 500 against every real node. Only the
- * fixture backend, which runs no SQL, ever answered it.
- */
+export type BlockHeaderRecord = {
+  header_hash: Uint8Array;
+  height: number | null;
+  block_start_time: Date | null;
+  block_end_time: Date;
+  header_l2_transaction_count: bigint | null;
+  header_deposit_count: bigint | null;
+  header_withdrawal_count: bigint | null;
+  header_forced_transaction_count: bigint | null;
+  materialized_l2_transaction_count: bigint;
+  payload_retained_locally: boolean;
+};
+
+/** One header summary. The journal is authoritative when present; DA and
+ * `blocks` are detail-only compatibility fallbacks so an orphaned legacy row
+ * remains inspectable without becoming part of the canonical header list. */
+export async function getBlockHeader(headerHash: string) {
+  const key = Buffer.from(headerHash, "hex");
+  const rows = await prisma.$queryRaw<BlockHeaderRecord[]>`
+    WITH materialized AS (
+      SELECT header_hash, MIN(height)::int AS height, COUNT(*)::bigint AS count,
+             MAX(time_stamp_tz) AS block_end_time
+        FROM blocks WHERE header_hash = ${key} GROUP BY header_hash
+    )
+    SELECT COALESCE(f.header_hash, d.header_hash, b.header_hash) AS header_hash,
+           b.height,
+           COALESCE(f.block_start_time, d.block_start_time) AS block_start_time,
+           COALESCE(f.block_end_time, d.block_end_time, b.block_end_time) AS block_end_time,
+           COALESCE(f.expected_l2_transaction_count, d.l2_transaction_count) AS header_l2_transaction_count,
+           COALESCE(f.expected_deposit_count, d.deposit_count) AS header_deposit_count,
+           COALESCE(f.expected_withdrawal_count, d.withdrawal_count) AS header_withdrawal_count,
+           COALESCE(f.expected_forced_transaction_count, d.forced_transaction_count) AS header_forced_transaction_count,
+           COALESCE(b.count, 0)::bigint AS materialized_l2_transaction_count,
+           (d.header_hash IS NOT NULL) AS payload_retained_locally
+      FROM pending_block_finalizations AS f
+      FULL OUTER JOIN da_payloads AS d ON d.header_hash = f.header_hash
+      FULL OUTER JOIN materialized AS b
+        ON b.header_hash = COALESCE(f.header_hash, d.header_hash)
+     WHERE COALESCE(f.header_hash, d.header_hash, b.header_hash) = ${key};`;
+  return rows[0] ?? null;
+}
+
+export type BlockListRecord = {
+  height: number | null;
+  header_hash: Uint8Array;
+  tx_id: Uint8Array | null;
+  block_start_time: Date;
+  block_end_time: Date;
+  header_l2_transaction_count: bigint;
+  header_deposit_count: bigint;
+  header_withdrawal_count: bigint;
+  header_forced_transaction_count: bigint;
+  materialized_l2_transaction_count: bigint;
+  payload_retained_locally: boolean;
+  finalization_status: string;
+};
+
+const listSelect = async (count: number): Promise<BlockListRecord[]> =>
+  prisma.$queryRaw<BlockListRecord[]>`
+    WITH legacy AS (
+      SELECT header_hash, MIN(height)::int AS height, COUNT(*)::bigint AS count
+        FROM blocks GROUP BY header_hash
+    ), first_tx AS (
+      SELECT DISTINCT ON (header_hash) header_hash, member_id
+        FROM pending_block_finalization_txs
+       ORDER BY header_hash, ordinal ASC
+    )
+    SELECT f.header_hash,
+           l.height,
+           t.member_id AS tx_id,
+           f.block_start_time,
+           f.block_end_time,
+           f.expected_l2_transaction_count AS header_l2_transaction_count,
+           f.expected_deposit_count AS header_deposit_count,
+           f.expected_withdrawal_count AS header_withdrawal_count,
+           f.expected_forced_transaction_count AS header_forced_transaction_count,
+           COALESCE(l.count, 0)::bigint AS materialized_l2_transaction_count,
+           (d.header_hash IS NOT NULL) AS payload_retained_locally,
+           f.status AS finalization_status
+      FROM pending_block_finalizations AS f
+      LEFT JOIN legacy AS l ON l.header_hash = f.header_hash
+      LEFT JOIN first_tx AS t ON t.header_hash = f.header_hash
+      LEFT JOIN da_payloads AS d ON d.header_hash = f.header_hash
+     ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC
+     LIMIT ${count};`;
+
 export async function getLastBlocks(count: number) {
-  return prisma.$queryRaw<
-    Array<{
-      height: number;
-      header_hash: Uint8Array;
-      tx_id: Uint8Array;
-      time_stamp_tz: Date;
-      tx_count: bigint;
-      finalization_status: string | null;
-    }>
-  >`SELECT MIN(b.height)::int AS height,
-      b.header_hash,
-      (array_agg(b.tx_id ORDER BY b.height))[1] AS tx_id,
-      MAX(b.time_stamp_tz) AS time_stamp_tz,
-      COUNT(*)::bigint AS tx_count,
-      MAX(f.status) AS finalization_status
-    FROM blocks AS b
-    LEFT JOIN pending_block_finalizations AS f
-      ON f.header_hash = b.header_hash
-    GROUP BY b.header_hash
-    ORDER BY MIN(b.height) DESC
-    LIMIT ${count};`;
+  return listSelect(count);
 }
 
+/** Recent committed transaction membership also survives `blocks` cleanup. */
 export async function getLastTransactions(count: number) {
   return prisma.$queryRaw<
     Array<{
-      height: number;
+      height: number | null;
       header_hash: Uint8Array;
       tx_id: Uint8Array;
       time_stamp_tz: Date;
-      in_immutable: boolean;
+      finalization_status: string;
     }>
-  // The block's height, not the transaction's row id: see `getLastBlocks`. A
-  // window function gives it per row without collapsing the transactions.
-  >`SELECT MIN(b.height) OVER (PARTITION BY b.header_hash)::int AS height,
-      b.header_hash,
-      b.tx_id,
-      b.time_stamp_tz,
-      (i.tx_id IS NOT NULL) AS in_immutable
-    FROM blocks AS b
-    LEFT JOIN immutable AS i
-      ON i.tx_id = b.tx_id
-    ORDER BY b.height DESC
-    LIMIT ${count};`;
+  >`
+    WITH legacy AS (
+      SELECT header_hash, MIN(height)::int AS height FROM blocks GROUP BY header_hash
+    )
+    SELECT l.height, j.header_hash, j.member_id AS tx_id,
+           j.source_time_stamp_tz AS time_stamp_tz,
+           f.status AS finalization_status
+      FROM pending_block_finalization_txs AS j
+      JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
+      LEFT JOIN legacy AS l ON l.header_hash = j.header_hash
+     ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC, j.ordinal ASC
+     LIMIT ${count};`;
 }
 
-/** Height is what people read off a block page and type back into search, so it
- * resolves to the canonical header hash. `blocks` holds one row per block-tx
- * pair; every row for a height carries the same header hash. */
+/** Retained for typed height lookups over transaction-bearing legacy rows. */
 export async function getBlockHashByHeight(height: number) {
   const row = await prisma.blocks.findFirst({
     where: { height },
@@ -109,8 +179,9 @@ export async function getBlockHashByHeight(height: number) {
 }
 
 export async function getTotalBlocks() {
-  const rows = await prisma.blocks.groupBy({ by: ["header_hash"] });
-  return rows.length;
+  const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`
+    SELECT COUNT(*)::bigint AS n FROM pending_block_finalizations;`;
+  return Number(rows[0]?.n ?? 0n);
 }
 
 export async function getBlockDaMetadata(headerHash: string) {
@@ -165,8 +236,7 @@ export async function getBlockFinalization(headerHash: string) {
     }>
   >`SELECT status, submitted_tx_hash, block_end_time, created_at, updated_at,
       observed_confirmed_at_ms
-    FROM pending_block_finalizations
-    WHERE header_hash = ${key};`;
+    FROM pending_block_finalizations WHERE header_hash = ${key};`;
   const row = rows[0];
   if (!row) return null;
   return {
@@ -184,69 +254,89 @@ export async function getBlockFinalization(headerHash: string) {
   };
 }
 
-/** One row per block, carrying what a reader needs to choose which block to
- * open: its height, how much it holds, and where it stands on L1. The counts
- * come from `blocks` itself, which holds one row per block-tx pair. */
+export type BlockEventMember = {
+  member_id: Uint8Array;
+  ordinal: number;
+  source_time_stamp_tz: Date;
+};
+
+/** IDs and order are enough to connect a header to the existing bridge pages;
+ * payload bytes remain in the raw node journal and are not duplicated in JSON. */
+export async function getBlockEvents(headerHash: string) {
+  const key = Buffer.from(headerHash, "hex");
+  const [deposits, withdrawals, forcedTransactions] = await Promise.all([
+    prisma.$queryRaw<BlockEventMember[]>`
+      SELECT member_id, ordinal, source_time_stamp_tz
+        FROM pending_block_finalization_deposits
+       WHERE header_hash = ${key} ORDER BY ordinal ASC;`,
+    prisma.$queryRaw<BlockEventMember[]>`
+      SELECT member_id, ordinal, source_time_stamp_tz
+        FROM pending_block_finalization_withdrawals
+       WHERE header_hash = ${key} ORDER BY ordinal ASC;`,
+    prisma.$queryRaw<BlockEventMember[]>`
+      SELECT member_id, ordinal, source_time_stamp_tz
+        FROM pending_block_finalization_forced_transactions
+       WHERE header_hash = ${key} ORDER BY ordinal ASC;`,
+  ]);
+  return { deposits, withdrawals, forcedTransactions };
+}
+
 export async function getBlocksPage(page: number, status?: string) {
   const limit = config.BLOCKS_PER_PAGE;
   const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
   const offset = (safePage - 1) * limit;
-  // Narrowing happens in SQL. A filter applied to the rows that happened to
-  // arrive would look like it searches the chain and in fact search one screen.
   const filter = status && status.length > 0 ? status : null;
   const [rows, total] = await Promise.all([
-    prisma.$queryRaw<
-      Array<{
-        height: number;
-        header_hash: Uint8Array;
-        time_stamp_tz: Date;
-        tx_count: bigint;
-        finalization_status: string | null;
-      }>
-    // Grouped by hash alone, for the reason given on `getLastBlocks`: a height
-    // is a row id over block-transaction pairs. Grouping by it too listed one
-    // row per transaction while `total` below counted distinct hashes, so the
-    // page said "6 blocks" and then rendered 21 of them, and every page after
-    // the first was offset against a count that did not describe the rows.
-    >`SELECT MIN(b.height)::int AS height,
-        b.header_hash,
-        MAX(b.time_stamp_tz) AS time_stamp_tz,
-        COUNT(*)::bigint AS tx_count,
-        MAX(f.status) AS finalization_status
-      FROM blocks AS b
-      LEFT JOIN pending_block_finalizations AS f
-        ON f.header_hash = b.header_hash
-      WHERE ${filter}::text IS NULL OR f.status = ${filter}
-      GROUP BY b.header_hash
-      ORDER BY MIN(b.height) DESC
-      OFFSET ${offset}
-      LIMIT ${limit};`,
+    prisma.$queryRaw<BlockListRecord[]>`
+      WITH legacy AS (
+        SELECT header_hash, MIN(height)::int AS height, COUNT(*)::bigint AS count
+          FROM blocks GROUP BY header_hash
+      ), first_tx AS (
+        SELECT DISTINCT ON (header_hash) header_hash, member_id
+          FROM pending_block_finalization_txs
+         ORDER BY header_hash, ordinal ASC
+      )
+      SELECT f.header_hash, l.height, t.member_id AS tx_id,
+             f.block_start_time, f.block_end_time,
+             f.expected_l2_transaction_count AS header_l2_transaction_count,
+             f.expected_deposit_count AS header_deposit_count,
+             f.expected_withdrawal_count AS header_withdrawal_count,
+             f.expected_forced_transaction_count AS header_forced_transaction_count,
+             COALESCE(l.count, 0)::bigint AS materialized_l2_transaction_count,
+             (d.header_hash IS NOT NULL) AS payload_retained_locally,
+             f.status AS finalization_status
+        FROM pending_block_finalizations AS f
+        LEFT JOIN legacy AS l ON l.header_hash = f.header_hash
+        LEFT JOIN first_tx AS t ON t.header_hash = f.header_hash
+        LEFT JOIN da_payloads AS d ON d.header_hash = f.header_hash
+       WHERE ${filter}::text IS NULL OR f.status = ${filter}
+       ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC
+       OFFSET ${offset} LIMIT ${limit};`,
     prisma.$queryRaw<Array<{ n: bigint }>>`
-      SELECT COUNT(DISTINCT b.header_hash)::bigint AS n
-        FROM blocks AS b
-        LEFT JOIN pending_block_finalizations AS f
-          ON f.header_hash = b.header_hash
-       WHERE ${filter}::text IS NULL OR f.status = ${filter};`.then((r) =>
+      SELECT COUNT(*)::bigint AS n FROM pending_block_finalizations
+       WHERE ${filter}::text IS NULL OR status = ${filter};`.then((r) =>
       Number(r[0]?.n ?? 0n),
     ),
   ]);
-  const hasNextPage = safePage * limit < total;
-  return { rows, hasNextPage, total, limit };
+  return {
+    rows,
+    hasNextPage: safePage * limit < total,
+    total,
+    limit,
+  };
 }
 
 export type BlockNeighbours = {
-  prev: { height: number; header_hash: Uint8Array } | null;
-  next: { height: number; header_hash: Uint8Array } | null;
+  prev: { height: number | null; header_hash: Uint8Array } | null;
+  next: { height: number | null; header_hash: Uint8Array } | null;
 };
 
-/** The blocks either side of this one.
- *
- * Not arithmetic on the height: heights are row ids, so a block's neighbours
- * are rarely one apart (the real chain here runs 1, 4, 5, 8, 14, 20). The
- * neighbour is the nearest row belonging to a different block, and its height
- * is that block's own lowest row id, so the number matches every listing.
- */
-export async function getBlockNeighbours(headerHash: string): Promise<BlockNeighbours> {
+/** Adjacent journaled headers in the same deterministic order as the list.
+ * `prev` is earlier and `next` is later. They are hash-addressed because a
+ * header need never have a row in `blocks`. */
+export async function getBlockNeighbours(
+  headerHash: string,
+): Promise<BlockNeighbours> {
   const key = Buffer.from(headerHash, "hex");
   const rows = await prisma.$queryRaw<
     Array<{
@@ -255,34 +345,36 @@ export async function getBlockNeighbours(headerHash: string): Promise<BlockNeigh
       next_hash: Uint8Array | null;
       next_height: number | null;
     }>
-  >`WITH here AS (
-      SELECT MIN(height) AS h FROM blocks WHERE header_hash = ${key}
-    ),
-    prev AS (
-      SELECT header_hash FROM blocks
-       WHERE header_hash <> ${key} AND height < (SELECT h FROM here)
-       ORDER BY height DESC LIMIT 1
-    ),
-    nxt AS (
-      SELECT header_hash FROM blocks
-       WHERE header_hash <> ${key} AND height > (SELECT h FROM here)
-       ORDER BY height ASC LIMIT 1
+  >`
+    WITH legacy AS (
+      SELECT header_hash, MIN(height)::int AS height FROM blocks GROUP BY header_hash
+    ), ordered AS (
+      SELECT f.header_hash, l.height,
+             LAG(f.header_hash) OVER (
+               ORDER BY f.block_end_time ASC, encode(f.header_hash, 'hex') ASC
+             ) AS prev_hash,
+             LAG(l.height) OVER (
+               ORDER BY f.block_end_time ASC, encode(f.header_hash, 'hex') ASC
+             ) AS prev_height,
+             LEAD(f.header_hash) OVER (
+               ORDER BY f.block_end_time ASC, encode(f.header_hash, 'hex') ASC
+             ) AS next_hash,
+             LEAD(l.height) OVER (
+               ORDER BY f.block_end_time ASC, encode(f.header_hash, 'hex') ASC
+             ) AS next_height
+        FROM pending_block_finalizations AS f
+        LEFT JOIN legacy AS l ON l.header_hash = f.header_hash
     )
-    SELECT
-      (SELECT header_hash FROM prev) AS prev_hash,
-      (SELECT MIN(height)::int FROM blocks WHERE header_hash = (SELECT header_hash FROM prev)) AS prev_height,
-      (SELECT header_hash FROM nxt) AS next_hash,
-      (SELECT MIN(height)::int FROM blocks WHERE header_hash = (SELECT header_hash FROM nxt)) AS next_height;`;
+    SELECT prev_hash, prev_height, next_hash, next_height
+      FROM ordered WHERE header_hash = ${key};`;
   const row = rows[0];
   if (!row) return { prev: null, next: null };
   return {
-    prev:
-      row.prev_hash && row.prev_height !== null
-        ? { height: row.prev_height, header_hash: row.prev_hash }
-        : null,
-    next:
-      row.next_hash && row.next_height !== null
-        ? { height: row.next_height, header_hash: row.next_hash }
-        : null,
+    prev: row.prev_hash
+      ? { height: row.prev_height, header_hash: row.prev_hash }
+      : null,
+    next: row.next_hash
+      ? { height: row.next_height, header_hash: row.next_hash }
+      : null,
   };
 }

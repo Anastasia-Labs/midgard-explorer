@@ -2,7 +2,7 @@ import { prisma } from "../db";
 
 const LIMIT = 25;
 
-export async function getWithdrawalsPage(page: number) {
+export async function getWithdrawalsPage(page: number, eventId?: string) {
   const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
   const offset = (safePage - 1) * LIMIT;
   const [rows, totalRows] = await Promise.all([
@@ -23,10 +23,12 @@ export async function getWithdrawalsPage(page: number) {
          l2_outref, l2_value, l1_address, validity, status, inclusion_time,
          projected_header_hash
        FROM withdrawal_utxos
+       WHERE (${eventId ?? null}::text IS NULL OR encode(event_id, 'hex') = ${eventId ?? null})
        ORDER BY inclusion_time DESC, event_id DESC
        LIMIT ${LIMIT + 1} OFFSET ${offset};`,
     prisma.$queryRaw<Array<{ count: bigint }>>`
-      SELECT COUNT(*) AS count FROM withdrawal_utxos;`,
+      SELECT COUNT(*) AS count FROM withdrawal_utxos
+       WHERE (${eventId ?? null}::text IS NULL OR encode(event_id, 'hex') = ${eventId ?? null});`,
   ]);
   return {
     rows: rows.slice(0, LIMIT),

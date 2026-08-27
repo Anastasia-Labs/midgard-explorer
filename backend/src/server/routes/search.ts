@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { MIN_PREFIX, searchByPrefix } from "../../db/search";
+import { MIN_PREFIX, searchAddress, searchByPrefix } from "../../db/search";
 
 /** Prefix search. Returns an empty result rather than an error for a prefix
  * that is too short, because the caller is a search box being typed into and a
@@ -10,6 +10,9 @@ export async function getSearchRoute(req: Request, res: Response) {
     return res.status(400).json({ error: "Missing q query param." });
   }
   const prefix = q.trim().toLowerCase();
+  if (/^(?:addr|stake)(?:_test)?1/.test(prefix)) {
+    return res.json({ hits: await searchAddress(prefix), minPrefix: MIN_PREFIX, tooShort: false });
+  }
   if (prefix.length < MIN_PREFIX || !/^[0-9a-f]+$/.test(prefix)) {
     return res.json({ hits: [], minPrefix: MIN_PREFIX, tooShort: prefix.length < MIN_PREFIX });
   }

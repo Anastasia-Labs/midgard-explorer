@@ -89,7 +89,15 @@ export async function getAssetRoute(req: Request, res: Response) {
       utxoCount: v.utxoCount,
     }))
     // Largest first: the question a holder list answers is who holds most.
-    .sort((a, b) => (BigInt(b.quantity) > BigInt(a.quantity) ? 1 : -1));
+    .sort((a, b) => {
+      const quantityOrder =
+        BigInt(b.quantity) > BigInt(a.quantity)
+          ? 1
+          : BigInt(b.quantity) < BigInt(a.quantity)
+            ? -1
+            : 0;
+      return quantityOrder || a.address.localeCompare(b.address);
+    });
 
   return res.json({
     policyId: policy,
@@ -137,7 +145,13 @@ export async function getAssetsRoute(_req: Request, res: Response) {
         utxoCount: v.utxoCount,
       };
     })
-    .sort((a, b) => b.holderCount - a.holderCount || b.utxoCount - a.utxoCount);
+    .sort(
+      (a, b) =>
+        b.holderCount - a.holderCount ||
+        b.utxoCount - a.utxoCount ||
+        a.policyId.localeCompare(b.policyId) ||
+        a.assetName.localeCompare(b.assetName),
+    );
 
   return res.json({ rows, total: rows.length, coverage });
 }

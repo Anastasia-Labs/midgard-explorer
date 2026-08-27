@@ -16,4 +16,5 @@ export async function truncateL1(): Promise<void> {
   await indexerPrisma.l1BlockHeader.deleteMany({});
   await indexerPrisma.l1Event.deleteMany({});
   await indexerPrisma.l1Tx.deleteMany({});
+  await indexerPrisma.l1ProtocolParams.deleteMany({});
 }

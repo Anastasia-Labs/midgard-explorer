@@ -28,6 +28,7 @@ export async function getSpendableLedger(
         FROM mempool_ledger AS ml
         LEFT JOIN deposits_utxos AS d ON d.event_id = ml.source_event_id
        WHERE ml.source_event_id IS NULL OR d.projected_header_hash IS NOT NULL
+       ORDER BY encode(ml.outref, 'hex') ASC
        LIMIT ${limit};`,
     prisma.$queryRaw<Array<{ n: bigint }>>`
       SELECT COUNT(*)::bigint AS n
