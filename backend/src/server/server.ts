@@ -105,22 +105,32 @@ export const startServer = async () => {
 
   const shutdown = (signal: string) => {
     logger.info(`Received ${signal}, shutting down.`);
-    server.close(async () => {
-      // The indexer holds a write transaction for the length of a pass.
-      // Disconnecting Prisma underneath it cut that transaction mid-write, so
-      // the loop is stopped and drained before either client is closed.
-      if (sync) {
-        logger.info("Draining the indexer before disconnecting.");
-        await sync.stop().catch((err) =>
-          logger.error(`Indexer did not drain cleanly: ${String(err)}`),
-        );
-      }
+
+    // Stop scheduling immediately, then drain HTTP and the indexer at the same
+    // time. `server.close` fires its callback only once every connection has
+    // ended, so stopping the indexer inside it made a keep-alive client able to
+    // hold the drain past the forced-exit timer below and have an active sync
+    // killed mid-transaction. Idle sockets are closed rather than waited on for
+    // the same reason.
+    const indexerDrained = sync
+      ? sync.stop().catch((err) => {
+          logger.error(`Indexer did not drain cleanly: ${String(err)}`);
+        })
+      : Promise.resolve();
+
+    const httpDrained = new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      server.closeIdleConnections();
+    });
+
+    void Promise.all([indexerDrained, httpDrained]).then(async () => {
       await prisma.$disconnect();
       await indexerPrisma.$disconnect();
       logger.info("Shutdown complete.");
       process.exit(0);
     });
-    // Force-exit if connections don't drain in time.
+
+    // Force-exit if either side does not drain in time.
     setTimeout(() => {
       logger.error("Forced shutdown after timeout.");
       process.exit(1);
