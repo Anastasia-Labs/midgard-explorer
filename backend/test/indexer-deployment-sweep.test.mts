@@ -1,7 +1,18 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { indexerPrisma } from "../src/indexer/db.js";
 import { syncOnce } from "../src/indexer/sync.js";
+import { loadManifest } from "../src/indexer/manifest.js";
+import { config } from "../src/config.js";
 import { truncateL1 } from "./helpers/truncate.mjs";
+
+/** The mint-policy scan also enumerates assets, once per Mint entry, so a spy
+ * that counts every `fetchPolicyAssets` call counts both scans. Only calls for
+ * the reference-script auth policy belong to the sweep under test. */
+const REFERENCE_POLICY = loadManifest(config.MIDGARD_MANIFEST_PATH)
+  .referenceScriptAuthPolicy;
+
+const sweepsOf = (calls: string[]) =>
+  calls.filter((policy) => policy === REFERENCE_POLICY);
 
 /** Reference scripts are published to the DEPLOYER'S OWN WALLET address, so
  * none of their outputs sit at a Midgard validator address and no amount of
@@ -36,6 +47,11 @@ function spyDeps(sweepCalls: string[], requested: string[][]) {
     fetchAssetTxs: async () => [
       { tx_hash: DEPLOY_TX, block_height: 4939807, block_time: 1_752_600_043, epoch_no: 303 },
     ],
+    // Stubbed rather than omitted. An omitted dep falls through to the real
+    // implementation, so a test meant to be offline reaches live Koios and
+    // fails for a reason that has nothing to do with what it asserts.
+    fetchAccountUpdates: async () => [],
+    fetchEpochParams: async () => null,
   } as never;
 }
 
@@ -57,7 +73,7 @@ describe("reference script deployment sweep", () => {
 
     await syncOnce(spyDeps(sweepCalls, requested));
 
-    expect(sweepCalls).toHaveLength(1);
+    expect(sweepsOf(sweepCalls).length).toBeGreaterThan(0);
     // The address scan returned nothing, so this hash can only have come from
     // the sweep.
     expect(requested.flat()).toContain(DEPLOY_TX);
@@ -66,15 +82,50 @@ describe("reference script deployment sweep", () => {
   // The discriminating case. A sweep that ran every tick would pass the test
   // above and would also spend dozens of Koios calls a minute re-learning the
   // same immutable answer, on an API that rate limits.
-  it("does not sweep on an incremental pass, only on a full history scan", async () => {
+  //
+  // Completion is now recorded durably rather than inferred from the scan
+  // floor. The old gate was `scanFloor === 0`, which stops being true a few
+  // blocks in, so a sweep that failed on the first pass was never retried.
+  it("does not re-fetch history the policy cursor has already covered", async () => {
+    await setCursor(0);
+    // First pass covers the policies and records how far it got.
+    await syncOnce(spyDeps([], []));
+
+    const floors: number[] = [];
+    const base = spyDeps([], []) as Record<string, unknown>;
+    const second = {
+      ...base,
+      fetchAssetTxs: async (_p: string, _a: string, after: number) => {
+        floors.push(after);
+        return [];
+      },
+    } as never;
+    await syncOnce(second);
+
+    // The cursor moved past the deployment block, so the next pass asks Koios
+    // only for what came after it rather than re-reading the whole history.
+    expect(floors.length).toBeGreaterThan(0);
+    expect(Math.min(...floors)).toBe(4939807);
+  });
+
+  // The regression the durable marker exists to close: a failed sweep used to
+  // be unreachable forever once ordinary activity moved the cursor.
+  it("retries the sweep on the next pass when it failed", async () => {
+    await setCursor(4_980_661);
+    const failing = {
+      ...(spyDeps([], []) as Record<string, unknown>),
+      fetchPolicyAssets: async () => {
+        throw new Error("Koios unavailable");
+      },
+    } as never;
+    await syncOnce(failing);
+
     const sweepCalls: string[] = [];
     const requested: string[][] = [];
-    await setCursor(4_980_661);
-
     await syncOnce(spyDeps(sweepCalls, requested));
 
-    expect(sweepCalls).toHaveLength(0);
-    expect(requested.flat()).not.toContain(DEPLOY_TX);
+    expect(sweepsOf(sweepCalls).length).toBeGreaterThan(0);
+    expect(requested.flat()).toContain(DEPLOY_TX);
   });
 
   it("keeps the address scan's results when the sweep fails", async () => {

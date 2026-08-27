@@ -142,6 +142,51 @@ export function parseAddressTxs(json: unknown): KoiosAddressTx[] {
   return z.array(addressTxSchema).parse(json);
 }
 
+/** One reward-account action. Koios nests the actions under the account they
+ * belong to, so a flat list of transactions needs both levels. */
+const accountUpdateSchema = z.object({
+  stake_address: z.string(),
+  updates: z
+    .array(
+      z.object({
+        tx_hash: z.string(),
+        action_type: z.string(),
+        block_time: z.number().nullable().default(null),
+      }),
+    )
+    .default([]),
+});
+
+export type KoiosAccountUpdate = {
+  stakeAddress: string;
+  txHash: string;
+  actionType: string;
+};
+
+/** The rows exactly as Koios counts them: one per account, each carrying its
+ * own list of actions. Paging has to be decided on this count, not on the
+ * flattened action count, or a page of 50 accounts holding 900 actions between
+ * them reads as "more pages to come". */
+function parseAccountRows(json: unknown): z.infer<typeof accountUpdateSchema>[] {
+  return z.array(accountUpdateSchema).parse(json);
+}
+
+export function parseAccountUpdates(json: unknown): KoiosAccountUpdate[] {
+  return flattenAccountRows(parseAccountRows(json));
+}
+
+function flattenAccountRows(
+  rows: z.infer<typeof accountUpdateSchema>[],
+): KoiosAccountUpdate[] {
+  return rows.flatMap((account) =>
+    account.updates.map((update) => ({
+      stakeAddress: account.stake_address,
+      txHash: update.tx_hash,
+      actionType: update.action_type,
+    })),
+  );
+}
+
 export function parseTxInfo(json: unknown): KoiosTxInfo[] {
   return z.array(txInfoSchema).parse(json);
 }
@@ -276,21 +321,128 @@ export async function readBounded(
   return out + decoder.decode();
 }
 
+/**
+ * Koios caps any response at 1000 rows and answers a request for more without
+ * saying it truncated. A single unpaged request is therefore indistinguishable
+ * from a complete answer, and the caller that advanced a cursor over it skipped
+ * whatever did not fit, permanently.
+ *
+ * Verified against preprod on 2026-08-27: `?offset=0&limit=2` and
+ * `?offset=2&limit=2` return different rows on `/address_txs`, and an offset
+ * past the end returns an empty array, which is the loop's exit condition.
+ */
+const KOIOS_PAGE_SIZE = 1000;
+
+/**
+ * Requests bigger than this are split. Koios documents a small request payload
+ * limit, and an unbounded `_addresses` or `_tx_hashes` array grows with the
+ * deployment until a request that used to work starts failing.
+ */
+const KOIOS_BATCH_SIZE = 50;
+
+/** A scan that pages forever is a scan that never returns. Reaching this means
+ * the exit condition is wrong, not that the chain is large: at this page size
+ * it is a million rows for one address set. */
+const MAX_PAGES = 1_000;
+
+export function chunk<T>(items: T[], size: number = KOIOS_BATCH_SIZE): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/** Every page of one query. A page shorter than the page size is the last one,
+ * which is the only signal Koios gives that a result set is complete. */
+async function postAllPages<T>(
+  path: string,
+  body: unknown,
+  parse: (json: unknown) => T[],
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const sep = path.includes("?") ? "&" : "?";
+    const query = `${path}${sep}offset=${page * KOIOS_PAGE_SIZE}&limit=${KOIOS_PAGE_SIZE}`;
+    const rows = parse(await post(query, body));
+    out.push(...rows);
+    if (rows.length < KOIOS_PAGE_SIZE) return out;
+  }
+  throw new Error(
+    `Koios ${path} did not terminate within ${MAX_PAGES} pages of ` +
+      `${KOIOS_PAGE_SIZE}; refusing to treat the result as complete`,
+  );
+}
+
 export async function fetchAddressTxs(
   addresses: string[],
   afterBlockHeight: number,
 ): Promise<KoiosAddressTx[]> {
   if (addresses.length === 0) return [];
-  return parseAddressTxs(
-    await post("/address_txs", {
-      _addresses: addresses,
-      _after_block_height: afterBlockHeight,
-    }),
-  );
+  const out: KoiosAddressTx[] = [];
+  for (const batch of chunk(addresses)) {
+    out.push(
+      ...(await postAllPages("/address_txs", {
+        _addresses: batch,
+        _after_block_height: afterBlockHeight,
+      }, parseAddressTxs)),
+    );
+  }
+  return out;
 }
 
+/**
+ * Reward-account history for script stake credentials.
+ *
+ * A validator whose only handler is `withdraw` is executed by a zero-value
+ * withdrawal. That execution is recorded against the reward address derived
+ * from the script hash and never touches the enterprise payment address, so no
+ * amount of address scanning can see it. Verified on preprod 2026-08-27: the
+ * `phasMembership` reward account is registered and its registration
+ * transaction was absent from the index.
+ */
+export async function fetchAccountUpdates(
+  stakeAddresses: string[],
+): Promise<KoiosAccountUpdate[]> {
+  if (stakeAddresses.length === 0) return [];
+  const rows: z.infer<typeof accountUpdateSchema>[] = [];
+  for (const batch of chunk(stakeAddresses)) {
+    rows.push(
+      ...(await postAllPages(
+        "/account_updates",
+        { _stake_addresses: batch },
+        parseAccountRows,
+      )),
+    );
+  }
+  return flattenAccountRows(rows);
+}
+
+/**
+ * Detail for every requested transaction, or an error naming what is missing.
+ *
+ * The caller deletes a reconciliation window and rewrites it from this result,
+ * then advances its cursor. A short answer accepted as complete therefore
+ * destroys history rather than merely omitting it, so an incomplete response
+ * has to stop the pass rather than shrink it.
+ */
 export async function fetchTxInfo(txHashes: string[]): Promise<KoiosTxInfo[]> {
   if (txHashes.length === 0) return [];
+  const out: KoiosTxInfo[] = [];
+  for (const batch of chunk(txHashes)) {
+    out.push(...(await fetchTxInfoBatch(batch)));
+  }
+  const returned = new Set(out.map((info) => info.tx_hash));
+  const missing = txHashes.filter((hash) => !returned.has(hash));
+  if (missing.length > 0) {
+    throw new Error(
+      `Koios /tx_info returned ${returned.size} of ${txHashes.length} ` +
+        `requested transactions. Missing: ${missing.slice(0, 5).join(", ")}` +
+        `${missing.length > 5 ? ` and ${missing.length - 5} more` : ""}`,
+    );
+  }
+  return out;
+}
+
+async function fetchTxInfoBatch(txHashes: string[]): Promise<KoiosTxInfo[]> {
   // Every one of these flags is load-bearing. Koios does not error on a
   // missing flag, it returns that section as an empty array, which is
   // indistinguishable from a transaction that genuinely has none. Measured on
@@ -322,9 +474,11 @@ const policyAssetSchema = z.object({
  * carry no output at a Midgard script address, which address scanning alone
  * cannot see. */
 export async function fetchPolicyAssets(policyId: string): Promise<string[]> {
-  const rows = z
-    .array(policyAssetSchema)
-    .parse(await post("/policy_asset_list", { _asset_policy: policyId }));
+  const rows = await postAllPages(
+    "/policy_asset_list",
+    { _asset_policy: policyId },
+    (json) => z.array(policyAssetSchema).parse(json),
+  );
   return rows.map((r) => r.asset_name ?? "");
 }
 
@@ -334,14 +488,17 @@ export async function fetchPolicyAssets(policyId: string): Promise<string[]> {
 export async function fetchAssetTxs(
   policyId: string,
   assetName: string,
+  afterBlockHeight: number = 0,
 ): Promise<KoiosAddressTx[]> {
-  return parseAddressTxs(
-    await post("/asset_txs", {
+  return postAllPages(
+    "/asset_txs",
+    {
       _asset_policy: policyId,
       _asset_name: assetName,
-      _after_block_height: 0,
+      _after_block_height: afterBlockHeight,
       _history: true,
-    }),
+    },
+    parseAddressTxs,
   );
 }
 

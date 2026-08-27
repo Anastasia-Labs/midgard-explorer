@@ -81,6 +81,13 @@ describe("syncOnce", () => {
     const deps = {
       fetchAddressTxs: async () => addressTxs,
       fetchTxInfo: async () => txInfo,
+      // Every network dep is stubbed, not just the ones this case exercises.
+      // An omitted dep falls through to the real implementation, so the test
+      // reached live Koios and timed out for a reason unrelated to duplicates.
+      fetchPolicyAssets: async () => [],
+      fetchAssetTxs: async () => [],
+      fetchAccountUpdates: async () => [],
+      fetchEpochParams: async () => null,
     };
     await syncOnce(deps);
     const before = await indexerPrisma.l1Tx.count();

@@ -46,7 +46,10 @@ describe("contractFamily", () => {
     expect(contractFamily("daParamsGovernorSpend")).toBe("daParamsGovernor");
     expect(contractFamily("daParamsGovernorMint")).toBe("daParamsGovernor");
     expect(contractFamily("reserveWithdraw")).toBe("reserve");
-    expect(contractFamily("reserveObserver")).toBe("reserve");
+    // "Observer" is deliberately not a purpose: the deployed manifest has no
+    // such entry, so the suffix only ever mis-derived a family for a name
+    // that happened to end in it.
+    expect(contractFamily("reserveObserver")).toBe("reserveObserver");
   });
 
   it("leaves a name with no purpose suffix alone", () => {

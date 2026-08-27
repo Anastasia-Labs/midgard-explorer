@@ -6,6 +6,26 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
  * and assets_minted: [], while the same transaction really has 3, 5, 1 and 1.
  * Nothing downstream can tell that apart from a transaction with no inputs,
  * so the only place this can be caught is here, at the request. */
+/** The smallest row `txInfoSchema` accepts, under a caller-chosen hash. */
+function txInfoRow(txHash: string) {
+  return {
+    tx_hash: txHash,
+    block_height: 1,
+    block_hash: "b".repeat(64),
+    absolute_slot: 1,
+    epoch_no: 1,
+    tx_timestamp: 1,
+    outputs: [],
+    fee: "1",
+    tx_size: 1,
+    total_output: "1",
+    tx_block_index: 1,
+    deposit: "0",
+    withdrawals: [],
+    certificates: [],
+  };
+}
+
 describe("fetchTxInfo request flags", () => {
   let body: Record<string, unknown> | null;
 
@@ -13,7 +33,14 @@ describe("fetchTxInfo request flags", () => {
     body = null;
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
       body = JSON.parse(String(init.body));
-      return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+      // Echo back a row per requested hash. `fetchTxInfo` now refuses a short
+      // answer, because the caller deletes a window and rewrites it from this
+      // result: a stub that returns nothing is asking it to destroy history.
+      const hashes = (body!._tx_hashes ?? []) as string[];
+      return new Response(JSON.stringify(hashes.map(txInfoRow)), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     });
   });
   afterEach(() => vi.unstubAllGlobals());

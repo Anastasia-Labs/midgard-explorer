@@ -11,7 +11,7 @@ import http from "http";
 import { bigintStringify } from "./helpers";
 import { prisma } from "../db";
 import { indexerPrisma } from "../indexer/db";
-import { startSync } from "../indexer/sync";
+import { startSync, type SyncHandle } from "../indexer/sync";
 import { reportDatabaseIdentity } from "../db/identity";
 import { mountRateLimits, startRateLimitSweeper } from "./rateLimit";
 import { resolveCorsOrigin, securityHeaders } from "./security";
@@ -67,8 +67,9 @@ export const startServer = async () => {
 
   // One process indexes. Extra instances serve reads against the same index
   // with L1_SYNC_ENABLED=false, and say so rather than appearing to index.
+  let sync: SyncHandle | null = null;
   if (config.L1_SYNC_ENABLED) {
-    startSync();
+    sync = startSync();
   } else {
     logger.info("L1 sync disabled by configuration; serving reads only");
   }
@@ -105,6 +106,15 @@ export const startServer = async () => {
   const shutdown = (signal: string) => {
     logger.info(`Received ${signal}, shutting down.`);
     server.close(async () => {
+      // The indexer holds a write transaction for the length of a pass.
+      // Disconnecting Prisma underneath it cut that transaction mid-write, so
+      // the loop is stopped and drained before either client is closed.
+      if (sync) {
+        logger.info("Draining the indexer before disconnecting.");
+        await sync.stop().catch((err) =>
+          logger.error(`Indexer did not drain cleanly: ${String(err)}`),
+        );
+      }
       await prisma.$disconnect();
       await indexerPrisma.$disconnect();
       logger.info("Shutdown complete.");

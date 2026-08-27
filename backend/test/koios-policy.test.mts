@@ -9,6 +9,27 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * its tests sat in another commit would not have typechecked on its own.
  */
 
+/** `fetchTxInfo` refuses an answer that omits a requested hash, because its
+ * caller deletes a window and rewrites it from the result. These cases are
+ * about transport policy rather than completeness, so the stub returns the
+ * smallest valid row for whatever was asked for. */
+function okBody(init?: RequestInit): Response {
+  const hashes: string[] = init?.body
+    ? (JSON.parse(String(init.body))._tx_hashes ?? [])
+    : [];
+  return new Response(
+    JSON.stringify(
+      hashes.map((tx_hash) => ({
+        tx_hash, block_height: 1, block_hash: "b".repeat(64),
+        absolute_slot: 1, epoch_no: 1, tx_timestamp: 1, outputs: [],
+        fee: "1", tx_size: 1, total_output: "1", tx_block_index: 1,
+        deposit: "0", withdrawals: [], certificates: [],
+      })),
+    ),
+    { status: 200 },
+  );
+}
+
 describe("Koios request policy", () => {
   const original = globalThis.fetch;
   afterEach(() => {
@@ -19,10 +40,10 @@ describe("Koios request policy", () => {
     vi.useRealTimers();
     const { fetchTxInfo } = await import("../src/indexer/koios.js");
     let calls = 0;
-    globalThis.fetch = (async () => {
+    globalThis.fetch = (async (_u: string, init: RequestInit) => {
       calls += 1;
       if (calls < 3) return new Response("busy", { status: 429 });
-      return new Response("[]", { status: 200 });
+      return okBody(init);
     }) as typeof fetch;
     await fetchTxInfo(["a".repeat(64)]);
     expect(calls).toBe(3);
@@ -62,9 +83,11 @@ describe("Koios request policy", () => {
   it("still parses a normal response, with no content-length header", async () => {
     vi.useRealTimers();
     const { fetchTxInfo } = await import("../src/indexer/koios.js");
-    globalThis.fetch = (async () =>
-      new Response("[]", { status: 200 })) as typeof fetch;
-    expect(await fetchTxInfo(["a".repeat(64)])).toEqual([]);
+    globalThis.fetch = (async (_u: string, init: RequestInit) =>
+      okBody(init)) as typeof fetch;
+    const parsed = await fetchTxInfo(["a".repeat(64)]);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]!.tx_hash).toBe("a".repeat(64));
   });
 
   it("sends an abort signal so a hung request cannot stall the sync tick", async () => {
@@ -73,7 +96,7 @@ describe("Koios request policy", () => {
     let sawSignal = false;
     globalThis.fetch = (async (_u: string, init: RequestInit) => {
       sawSignal = init.signal instanceof AbortSignal;
-      return new Response("[]", { status: 200 });
+      return okBody(init);
     }) as typeof fetch;
     await fetchTxInfo(["a".repeat(64)]);
     expect(sawSignal).toBe(true);

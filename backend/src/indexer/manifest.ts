@@ -1,9 +1,35 @@
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { z } from "zod";
-import { scriptHashToAddress } from "./bech32";
+import { scriptHashToAddress, scriptHashToRewardAddress } from "./bech32";
 
-const PURPOSE_SUFFIXES = ["Spend", "Mint", "Withdraw", "Observer"];
+/**
+ * The purposes a manifest entry name can declare.
+ *
+ * "Observer" was listed here and matches nothing. The deployed manifest carries
+ * 17 Spend, 17 Mint, 2 Withdraw and 4 unsuffixed entries and not one Observer,
+ * so the suffix only ever mis-derived a family for a name that happened to end
+ * in it. It is not reinstated without an entry that proves what it means.
+ */
+const PURPOSE_SUFFIXES = ["Spend", "Mint", "Withdraw"] as const;
+
+export type Purpose = (typeof PURPOSE_SUFFIXES)[number] | "None";
+
+/** Which scan can see this entry's executions.
+ *
+ * A Spend entry is found by address history. A Mint entry is found by the
+ * assets issued under its policy, which is the script hash itself. A Withdraw
+ * entry is found by its reward account. These are not interchangeable: a
+ * withdraw-only validator ignores the transaction entirely, so no rule could
+ * make its execution touch a payment address. */
+export function contractPurpose(entryName: string): Purpose {
+  for (const suffix of PURPOSE_SUFFIXES) {
+    if (entryName.endsWith(suffix) && entryName.length > suffix.length) {
+      return suffix;
+    }
+  }
+  return "None";
+}
 
 /** Schema versions this indexer knows how to read. A version outside this set
  * is refused rather than read on a guess: an unknown layout that happens to
@@ -14,8 +40,16 @@ const SUPPORTED_SCHEMA_VERSIONS = new Set(["midgard-deployment-manifest-v2"]);
 export type ValidatorEntry = {
   entryName: string;
   family: string;
+  purpose: Purpose;
   scriptHash: string;
+  /** Enterprise payment address. Only a Spend entry is reachable through it. */
   address: string;
+  /** Reward address for the same hash. Set for a Withdraw entry, which is
+   * executed against this and never against `address`. */
+  rewardAddress: string | null;
+  /** Minting policy id, which for a minting script is the script hash. Set for
+   * a Mint entry, whose executions are found through the assets it issues. */
+  policyId: string | null;
 };
 
 /** "daParamsGovernorSpend" and "daParamsGovernorMint" are one contract, two
@@ -226,11 +260,18 @@ export function parseManifest(path: string): Manifest {
     if (stubHashes.has(entry.scriptHash)) continue;
     if (seen.has(entry.scriptHash)) continue;
     seen.add(entry.scriptHash);
+    const purpose = contractPurpose(name);
     validators.push({
       entryName: name,
       family: contractFamily(name),
+      purpose,
       scriptHash: entry.scriptHash,
       address: scriptHashToAddress(entry.scriptHash, network),
+      rewardAddress:
+        purpose === "Withdraw"
+          ? scriptHashToRewardAddress(entry.scriptHash, network)
+          : null,
+      policyId: purpose === "Mint" ? entry.scriptHash : null,
     });
   }
 

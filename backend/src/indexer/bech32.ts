@@ -68,3 +68,28 @@ export function scriptHashToAddress(
   const payload = [header, ...bytes];
   return bech32Encode(hrp, convertBits(payload, 8, 5));
 }
+
+/**
+ * Reward address for a script stake credential: header byte 0b1111_nnnn,
+ * followed by the same 28-byte script hash.
+ *
+ * A validator whose only handler is `withdraw` is executed by a zero-value
+ * withdrawal against this address. Nothing is ever paid to or spent from the
+ * enterprise address derived above, so the two are not interchangeable and a
+ * scan over one cannot stand in for the other.
+ */
+export function scriptHashToRewardAddress(
+  scriptHashHex: string,
+  network: "preprod" | "mainnet",
+): string {
+  const bytes = Buffer.from(scriptHashHex, "hex");
+  if (bytes.length !== 28) {
+    throw new Error(
+      `Script hash must be 28 bytes, got ${bytes.length} from "${scriptHashHex}"`,
+    );
+  }
+  const header = network === "mainnet" ? 0xf1 : 0xf0;
+  const hrp = network === "mainnet" ? "stake" : "stake_test";
+  const payload = [header, ...bytes];
+  return bech32Encode(hrp, convertBits(payload, 8, 5));
+}
