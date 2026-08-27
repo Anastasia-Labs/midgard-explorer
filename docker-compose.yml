@@ -1,6 +1,10 @@
 services:
   explorer-api-cache:
-    image: nginx:1.27-alpine
+    # Pinned by digest. A tag is a moving pointer: `nginx:1.27-alpine` resolved
+    # to a different image the week after this file was written, so two
+    # deployments from the same commit could run different code. The tag is kept
+    # alongside for readability; the digest is what is actually resolved.
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
     container_name: midgard-explorer-api-cache
     restart: unless-stopped
     environment:
@@ -28,7 +32,7 @@ services:
           memory: 128M
 
   explorer-postgres:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     container_name: midgard-explorer-postgres
     restart: unless-stopped
     environment:
