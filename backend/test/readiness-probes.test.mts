@@ -153,6 +153,31 @@ describe("the reconciliation probe", () => {
     );
   });
 
+  /** Non-zero is not the invariant. One reconciled pass writes all three
+   * cursors from one observedTip inside one transaction, so three different
+   * heights mean three different passes and three different windows: every
+   * mint between the mint cursor and the primary one is simply absent, while
+   * the row counts look healthy. */
+  it("refuses cursors that are all non-zero but disagree", async () => {
+    const { client } = stub(0, [
+      { source: "l1", last_block_height: 5106529 },
+      { source: "l1:mints", last_block_height: 5000000 },
+      { source: "l1:rewards", last_block_height: 4900000 },
+    ]);
+    await expect(probeIndexReconciled(client)).rejects.toThrow(
+      /cursors disagree.*l1=5106529, l1:mints=5000000, l1:rewards=4900000/s,
+    );
+  });
+
+  it("refuses a single source that has fallen behind the other two", async () => {
+    const { client } = stub(0, [
+      { source: "l1", last_block_height: 5106529 },
+      { source: "l1:mints", last_block_height: 5106529 },
+      { source: "l1:rewards", last_block_height: 5106528 },
+    ]);
+    await expect(probeIndexReconciled(client)).rejects.toThrow(/cursors disagree/);
+  });
+
   /** Rows belonging to a PREVIOUS deployment are not a fault. A redeployed
    * protocol leaves its predecessor's rows behind and the read path filters
    * them out; refusing traffic forever for that would be wrong. */

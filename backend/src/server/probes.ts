@@ -183,11 +183,15 @@ export async function probeIndexDatabase(): Promise<void> {
  *    a redeployed protocol legitimately leaves its predecessor's rows behind,
  *    and refusing traffic forever for that would be wrong.
  *
- * 2. Every cursor has advanced past zero. `syncOnce` writes the three cursors
- *    only inside a pass where every source completed, so a non-zero value is
- *    not a progress estimate: it is the record that one full reconciliation
- *    committed. Equality between them is not enough on its own, since all three
- *    read zero together immediately after the migration.
+ * 2. Every cursor has advanced past zero AND all three agree. `syncOnce` writes
+ *    the three cursors inside one transaction, from one `observedTip`, only in
+ *    a pass where every source completed. So the invariant a reconciled index
+ *    satisfies is not "non-zero", it is "non-zero and equal", and both halves
+ *    are needed. Equality alone passes the state the migration leaves behind,
+ *    because zero equals zero. Non-zero alone passes three cursors written by
+ *    different passes, which is an index whose sources have covered different
+ *    windows: the mint cursor trailing the primary one by 100,000 blocks means
+ *    every mint in that range is missing, and the count of rows looks healthy.
  *
  * An index that has never indexed therefore reports NOT READY rather than
  * ready-and-empty. That is the intended answer: it cannot serve an L1 page.
@@ -221,6 +225,16 @@ export async function probeIndexReconciled(
         `${pending.length} of ${SYNC_SOURCES.length} sources: ` +
         `${pending.join(", ")}. The indexer has not finished a pass in which ` +
         `every source completed.`,
+    );
+  }
+
+  const distinct = new Set(heights.values());
+  if (distinct.size > 1) {
+    throw new Error(
+      `the explorer index's cursors disagree, so its sources have covered ` +
+        `different windows: ` +
+        `${SYNC_SOURCES.map((source) => `${source}=${heights.get(source)}`).join(", ")}. ` +
+        `One reconciled pass writes all three to the same height.`,
     );
   }
 }
