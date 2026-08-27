@@ -24,6 +24,30 @@ export type IndexerTx = Omit<
   "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends"
 >;
 
+/** The attribution written before the ingest path passed a deployment. It is
+ * never a real manifest identity, so a row carrying it is a row no query can
+ * reach. */
+export const UNATTRIBUTED_DEPLOYMENT = "default";
+
+/** Per-source cursors, named here rather than in `sync.ts` so readiness can
+ * read the same three without importing the network layer.
+ *
+ * `l1` and `l1:mints` are incremental: each records the height through which
+ * that source has confirmed coverage. `l1:rewards` is not incremental, because
+ * Koios `/account_updates` has no height filter; it records the height through
+ * which the last COMPLETE reward scan was confirmed.
+ *
+ * All three are written only inside a pass that reconciled, so a non-zero value
+ * is the durable record that a full pass completed. */
+export const SYNC_SOURCE_PRIMARY = "l1";
+export const SYNC_SOURCE_MINTS = "l1:mints";
+export const SYNC_SOURCE_REWARDS = "l1:rewards";
+export const SYNC_SOURCES = [
+  SYNC_SOURCE_PRIMARY,
+  SYNC_SOURCE_MINTS,
+  SYNC_SOURCE_REWARDS,
+] as const;
+
 export async function getSyncCursor(source: string) {
   return indexerPrisma.syncCursor.findUnique({ where: { source } });
 }

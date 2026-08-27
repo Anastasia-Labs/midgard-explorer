@@ -8,6 +8,7 @@
  */
 import {
   probeIndexDatabase,
+  probeIndexReconciled,
   probeManifest,
   probeNodeDatabase,
   shippedMigrations,
@@ -16,6 +17,7 @@ import {
 const PROBES = [
   ["node database", probeNodeDatabase],
   ["explorer index", probeIndexDatabase],
+  ["index reconciled", probeIndexReconciled],
   ["manifest", probeManifest],
 ] as const;
 

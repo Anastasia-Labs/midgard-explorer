@@ -1,7 +1,11 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { prisma } from "../db";
-import { indexerPrisma } from "../indexer/db";
+import {
+  indexerPrisma,
+  SYNC_SOURCES,
+  UNATTRIBUTED_DEPLOYMENT,
+} from "../indexer/db";
 import { loadManifest } from "../indexer/manifest";
 import { config } from "../config";
 
@@ -153,6 +157,70 @@ export async function probeIndexDatabase(): Promise<void> {
       `the explorer index is missing ${unapplied.length} ` +
         `${unapplied.length === 1 ? "migration" : "migrations"} this build ` +
         `ships: ${unapplied.join(", ")}. Run \`pnpm indexer:deploy\`.`,
+    );
+  }
+}
+
+/**
+ * That the index has finished a full reconciliation, and holds nothing the read
+ * path cannot reach.
+ *
+ * Schema and migration state say the index is SHAPED correctly. They say
+ * nothing about whether it holds the chain. The attribution repair makes the
+ * gap concrete: the moment its migration lands, the schema is current, every
+ * relation exists, every migration is recorded, and the index is at its worst.
+ * The cursors are zero, the rows still carry the sentinel attribution, and
+ * every validator query filtered by the manifest identity returns empty. A
+ * probe that passed there puts a process into rotation to serve empty pages as
+ * though they were the truth, which is the failure this whole repair exists to
+ * end.
+ *
+ * Two conditions, both durable, both readable from the index alone:
+ *
+ * 1. No row carries `default`. That value is not an identity; it is what was
+ *    written when nothing wrote one, so a row holding it is unreachable by
+ *    construction. Rows under some OTHER deployment are left alone on purpose:
+ *    a redeployed protocol legitimately leaves its predecessor's rows behind,
+ *    and refusing traffic forever for that would be wrong.
+ *
+ * 2. Every cursor has advanced past zero. `syncOnce` writes the three cursors
+ *    only inside a pass where every source completed, so a non-zero value is
+ *    not a progress estimate: it is the record that one full reconciliation
+ *    committed. Equality between them is not enough on its own, since all three
+ *    read zero together immediately after the migration.
+ *
+ * An index that has never indexed therefore reports NOT READY rather than
+ * ready-and-empty. That is the intended answer: it cannot serve an L1 page.
+ */
+export async function probeIndexReconciled(
+  client: Queryable = indexerPrisma as unknown as Queryable,
+): Promise<void> {
+  const [stale] = await client.$queryRawUnsafe<Array<{ count: bigint }>>(
+    `SELECT count(*)::bigint AS count FROM l1_event WHERE deployment = $1;`,
+    UNATTRIBUTED_DEPLOYMENT,
+  );
+  if (Number(stale?.count ?? 0) > 0) {
+    throw new Error(
+      `the explorer index holds ${stale.count} events under ` +
+        `"${UNATTRIBUTED_DEPLOYMENT}", which no query can reach. A full ` +
+        `re-index under the manifest identity has not finished.`,
+    );
+  }
+
+  const rows = await client.$queryRawUnsafe<
+    Array<{ source: string; last_block_height: number }>
+  >(
+    `SELECT source, last_block_height FROM sync_cursor WHERE source = ANY($1::text[]);`,
+    [...SYNC_SOURCES],
+  );
+  const heights = new Map(rows.map((row) => [row.source, Number(row.last_block_height)]));
+  const pending = SYNC_SOURCES.filter((source) => !((heights.get(source) ?? 0) > 0));
+  if (pending.length > 0) {
+    throw new Error(
+      `the explorer index has no completed reconciliation for ` +
+        `${pending.length} of ${SYNC_SOURCES.length} sources: ` +
+        `${pending.join(", ")}. The indexer has not finished a pass in which ` +
+        `every source completed.`,
     );
   }
 }

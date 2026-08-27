@@ -1,6 +1,13 @@
 import { config } from "../config";
 import { logger } from "../logger";
-import { getSyncCursor, indexerPrisma, setSyncCursor } from "./db";
+import {
+  getSyncCursor,
+  indexerPrisma,
+  setSyncCursor,
+  SYNC_SOURCE_MINTS,
+  SYNC_SOURCE_PRIMARY,
+  SYNC_SOURCE_REWARDS,
+} from "./db";
 import { deleteFromBlockHeight, ingestTxInfos } from "./ingest";
 import {
   fetchAddressTxs as realFetchAddressTxs,
@@ -16,16 +23,11 @@ import {
 } from "./leadership";
 import { loadManifest } from "./manifest";
 
-const SOURCE = "l1";
-
-/** Per-source cursors. `l1` and `l1:mints` are incremental: each records the
- * height through which that source has confirmed coverage, and a scan is asked
- * for everything above it. `l1:rewards` is not incremental, because Koios
- * `/account_updates` has no height filter and returns the whole history of an
- * account every time; it records the height through which the last COMPLETE
- * reward scan was confirmed, which is what the reconciliation gate reads. */
-const SOURCE_MINTS = "l1:mints";
-const SOURCE_REWARDS = "l1:rewards";
+// Defined in ./db, which readiness also reads, so the two cannot name
+// different cursors.
+const SOURCE = SYNC_SOURCE_PRIMARY;
+const SOURCE_MINTS = SYNC_SOURCE_MINTS;
+const SOURCE_REWARDS = SYNC_SOURCE_REWARDS;
 
 export type SyncDeps = {
   fetchAddressTxs: typeof realFetchAddressTxs;

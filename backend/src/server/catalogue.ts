@@ -23,7 +23,12 @@ import { prisma } from "../db";
 import { indexerPrisma } from "../indexer/db";
 import { logger } from "../logger";
 import { readinessRoute } from "./readiness";
-import { probeIndexDatabase, probeManifest, probeNodeDatabase } from "./probes";
+import {
+  probeIndexDatabase,
+  probeIndexReconciled,
+  probeManifest,
+  probeNodeDatabase,
+} from "./probes";
 import {
   getL1SummaryRoute,
   getL1TransactionsPageRoute,
@@ -144,6 +149,10 @@ const readyRoute = readinessRoute(
   {
     "midgard-node": probeNodeDatabase,
     "explorer-index": probeIndexDatabase,
+    // Separate from the check above, because the two fail for different
+    // reasons and an operator needs to read which. The index can be shaped
+    // correctly and hold nothing reachable.
+    "index-reconciled": probeIndexReconciled,
     manifest: probeManifest,
   },
   {
