@@ -83,17 +83,48 @@ describe("parseConfig", () => {
     expect(err).toMatch(/KOIOS_BASE_URL/);
   });
 
-  // Nothing calls the node over HTTP, so no deployment sets these. Requiring
-  // them would refuse a boot over settings no code path reads.
-  it("boots without the unused node RPC settings", () => {
-    const { NODE_RPC_HOST: _h, NODE_RPC_PORT: _p, ...rest } = valid;
-    expect(parseConfig(rest).NODE_RPC_HOST).toBeUndefined();
+  // Nothing reads these to connect: POSTGRES_URL is the only connection
+  // setting. Requiring them refused a boot over five values the process never
+  // looks at, so a deployment supplying a complete URL was rejected.
+  it("boots on a connection URL alone", () => {
+    const {
+      POSTGRES_HOST: _h,
+      POSTGRES_PORT: _p,
+      POSTGRES_USER: _u,
+      POSTGRES_PASSWORD: _pw,
+      POSTGRES_DB: _db,
+      ...rest
+    } = valid;
+    const parsed = parseConfig(rest);
+    expect(parsed.POSTGRES_URL).toBe(valid.POSTGRES_URL);
+    expect(parsed.POSTGRES_HOST).toBeUndefined();
   });
 
-  it("still rejects a node RPC port that is set to nonsense", () => {
-    expect(() => parseConfig({ ...valid, NODE_RPC_PORT: "no" })).toThrow(
-      /NODE_RPC_PORT/,
+  it("still rejects a component that is set to nonsense", () => {
+    expect(() => parseConfig({ ...valid, POSTGRES_PORT: "no" })).toThrow(
+      /POSTGRES_PORT/,
     );
+  });
+
+  it("refuses to trust an edge without naming it", () => {
+    expect(() =>
+      parseConfig({ ...valid, TRUSTED_PROXY_MODE: "single-edge" }),
+    ).toThrow(/TRUSTED_PROXY_PEERS/);
+  });
+
+  it("defaults to trusting no edge at all", () => {
+    const parsed = parseConfig(valid);
+    expect(parsed.TRUSTED_PROXY_MODE).toBe("none");
+    expect(parsed.TRUSTED_PROXY_PEERS).toEqual([]);
+  });
+
+  it("accepts a named edge", () => {
+    const parsed = parseConfig({
+      ...valid,
+      TRUSTED_PROXY_MODE: "single-edge",
+      TRUSTED_PROXY_PEERS: "172.18.0.0/16, 10.0.0.5",
+    });
+    expect(parsed.TRUSTED_PROXY_PEERS).toEqual(["172.18.0.0/16", "10.0.0.5"]);
   });
 
   it("allows a reorg lookback of zero, which means scan from genesis", () => {

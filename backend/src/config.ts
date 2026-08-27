@@ -55,25 +55,53 @@ const shape = {
   // identity and `x-forwarded-for` is ignored whoever sent it. A private peer
   // is not evidence of a trusted hop, which is what made the limiter evadable
   // by any client willing to send its own header.
-  TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(8).default(0),
+  /**
+   * Whether this process sits behind an edge that rewrites client identity.
+   *
+   * This was a hop COUNT accepting 0 to 8, which modelled a topology that does
+   * not exist: there is exactly one overwriting edge, and every value above 1
+   * was a way to misconfigure trust rather than a deployment anyone runs. The
+   * two states the system actually has are named instead.
+   */
+  TRUSTED_PROXY_MODE: z.enum(["none", "single-edge"]).default("none"),
+
+  /**
+   * The peers allowed to state a client identity, as exact addresses or IPv4
+   * CIDR blocks.
+   *
+   * Trust used to be granted to any peer in a private range, so anything that
+   * could reach the port from inside the network could claim to be the edge.
+   * Required when TRUSTED_PROXY_MODE is single-edge, and ignored otherwise.
+   */
+  TRUSTED_PROXY_PEERS: z
+    .string()
+    .default("")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
+    ),
   API_RATE_LIMIT_MAX: positive.default(120),
   API_RATE_LIMIT_WINDOW_MS: positive.default(60_000),
   LOG_LOCATION: required,
-  // Optional because the explorer reads the node's Postgres directly and no
-  // code path calls the node over HTTP today. Kept and still validated so a
-  // future caller gets a real host and port rather than undefined and NaN,
-  // which is what these silently were before this schema existed.
+  // The parts a POSTGRES_URL is usually assembled from, and nothing reads them
+  // to connect: `POSTGRES_URL` is the only connection setting. They were
+  // REQUIRED, so a deployment that supplies a complete URL and no components
+  // was refused at boot over five values the process never looks at.
   //
-  // `blank` treats `NODE_RPC_HOST=` as absent rather than failing. An empty
+  // Kept rather than dropped, because operators do compose the URL from them
+  // through dotenv-expand, and `reconcile.ts` prints the port. Optional now, so
+  // supplying the URL alone is a valid deployment.
+  //
+  // `blank` treats `POSTGRES_HOST=` as absent rather than failing. An empty
   // value counts as missing everywhere else in this schema, and an optional
   // setting that refuses an empty line would contradict that.
-  NODE_RPC_HOST: blank(required),
-  NODE_RPC_PORT: blank(positive),
-  POSTGRES_HOST: required,
-  POSTGRES_PORT: positive,
-  POSTGRES_USER: required,
-  POSTGRES_PASSWORD: required,
-  POSTGRES_DB: required,
+  POSTGRES_HOST: blank(required).optional(),
+  POSTGRES_PORT: blank(positive).optional(),
+  POSTGRES_USER: blank(required).optional(),
+  POSTGRES_PASSWORD: blank(required).optional(),
+  POSTGRES_DB: blank(required).optional(),
   RECENT_BLOCKS_LIMIT: positive,
   RECENT_TRANSACTIONS_LIMIT: positive,
   TRANSACTIONS_PER_PAGE: positive,
@@ -106,6 +134,20 @@ export const configSchema = z
         code: "custom",
         path: ["MIDGARD_READ_REPLICA_URL"],
         message: "is required when REQUIRE_MIDGARD_READ_REPLICA is true",
+      });
+    }
+    // Trusting an edge without naming it is the misconfiguration this pair
+    // exists to prevent: every request would fall back to the socket peer,
+    // which reads as working until one client is limited on behalf of all.
+    if (
+      value.TRUSTED_PROXY_MODE === "single-edge" &&
+      value.TRUSTED_PROXY_PEERS.length === 0
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["TRUSTED_PROXY_PEERS"],
+        message:
+          "must name the edge's address or CIDR when TRUSTED_PROXY_MODE is single-edge",
       });
     }
   });

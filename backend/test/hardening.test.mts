@@ -4,17 +4,36 @@ import { rateLimiter, resetRateLimits } from "../src/server/rateLimit.js";
 import { securityHeaders, resolveCorsOrigin } from "../src/server/security.js";
 
 /** Trust is configuration, so a test about trust has to set it. Restored on the
- * way out so one case cannot decide another's outcome. */
-function withHops(hops: number, body: () => void): void {
-  const mutable = config as { TRUSTED_PROXY_HOPS: number };
-  const original = mutable.TRUSTED_PROXY_HOPS;
-  mutable.TRUSTED_PROXY_HOPS = hops;
+ * way out so one case cannot decide another's outcome.
+ *
+ * The edge is named rather than counted. A hop count let a deployment trust
+ * "two hops back" without saying who either hop was, and trust was then granted
+ * to any peer in a private range. */
+type ProxyConfig = {
+  TRUSTED_PROXY_MODE: "none" | "single-edge";
+  TRUSTED_PROXY_PEERS: string[];
+};
+
+function behindEdge(
+  peers: string[],
+  body: () => void,
+  mode: "none" | "single-edge" = "single-edge",
+): void {
+  const mutable = config as unknown as ProxyConfig;
+  const mode0 = mutable.TRUSTED_PROXY_MODE;
+  const peers0 = mutable.TRUSTED_PROXY_PEERS;
+  mutable.TRUSTED_PROXY_MODE = mode;
+  mutable.TRUSTED_PROXY_PEERS = peers;
   try {
     body();
   } finally {
-    mutable.TRUSTED_PROXY_HOPS = original;
+    mutable.TRUSTED_PROXY_MODE = mode0;
+    mutable.TRUSTED_PROXY_PEERS = peers0;
   }
 }
+
+/** The compose topology: one nginx on the bridge network. */
+const EDGE = ["10.0.0.0/8"];
 
 
 /** Express handles reduced to what these middlewares actually touch. */
@@ -107,10 +126,10 @@ describe("rateLimiter", () => {
    * would be readers getting 429 for someone else's traffic.
    */
   it("separates clients that share one proxy address", () => {
-    // Needs a trusted hop. Without one the peer is the identity and both of
+    // Needs a named edge. Without one the peer is the identity and both of
     // these are the same client, which is the correct answer for an
     // unconfigured deployment and the wrong one for this scenario.
-    withHops(1, () => {
+    behindEdge(EDGE, () => {
       const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
       let passed = 0;
       limit(mkReq("10.0.0.1", "203.0.113.7"), mkRes().res, () => (passed += 1));
@@ -119,26 +138,26 @@ describe("rateLimiter", () => {
     });
   });
 
-  /** With no trusted hop configured, the socket peer is the identity and the
-   * header is not read at all. This is the default, and it is what makes a
-   * deployment safe before anyone has thought about its topology. */
-  it("ignores a forwarded chain when no proxy hop is trusted", () => {
-    withHops(0, () => {
+  /** With no edge configured, the socket peer is the identity and the header
+   * is not read at all. This is the default, and it is what makes a deployment
+   * safe before anyone has thought about its topology. */
+  it("ignores a forwarded chain when no edge is trusted", () => {
+    behindEdge(EDGE, () => {
       const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
       let passed = 0;
       // Two different forged chains from one peer. Both are the same client.
       limit(mkReq("10.0.0.1", "203.0.113.7"), mkRes().res, () => (passed += 1));
       limit(mkReq("10.0.0.1", "203.0.113.8"), mkRes().res, () => (passed += 1));
       expect(passed).toBe(1);
-    });
+    }, "none");
   });
 
   /** The regression this exists to close. The limiter read the LEFTMOST entry,
    * which is whatever the client wrote first, so any direct caller could rotate
    * it per request, never be limited, and grow the bucket map with forged
    * identities. The rightmost entry is the one the nearest trusted hop wrote. */
-  it("reads the client the trusted hop wrote, not the one the client sent", () => {
-    withHops(1, () => {
+  it("reads the client the edge wrote, not the one the client sent", () => {
+    behindEdge(EDGE, () => {
       const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
       let passed = 0;
       // The edge appended 10.0.0.9; 203.0.113.7 is the client's own claim.
@@ -161,7 +180,7 @@ describe("rateLimiter", () => {
    * two budgets. Asserted alongside the case above, because a limiter that
    * collapsed everyone into one bucket would also pass that one. */
   it("gives two viewers the edge distinguishes their own budgets", () => {
-    withHops(1, () => {
+    behindEdge(EDGE, () => {
       const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
       let passed = 0;
       limit(mkReq("10.0.0.1", "203.0.113.7"), mkRes().res, () => (passed += 1));
@@ -174,15 +193,47 @@ describe("rateLimiter", () => {
    * the open internet it is client-settable, so honouring it hands out a fresh
    * budget per forged value and grows the bucket map for free. */
   it("ignores a forwarded address from a peer that is not our proxy", () => {
-    const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
-    let passed = 0;
-    limit(mkReq("203.0.113.7", "9.9.9.1"), mkRes().res, () => (passed += 1));
-    limit(mkReq("203.0.113.7", "9.9.9.2"), mkRes().res, () => (passed += 1));
-    expect(passed).toBe(1);
+    behindEdge(EDGE, () => {
+      const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
+      let passed = 0;
+      limit(mkReq("203.0.113.7", "9.9.9.1"), mkRes().res, () => (passed += 1));
+      limit(mkReq("203.0.113.7", "9.9.9.2"), mkRes().res, () => (passed += 1));
+      expect(passed).toBe(1);
+    });
   });
 
-  it("trusts a loopback edge only when a hop is configured", () => {
-    withHops(1, () => {
+  /** The narrowing. A private peer is no longer a trusted peer: anything that
+   * can reach the port from inside the network used to be able to present
+   * itself as the edge and state any client identity it liked. */
+  it("ignores a private peer that is not the named edge", () => {
+    behindEdge(["172.18.0.1"], () => {
+      const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
+      let passed = 0;
+      limit(mkReq("10.0.0.1", "203.0.113.7"), mkRes().res, () => (passed += 1));
+      limit(mkReq("10.0.0.1", "203.0.113.8"), mkRes().res, () => (passed += 1));
+      expect(passed).toBe(1);
+    });
+  });
+
+  it("matches the named edge inside its CIDR and nothing outside it", () => {
+    behindEdge(["172.18.0.0/16"], () => {
+      const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
+      let inside = 0;
+      limit(mkReq("172.18.0.1", "203.0.113.7"), mkRes().res, () => (inside += 1));
+      limit(mkReq("172.18.9.9", "203.0.113.8"), mkRes().res, () => (inside += 1));
+      expect(inside).toBe(2);
+    });
+    behindEdge(["172.18.0.0/16"], () => {
+      const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
+      let outside = 0;
+      limit(mkReq("172.19.0.1", "203.0.113.7"), mkRes().res, () => (outside += 1));
+      limit(mkReq("172.19.0.1", "203.0.113.8"), mkRes().res, () => (outside += 1));
+      expect(outside).toBe(1);
+    });
+  });
+
+  it("trusts a loopback edge only when it is the named one", () => {
+    behindEdge(["127.0.0.1"], () => {
       const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
       let passed = 0;
       limit(mkReq("::ffff:127.0.0.1", "203.0.113.7"), mkRes().res, () => (passed += 1));

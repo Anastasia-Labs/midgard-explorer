@@ -192,12 +192,17 @@ and a `NEXT_PUBLIC_API_BASE` a visitor can actually reach. That last one
 defaulted to `http://localhost:3102`, so a build without it published API
 documentation and copyable examples pointing at each visitor's own machine.
 
-`TRUSTED_PROXY_HOPS` decides whether the backend reads `x-forwarded-for` at
-all. It defaults to `0`, meaning the socket peer is the client identity and the
-header is ignored whoever sent it. Set it to `1` only when the backend sits
-directly behind the bundled nginx edge, which replaces the chain with the
-address it saw rather than appending to it. A private socket peer is not
-evidence of a trusted hop.
+`TRUSTED_PROXY_MODE` decides whether the backend reads `x-forwarded-for` at
+all. It defaults to `none`, meaning the socket peer is the client identity and
+the header is ignored whoever sent it. Set `single-edge` only when the backend
+sits directly behind the bundled nginx edge, which replaces the chain with the
+address it saw rather than appending to it.
+
+`TRUSTED_PROXY_PEERS` then names that edge, as exact addresses or IPv4 CIDR
+blocks. It is required in `single-edge` mode, because trust used to be granted
+to any peer in a private range: anything that could reach the port from inside
+the network could present itself as the edge and state any client identity it
+liked.
 
 On a machine too small to hold the whole end-to-end suite in one process,
 `frontend-new/scripts/e2e-by-file.sh` runs the same tests one spec file at a

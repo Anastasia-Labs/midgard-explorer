@@ -207,14 +207,20 @@ describe("source identity", () => {
     const { config } = await import("../src/config.js");
     const original = config.POSTGRES_DB;
     resetSourceIdentity();
-    (config as { POSTGRES_DB: string }).POSTGRES_DB =
+    // Deliberately misconfigured. The identity is read from the connection with
+    // `current_database()`, so what the environment claims the database is
+    // named cannot change the answer. This is the whole point: the explorer
+    // spent weeks reporting figures from a database nobody thought it was
+    // reading, and an echo of the configured name would have agreed with the
+    // mistake.
+    (config as { POSTGRES_DB?: string }).POSTGRES_DB =
       "midgard_phase4_process_txcoverage";
     try {
       const s = await getSourceIdentity();
       expect(s!.l2Database).toBe(db);
       expect(s!.isFixture).toBe(isFixtureDatabase(db));
     } finally {
-      (config as { POSTGRES_DB: string }).POSTGRES_DB = original;
+      (config as { POSTGRES_DB?: string }).POSTGRES_DB = original;
       resetSourceIdentity();
     }
   });

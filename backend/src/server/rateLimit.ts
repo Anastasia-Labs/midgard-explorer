@@ -42,24 +42,44 @@ export type RateLimitOptions = {
   windowMs: number;
 };
 
-/** Whether the peer that opened this socket is one of our own proxies.
+/**
+ * Whether a peer is the edge this process was told to sit behind.
  *
- * The frontend's route handlers run beside this API, so a forwarded chain that
- * we should believe always arrives over loopback or a private network. From
- * anywhere else the header is client-settable, and honouring it hands a fresh
- * budget to every forged value while growing the bucket map for free. */
-function isTrustedProxy(address: string | undefined): boolean {
-  if (!address) return false;
-  const ip = address.startsWith("::ffff:") ? address.slice(7) : address;
-  if (ip === "::1" || ip === "localhost") return true;
-  if (ip.startsWith("fc") || ip.startsWith("fd")) return true; // unique local
-  const [a, b] = ip.split(".").map(Number);
-  if (a === undefined || b === undefined || Number.isNaN(a) || Number.isNaN(b))
-    return false;
-  if (a === 127 || a === 10) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && b === 168) return true;
-  return false;
+ * Trust used to be granted to any address in a private range, so anything that
+ * could reach the port from inside the network could present itself as the
+ * edge and state a client identity. The edge is named now, as an exact address
+ * or an IPv4 CIDR block, and nothing else is believed.
+ */
+function inCidr(address: string, block: string): boolean {
+  const [network, bitsRaw] = block.split("/");
+  const bits = Number(bitsRaw);
+  if (!network || !Number.isInteger(bits) || bits < 0 || bits > 32) return false;
+  const toInt = (value: string): number | null => {
+    const parts = value.split(".");
+    if (parts.length !== 4) return null;
+    let out = 0;
+    for (const part of parts) {
+      const octet = Number(part);
+      if (!Number.isInteger(octet) || octet < 0 || octet > 255) return null;
+      out = (out << 8) | octet;
+    }
+    return out >>> 0;
+  };
+  const a = toInt(address);
+  const b = toInt(network);
+  if (a === null || b === null) return false;
+  // A /0 shift by 32 is undefined in JS, so the whole-internet case is explicit.
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return (a & mask) === (b & mask);
+}
+
+export function isTrustedProxy(peer: string | undefined): boolean {
+  if (peer === undefined) return false;
+  // Express reports an IPv4 peer over a dual-stack socket in this form.
+  const address = peer.startsWith("::ffff:") ? peer.slice(7) : peer;
+  return config.TRUSTED_PROXY_PEERS.some((entry) =>
+    entry.includes("/") ? inCidr(address, entry) : entry === address,
+  );
 }
 
 /**
@@ -71,29 +91,28 @@ function isTrustedProxy(address: string | undefined): boolean {
  * and never be limited, while also growing the bucket map with forged
  * identities.
  *
- * The edge is now the only authority on client identity. It overwrites the
- * chain rather than appending to it, so exactly one hop is trusted and only
- * when this process has been told it is behind that edge. With
- * `TRUSTED_PROXY_HOPS` unset, the socket peer is the identity and a forwarded
- * header is ignored no matter who sent it.
+ * The edge is the only authority on client identity. It overwrites the chain
+ * rather than appending to it, so exactly one entry is believed, the rightmost,
+ * and only when this process has been told it sits behind a named edge. With
+ * `TRUSTED_PROXY_MODE` at `none` the socket peer is the identity and a
+ * forwarded header is ignored no matter who sent it.
  *
  * `req.ip` is undefined when the socket is already gone; those share one
  * bucket, which is correct because they are indistinguishable.
  */
 function clientAddress(req: Request): string {
   const peer = req.ip;
-  if (config.TRUSTED_PROXY_HOPS > 0 && isTrustedProxy(peer)) {
+  if (config.TRUSTED_PROXY_MODE === "single-edge" && isTrustedProxy(peer)) {
     const forwarded = req.headers?.["x-forwarded-for"];
     const chain = Array.isArray(forwarded) ? forwarded[0] : forwarded;
     const entries = (chain ?? "")
       .split(",")
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
-    // Count from the right. The rightmost entry is the one the nearest trusted
-    // hop wrote, and it is the only part a client cannot forge. Taking the
-    // leftmost entry takes whatever the client put there first.
-    const index = entries.length - config.TRUSTED_PROXY_HOPS;
-    const identity = index >= 0 ? entries[index] : undefined;
+    // The rightmost entry is the one the edge wrote, and it is the only part a
+    // client cannot forge. Taking the leftmost takes whatever the client put
+    // there first.
+    const identity = entries.at(-1);
     if (identity !== undefined) return identity;
   }
   return peer ?? "unknown";

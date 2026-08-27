@@ -4,9 +4,9 @@
 # which read the leftmost entry, believed them. `$remote_addr` replaces the
 # chain with the socket peer nginx actually saw.
 #
-# The backend counts hops from the right and only when TRUSTED_PROXY_HOPS says
-# it sits behind this edge. With one hop configured here, the single entry
-# written below is the identity, and nothing a client sends can change it.
+# The backend reads the rightmost entry, and only when TRUSTED_PROXY_MODE is
+# single-edge and TRUSTED_PROXY_PEERS names this edge. The single entry written
+# below is then the identity, and nothing a client sends can change it.
 
 proxy_cache_path /var/cache/nginx/api
   levels=1:2

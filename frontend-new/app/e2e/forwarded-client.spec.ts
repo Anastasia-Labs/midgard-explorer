@@ -15,8 +15,8 @@ import { FIXTURE, expect, settle, test } from "./helpers";
  * it passed just as well when the value was a forgery the frontend had copied
  * through. What has to hold is narrower. Exactly one entry is forwarded, and it
  * is the one the nearest trusted hop wrote, not the prefix a client chose. The
- * backend then ignores even that unless TRUSTED_PROXY_HOPS says it sits behind
- * a real edge.
+ * backend then ignores even that unless TRUSTED_PROXY_MODE says it sits behind
+ * a named edge.
  */
 test.describe("what the frontend forwards", () => {
   test("passes the address on from a server-rendered page, not only a route handler", async ({
