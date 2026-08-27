@@ -1,0 +1,29 @@
+{
+  "$comment": [
+    "Recorded dispositions for production dependency advisories.",
+    "The audit gate fails on any advisory that is not listed here, so a new one",
+    "has to be looked at rather than accumulating in a report nobody reads.",
+    "Re-check each entry when its package or its parent is upgraded."
+  ],
+  "accepted": [
+    {
+      "id": "GHSA-ggr8-5vv4-36mx",
+      "module": "deepmerge-ts",
+      "version": "7.1.5",
+      "severity": "high",
+      "title": "Stack exhaustion when merging recursive object graphs",
+      "path": "@prisma/client -> prisma -> @prisma/config -> deepmerge-ts",
+      "disposition": "not-exploitable",
+      "reason": [
+        "Reached only through Prisma's configuration loader, which runs at CLI",
+        "and startup time against prisma.config.ts and prisma.indexer.config.ts.",
+        "Those are files in this repository, not request input. No source file",
+        "imports deepmerge-ts, and no HTTP handler reaches it.",
+        "The advisory needs an attacker-supplied recursive object graph; nothing",
+        "on any request path merges one."
+      ],
+      "recheckWhen": "prisma or @prisma/config is upgraded",
+      "recordedOn": "2026-08-27"
+    }
+  ]
+}

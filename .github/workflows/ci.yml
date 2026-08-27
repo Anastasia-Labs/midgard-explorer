@@ -115,6 +115,9 @@ jobs:
           pnpm indexer:deploy
           INDEXER_POSTGRES_URL="$TEST_INDEXER_POSTGRES_URL" pnpm indexer:deploy
 
+      - name: Dependency advisories, gated on recorded dispositions
+        run: pnpm audit
+
       - run: pnpm typecheck
 
       - run: pnpm test
