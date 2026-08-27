@@ -15,6 +15,7 @@ set -u
 cd "$(dirname "$0")/../app"
 S=${E2E_OUT_DIR:-$(mktemp -d)}
 SUM=$S/suite-summary.txt
+FAILED_SPECS=""
 : > $SUM
 
 # Reuse is opt-in in this config, because adopting a foreign server has twice
@@ -56,7 +57,19 @@ for f in e2e/*.spec.ts; do
   line=$(printf '%s\n' "$out" | grep -E "^ *[0-9]+ (passed|failed|skipped|flaky)|passed \(|failed \(" | tr '\n' ' ')
   printf '%-34s exit=%s %4ss  %s\n' "$(basename "$f")" "$code" "$took" "$line" >> $SUM
   printf '%s\n' "$out" | grep -E "✘|Error:" | head -5 >> $SUM
+  # Aggregate, do not merely record. Each exit code was printed into the
+  # summary and then discarded, so the script reached DONE and exited 0 after
+  # a failing spec: a gate that reports success whatever the tests did.
+  if [ "$code" -ne 0 ]; then
+    FAILED_SPECS="${FAILED_SPECS}${FAILED_SPECS:+ }$(basename "$f")"
+  fi
 done
+
+if [ -n "$FAILED_SPECS" ]; then
+  echo "FAILED: $FAILED_SPECS" >> $SUM
+  cat $SUM
+  exit 1
+fi
 
 echo "DONE" >> $SUM
 cat $SUM

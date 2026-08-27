@@ -23,6 +23,7 @@ import { prisma } from "../db";
 import { indexerPrisma } from "../indexer/db";
 import { logger } from "../logger";
 import { readinessRoute } from "./readiness";
+import { probeIndexDatabase, probeManifest, probeNodeDatabase } from "./probes";
 import {
   getL1SummaryRoute,
   getL1TransactionsPageRoute,
@@ -129,15 +130,16 @@ const healthRoute: RequestHandler = (_req, res) => {
   res.json({ status: "ok", now: new Date().toISOString() });
 };
 
-/* Both databases, because the explorer serves nothing useful without either:
- * the node's Postgres holds every L2 record and the explorer's own index holds
- * everything observed on Cardano. `SELECT 1` costs a round trip and proves the
- * pool can still hand out a working connection, which is the part a process
- * that booted hours ago can no longer assume. */
+/* Both databases and the manifest, because the explorer serves nothing useful
+ * without any of them. These probes check the relations each query path needs
+ * and that the index's migrations finished. `SELECT 1` proved only that the
+ * pool could hand out a connection, so an empty generic PostgreSQL with none of
+ * the tables reported ready, which is what CI provisioned. */
 const readyRoute = readinessRoute(
   {
-    "midgard-node": () => prisma.$queryRaw`SELECT 1`,
-    "explorer-index": () => indexerPrisma.$queryRaw`SELECT 1`,
+    "midgard-node": probeNodeDatabase,
+    "explorer-index": probeIndexDatabase,
+    manifest: probeManifest,
   },
   {
     onFailure: (name, error) =>

@@ -27,8 +27,36 @@ export const HexString = Schema.String.pipe(
 );
 export type HexString = Schema.Schema.Type<typeof HexString>;
 
-export const IsoTimestamp = Schema.String;
+/**
+ * A timestamp the UI can actually format.
+ *
+ * This was `Schema.String`, so it accepted anything. A manifest with no
+ * `createdAt` reached the backend as the literal string "undefined", passed
+ * this boundary unchanged, and threw inside `new Date(...).toISOString()` when
+ * the source banner rendered it. Parsing here means a bad value is a decode
+ * error naming the field rather than an exception in a component.
+ */
+export const IsoTimestamp = Schema.String.pipe(
+  Schema.filter((s) => !Number.isNaN(new Date(s).getTime()), {
+    message: () => "expected a parseable ISO timestamp",
+  }),
+  Schema.brand("IsoTimestamp"),
+);
 export type IsoTimestamp = Schema.Schema.Type<typeof IsoTimestamp>;
+
+/** A blake2b-224 hash: script hashes, policy ids, payment credentials. */
+export const Hash28 = Schema.String.pipe(
+  Schema.pattern(/^[0-9a-fA-F]{56}$/),
+  Schema.brand("Hash28"),
+);
+export type Hash28 = Schema.Schema.Type<typeof Hash28>;
+
+/** A blake2b-256 hash: transaction ids, block header hashes, datum hashes. */
+export const Hash32 = Schema.String.pipe(
+  Schema.pattern(/^[0-9a-fA-F]{64}$/),
+  Schema.brand("Hash32"),
+);
+export type Hash32 = Schema.Schema.Type<typeof Hash32>;
 
 export const KNOWN_TX_STATUSES = [
   "committed",

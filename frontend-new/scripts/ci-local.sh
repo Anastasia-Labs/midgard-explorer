@@ -39,7 +39,18 @@ pnpm --filter @midgard-explorer/contracts exec tsc --noEmit
 step "typecheck: app"
 pnpm --filter @midgard-explorer/app exec tsc --noEmit
 
-step "unit tests"
+step "typecheck: ui"
+pnpm --filter @midgard-explorer/ui exec tsc --noEmit
+
+step "unit tests: contracts"
+# These two packages ran with --passWithNoTests and held no test files, so the
+# gate reported them green while measuring nothing.
+pnpm --filter @midgard-explorer/contracts test
+
+step "unit tests: ui"
+pnpm --filter @midgard-explorer/ui test
+
+step "unit tests: app"
 pnpm --filter @midgard-explorer/app exec vitest run
 
 step "production build"

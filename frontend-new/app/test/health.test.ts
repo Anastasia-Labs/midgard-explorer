@@ -1,3 +1,4 @@
+import { IsoTimestamp } from "@midgard-explorer/contracts";
 import type { MetricsResponse } from "@midgard-explorer/contracts";
 import { describe, expect, it } from "vitest";
 import { networkHealth } from "../src/lib/health";
@@ -195,7 +196,9 @@ describe("networkHealth when no interval can be measured", () => {
       tip: {
         headerHash: base().tip.headerHash,
         height: 20,
-        at: "2026-08-04T12:28:29.120Z",
+        // Branded now: `IsoTimestamp` rejects any string that will not parse,
+        // which is what stopped "undefined" reaching the source banner.
+        at: IsoTimestamp.make("2026-08-04T12:28:29.120Z"),
         ageSeconds: 284112,
         source: "blocks.height",
       },

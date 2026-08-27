@@ -43,12 +43,15 @@ jobs:
       # a misconfigured run stops rather than truncating something real.
       TEST_INDEXER_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_explorer_test
       INDEXER_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_explorer_ci
-      POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/postgres?schema=public
+      # The node's database, created and migrated from a versioned fixture
+      # below. Pointing this at a generic empty `postgres` meant every test
+      # that queries a node table skipped on a `SELECT 1` guard that succeeded.
+      POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_node_ci?schema=public
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
+      POSTGRES_DB: midgard_node_ci
       BACKEND_PORT: "3101"
       LOG_LOCATION: ./logs/ci
       RECENT_BLOCKS_LIMIT: "10"
@@ -56,7 +59,13 @@ jobs:
       TRANSACTIONS_PER_PAGE: "25"
       BLOCKS_PER_PAGE: "25"
       KOIOS_BASE_URL: https://preprod.koios.rest/api/v1
-      MIDGARD_MANIFEST_PATH: ./manifest.json
+      # A committed fixture. This pointed at ./manifest.json, which does not
+      # exist in the repository, so anything reading the manifest was testing
+      # the failure path or skipping.
+      MIDGARD_MANIFEST_PATH: ./test/fixtures/manifest-sample.json
+      # DB-backed tests must fail rather than skip. They guarded on a reachable
+      # database and reported success when it was absent.
+      REQUIRE_DB: "1"
       L1_SYNC_INTERVAL_MS: "60000"
       L1_REORG_LOOKBACK_BLOCKS: "20"
       # Nothing in CI may reach Koios or index anything. The API still starts.
@@ -88,6 +97,16 @@ jobs:
         run: |
           psql -h localhost -U postgres -c 'CREATE DATABASE midgard_explorer_test'
           psql -h localhost -U postgres -c 'CREATE DATABASE midgard_explorer_ci'
+          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_node_ci'
+
+      - name: Apply the Midgard node schema fixture
+        # Derived from prisma/schema.prisma, the read-only model the explorer's
+        # queries are typed against, so the fixture cannot drift from them.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d midgard_node_ci -v ON_ERROR_STOP=1 \
+            -f test/fixtures/schema/midgard-node.sql
 
       - name: Migrate the test database
         # `indexer:deploy` targets INDEXER_POSTGRES_URL only, so the database

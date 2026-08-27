@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Platypi } from "next/font/google";
+import localFont from "next/font/local";
 import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { AppShell } from "../components/shell/AppShell";
@@ -24,14 +24,29 @@ assertNetworkConfigured();
  * decorative rune shapes for readable Latin letters. Interface headings,
  * metrics, links and controls stay in Geist Sans.
  */
-const geistSans = Geist({ subsets: ["latin"], display: "swap", variable: "--font-geist-sans" });
-const geistMono = Geist_Mono({
-  subsets: ["latin"],
+/* Vendored rather than fetched. `next/font/google` downloads each family at
+ * build time, so the production build needed the network: CI and any
+ * air-gapped deployment could not build at all, and the e2e gate could not run
+ * because it builds first. These are the basic-latin variable subsets, which
+ * carry digits and punctuation. The narrower default subset does not, and a
+ * hash column rendered in a fallback face is the visible symptom.
+ *
+ * Refresh with scripts/vendor-fonts.mjs. */
+const geistSans = localFont({
+  src: "./fonts/geist-sans.woff2",
+  weight: "100 900",
+  display: "swap",
+  variable: "--font-geist-sans",
+});
+const geistMono = localFont({
+  src: "./fonts/geist-mono.woff2",
+  weight: "100 900",
   display: "swap",
   variable: "--font-geist-mono",
 });
-const platypi = Platypi({
-  subsets: ["latin"],
+const platypi = localFont({
+  src: "./fonts/platypi.woff2",
+  weight: "300 800",
   display: "swap",
   variable: "--font-platypi",
 });

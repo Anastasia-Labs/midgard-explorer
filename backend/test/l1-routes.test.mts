@@ -307,6 +307,7 @@ describe("L1 deposits", () => {
           create: [
             {
               validator: "deposit",
+              deployment: deploymentId,
               eventType: "deposit",
               outputIndex: 0,
               lovelace: 2000000n,
@@ -318,6 +319,7 @@ describe("L1 deposits", () => {
             },
             {
               validator: "deposit",
+              deployment: deploymentId,
               eventType: "unknown",
               outputIndex: 1,
               lovelace: 3000000n,
