@@ -131,7 +131,7 @@ model L1Event {
   /// Which deployment's manifest this validator came from. Two deployments
   /// have entirely different script hashes, so without this an event cannot
   /// be attributed once more than one manifest is loaded.
-  deployment String @default("default")
+  deployment String
 
   /// Populated for deposits and withdrawals once the datum decodes. Null
   /// means "not decoded", never "zero": a decoder that cannot prove the
