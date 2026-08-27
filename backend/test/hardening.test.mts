@@ -56,11 +56,21 @@ describe("rateLimiter", () => {
     expect(seen).toHaveLength(3);
   });
 
+  it("publishes the remaining shared budget", () => {
+    const limit = rateLimiter({ limit: 3, windowMs: 60_000 });
+    const first = mkRes();
+    limit(mkReq(), first.res, () => {});
+    expect(first.headers["RateLimit-Limit"]).toBe("3");
+    expect(first.headers["RateLimit-Remaining"]).toBe("2");
+    expect(first.headers["RateLimit-Reset"]).toBe("60");
+  });
+
   it("refuses the one over the limit with 429", () => {
     const limit = rateLimiter({ limit: 2, windowMs: 60_000 });
     let passed = 0;
     const last = mkRes();
-    for (let i = 0; i < 2; i += 1) limit(mkReq(), mkRes().res, () => (passed += 1));
+    for (let i = 0; i < 2; i += 1)
+      limit(mkReq(), mkRes().res, () => (passed += 1));
     limit(mkReq(), last.res, () => (passed += 1));
     expect(passed).toBe(2);
     expect(last.status).toBe(429);
@@ -92,8 +102,16 @@ describe("rateLimiter", () => {
   it("reads the client from the front of a forwarded chain", () => {
     const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
     let passed = 0;
-    limit(mkReq("10.0.0.1", "203.0.113.7, 10.0.0.9"), mkRes().res, () => (passed += 1));
-    limit(mkReq("10.0.0.1", "203.0.113.7, 10.0.0.9"), mkRes().res, () => (passed += 1));
+    limit(
+      mkReq("10.0.0.1", "203.0.113.7, 10.0.0.9"),
+      mkRes().res,
+      () => (passed += 1),
+    );
+    limit(
+      mkReq("10.0.0.1", "203.0.113.7, 10.0.0.9"),
+      mkRes().res,
+      () => (passed += 1),
+    );
     expect(passed).toBe(1);
   });
 
@@ -111,8 +129,16 @@ describe("rateLimiter", () => {
   it("still trusts the chain from a loopback proxy", () => {
     const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
     let passed = 0;
-    limit(mkReq("::ffff:127.0.0.1", "203.0.113.7"), mkRes().res, () => (passed += 1));
-    limit(mkReq("::ffff:127.0.0.1", "203.0.113.8"), mkRes().res, () => (passed += 1));
+    limit(
+      mkReq("::ffff:127.0.0.1", "203.0.113.7"),
+      mkRes().res,
+      () => (passed += 1),
+    );
+    limit(
+      mkReq("::ffff:127.0.0.1", "203.0.113.8"),
+      mkRes().res,
+      () => (passed += 1),
+    );
     expect(passed).toBe(2);
   });
 
@@ -159,11 +185,10 @@ describe("resolveCorsOrigin", () => {
 });
 
 describe("rate limit mounts", () => {
-  it("spends a separate budget on each route", async () => {
+  it("shares one aggregate budget across every public API route", async () => {
     const express = (await import("express")).default;
-    const { mountRateLimits, resetRateLimits: reset } = await import(
-      "../src/server/rateLimit.js"
-    );
+    const { mountRateLimits, resetRateLimits: reset } =
+      await import("../src/server/rateLimit.js");
     reset();
 
     const app = express();
@@ -179,10 +204,12 @@ describe("rate limit mounts", () => {
       const first = await fetch(`http://127.0.0.1:${port}/api/metrics`);
       const second = await fetch(`http://127.0.0.1:${port}/api/metrics`);
       const other = await fetch(`http://127.0.0.1:${port}/api/assets`);
-      const transaction = await fetch(`http://127.0.0.1:${port}/api/transaction`);
+      const transaction = await fetch(
+        `http://127.0.0.1:${port}/api/transaction`,
+      );
       expect([first.status, second.status]).toEqual([200, 429]);
-      expect(other.status).toBe(200);
-      expect(transaction.status).toBe(200);
+      expect(other.status).toBe(429);
+      expect(transaction.status).toBe(429);
     } finally {
       server.close();
     }

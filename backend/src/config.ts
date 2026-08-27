@@ -17,13 +17,17 @@ const required = z.string().min(1);
  * NaN, and both used to sail through as a port number. */
 const positive = z.coerce.number().int().positive();
 
+const boolean = z
+  .enum(["true", "false", "1", "0"])
+  .transform((value) => value === "true" || value === "1");
+
 /** Optional, with an empty value read as absent. `FOO=` and no `FOO` line at
  * all mean the same thing to an operator, so they must mean the same thing
  * here. */
 const blank = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((v) => (v === "" ? undefined : v), schema.optional());
 
-const schema = z.object({
+const shape = {
   BACKEND_PORT: positive,
   // min(1) matters: `CORS_ORIGIN=` in a .env used to pass as the empty string,
   // which is not "unset" and never reaches the default. It sailed past the
@@ -31,6 +35,18 @@ const schema = z.object({
   // with nothing anywhere saying so.
   CORS_ORIGIN: required.default("*"),
   POSTGRES_URL: required,
+  // Optional locally for backwards compatibility. Production can make the
+  // replica mandatory with REQUIRE_MIDGARD_READ_REPLICA=true.
+  MIDGARD_READ_REPLICA_URL: blank(required),
+  REQUIRE_MIDGARD_READ_REPLICA: boolean.default(false),
+  NODE_DB_POOL_MAX: positive.default(8),
+  INDEXER_DB_POOL_MAX: positive.default(5),
+  DB_CONNECTION_TIMEOUT_MS: positive.default(5_000),
+  DB_IDLE_TIMEOUT_MS: positive.default(30_000),
+  DB_STATEMENT_TIMEOUT_MS: positive.default(10_000),
+  RESPONSE_CACHE_MAX_ENTRIES: positive.default(1_000),
+  API_RATE_LIMIT_MAX: positive.default(120),
+  API_RATE_LIMIT_WINDOW_MS: positive.default(60_000),
   LOG_LOCATION: required,
   // Optional because the explorer reads the node's Postgres directly and no
   // code path calls the node over HTTP today. Kept and still validated so a
@@ -55,9 +71,33 @@ const schema = z.object({
   KOIOS_BASE_URL: required,
   MIDGARD_MANIFEST_PATH: required,
   L1_SYNC_INTERVAL_MS: positive,
+  // The indexing loop. Default true so a single-process deployment behaves as
+  // it always has; a second API instance sets it false and serves reads only,
+  // because two loops against one index duplicate every Koios request and
+  // race each other's writes.
+  L1_SYNC_ENABLED: boolean.default(true),
   // Zero is meaningful here: it means every pass is a full rescan from genesis.
   L1_REORG_LOOKBACK_BLOCKS: z.coerce.number().int().nonnegative(),
-});
+} as const;
+
+/** The names the backend reads, exported so `.env.example` can be checked
+ * against them rather than kept in step by memory. */
+export const CONFIG_KEYS = Object.keys(shape);
+
+const schema = z
+  .object(shape)
+  .superRefine((value, ctx) => {
+    if (
+      value.REQUIRE_MIDGARD_READ_REPLICA &&
+      value.MIDGARD_READ_REPLICA_URL === undefined
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["MIDGARD_READ_REPLICA_URL"],
+        message: "is required when REQUIRE_MIDGARD_READ_REPLICA is true",
+      });
+    }
+  });
 
 /** Takes the environment rather than reading it, so the rules can be tested
  * without mutating the real process. */

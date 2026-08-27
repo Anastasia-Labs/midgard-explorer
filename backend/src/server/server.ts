@@ -52,7 +52,10 @@ export const startServer = async () => {
 
   // `/healthz` is in the endpoint catalogue with everything else, so it is
   // registered by `registerRoutes` below rather than declared here.
-  mountRateLimits(app, { limit: 60, windowMs: 60_000 });
+  mountRateLimits(app, {
+    limit: config.API_RATE_LIMIT_MAX,
+    windowMs: config.API_RATE_LIMIT_WINDOW_MS,
+  });
   startRateLimitSweeper();
 
   registerRoutes(app);
@@ -62,7 +65,13 @@ export const startServer = async () => {
   // Before the sync loop, so the log names its databases even if sync fails.
   void reportDatabaseIdentity();
 
-  startSync();
+  // One process indexes. Extra instances serve reads against the same index
+  // with L1_SYNC_ENABLED=false, and say so rather than appearing to index.
+  if (config.L1_SYNC_ENABLED) {
+    startSync();
+  } else {
+    logger.info("L1 sync disabled by configuration; serving reads only");
+  }
 
   // 404 for unmatched routes.
   app.use((_req, res) => {

@@ -11,6 +11,15 @@ import { parseConfig } from "../src/config.js";
 const valid = {
   BACKEND_PORT: "3101",
   POSTGRES_URL: "postgres://u:p@localhost:5433/midgard",
+  REQUIRE_MIDGARD_READ_REPLICA: "false",
+  NODE_DB_POOL_MAX: "8",
+  INDEXER_DB_POOL_MAX: "5",
+  DB_CONNECTION_TIMEOUT_MS: "5000",
+  DB_IDLE_TIMEOUT_MS: "30000",
+  DB_STATEMENT_TIMEOUT_MS: "10000",
+  RESPONSE_CACHE_MAX_ENTRIES: "1000",
+  API_RATE_LIMIT_MAX: "120",
+  API_RATE_LIMIT_WINDOW_MS: "60000",
   LOG_LOCATION: "./logs",
   NODE_RPC_HOST: "localhost",
   NODE_RPC_PORT: "3000",
@@ -35,6 +44,7 @@ describe("parseConfig", () => {
     const c = parseConfig(valid);
     expect(c.BACKEND_PORT).toBe(3101);
     expect(c.L1_REORG_LOOKBACK_BLOCKS).toBe(20);
+    expect(c.NODE_DB_POOL_MAX).toBe(8);
   });
 
   it("names the missing variable rather than yielding undefined", () => {
@@ -87,7 +97,48 @@ describe("parseConfig", () => {
   });
 
   it("allows a reorg lookback of zero, which means scan from genesis", () => {
-    expect(parseConfig({ ...valid, L1_REORG_LOOKBACK_BLOCKS: "0" })
-      .L1_REORG_LOOKBACK_BLOCKS).toBe(0);
+    expect(
+      parseConfig({ ...valid, L1_REORG_LOOKBACK_BLOCKS: "0" })
+        .L1_REORG_LOOKBACK_BLOCKS,
+    ).toBe(0);
+  });
+
+  it("can require a replica in public production", () => {
+    expect(() =>
+      parseConfig({ ...valid, REQUIRE_MIDGARD_READ_REPLICA: "true" }),
+    ).toThrow(/MIDGARD_READ_REPLICA_URL/);
+    expect(
+      parseConfig({
+        ...valid,
+        REQUIRE_MIDGARD_READ_REPLICA: "true",
+        MIDGARD_READ_REPLICA_URL: "postgres://reader:p@replica:5432/midgard",
+      }).MIDGARD_READ_REPLICA_URL,
+    ).toContain("replica");
+  });
+
+  /** One process must index. Two processes running the same sync loop against
+   * one index duplicate every Koios request and race each other's writes, and
+   * the moment a deployment runs more than one API instance that is the
+   * default rather than an accident. */
+  it("indexes by default, so a single-process deployment needs no new setting", () => {
+    expect(parseConfig(valid).L1_SYNC_ENABLED).toBe(true);
+  });
+
+  it("lets an extra read-only instance opt out of indexing", () => {
+    expect(parseConfig({ ...valid, L1_SYNC_ENABLED: "false" }).L1_SYNC_ENABLED).toBe(
+      false,
+    );
+  });
+
+  it("refuses a sync flag that is neither true nor false", () => {
+    expect(() => parseConfig({ ...valid, L1_SYNC_ENABLED: "maybe" })).toThrow(
+      /L1_SYNC_ENABLED/,
+    );
+  });
+
+  it("rejects an unbounded or nonsensical pool setting", () => {
+    expect(() => parseConfig({ ...valid, NODE_DB_POOL_MAX: "0" })).toThrow(
+      /NODE_DB_POOL_MAX/,
+    );
   });
 });
