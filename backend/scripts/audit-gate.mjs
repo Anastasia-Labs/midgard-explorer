@@ -25,11 +25,49 @@ const fail = (reason) => {
   process.exit(1);
 };
 
-const accepted = new Map(
-  JSON.parse(
+/**
+ * Dispositions are decisions with an end date.
+ *
+ * A recorded acceptance with no owner and no expiry is a permanent exemption:
+ * it silences the advisory for as long as the file exists, and nothing ever
+ * asks whether the reasoning still holds after the dependency has moved four
+ * majors. Each entry carries a role that owns it and a date it stops counting.
+ *
+ * Both are checked when the file is READ, not when an advisory happens to
+ * match, so an entry that has expired fails the build whether or not the
+ * advisory is still reported. An advisory that is gone should have its record
+ * deleted, and this is what says so.
+ */
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const loadDispositions = () => {
+  const entries = JSON.parse(
     readFileSync(join(root, "security-advisories.json"), "utf8"),
-  ).accepted.map((entry) => [entry.id, entry]),
-);
+  ).accepted;
+  const today = new Date().toISOString().slice(0, 10);
+
+  for (const entry of entries) {
+    if (typeof entry.owner !== "string" || entry.owner.trim() === "") {
+      fail(`the disposition for ${entry.id} has no owner. Name the role that owns it.`);
+    }
+    if (!DATE.test(entry.expiresOn ?? "")) {
+      fail(
+        `the disposition for ${entry.id} has no expiresOn date in YYYY-MM-DD form. ` +
+          `An acceptance without an end is a permanent exemption.`,
+      );
+    }
+    if (entry.expiresOn < today) {
+      fail(
+        `the disposition for ${entry.id} (${entry.module}) expired on ` +
+          `${entry.expiresOn} and is owned by ${entry.owner}. Re-triage it, ` +
+          `extend it with a reason, or delete it if the advisory is gone.`,
+      );
+    }
+  }
+  return new Map(entries.map((entry) => [entry.id, entry]));
+};
+
+const accepted = loadDispositions();
 
 /**
  * `pnpm audit` exits non-zero when it FINDS something, which is not a failure

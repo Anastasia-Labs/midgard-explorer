@@ -3,7 +3,9 @@
     "Recorded dispositions for production dependency advisories.",
     "The audit gate fails on any advisory that is not listed here, so a new one",
     "has to be looked at rather than accumulating in a report nobody reads.",
-    "Re-check each entry when its package or its parent is upgraded."
+    "Every entry needs an owner and an expiresOn date. The gate fails once that",
+    "date passes, so an acceptance is a decision with an end rather than a",
+    "permanent exemption nobody revisits. Owners are roles, never people."
   ],
   "accepted": [
     {
@@ -23,7 +25,9 @@
         "on any request path merges one."
       ],
       "recheckWhen": "prisma or @prisma/config is upgraded",
-      "recordedOn": "2026-08-27"
+      "recordedOn": "2026-08-27",
+      "owner": "explorer-maintainers",
+      "expiresOn": "2026-11-27"
     }
   ]
 }
