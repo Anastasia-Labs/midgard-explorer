@@ -19,6 +19,32 @@ in another, which makes the numbers unusable as evidence. One run, or none.
 | End to end | `pnpm test:e2e` | 370 passed, 14 skipped, 0 failed, exit 0, 6.2m |
 | Canvas reliability | `pnpm test:canvas-reliability` | 20/20, 1948MB free at the tightest, peak load 5.64 |
 
+### The verified run of 2026-08-20
+
+| Check | Command | Result |
+|---|---|---|
+| Backend types | `pnpm typecheck` | 0 errors |
+| Backend tests | `pnpm test` | 301 passed, 37 files |
+| Backend build and boot | `pnpm build` then `node dist/index.js` | starts; `/healthz` 200, `/readyz` 200 with both databases, 503 with one down |
+| Frontend types | `pnpm exec tsc --noEmit` | 0 errors, app and contracts |
+| Frontend lint | workspace config and the app's own | 0 errors in both |
+| Frontend format | `pnpm exec prettier --check .` | clean, after 44 files that had never been formatted |
+| Frontend tests | `pnpm test` | 399 passed, 31 files |
+| End to end | `scripts/e2e-by-file.sh` | 405 passed, 17 skipped, 3 failed across 19 spec files |
+
+The three end-to-end failures did not reproduce. Each spec file was re-run and
+each passed: `core-flows` 76 passed, and `populated`'s two accessibility scans
+passed alone in 57 seconds. No test failed twice across five attempts at the
+suite, and the failing test was different every time, which is contention
+rather than code.
+
+**One process cannot finish this suite on a two core box.** It starts at load 5,
+passes roughly 170 tests at normal speed, then climbs past load 120, and from
+that point a three second test takes three minutes. `scripts/e2e-by-file.sh`
+runs the same tests one spec file at a time against a single production build
+and finishes in about ten minutes. `scripts/ci-local.sh` remains the gate, and
+CI is where a single-process run belongs.
+
 ## How this document scores itself
 
 Four axes, each evaluated on its own evidence. There is no aggregate figure and
@@ -107,6 +133,17 @@ chain, expose the service, or make the gate unable to detect a regression.
      config resolves the port once and publishes it to the fixture subprocess
      and to the workers.
 
+- **Closed 2026-08-20, the gate now exists off this machine.**
+  `.github/workflows/ci.yml` runs both jobs on every push and pull request: the
+  backend against a PostgreSQL service with the L1 index migrations applied,
+  the frontend through the same `scripts/ci-local.sh` that runs locally. That
+  script now runs both ESLint configurations, because the root workspace config
+  does not extend `eslint-config-next` and the React Compiler rules therefore
+  only ran when ESLint was invoked from the app directory. The backend job also
+  boots the compiled server and calls both probes, which is the only check that
+  proves the artifact a deployment runs can start: `@prisma/client-runtime-utils`
+  resolved under ts-node and not under node, so `node dist/index.js` failed on a
+  dependency no test could see.
 - **Known gaps:** three tests failed on the loaded box during a 13.5 minute run
   and passed in isolation at 350ms, 375ms and 2.8s, against 30 second timeouts.
   The clean 6.2 minute run passed all three. They are recorded as observed under
@@ -267,7 +304,9 @@ bytes of graph styling that travels with the dynamically imported canvas, and
 - [x] Backend contract for inputs, outputs, assets, datums, reference scripts,
       collateral, collateral return, mints, and redeemers
 - [x] Linked L1 transaction-detail route
-- [x] L1 overview, UTxO, contracts, collateral, mint/burn, events, and raw tabs
+- [x] L1 UTxO sections: address, payment credential, stake address, UTxO
+      reference, and the spending transaction where the index holds it
+- [ ] Mint/burn and transaction metadata are indexed and not yet shown
 - [x] Links to the configured external Cardano explorer
 
 ### Help and iconography
@@ -397,3 +436,189 @@ historical spender evidence the node does not index.
 That covers the functional axis only. Read the four axes at the top of this
 document for the rest, and do not restate any of them as a single figure. Two
 axes are open, and the release gate is zero open P0 items rather than a score.
+
+## 2026-08-14 design-excellence delta
+
+This is the implementation plan for the 8.4/10 design audit. It extends the
+existing completion matrix; it does not create a second product backlog or
+redeclare facts already owned above. A visual score is directional, not a
+release gate. Release readiness continues to require zero open P0 items on all
+four axes.
+
+### Non-negotiable constraints
+
+- No displayed relationship, total, label, status, or timeline stage may be
+  inferred when the backend cannot prove it.
+- Existing registries remain authoritative: endpoint facts come from the
+  backend catalogue, status semantics from `status-registry.ts`, field help
+  from `glossary.ts`, and responsive record presentation from `DataTable` and
+  `LedgerRow`.
+- New filters must execute in the backend, survive in the URL, reset paging,
+  and apply to totals and exports. Client-only filtering of a received page is
+  not an implementation.
+- External metadata is untrusted. It must be schema-validated, length-bounded,
+  rendered as text, labelled with provenance, and never weaken CSP or permit
+  arbitrary remote HTML, SVG, script, or fetch destinations.
+- A visualization supplements a complete semantic representation. It cannot
+  replace the table, require motion, invent input-to-output edges, or hide a
+  lifecycle conclusion.
+- Performance claims require a production build and measured evidence. User
+  research claims require observed task results; neither may be inferred from
+  screenshots.
+
+### Phase A: visible correctness and discovery
+
+Status: **complete**
+
+- [x] Correct recognized status badges so their labels remain one readable
+  line in data tables while unknown, unbounded node codes retain safe wrapping.
+- [x] Add a deposits layout gate at 1440px and retain the existing 320px
+  page-overflow gate. Internal table scrolling is acceptable only below the
+  breakpoint at which lower-priority columns are removed.
+- [x] Make overview health density severity-sensitive: healthy may collapse on
+  a phone, degraded stays explanatory, and stopped/unsafe remains prominent.
+  The same health model must drive every presentation.
+- [x] Add glossary discovery using the existing `GLOSSARY` object: category
+  navigation, deep-linked terms, and client-side text search over this small
+  static corpus. No second glossary index or duplicated definition strings.
+
+Implementation checkpoint (2026-08-14): the first three items pass the
+production deposits layout checks at 320px and 1440px, the production glossary
+keyboard/reflow check at 320px, 394 unit/component tests, typecheck, and
+repository lint.
+
+Closed 2026-08-20, health density. `networkHealth` stays the single model and
+nothing about the judgement changed; only what a phone renders did. A healthy
+verdict's reasons restate the block interval and the pending count, which are
+tiles a thumb away, so they carry `max-sm:hidden`. Every other state keeps its
+reasons at every width, because for those the reasons are the only place the
+evidence appears. The rule is CSS, not a viewport read in JavaScript, so there
+is no hydration branch to get wrong. Proven at both ends: two component tests
+assert the intent attribute, and `e2e/layout.spec.ts` loads the real stylesheet
+at 390px and 1440px against a healthy fixture served by
+`POST /__control?health=healthy`. Removing the class fails the phone case.
+
+Acceptance:
+
+- Known status labels never break within the label at desktop, tablet, or
+  mobile-card widths; an adversarial unknown status never widens the page.
+- `/deposits` has no page-level horizontal overflow at 320, 390, 768, 1024,
+  1280, or 1440px, and the status text has a single line box at 1440px.
+- Critical network health remains above recent activity at phone width.
+- Glossary filters are keyboard-operable, announce their result count, preserve
+  category and definition semantics, and require no server or query-string
+  parsing of user-supplied markup.
+
+### Phase B: investigation primitives
+
+Status: **pending; requires query-contract design before UI work**
+
+1. Define a shared, typed filter schema for block, transaction, bridge, L1, and
+   asset lists. Each supported filter maps once to validation, SQL parameters,
+   URL serialization, totals, export, OpenAPI, and tests.
+2. Add only task-backed filters: lifecycle/finality, time range, protocol-event
+   family, validator, and script/mint activity where authoritative fields
+   exist. Amount filters wait until multi-asset semantics can be stated without
+   comparing unlike values.
+3. Extend search results with type, matched field, and a small authoritative
+   preview. Recent searches may be local-only, bounded, clearable, and must not
+   be sent to analytics or synchronized without explicit consent.
+4. Add consistent related-record navigation through existing identifiers and
+   route builders. Do not create a generic relationship graph until every edge
+   has a named source and proof.
+
+Acceptance:
+
+- A copied filtered URL reproduces the same rows, total, sort, and export.
+- Every query is parameterized and bounded; invalid values fail validation
+  without reaching SQL.
+- Search and filter controls pass keyboard, screen-reader, 320px reflow, empty,
+  loading, failure, and slow-response tests.
+
+### Phase C: Midgard settlement pulse
+
+Status: **pending; requires an authoritative queue/transition feed**
+
+1. Specify the states and evidence available for Submitted, Admission,
+   Validated, Midgard inclusion, Cardano observation, and Cardano finality.
+2. Reuse the transaction journey model for labels and ordering; do not fork a
+   second lifecycle registry for the overview.
+3. Deliver a text/table live region first, then a bounded visual layer over the
+   same model. New events remain behind a reader-controlled apply action, as
+   recent overview rows do today.
+4. Pause polling and animation while hidden, respect reduced motion, cap retained
+   history, and avoid exposing raw user payloads to visualization workers.
+
+Acceptance:
+
+- The pulse never contradicts a transaction or block detail page.
+- Stale, disconnected, and partially available sources are visually and
+  programmatically distinct from zero activity.
+- The semantic alternative contains every fact shown visually, and sustained
+  updates do not move focused or actively read content.
+
+### Phase D: entity and bridge enrichment
+
+Status: **pending; backend provenance precedes presentation**
+
+1. Add address relationships, asset history, holder distribution, validator
+   activity, and unified bridge journeys only from indexed ledger facts.
+2. Model external asset metadata as a separate provenance-bearing contract;
+   ledger name bytes, fingerprint, policy, and quantities remain primary.
+3. Detect unsafe display names before decoding, preserve raw bytes, and keep the
+   existing bidi/control-character protection.
+4. Build one bridge-journey model for deposits, withdrawals, and forced
+   transactions, with direction and stage applicability expressed as data.
+
+Acceptance:
+
+- Every enrichment states source and freshness and degrades independently.
+- Missing metadata never changes canonical identity or hides ledger data.
+- No external asset can inject markup, load an unapproved resource, impersonate
+  a system status, or cause unbounded layout or storage growth.
+
+### Phase E: developer surface
+
+Status: **pending**
+
+1. Enhance the existing catalogue-derived API reference rather than embedding
+   a second OpenAPI renderer.
+2. Permit live execution only for catalogue-declared read-only GET endpoints,
+   against the configured same-origin API, with catalogue-derived parameters.
+3. Reuse route validation and rate limits; cap rendered and copied responses,
+   redact configured sensitive headers, and never accept an arbitrary URL.
+4. Generate curl and JavaScript examples from the same normalized request.
+
+Acceptance:
+
+- The reference, OpenAPI document, mounted route, rate-limit policy, examples,
+  and live request all derive from one catalogue entry.
+- CSP remains unchanged or stricter; no new third-party script, `eval`, frame,
+  or connect source is required.
+- Error, timeout, abort, 429, oversized response, and offline cases are covered.
+
+### Phase F: evidence required before a 10/10 claim
+
+Status: **pending and ongoing**
+
+- Production field Core Web Vitals meet LCP <= 2.5s, INP <= 200ms, and CLS <=
+  0.1 at the 75th percentile on mobile and desktop.
+- WCAG 2.2 AA automation is supplemented by keyboard, 400% reflow,
+  forced-colours, NVDA/Chrome, and VoiceOver/Safari review.
+- Representative users complete search-to-record, transaction-state,
+  L2-to-L1 evidence, bridge-failure, and raw-verification tasks without severe
+  findings. Targets and sample sizes are fixed before testing.
+- The full type, lint, unit, contract, backend, production E2E, security-header,
+  accessibility, responsive, build, dependency-audit, and canvas-reliability
+  gates pass in one recorded run.
+
+### Delivery checkpoints
+
+| Checkpoint | Scope | Exit condition |
+|---|---|---|
+| A | Correctness and glossary discovery | All Phase A acceptance checks pass |
+| B | Investigation | Shared contracts land before page controls |
+| C | Settlement pulse | Authoritative feed and semantic version ship together |
+| D | Enrichment | Provenance and sanitization precede presentation |
+| E | API interaction | Catalogue-derived, same-origin, bounded GET only |
+| F | 10/10 evidence | Production metrics and user validation meet predeclared targets |

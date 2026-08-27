@@ -1,4 +1,32 @@
 services:
+  explorer-api-cache:
+    image: nginx:1.27-alpine
+    container_name: midgard-explorer-api-cache
+    restart: unless-stopped
+    environment:
+      BACKEND_ORIGIN: ${BACKEND_ORIGIN:-host.docker.internal:3101}
+      # Prevent the image's envsubst pass from consuming Nginx's own $variables.
+      NGINX_ENVSUBST_FILTER: BACKEND_ORIGIN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${API_CACHE_PORT:-3102}:8080"
+    volumes:
+      - ./infra/nginx/explorer-api.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - explorer-api-cache:/var/cache/nginx
+    tmpfs:
+      - /var/run
+      - /var/log/nginx
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
   explorer-postgres:
     image: postgres:17-alpine
     container_name: midgard-explorer-postgres
@@ -22,4 +50,5 @@ services:
           memory: 512M
 
 volumes:
+  explorer-api-cache:
   explorer-pgdata:

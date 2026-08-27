@@ -1,0 +1,155 @@
+name: CI
+
+# The gate that has only ever run on one machine. Both jobs run the same
+# commands the local scripts run, so a green run here means the same thing a
+# green run there does.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # The suite refuses any database whose name does not end in `_test`, so
+      # a misconfigured run stops rather than truncating something real.
+      TEST_INDEXER_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_explorer_test
+      INDEXER_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_explorer_ci
+      POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/postgres?schema=public
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      BACKEND_PORT: "3101"
+      LOG_LOCATION: ./logs/ci
+      RECENT_BLOCKS_LIMIT: "10"
+      RECENT_TRANSACTIONS_LIMIT: "10"
+      TRANSACTIONS_PER_PAGE: "25"
+      BLOCKS_PER_PAGE: "25"
+      KOIOS_BASE_URL: https://preprod.koios.rest/api/v1
+      MIDGARD_MANIFEST_PATH: ./manifest.json
+      L1_SYNC_INTERVAL_MS: "60000"
+      L1_REORG_LOOKBACK_BLOCKS: "20"
+      # Nothing in CI may reach Koios or index anything. The API still starts.
+      L1_SYNC_ENABLED: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate both Prisma clients
+        run: |
+          pnpm prisma:generate
+          pnpm indexer:generate
+
+      - name: Create the databases the suite and the boot check need
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_explorer_test'
+          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_explorer_ci'
+
+      - name: Migrate the test database
+        # `indexer:deploy` targets INDEXER_POSTGRES_URL only, so the database
+        # the suite actually uses needs the same migrations applied to it.
+        run: |
+          pnpm indexer:deploy
+          INDEXER_POSTGRES_URL="$TEST_INDEXER_POSTGRES_URL" pnpm indexer:deploy
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      - run: pnpm build
+
+      - name: Boot the compiled server and prove both probes
+        # `pnpm test` never runs `dist`. This is the only step that proves the
+        # artifact a deployment would run can start at all: a missing runtime
+        # dependency resolves under ts-node and fails under node.
+        run: |
+          node dist/index.js &
+          SERVER_PID=$!
+          for _ in $(seq 1 30); do
+            sleep 1
+            curl -fsS http://127.0.0.1:3101/healthz > /dev/null && break
+          done
+          curl -fsS http://127.0.0.1:3101/healthz | tee /dev/stderr | grep -q '"status":"ok"'
+          curl -fsS http://127.0.0.1:3101/readyz | tee /dev/stderr | grep -q '"ready":true'
+          kill $SERVER_PID
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: frontend-new
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend-new/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install the browser the e2e project uses
+        run: pnpm --filter @midgard-explorer/app exec playwright install --with-deps chromium
+
+      - name: Run the same gate the local script runs
+        run: ./scripts/ci-local.sh
+
+      - name: Keep the report when the gate fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend-new/app/playwright-report
+          retention-days: 7
