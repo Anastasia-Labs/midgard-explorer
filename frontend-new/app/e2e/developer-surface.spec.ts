@@ -27,14 +27,7 @@ test.describe("transaction tabs", () => {
   test("offers the convention's sections", async ({ page }) => {
     await openTx(page);
     const tabs = page.getByRole("tab");
-    await expect(tabs).toHaveText([
-      /Overview/,
-      /State/,
-      /Datums & redeemers/,
-      /Events/,
-      /Details/,
-      /Raw/,
-    ]);
+    await expect(tabs).toHaveText([/Overview/, /State/, /Datums & redeemers/, /Events/, /Raw/]);
   });
 
   test("a section is linkable and survives a reload", async ({ page }) => {
@@ -55,7 +48,6 @@ test.describe("events", () => {
     await openTx(page);
     await page.getByRole("tab", { name: /Events/ }).click();
     const events = page.getByRole("tabpanel", { name: /Events/ });
-    await expect(events.getByText(/do not emit an event-log collection/i)).toBeVisible();
     await expect(events.getByRole("heading", { name: /Script invocations/ })).toBeVisible();
     await expect(events.getByRole("heading", { name: "Spend", exact: true })).toBeVisible();
     await expect(events.getByText(/spend #0/i).first()).toBeVisible();
@@ -65,16 +57,11 @@ test.describe("events", () => {
     await expect(events.getByRole("region", { name: /redeemer CBOR/i }).first()).toBeVisible();
   });
 
-  /** The populated case above is the demonstration. This is the other half of
-   * the contract: a plain transfer runs no scripts, and the tab has to say that
-   * plainly rather than render an empty list that reads as a missing feature. */
-  test("says a transaction ran no scripts rather than showing an empty list", async ({ page }) => {
+  test("omits the events tab when no script ran", async ({ page }) => {
     const hash = await txWithoutInvocations(page);
     await page.goto(`/transaction/${hash}?tab=events`);
     await settle(page);
-    const events = page.getByRole("tabpanel", { name: /Events/ });
-    await expect(events.getByText(/no redeemers, so it has no recorded script invocations/i)).toBeVisible();
-    await expect(events.getByText(/do not emit an event-log collection/i)).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Events/ })).toHaveCount(0);
   });
 });
 
@@ -128,16 +115,15 @@ test.describe("datums and redeemers", () => {
 });
 
 test.describe("protocol details", () => {
-  test("accounts for authorization, commitments, and unavailable sections", async ({ page }) => {
+  test("shows authorization and commitments without listing absent Cardano features", async ({
+    page,
+  }) => {
     await openTx(page);
-    await page.getByRole("tab", { name: "Details" }).click();
+    // Overview, not a Details tab of its own: four hashes behind a tab a
+    // reader has to open is a tab that hides them.
     await expect(page.getByText("Authorization and commitments")).toBeVisible();
     await expect(page.getByText("Required signers")).toBeVisible();
-    await expect(page.getByText("Protocol availability")).toBeVisible();
-    await expect(page.getByText("Metadata and CIP-20")).toBeVisible();
-    await expect(page.getByText("Protocol events / logs")).toBeVisible();
-    await expect(page.getByText("Execution trace")).toBeVisible();
-    await expect(page.getByText("Not in native format").first()).toBeVisible();
+    await expect(page.getByText("Protocol availability")).toHaveCount(0);
   });
 });
 
@@ -203,7 +189,7 @@ test.describe("state", () => {
 });
 
 test.describe("accessibility of the new surface", () => {
-  for (const tab of ["datums", "details", "raw", "utxo"] as const) {
+  for (const tab of ["datums", "summary", "raw", "utxo"] as const) {
     test(`the ${tab} tab has no automated violations in either theme`, async ({ page }) => {
       const hash = await txWithStatus(page, "committed");
       for (const scheme of ["light", "dark"] as const) {

@@ -111,9 +111,9 @@ test.describe("task performance", () => {
       await input.fill(hash);
       await input.press("Enter");
       await page.waitForURL(new RegExp(`/transaction/${hash}$`));
-      return page.getByRole("region", { name: "Protocol journey" }).getByRole("heading", {
-        level: 2,
-      });
+      // The answer is the record header's badge. It used to be the journey's
+      // own heading, one of three places this page stated a lifecycle.
+      return page.locator('[data-region="identity"]').getByText(/Committed|Final on Cardano/);
     });
     expect(r.steps).toBeLessThanOrEqual(3);
   });

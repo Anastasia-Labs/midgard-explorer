@@ -48,9 +48,7 @@ test("gives the pre-paint script the nonce the policy authorizes", async ({ page
     const el = [...document.querySelectorAll("script")].find((s) =>
       s.textContent?.includes("mg_theme"),
     );
-    return el === undefined
-      ? null
-      : { property: el.nonce, attribute: el.getAttribute("nonce") };
+    return el === undefined ? null : { property: el.nonce, attribute: el.getAttribute("nonce") };
   });
 
   expect(script, "the pre-paint theme script is not in the document").not.toBeNull();
@@ -94,7 +92,7 @@ test("refuses an inline script that does not carry the nonce", async ({ page }) 
     injected = true;
     await route.fulfill({
       response,
-      body: body.replace("</body>", '<script>window.__unauthorized=true;</script></body>'),
+      body: body.replace("</body>", "<script>window.__unauthorized=true;</script></body>"),
     });
   });
 

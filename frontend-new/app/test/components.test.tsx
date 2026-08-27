@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdaAmount, ValueCell } from "../src/components/ui/amount";
 import { Journey } from "../src/components/ui/journey";
+import { LedgerRow } from "../src/components/ui/mobilerow";
 import { NetworkMetrics } from "../src/components/ui/metrics";
 import { Callout, EmptyState, ErrorState, L1L2Badge } from "../src/components/ui/primitives";
 import { StatusBadge } from "../src/components/ui/status";
@@ -21,15 +22,40 @@ const value = (lovelace: string, assets: Record<string, Record<string, string>> 
 
 afterEach(cleanup);
 
+describe("LedgerRow", () => {
+  it("allows repeated visible labels without duplicate React keys", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(
+      <LedgerRow
+        spec={{
+          primary: "Record",
+          details: [
+            { label: "Contract", value: "One" },
+            { label: "Contract", value: "Two" },
+          ],
+        }}
+      />,
+    );
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+});
+
 describe("StatusBadge", () => {
-  it("renders the registry label for a known status", () => {
+  it("renders the registry label for a known status without mid-word breaking", () => {
+    // Registry labels are short product copy, so they must never break inside a
+    // word: `wrap-anywhere` turned "Projected" into a column of letters. They
+    // still wrap at spaces, because forbidding every break put the overview
+    // into horizontal scroll at 320px.
     render(<StatusBadge status="committed" />);
-    expect(screen.getByText("Committed")).toBeDefined();
+    expect(screen.getByText("Committed").className).not.toMatch(/\bwrap-anywhere\b/);
   });
 
   it("renders an unknown status verbatim and announces it to screen readers", () => {
     render(<StatusBadge status="some_future_status" />);
-    expect(screen.getByText("some_future_status")).toBeDefined();
+    const badge = screen.getByText("some_future_status");
+    expect(badge.className).toMatch(/\bwrap-anywhere\b/);
+    expect(badge.className).not.toMatch(/\bwhitespace-nowrap\b/);
     expect(screen.getByText("(unrecognized status)")).toBeDefined();
   });
 
@@ -103,11 +129,11 @@ describe("Journey", () => {
   });
 
   it("does not invent an L1 submission timestamp", () => {
-    render(<Journey model={blockJourney(finalization, 40)} />);
+    render(<Journey model={blockJourney(finalization, 40, "ab".repeat(28))} />);
     // The label is on the rail and again in the details; the details entry is
     // the one that carries the timestamp, or says it has none.
     const entry = screen
-      .getAllByText("Submitted to L1")
+      .getAllByText("Submitted to Cardano")
       .map((el) => el.closest("dt")?.parentElement)
       .find((el) => el != null);
     expect(entry).toBeDefined();
@@ -126,12 +152,12 @@ describe("Journey", () => {
       />,
     );
     expect(screen.getAllByText("Rejected").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Final on L1")).toBeNull();
+    expect(screen.queryByText("Final on Cardano")).toBeNull();
   });
 
   it("names the stage a block is waiting on rather than restating its code", () => {
-    render(<Journey model={blockJourney(finalization, 40)} />);
-    expect(screen.getByText("Committed, awaiting L1 finality")).toBeDefined();
+    render(<Journey model={blockJourney(finalization, 40, "ab".repeat(28))} />);
+    expect(screen.getByText("Committed, awaiting Cardano finality")).toBeDefined();
   });
 });
 
@@ -144,7 +170,13 @@ describe("NetworkMetrics", () => {
       observedFrom: "2026-07-20T12:00:00.000Z",
       partial: false,
     },
-    tip: { height: 40, at: "2026-07-28T12:00:00.000Z", ageSeconds: 12, source: "blocks.height" },
+    tip: {
+      headerHash: "ab".repeat(28),
+      height: 40,
+      at: "2026-07-28T12:00:00.000Z",
+      ageSeconds: 12,
+      source: "blocks.height",
+    },
     throughput: {
       transactions: 88,
       blocks: 40,
@@ -181,6 +213,34 @@ describe("NetworkMetrics", () => {
     expect(screen.getByText(/Everything else on this page is unaffected/)).toBeDefined();
     // All-time counts survive a metrics failure: they come from another call.
     expect(screen.getByText("40")).toBeDefined();
+  });
+
+  /** Density has to follow severity, not the other way round. On a phone the
+   * healthy verdict's supporting sentences repeat figures that are already in
+   * the tiles below it, so they collapse; a degraded or stalled verdict's
+   * reasons are the only place its evidence appears, so they never do. */
+  it("collapses only a healthy verdict's reasons at phone width", () => {
+    const { container } = render(<NetworkMetrics metrics={base} totalBlocks={40} totalTxs={60} />);
+    const verdict = container.querySelector('[data-region="verdict"]');
+    expect(verdict?.getAttribute("data-verdict-state")).toBe("healthy");
+    expect(
+      verdict?.querySelector("[data-region='verdict-reasons']")?.getAttribute("data-density"),
+    ).toBe("collapsible");
+  });
+
+  it("keeps a stalled verdict's reasons at every width", () => {
+    const stalled = {
+      ...base,
+      tip: { ...base.tip, ageSeconds: 4_000 },
+    } as unknown as MetricsResponse;
+    const { container } = render(
+      <NetworkMetrics metrics={stalled} totalBlocks={40} totalTxs={60} />,
+    );
+    const verdict = container.querySelector('[data-region="verdict"]');
+    expect(verdict?.getAttribute("data-verdict-state")).toBe("stalled");
+    expect(
+      verdict?.querySelector("[data-region='verdict-reasons']")?.getAttribute("data-density"),
+    ).toBe("always");
   });
 
   it("states a verdict above the figures rather than leaving the reader to add up five numbers", () => {
@@ -235,7 +295,10 @@ describe("NetworkMetrics", () => {
     // not happen.
     expect(container.querySelector(".mg-tint")).toBeNull();
 
-    const advanced = { ...base, tip: { ...base.tip, height: 41 } } as MetricsResponse;
+    const advanced = {
+      ...base,
+      tip: { ...base.tip, headerHash: "cd".repeat(28), height: 41 },
+    } as MetricsResponse;
     rerender(<NetworkMetrics metrics={advanced} totalBlocks={40} totalTxs={60} />);
     expect(container.querySelector(".mg-tint")).not.toBeNull();
   });
@@ -252,10 +315,7 @@ describe("NetworkMetrics", () => {
     expect(screen.getByText(/thin sample/)).toBeDefined();
   });
 
-  /** A node idle for days made every windowed tile read zero while the only
-   * real figures sat in a caption in the panel's corner, so the panel looked
-   * broken rather than quiet. */
-  it("falls back to all-time counts when nothing happened in the window", () => {
+  it("shows canonical all-time totals when nothing happened in the window", () => {
     const idle = {
       ...base,
       throughput: {
@@ -272,16 +332,17 @@ describe("NetworkMetrics", () => {
     expect(region.textContent).toContain("21");
     // The basis must be stated. A figure a reader cannot situate is worth
     // less than the zero it replaced.
-    expect(region.textContent).toContain("all time");
+    expect(region.textContent).toContain("all time total");
   });
 
-  // The discriminating case: a window with real activity must keep showing
-  // the window, or the panel silently stops being a 24 hour panel.
-  it("keeps showing window counts when the window has activity", () => {
+  // The overview and list pages must never disagree merely because the node
+  // has activity inside the metrics window. Window counts are context only.
+  it("keeps showing canonical totals when the window has activity", () => {
     render(<NetworkMetrics metrics={base} totalBlocks={9999} totalTxs={9999} />);
     const region = document.querySelector('[data-region="metrics"]')!;
-    expect(region.textContent).not.toContain("9,999");
-    expect(region.textContent).not.toContain("all time");
+    expect(region.textContent).toContain("9,999");
+    expect(region.textContent).toContain("all time total");
+    expect(region.textContent).toContain(`in the last ${base.window.hours}h`);
   });
 });
 

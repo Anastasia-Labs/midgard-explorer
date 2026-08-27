@@ -112,3 +112,49 @@ export function reportTxLayout(m: PageMetrics, label: string): string {
     `  document   ${m.docHeight}`,
   ].join("\n");
 }
+
+/** Text painted below `floor`, in CSS pixels, wherever it came from.
+ *
+ * Lives here rather than in the spec because the spec's claim is only as good
+ * as this walk, and a walk that cannot be exercised on its own gets trusted
+ * without ever being checked. Given a page, it returns one line per distinct
+ * (size, element shape) pair.
+ *
+ * Three filters, each load-bearing:
+ *   - `checkVisibility` keeps out the responsive branch that is not painted.
+ *     The desktop table still carries its classes at 390px, and reporting its
+ *     headers there would be a finding about markup, not about what is read.
+ *   - `exempt` drops text the floor does not govern: `<sup>`/`<sub>` are shrunk
+ *     by the UA relative to their container, so holding them to it would mean
+ *     setting them larger than body.
+ *   - the dedup key is (size, tag+class), so an 11px table header reports once
+ *     rather than once per column and buries everything else. */
+export async function undersizedText(page: Page, floor: number, exempt: string[]) {
+  await settle(page);
+  return page.evaluate(
+    ({ floor, exempt }) => {
+      const found: string[] = [];
+      const seen = new Set<string>();
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const el = node.parentElement;
+        if (!el || exempt.includes(el.tagName)) continue;
+        const text = (node.textContent ?? "").trim();
+        if (!text) continue;
+        if (!el.checkVisibility()) continue;
+
+        const size = parseFloat(getComputedStyle(el).fontSize);
+        if (!(size < floor)) continue;
+
+        const where = `${el.tagName.toLowerCase()}.${el.className || "-"}`.slice(0, 90);
+        const key = `${size}|${where}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        found.push(`${size}px  ${where}  "${text.slice(0, 40)}"`);
+      }
+      return found;
+    },
+    { floor, exempt },
+  );
+}

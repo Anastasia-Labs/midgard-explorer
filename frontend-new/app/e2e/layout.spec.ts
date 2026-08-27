@@ -25,6 +25,46 @@ const WIDTHS = FULL
   ? (["narrow", "phone", "tablet", "desktop"] as const)
   : (["narrow", "phone"] as const);
 
+/** Density follows severity, and the only honest test of that is a real
+ * viewport with the real stylesheet: the class that hides the healthy reasons
+ * is a media query, so jsdom can only assert the intent attribute. */
+test.describe("overview health density", () => {
+  test.beforeEach(({}, info) => {
+    test.skip(info.project.name !== "desktop", "sets its own viewports");
+  });
+
+  test("collapses a healthy verdict's reasons on a phone and keeps them on a desktop", async ({
+    page,
+    request,
+  }) => {
+    await request.post(`${FIXTURE}/__control?health=healthy`);
+
+    await page.setViewportSize(VIEWPORTS.phone);
+    await page.goto("/");
+    await settle(page);
+
+    const verdict = page.locator('[data-region="verdict"]');
+    await expect(verdict).toHaveAttribute("data-verdict-state", "healthy");
+    await expect(verdict.getByText(/Blocks arrive every/)).toBeHidden();
+
+    await page.setViewportSize(VIEWPORTS.desktop);
+    await settle(page);
+    await expect(verdict.getByText(/Blocks arrive every/)).toBeVisible();
+  });
+
+  test("keeps a degraded verdict's reasons on a phone, where its evidence lives nowhere else", async ({
+    page,
+  }) => {
+    await page.setViewportSize(VIEWPORTS.phone);
+    await page.goto("/");
+    await settle(page);
+
+    const verdict = page.locator('[data-region="verdict"]');
+    await expect(verdict).toHaveAttribute("data-verdict-state", "degraded");
+    await expect(verdict.locator('[data-region="verdict-reasons"]')).toBeVisible();
+  });
+});
+
 test.describe("layout gates", () => {
   // This spec sets its own viewport sizes, so running it under both projects
   // would measure the same layout twice.
@@ -108,7 +148,6 @@ test.describe("layout gates", () => {
  * found a second instance in the journey stage list.
  */
 test.describe("summary band fills its rows", () => {
-
   test.beforeEach(({}, info) => {
     test.skip(info.project.name !== "desktop", "sets its own viewports");
   });

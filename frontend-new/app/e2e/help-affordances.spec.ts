@@ -98,6 +98,28 @@ test.describe("help text is reachable without a mouse", () => {
     ).toBeVisible();
   });
 
+  test("glossary discovery is keyboard-operable and reflows at 320px", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    await page.goto("/glossary");
+
+    const search = page.getByRole("searchbox", { name: "Search glossary" });
+    await search.focus();
+    await page.keyboard.type("CIP-14");
+    await expect(page.locator("#glossary-results")).toContainText("1 term matching");
+    await expect(page.getByRole("link", { name: "Asset fingerprint" })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      ),
+    ).toBe(false);
+
+    await page.getByRole("button", { name: "Clear glossary search" }).click();
+    await expect(page.getByRole("link", { name: "Reference input" })).toHaveAttribute(
+      "href",
+      "#glossary-term-referenceInput",
+    );
+  });
+
   test("the trigger meets the minimum target size", async ({ page }) => {
     await page.goto("/transactions");
     await settle(page);

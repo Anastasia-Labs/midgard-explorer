@@ -54,9 +54,7 @@ test.describe("an empty table is marked as empty", () => {
 });
 
 test.describe("transaction concepts keep one semantic glyph", () => {
-  test("marks L2 credentials, UTxOs, protocol availability, and consumed outputs", async ({
-    page,
-  }) => {
+  test("marks L2 credentials, UTxOs, and transaction commitments", async ({ page }) => {
     const hash = await txWithStatus(page, "committed");
     await page.goto(`/transaction/${hash}?tab=utxo`);
     await settle(page);
@@ -66,30 +64,21 @@ test.describe("transaction concepts keep one semantic glyph", () => {
     await expect(page.locator('[data-semantic-icon="paymentCredential"]').first()).toBeVisible();
     await expect(page.locator('[data-semantic-icon="stakeCredential"]').first()).toBeVisible();
 
-    await page.getByRole("tab", { name: "Details" }).click();
-    for (const kind of [
-      "collateral",
-      "metadata",
-      "protocolEvent",
-      "executionTrace",
-      "consumedBy",
-    ]) {
+    await page.getByRole("tab", { name: "Overview" }).click();
+    for (const kind of ["requiredSigner", "requiredObserver", "script", "metadata"]) {
       await expect(page.locator(`[data-semantic-icon="${kind}"]:visible`).first()).toBeVisible();
     }
+    await expect(page.getByRole("heading", { name: "Protocol availability" })).toHaveCount(0);
   });
 
-  test("uses the same marks in Cardano L1 detail", async ({ page }) => {
+  test("keeps Cardano detail focused on Midgard actions", async ({ page }) => {
     const rows = await page.request
       .get(`${FIXTURE}/api/l1/transactions/1`)
       .then(async (response) => (await response.json()).rows as Array<{ txHash: string }>);
-    await page.goto(`/l1/transaction/${rows[0]!.txHash}?tab=utxos`);
+    await page.goto(`/l1/transaction/${rows[0]!.txHash}`);
     await settle(page);
-    for (const kind of ["input", "referenceInput", "output", "paymentCredential", "datum"]) {
-      await expect(page.locator(`[data-semantic-icon="${kind}"]`).first()).toBeVisible();
-    }
-    await page.getByRole("tab", { name: /Collateral/ }).click();
-    await expect(page.locator('[data-semantic-icon="collateral"]').first()).toBeVisible();
-    await page.getByRole("tab", { name: /Mint \/ burn/ }).click();
-    await expect(page.locator('[data-semantic-icon="mintBurn"]').first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Midgard activity" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "View on CExplorer" })).toBeVisible();
+    await expect(page.getByRole("tab")).toHaveCount(0);
   });
 });

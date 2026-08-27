@@ -302,14 +302,14 @@ describe("every known status is handled", () => {
       .filter(([, v]) => v.kind === "finalization")
       .map(([code]) => code);
     for (const status of codes) {
-      const m = blockJourney(finalization({ status }), 40);
+      const m = blockJourney(finalization({ status }), 40, "ab".repeat(28));
       expect(m.stages.length, `${status} produced no stages`).toBeGreaterThan(0);
       expect(m.rawStatus).toBe(status);
     }
   });
 
   it("handles a block with no finalization record", () => {
-    const m = blockJourney(null, 40);
+    const m = blockJourney(null, 40, "ab".repeat(28));
     expect(m.outcome).toBe("unknown");
     expect(m.stages.every((s) => s.state !== "reached" || s.key === "closed")).toBe(true);
   });

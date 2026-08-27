@@ -70,6 +70,22 @@ export const ADDRESSES = [
 
 const value = (lovelace, assets = {}) => ({ lovelace: String(lovelace), assets });
 
+const sumValues = (values) => {
+  let lovelace = 0n;
+  const assets = {};
+  for (const entry of values) {
+    lovelace += BigInt(entry.lovelace);
+    for (const [policyId, names] of Object.entries(entry.assets)) {
+      const policy = assets[policyId] ?? {};
+      for (const [assetName, quantity] of Object.entries(names)) {
+        policy[assetName] = String(BigInt(policy[assetName] ?? "0") + BigInt(quantity));
+      }
+      assets[policyId] = policy;
+    }
+  }
+  return value(lovelace, assets);
+};
+
 const utf8Hex = (s) => Buffer.from(s, "utf8").toString("hex");
 
 const addressIdentity = (seed, kind = "PubKey") => ({
@@ -123,7 +139,7 @@ const MULTI_ASSET = {
  * absorbs whatever the others and the fee leave over, so the equation holds.
  * When an input is unresolvable the amounts stay arbitrary, which is correct:
  * nothing can be checked in that case anyway. */
-const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) => {
+const view = (n, { pending = false, outputs = 2, inputs = 2, validity = "TxIsValid" } = {}) => {
   const fee = 170000 + n * 1013;
   const inputA = 9_500_000 + n * 1000;
   // Most transactions keep one unresolvable input, the common case once a
@@ -131,8 +147,10 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
   // canonical target as well; otherwise the fixture would claim a script ran
   // while withholding the output that proves which script it was.
   const hasSpendRedeemer = n % 2 === 1;
-  const allResolved = n % 4 === 0 || hasSpendRedeemer;
-  const inputB = allResolved ? 3_400_000 + n * 500 : null;
+  // A one-input transaction has nothing to leave unresolved, so it resolves.
+  const singleInput = inputs === 1;
+  const allResolved = singleInput || n % 4 === 0 || hasSpendRedeemer;
+  const inputB = singleInput || !allResolved ? null : 3_400_000 + n * 500;
   const inputARef = txId(n + 500);
   const inputBRef = txId(n + 900);
   const scriptIsInputA = hasSpendRedeemer && inputARef.localeCompare(inputBRef) < 0;
@@ -166,19 +184,23 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
           value: value(inputA),
         },
       },
-      {
-        txId: inputBRef,
-        index: 1,
-        resolved:
-          inputB === null
-            ? null
-            : {
-                address: ADDRESSES[(n + 1) % ADDRESSES.length],
-                addressKind: scriptIsInputB ? "Script" : "PubKey",
-                identity: addressIdentity(n + 1, scriptIsInputB ? "Script" : "PubKey"),
-                value: value(inputB),
-              },
-      },
+      ...(singleInput
+        ? []
+        : [
+            {
+              txId: inputBRef,
+              index: 1,
+              resolved:
+                inputB === null
+                  ? null
+                  : {
+                      address: ADDRESSES[(n + 1) % ADDRESSES.length],
+                      addressKind: scriptIsInputB ? "Script" : "PubKey",
+                      identity: addressIdentity(n + 1, scriptIsInputB ? "Script" : "PubKey"),
+                      value: value(inputB),
+                    },
+            },
+          ]),
     ],
     referenceInputs:
       n % 4 === 0
@@ -249,42 +271,27 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
     capabilities: {
       collateral: {
         state: "not_supported",
-        reason: "Midgard native transaction version 1 does not carry Cardano collateral.",
       },
       metadata: {
         state: n % 5 === 0 ? "hash_only" : "not_present",
-        reason:
-          n % 5 === 0
-            ? "Only the auxiliary-data hash is carried, so metadata text cannot be decoded."
-            : "No auxiliary-data hash is declared.",
       },
       certificates: {
         state: "not_supported",
-        reason: "Midgard native transaction version 1 does not carry Cardano certificates.",
       },
       withdrawals: {
         state: n % 5 === 0 ? "available" : "not_present",
-        reason:
-          n % 5 === 0
-            ? "A zero-value Cardano withdrawal script is preserved as a required observer."
-            : "No required withdrawal observers are declared.",
       },
       governance: {
         state: "not_supported",
-        reason:
-          "Midgard native transaction version 1 does not carry Cardano governance procedures.",
       },
       protocolEvents: {
         state: "not_emitted",
-        reason: "Midgard L2 transactions expose state changes, datums, and redeemers instead.",
       },
       executionTrace: {
         state: "commitment_only",
-        reason: "Only the containing block's transition-trace commitment is available.",
       },
       consumedBy: {
         state: "available",
-        reason: "The fixture includes a consuming transaction link for one output.",
       },
     },
     witnesses: {
@@ -315,17 +322,22 @@ const view = (n, { pending = false, outputs = 2, validity = "TxIsValid" } = {}) 
 };
 
 /** Blocks 1..40; block 3 is empty, block 5 carries many transactions. */
+export const DEPOSIT_ONLY_HEADER_HASH = "6f77bd238790f437971176e41b6c04ecf8eb04af01cf6c8fedfbcc8b";
+
 export const BLOCKS = Array.from({ length: 40 }, (_, i) => {
-  const height = 40 - i;
+  const number = 40 - i;
   return {
-    height,
-    header_hash: blockHash(height),
-    tx_id: txId(height),
+    number,
+    // Header 39 is deposit-only. It never had a `blocks` row and therefore has
+    // no legacy row identifier, while remaining a first-class journal header.
+    height: number === 39 ? null : number,
+    header_hash: number === 39 ? DEPOSIT_ONLY_HEADER_HASH : blockHash(number),
+    tx_id: number === 39 ? null : txId(number),
     time_stamp_tz: new Date(Date.UTC(2026, 6, 28, 12, 0, 0) - i * 21_000).toISOString(),
   };
 });
 
-const txCountForBlock = (height) => (height === 3 ? 0 : height === 5 ? 12 : 2);
+const txCountForBlock = (height) => (height === 3 || height === 39 ? 0 : height === 5 ? 12 : 2);
 
 export const blockRows = (height) =>
   Array.from({ length: txCountForBlock(height) }, (_, i) => {
@@ -355,10 +367,13 @@ export const blockDa = (height) =>
         transition_trace_root: hex(height * 11 + 6, 64),
         event_to_step_root: hex(height * 11 + 7, 64),
         l2_transaction_count: txCountForBlock(height),
-        deposit_count: height % 3,
-        withdrawal_count: height % 2,
+        deposit_count: height === 39 ? 1 : height % 3,
+        withdrawal_count: height === 39 ? 0 : height % 2,
         forced_transaction_count: height % 4 === 0 ? 1 : 0,
-        total_event_count: txCountForBlock(height) + (height % 3) + (height % 2),
+        total_event_count:
+          txCountForBlock(height) +
+          (height === 39 ? 1 : height % 3) +
+          (height === 39 ? 0 : height % 2),
         transition_step_count: txCountForBlock(height) * 2,
         block_start_time: new Date(Date.UTC(2026, 6, 28, 11, 59, 40)).toISOString(),
         block_end_time: new Date(Date.UTC(2026, 6, 28, 12, 0, 0)).toISOString(),
@@ -413,6 +428,41 @@ export const blockFinalization = (height) => {
     observedConfirmedAt: observed,
   };
 };
+
+export const blockHeader = (number) => {
+  const block = BLOCKS.find((b) => b.number === number);
+  if (!block) return null;
+  const da = blockDa(number);
+  const end = block.time_stamp_tz;
+  const start = new Date(new Date(end).getTime() - 20_000).toISOString();
+  return {
+    header_hash: block.header_hash,
+    height: block.height,
+    block_start_time: start,
+    block_end_time: end,
+    header_l2_transaction_count: txCountForBlock(number),
+    header_deposit_count: number === 39 ? 1 : number % 3,
+    header_withdrawal_count: number === 39 ? 0 : number % 2,
+    header_forced_transaction_count: number % 4 === 0 ? 1 : 0,
+    materialized_l2_transaction_count: block.height === null ? 0 : txCountForBlock(number),
+    payload_retained_locally: da !== null,
+  };
+};
+
+export const blockEvents = (number) => ({
+  deposits:
+    number === 39
+      ? [
+          {
+            member_id: eventId(39),
+            ordinal: 0,
+            source_time_stamp_tz: BLOCKS.find((b) => b.number === number).time_stamp_tz,
+          },
+        ]
+      : [],
+  withdrawals: [],
+  forced_transactions: [],
+});
 
 /** Transaction lifecycle: one of every known status, plus an unknown one so the
  * "unrecognized status" path is exercised. */
@@ -487,6 +537,62 @@ export const FLOW_STRESS_TX = {
   decodeError: null,
 };
 
+/** A transaction whose two sides hold different numbers of nodes.
+ *
+ * Every other fixture is 2-in 2-out, where both flow columns are the same
+ * height and a connector drawn against the wrong height still lands on its
+ * card. That symmetry hid a real misalignment for the whole life of the
+ * diagram: on 1-in 3-out the input line left from 67px below its card. Route
+ * only, like the stress transaction, so list payloads keep their usual shapes.
+ */
+export const FLOW_UNEQUAL_TX = {
+  n: 9002,
+  status: "committed",
+  header_hash: blockHash(39),
+  tx_id: txId(9002),
+  time_stamp_tz: new Date(Date.UTC(2026, 6, 28, 12, 2, 0)).toISOString(),
+  admission: {
+    status: "accepted",
+    firstSeenAt: new Date(Date.UTC(2026, 6, 28, 12, 1, 54)).toISOString(),
+    validationStartedAt: new Date(Date.UTC(2026, 6, 28, 12, 1, 55)).toISOString(),
+    terminalAt: new Date(Date.UTC(2026, 6, 28, 12, 1, 56)).toISOString(),
+    updatedAt: new Date(Date.UTC(2026, 6, 28, 12, 1, 56)).toISOString(),
+    attemptCount: 1,
+    requestCount: 1,
+    submitSource: "native",
+  },
+  transaction: view(9002, { inputs: 1, outputs: 3 }),
+  decodeError: null,
+};
+
+/** The payment shape: one input, change back to the spender, value to someone
+ * else. Exactly one address ends up net positive, which is the only case the
+ * action summary can state in a sentence.
+ *
+ * Every listed fixture transaction spends from both of the addresses it pays,
+ * so none of them has a single net recipient and the summary's surviving branch
+ * had nothing to render on. A branch no fixture reaches is a branch no test can
+ * check. */
+export const PAYMENT_TX = {
+  n: 9003,
+  status: "committed",
+  header_hash: blockHash(38),
+  tx_id: txId(9003),
+  time_stamp_tz: new Date(Date.UTC(2026, 6, 28, 12, 3, 0)).toISOString(),
+  admission: {
+    status: "accepted",
+    firstSeenAt: new Date(Date.UTC(2026, 6, 28, 12, 2, 54)).toISOString(),
+    validationStartedAt: new Date(Date.UTC(2026, 6, 28, 12, 2, 55)).toISOString(),
+    terminalAt: new Date(Date.UTC(2026, 6, 28, 12, 2, 56)).toISOString(),
+    updatedAt: new Date(Date.UTC(2026, 6, 28, 12, 2, 56)).toISOString(),
+    attemptCount: 1,
+    requestCount: 1,
+    submitSource: "native",
+  },
+  transaction: view(9003, { inputs: 1, outputs: 2 }),
+  decodeError: null,
+};
+
 const BRIDGE_STATUSES = ["awaiting", "projected", "consumed", "finalized"];
 
 export const DEPOSITS = Array.from({ length: 47 }, (_, i) => ({
@@ -517,7 +623,13 @@ export const WITHDRAWALS = Array.from({ length: 39 }, (_, i) => ({
   withdrawal_l1_output_index: i % 4,
   l2_outref: txId(i + 700),
   l2_value: i % 9 === 4 ? null : value(12_000_000 + i * 90_000),
+  l2_value_raw: hex(i * 37 + 5, 24),
+  l2_value_decode_error:
+    i % 9 === 4 ? "Failed to decode l2_value as Midgard SDK Plutus data." : null,
   l1_address: hex(i * 31 + 7, 58),
+  l1_address_bech32: i % 13 === 6 ? null : ADDRESSES[i % ADDRESSES.length],
+  l1_address_decode_error:
+    i % 13 === 6 ? "Failed to decode l1_address as Midgard SDK Plutus data." : null,
   validity: i % 7 === 2 ? null : WITHDRAWAL_VALIDITY[i % WITHDRAWAL_VALIDITY.length],
   status: BRIDGE_STATUSES[i % BRIDGE_STATUSES.length],
   inclusion_time: new Date(Date.UTC(2026, 6, 28, 10, 30, 0) - i * 73_000).toISOString(),
@@ -644,6 +756,91 @@ export const L1_TXS = Array.from({ length: 31 }, (_, i) => {
     invalidBefore: rich ? "141199000" : null,
     invalidAfter: rich ? "141205000" : null,
     metadata: rich ? { 674: { msg: ["Midgard fixture settlement"], source: "e2e" } } : null,
+    actions: rich
+      ? [
+          {
+            kind: "deposit",
+            family: "deposit",
+            outputIndex: 0,
+            lovelace: "12500000",
+            operation: null,
+            // The rich transaction carries a deposit-validator redeemer, so a
+            // verdict exists for it.
+            validContract: true,
+            operator: null,
+            startTime: null,
+            userEvent: {
+              kind: "deposit",
+              l2PaymentCredential: hex(20, 56),
+              l2StakeCredential: hex(21, 56),
+              l2NetworkId: 0,
+              inclusionTime: "1785238320000",
+            },
+            headerHash: null,
+          },
+          {
+            kind: "block_commitment",
+            family: "stateQueue",
+            outputIndex: 1,
+            lovelace: null,
+            operation: null,
+            // Paying to a script address runs no script, so nothing checked
+            // this one and null is the honest answer.
+            validContract: null,
+            operator: null,
+            startTime: null,
+            userEvent: null,
+            headerHash: BLOCKS[0].header_hash,
+          },
+        ]
+      : n % 3 === 0
+        ? [
+            {
+              kind: "deposit",
+              family: "deposit",
+              outputIndex: 0,
+              lovelace: String(4_000_000 + n * 1000),
+              operation: null,
+              // One deposit in the list failed its script, so the verdict has
+              // something to report and the row that reports it is exercised.
+              // The rest ran no script at all, which is null, not success.
+              validContract: n === 3 ? false : null,
+              operator: null,
+              startTime: null,
+              userEvent: {
+                kind: "deposit",
+                l2PaymentCredential: hex(30 + n, 56),
+                l2StakeCredential: null,
+                l2NetworkId: 0,
+                inclusionTime: String(1785238320000 + n * 1000),
+              },
+              headerHash: null,
+            },
+            // A withdrawal proves the other half of the decoder: an owner and
+            // the Midgard UTxO leaving, where a deposit proves a destination.
+            ...(n === 6
+              ? [
+                  {
+                    kind: "withdrawal",
+                    family: "withdrawal",
+                    outputIndex: 1,
+                    lovelace: null,
+                    operation: null,
+                    validContract: null,
+                    operator: null,
+                    startTime: null,
+                    userEvent: {
+                      kind: "withdrawal",
+                      l2Owner: hex(60, 56),
+                      l2OutRef: { txHash: txId(46), index: 1 },
+                      inclusionTime: "1785238326000",
+                    },
+                    headerHash: null,
+                  },
+                ]
+              : []),
+          ]
+        : [],
     events,
     inputs: [l1Io(n, "input", 0, inputHash, "8")],
     outputs: [
@@ -653,6 +850,10 @@ export const L1_TXS = Array.from({ length: 31 }, (_, i) => {
           ? {
               address: L1_VALIDATORS[0].address,
               paymentCred: L1_VALIDATORS[0].scriptHash,
+              // One output has a spender this index holds. The rest have none,
+              // which is the ordinary case: the index covers Midgard-related
+              // transactions, so most spenders are outside it.
+              spentBy: l1TxHash(2),
             }
           : {}),
       },
@@ -686,27 +887,33 @@ export const L1_TXS = Array.from({ length: 31 }, (_, i) => {
           },
         ]
       : [],
+    // Preprod's real values, read from Koios on 2026-08-18. The fixture
+    // redeemer above lands at 18.3% of memory and 9.0% of steps against them,
+    // which is what the budget bars are asserted on.
+    protocolParams: rich
+      ? { epochNo: 318, maxTxExMem: "17500000", maxTxExSteps: "10000000000" }
+      : null,
   };
 });
 
-export const addressResponse = (address) => {
+export const addressResponse = (address, page = 1) => {
   const history = TXS.filter((t) => t.transaction).slice(0, 9);
   const undecodedOutputs = address === ADDRESSES[1] ? 3 : 0;
   const rows = history.map((t, i) => {
     const block = BLOCKS.find((b) => b.header_hash === t.header_hash) ?? null;
     // Received reads this transaction's own outputs, so it is always exact.
-    const received = t.transaction.outputs
-      .filter((o) => o.address === address)
-      .reduce((sum, o) => sum + BigInt(o.value.lovelace), 0n)
-      .toString();
+    const received = sumValues(
+      t.transaction.outputs.filter((o) => o.address === address).map((o) => o.value),
+    );
     // Every third row keeps an unresolved input, the common real case once a
     // transaction has been applied and its inputs have left the ledger.
     const spentComplete = i % 3 !== 0 && t.transaction.inputs.every((x) => x.resolved !== null);
     const spent = spentComplete
-      ? t.transaction.inputs
-          .filter((x) => x.resolved?.address === address)
-          .reduce((sum, x) => sum + BigInt(x.resolved.value.lovelace), 0n)
-          .toString()
+      ? sumValues(
+          t.transaction.inputs
+            .filter((x) => x.resolved?.address === address)
+            .map((x) => x.resolved.value),
+        )
       : null;
     return {
       tx_id: t.tx_id,
@@ -715,6 +922,7 @@ export const addressResponse = (address) => {
       header_hash: block?.header_hash ?? null,
       time_stamp_tz: t.time_stamp_tz,
       status: t.status === "pending_commit" ? "pending_commit" : "committed",
+      finalization_status: block ? (blockFinalization(block.number)?.status ?? null) : null,
       received,
       spent,
       spentComplete,
@@ -739,15 +947,20 @@ export const addressResponse = (address) => {
     };
   });
 
+  const limit = 25;
+  const start = (Math.max(1, page) - 1) * limit;
   return {
     balance: value(184_250_000, MULTI_ASSET),
     undecodedOutputs,
     utxoCount: utxos.length,
     utxos,
     txCount: rows.length,
+    historyPage: page,
+    hasNextPage: start + limit < rows.length,
+    limit,
     firstActivity: new Date(Math.min(...times)).toISOString(),
     latestActivity: new Date(Math.max(...times)).toISOString(),
-    history: rows,
+    history: rows.slice(start, start + limit),
   };
 };
 
@@ -770,7 +983,7 @@ export const metrics = () => {
   const start = new Date(end.getTime() - 24 * 3_600_000);
   const observedFrom = new Date(end.getTime() - (BLOCKS.length - 1) * 21_000);
 
-  const txTotal = BLOCKS.reduce((n, b) => n + txCountForBlock(b.height), 0);
+  const txTotal = BLOCKS.reduce((n, b) => n + txCountForBlock(b.number), 0);
   const terminal = TXS.filter((t) => t.admission?.terminalAt);
   const accepted = terminal.filter((t) => t.admission.status === "accepted").length;
   const rejected = terminal.filter((t) => t.admission.status === "rejected").length;
@@ -778,14 +991,14 @@ export const metrics = () => {
     ["queued", "validating"].includes(t.admission?.status),
   ).length;
 
-  const finalizations = BLOCKS.map((b) => blockFinalization(b.height)).filter((f) => f !== null);
+  const finalizations = BLOCKS.map((b) => blockFinalization(b.number)).filter((f) => f !== null);
   const byStatus = (s) => finalizations.filter((f) => f.status === s).length;
   const unsettled = finalizations.filter((f) => !["finalized", "abandoned"].includes(f.status));
   const oldest = unsettled
     .slice()
     .sort((a, b) => new Date(a.blockEndTime) - new Date(b.blockEndTime))[0];
   const oldestBlock = BLOCKS.find(
-    (b) => blockFinalization(b.height)?.blockEndTime === oldest?.blockEndTime,
+    (b) => blockFinalization(b.number)?.blockEndTime === oldest?.blockEndTime,
   );
 
   const statusCounts = (list, key) => {
@@ -817,17 +1030,20 @@ export const metrics = () => {
       partial: true,
     },
     tip: {
+      headerHash: BLOCKS[0].header_hash,
       height: BLOCKS[0].height,
       at: BLOCKS[0].time_stamp_tz,
       ageSeconds: 12,
-      source: "blocks.height, blocks.time_stamp_tz",
+      source:
+        "pending_block_finalizations.status, pending_block_finalizations.block_end_time, blocks.height",
     },
     throughput: {
       transactions: txTotal,
       blocks: BLOCKS.length,
       transactionsPerBlock: txTotal / BLOCKS.length,
       blockIntervalSeconds: { p50: 21, p95: 21, sampleCount: BLOCKS.length - 1 },
-      source: "blocks.time_stamp_tz, blocks.header_hash",
+      source:
+        "pending_block_finalizations.block_end_time, pending_block_finalization_txs.member_id",
     },
     admission: {
       latency: {

@@ -141,6 +141,59 @@ test.describe("the flow itself", () => {
     expect(box!.width).toBeLessThanOrEqual(1000);
   });
 
+  /** Every other fixture is 2-in 2-out, where both columns are the same height
+   * and a line drawn against the wrong height still happens to land on its
+   * card. This one is 1-in 3-out, so the shorter side is measurably wrong when
+   * the column grid does not take the height its connectors take.
+   *
+   * The assertion is geometry, not a class name: where the line ends against
+   * where the card is. A test naming `h-full` would pass on a stylesheet that
+   * draws the diagram wrong. */
+  test("ends every line on the card it belongs to, on unequal sides", async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name.includes("mobile"), "the stacked layout draws no lines");
+    const specimen = await page.request.get(`${FIXTURE}/__flow-unequal`).then((r) => r.json());
+    await page.goto(`/transaction/${specimen.txId}?tab=utxo&view=flow`);
+    const flow = await readyFlow(page);
+    await expect(flow.getByTestId("flow-node-input")).toHaveCount(specimen.inputs);
+    await expect(flow.getByTestId("flow-node-output")).toHaveCount(specimen.outputs);
+
+    const offsets = await page.evaluate(() => {
+      const centre = (el: Element) => {
+        const box = el.getBoundingClientRect();
+        return box.top + box.height / 2;
+      };
+      // `preserveAspectRatio="none"` over a 0-100 viewBox, so a viewBox unit is
+      // a linear fraction of the rendered height.
+      const endpoints = (svg: Element, end: "start" | "finish") => {
+        const box = svg.getBoundingClientRect();
+        return [...svg.querySelectorAll("path")].map((path) => {
+          const numbers = (path.getAttribute("d") ?? "").match(/-?\d+(?:\.\d+)?/g) ?? [];
+          const unit = Number(end === "start" ? numbers[1] : numbers[numbers.length - 1]);
+          return box.top + (unit / 100) * box.height;
+        });
+      };
+      const svgs = [...document.querySelectorAll('[data-testid="flow-connectors"]')];
+      const pair = (nodes: Element[], lines: number[]) =>
+        nodes.map((node, i) => Math.abs(centre(node) - (lines[i] ?? Number.NaN)));
+      return {
+        inputs: pair(
+          [...document.querySelectorAll('[data-testid="flow-node-input"]')],
+          endpoints(svgs[0]!, "start"),
+        ),
+        outputs: pair(
+          [...document.querySelectorAll('[data-testid="flow-node-output"]')],
+          endpoints(svgs[1]!, "finish"),
+        ),
+      };
+    });
+
+    for (const offset of [...offsets.inputs, ...offsets.outputs]) {
+      expect(offset).toBeLessThanOrEqual(2);
+    }
+  });
+
   /** Stacked on a phone, a card that sizes to its content leaves half the
    * screen empty beside it while the transaction card fills the width, so the
    * column reads as broken rather than as deliberate. */
@@ -249,6 +302,10 @@ test.describe("the flow itself", () => {
   });
 
   test("shows complete node details outside the fixed-height canvas card", async ({ page }) => {
+    // Reveals and lays out 503 nodes, like the stress test below it. The click
+    // waits for the button to be stable, which on a loaded machine outlasts the
+    // default budget.
+    test.slow();
     const specimen = await page.request.get(`${FIXTURE}/__flow-stress`).then((r) => r.json());
     await page.goto(`/transaction/${specimen.txId}?tab=utxo&view=flow`);
     await readyFlow(page);
@@ -305,9 +362,7 @@ test.describe("the flow itself", () => {
     await page.goto(`/transaction/${hash}?tab=utxo&view=flow`);
     const flow = await readyFlow(page);
     await expect(flow.locator(".react-flow__node")).toHaveCount(0);
-    await expect(
-      page.getByText(/Table view is the complete non-visual representation/i),
-    ).toBeVisible();
+    await expect(page.getByText(/does not record which input funded which output/i)).toBeVisible();
   });
 
   test("has no automated violations in either theme", async ({ page }) => {

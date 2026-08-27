@@ -23,8 +23,15 @@ pnpm install --frozen-lockfile
 step "format check"
 pnpm exec prettier --check .
 
-step "lint"
+step "lint (workspace rules)"
 pnpm exec eslint .
+
+step "lint (Next and React Compiler rules)"
+# The workspace config at the root does not extend eslint-config-next, so the
+# React Compiler rules live only in the app's own config and only run when
+# eslint is invoked from there. Two of the five errors they last reported were
+# real defects rather than style, so the gate has to run both.
+pnpm --filter @midgard-explorer/app lint
 
 step "typecheck: contracts"
 pnpm --filter @midgard-explorer/contracts exec tsc --noEmit
@@ -38,7 +45,9 @@ pnpm --filter @midgard-explorer/app exec vitest run
 step "production build"
 MG_STRICT_CONFIG=1 \
 NEXT_PUBLIC_NETWORK_LABEL="${NEXT_PUBLIC_NETWORK_LABEL:-Preprod}" \
-NEXT_PUBLIC_L1_EXPLORER_URL="${NEXT_PUBLIC_L1_EXPLORER_URL:-https://preprod.cardanoscan.io}" \
+NEXT_PUBLIC_L1_EXPLORER_TX_URL="${NEXT_PUBLIC_L1_EXPLORER_TX_URL:-https://preprod.cexplorer.io/tx/{hash}}" \
+NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL="${NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL:-https://preprod.cexplorer.io/address/{address}}" \
+NEXT_PUBLIC_L1_EXPLORER_NAME="${NEXT_PUBLIC_L1_EXPLORER_NAME:-CExplorer}" \
   pnpm --filter @midgard-explorer/app exec next build
 
 if [[ $FAST -eq 0 ]]; then

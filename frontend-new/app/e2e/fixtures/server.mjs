@@ -18,13 +18,17 @@ import {
   DEPOSITS,
   FORCED,
   FLOW_STRESS_TX,
+  FLOW_UNEQUAL_TX,
+  PAYMENT_TX,
   L1_VALIDATORS,
   L1_TXS,
   TXS,
   WITHDRAWALS,
   addressResponse,
   blockDa,
+  blockEvents,
   blockFinalization,
+  blockHeader,
   blockRows,
   metrics,
   asset,
@@ -37,7 +41,26 @@ const LIMIT = 25;
 /** Answered by `GET /__control` so the suite can identify this process. */
 const FIXTURE_ID = "midgard-explorer-e2e";
 
-const state = { fail: null, slowMs: 0 };
+const state = { fail: null, slowMs: 0, health: null };
+
+/** The fixture chain abandons a third of its settlements, which is the state
+ * most of the suite needs. `POST /__control?health=healthy` returns the same
+ * shape with the two facts that make it degraded set to healthy values, so a
+ * test can exercise the healthy presentation without a second fixture chain. */
+const healthyMetrics = () => {
+  const m = metrics();
+  return {
+    ...m,
+    tip: { ...m.tip, ageSeconds: 12 },
+    admission: { ...m.admission, rejected: 0, rejectionRate: 0 },
+    finality: {
+      ...m.finality,
+      abandoned: 0,
+      finalized: m.finality.finalized + m.finality.abandoned,
+      oldestUnsettled: null,
+    },
+  };
+};
 
 const page = (rows, p) => {
   const safe = Number.isFinite(p) ? Math.max(1, Math.floor(p)) : 1;
@@ -114,8 +137,24 @@ const openApiDocument = () => ({
 
 const routes = [
   ["healthz", /^\/healthz$/, () => ({ status: "ok", now: new Date().toISOString() })],
+  [
+    "readyz",
+    /^\/readyz$/,
+    () => ({
+      ready: true,
+      now: new Date().toISOString(),
+      checks: [
+        { name: "midgard-node", ok: true, latencyMs: 1 },
+        { name: "explorer-index", ok: true, latencyMs: 1 },
+      ],
+    }),
+  ],
   ["openapi", /^\/api\/openapi\.json$/, () => openApiDocument()],
-  ["metrics", /^\/api\/metrics$/, () => metrics()],
+  [
+    "metrics",
+    /^\/api\/metrics$/,
+    () => (state.health === "healthy" ? healthyMetrics() : metrics()),
+  ],
   ["assets", /^\/api\/assets$/, () => assets()],
   [
     "search",
@@ -136,7 +175,26 @@ const routes = [
         height: BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? null,
         headerHash: t.header_hash,
       }));
-      return { hits: [...blocks, ...txs].slice(0, 10), minPrefix: 6, tooShort: false };
+      const l1 = L1_TXS.filter((t) => t.txHash.startsWith(q)).map((t) => ({
+        kind: "l1Transaction",
+        txHash: t.txHash,
+        blockHeight: t.blockHeight,
+      }));
+      const validators = L1_VALIDATORS.filter((v) => v.scriptHash.startsWith(q)).map((v) => ({
+        kind: "validator",
+        scriptHash: v.scriptHash,
+        family: v.family,
+      }));
+      const deposits = DEPOSITS.filter((row) => row.event_id.startsWith(q)).map((row) => ({
+        kind: "deposit",
+        eventId: row.event_id,
+        txHash: row.deposit_l1_tx_hash,
+      }));
+      return {
+        hits: [...blocks, ...txs, ...l1, ...validators, ...deposits].slice(0, 10),
+        minPrefix: 6,
+        tooShort: false,
+      };
     },
   ],
 
@@ -155,8 +213,9 @@ const routes = [
     () => ({
       rows: BLOCKS.slice(0, 7).map((b) => ({
         ...b,
-        tx_count: blockRows(b.height).length,
-        finalization_status: blockFinalization(b.height)?.status ?? null,
+        ...blockHeader(b.number),
+        tx_count: blockHeader(b.number).header_l2_transaction_count,
+        finalization_status: blockFinalization(b.number)?.status ?? "pending_submission",
       })),
     }),
   ],
@@ -166,12 +225,11 @@ const routes = [
     /^\/api\/blocks\/(\d+)$/,
     (m, _res, url) => {
       const status = url.searchParams.get("status");
-      const all = BLOCKS.map(({ height, header_hash, time_stamp_tz }) => ({
-        height,
-        header_hash,
-        time_stamp_tz,
-        tx_count: blockRows(height).length,
-        finalization_status: blockFinalization(height)?.status ?? null,
+      const all = BLOCKS.map((block) => ({
+        ...blockHeader(block.number),
+        time_stamp_tz: block.time_stamp_tz,
+        tx_count: blockHeader(block.number).header_l2_transaction_count,
+        finalization_status: blockFinalization(block.number)?.status ?? "pending_submission",
       }));
       // Narrowing before pagination, matching the backend: filtering the page
       // that happened to arrive would be a control that searches one screen.
@@ -185,7 +243,7 @@ const routes = [
     /^\/api\/transactions\/recent$/,
     () => ({
       rows: TXS.slice(0, 7).map((t) => ({
-        height: BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? 0,
+        height: BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? null,
         header_hash: t.header_hash,
         tx_id: t.tx_id,
         time_stamp_tz: t.time_stamp_tz,
@@ -199,7 +257,8 @@ const routes = [
     /^\/api\/transactions\/(\d+)$/,
     (m, _res, url) => {
       const all = TXS.map((t) => {
-        const height = BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? 0;
+        const height = BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? null;
+        const number = BLOCKS.find((b) => b.header_hash === t.header_hash)?.number ?? 0;
         return {
           height,
           header_hash: t.header_hash,
@@ -208,7 +267,7 @@ const routes = [
           // List rows come from the block table, so they are always in a
           // block; only which tier holds the bytes varies.
           status: t.status === "pending_commit" ? "pending_commit" : "committed",
-          finalization_status: blockFinalization(height)?.status ?? null,
+          finalization_status: blockFinalization(number)?.status ?? null,
           transaction: t.transaction,
           decodeError: t.decodeError,
         };
@@ -220,9 +279,39 @@ const routes = [
     },
   ],
 
-  ["deposits", /^\/api\/deposits\/(\d+)$/, (m) => page(DEPOSITS, Number(m[1]))],
-  ["withdrawals", /^\/api\/withdrawals\/(\d+)$/, (m) => page(WITHDRAWALS, Number(m[1]))],
-  ["forced-transactions", /^\/api\/forced-transactions\/(\d+)$/, (m) => page(FORCED, Number(m[1]))],
+  [
+    "deposits",
+    /^\/api\/deposits\/(\d+)$/,
+    (m, _res, url) =>
+      page(
+        url.searchParams.get("id")
+          ? DEPOSITS.filter((row) => row.event_id === url.searchParams.get("id"))
+          : DEPOSITS,
+        Number(m[1]),
+      ),
+  ],
+  [
+    "withdrawals",
+    /^\/api\/withdrawals\/(\d+)$/,
+    (m, _res, url) =>
+      page(
+        url.searchParams.get("id")
+          ? WITHDRAWALS.filter((row) => row.event_id === url.searchParams.get("id"))
+          : WITHDRAWALS,
+        Number(m[1]),
+      ),
+  ],
+  [
+    "forced-transactions",
+    /^\/api\/forced-transactions\/(\d+)$/,
+    (m, _res, url) =>
+      page(
+        url.searchParams.get("id")
+          ? FORCED.filter((row) => row.tx_order_id === url.searchParams.get("id"))
+          : FORCED,
+        Number(m[1]),
+      ),
+  ],
   [
     "l1/summary",
     /^\/api\/l1\/summary$/,
@@ -281,9 +370,11 @@ const handleBlock = (url, res) => {
     return b ? { height: b.height, header_hash: b.header_hash } : null;
   };
   return json(res, {
-    rows: blockRows(found.height),
-    da: blockDa(found.height),
-    finalization: blockFinalization(found.height),
+    header: blockHeader(found.number),
+    rows: blockRows(found.number).map((row) => ({ ...row, height: found.height })),
+    da: blockDa(found.number),
+    finalization: blockFinalization(found.number),
+    events: blockEvents(found.number),
     neighbours: { prev: at(i + 1), next: at(i - 1) },
   });
 };
@@ -293,21 +384,26 @@ const handleTransaction = (url, res) => {
   if (!hash || !/^[0-9a-f]{64}$/i.test(hash)) return fail(res, 400, "bad_request", "tx_hash");
   const found =
     TXS.find((t) => t.tx_id === hash.toLowerCase()) ??
-    (FLOW_STRESS_TX.tx_id === hash.toLowerCase() ? FLOW_STRESS_TX : null);
+    [FLOW_STRESS_TX, FLOW_UNEQUAL_TX, PAYMENT_TX].find((t) => t.tx_id === hash.toLowerCase()) ??
+    null;
   if (!found) return fail(res, 404, "not_found");
 
   // Committed transactions carry inclusion, and inclusion carries settlement.
   const included = found.status === "committed" || found.status === "pending_commit";
-  const height = BLOCKS.find((b) => b.header_hash === found.header_hash)?.height ?? null;
+  const inclusionBlock = BLOCKS.find((b) => b.header_hash === found.header_hash) ?? null;
   const inclusion =
-    included && height !== null
-      ? { height, header_hash: found.header_hash, time_stamp_tz: found.time_stamp_tz }
+    included && inclusionBlock
+      ? {
+          height: inclusionBlock.height,
+          header_hash: found.header_hash,
+          time_stamp_tz: found.time_stamp_tz,
+        }
       : null;
   const envelope = {
     txId: found.tx_id,
     admission: found.admission,
     inclusion,
-    finalization: inclusion ? blockFinalization(inclusion.height) : null,
+    finalization: inclusion ? blockFinalization(inclusionBlock.number) : null,
   };
 
   // Lifecycle-only outcomes come first, matching the backend: a transaction
@@ -360,9 +456,12 @@ const handleTransaction = (url, res) => {
 
 const handleAddress = (url, res) => {
   const address = url.searchParams.get("address");
+  const rawPage = url.searchParams.get("page");
+  const page = rawPage === null ? 1 : Number(rawPage);
   if (!address) return fail(res, 400, "bad_request", "address");
+  if (!Number.isInteger(page) || page < 1) return fail(res, 400, "bad_request", "page");
   if (!ADDRESSES.includes(address)) return fail(res, 404, "not_found");
-  return json(res, addressResponse(address));
+  return json(res, addressResponse(address, page));
 };
 
 const handleL1Transaction = (url, res) => {
@@ -389,6 +488,27 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/__flow-stress") {
     return json(res, { txId: FLOW_STRESS_TX.tx_id, nodes: 503 });
   }
+  if (req.method === "GET" && url.pathname === "/__flow-unequal") {
+    return json(res, { txId: FLOW_UNEQUAL_TX.tx_id, inputs: 1, outputs: 3 });
+  }
+  // Which Cardano transaction demonstrates which action shape. Derived from the
+  // fixture rather than restated in a spec, so a change to the data cannot
+  // leave a test asserting against a transaction that no longer has the case.
+  if (req.method === "GET" && url.pathname === "/__payment-tx") {
+    return json(res, { txId: PAYMENT_TX.tx_id });
+  }
+  if (req.method === "GET" && url.pathname === "/__l1-specimens") {
+    const withAction = (predicate) =>
+      L1_TXS.find((tx) => tx.actions.some(predicate))?.txHash ?? null;
+    return json(res, {
+      decodedDeposit: withAction((a) => a.userEvent?.kind === "deposit"),
+      decodedWithdrawal: withAction((a) => a.userEvent?.kind === "withdrawal"),
+      failedContract: withAction((a) => a.validContract === false),
+      // The one transaction carrying every UTxO section, found by the fact
+      // that distinguishes it rather than by the generator's index.
+      spentOutput: L1_TXS.find((tx) => tx.outputs.some((o) => o.spentBy))?.txHash ?? null,
+    });
+  }
   if (url.pathname.startsWith("/api/")) {
     forwarded.set(url.pathname, req.headers["x-forwarded-for"] ?? null);
   }
@@ -396,6 +516,7 @@ const server = createServer(async (req, res) => {
   if (req.method === "POST" && url.pathname === "/__control") {
     state.fail = url.searchParams.get("fail");
     state.slowMs = Number(url.searchParams.get("slow") ?? 0);
+    state.health = url.searchParams.get("health") || null;
     return json(res, { ok: true, ...state });
   }
 
@@ -434,6 +555,112 @@ const server = createServer(async (req, res) => {
       return fail(res, 500, "internal_error");
     }
     return handleL1Transaction(url, res);
+  }
+  if (url.pathname === "/api/l1/block-headers" || url.pathname === "/api/l1/block-header") {
+    const rows = BLOCKS.map((block) => {
+      const da = blockDa(block.number) ?? blockDa(1);
+      // The oldest block is left unattributed on purpose. A commit transaction
+      // re-outputs the previous queue node alongside the new head, so a header
+      // really can be seen carried forward before the transaction that
+      // committed it is observed, and the page has to say so rather than
+      // render an empty cell. Without one here that branch is never rendered.
+      const attributed = block.number > 1;
+      return {
+        headerHash: block.header_hash,
+        l1TxHash: attributed ? L1_TXS[block.number % L1_TXS.length].txHash : null,
+        blockHeight: attributed ? 5_120_000 - block.number : null,
+        prevUtxosRoot: "00".repeat(32),
+        utxosRoot: da.utxos_root,
+        withdrawalsRoot: da.withdrawals_root,
+        forcedTransactionsRoot: da.forced_transactions_root,
+        transactionsRoot: da.transactions_root,
+        depositsRoot: da.deposits_root,
+        transitionTraceRoot: da.transition_trace_root,
+        eventToStepRoot: da.event_to_step_root,
+        withdrawalCount: String(da.withdrawal_count),
+        forcedTransactionCount: String(da.forced_transaction_count),
+        l2TransactionCount: String(da.l2_transaction_count),
+        depositCount: String(da.deposit_count),
+        totalEventCount: String(da.total_event_count),
+        transitionStepCount: String(da.transition_step_count),
+        startTime: String(new Date(da.block_start_time).getTime()),
+        endTime: String(new Date(da.block_end_time).getTime()),
+        prevHeaderHash:
+          BLOCKS.find((candidate) => candidate.number === Math.max(1, block.number - 1))
+            ?.header_hash ?? block.header_hash,
+        operatorVkey: L1_VALIDATORS[1].scriptHash,
+        protocolVersion: "1",
+      };
+    });
+    if (url.pathname.endsWith("block-header")) {
+      const found = rows.find((row) => row.headerHash === url.searchParams.get("headerHash"));
+      return found ? json(res, found) : fail(res, 404, "not_found");
+    }
+    return json(res, rows.slice(0, Number(url.searchParams.get("limit") ?? 25)));
+  }
+  if (url.pathname === "/api/l1/deposits") {
+    const rows = L1_TXS.flatMap((tx) =>
+      tx.events
+        .filter((event) => event.validator === "deposit")
+        .map((event) => ({
+          ...event,
+          txHash: tx.txHash,
+          fundingAddresses: tx.inputs.flatMap((input) => (input.address ? [input.address] : [])),
+          tx,
+        })),
+    );
+    return json(res, rows.slice(0, Number(url.searchParams.get("limit") ?? 25)));
+  }
+  if (url.pathname === "/api/l1/validator") {
+    const validator = L1_VALIDATORS.find(
+      (row) => row.scriptHash === url.searchParams.get("scriptHash"),
+    );
+    if (!validator) return fail(res, 404, "not_found");
+    const rich = L1_TXS[0];
+    const history = L1_TXS.filter(
+      (tx) =>
+        tx.redeemers.some((row) => row.scriptHash === validator.scriptHash) ||
+        tx.outputs.some((row) => row.address === validator.address) ||
+        tx.events.some((row) => row.validator === validator.family),
+    ).map((tx) => ({
+      txHash: tx.txHash,
+      blockHeight: tx.blockHeight,
+      txTime: tx.txTime,
+      ioCount: tx.outputs.filter((row) => row.address === validator.address).length,
+      executionCount: tx.redeemers.filter((row) => row.scriptHash === validator.scriptHash).length,
+      eventCount: tx.events.filter((row) => row.validator === validator.family).length,
+    }));
+    const utxos = rich.outputs
+      .filter((row) => row.address === validator.address)
+      .map((row) => ({
+        ...row,
+        tx: { txHash: rich.txHash, blockHeight: rich.blockHeight, txTime: rich.txTime },
+      }));
+    const redeemers = L1_TXS.flatMap((tx) => tx.redeemers).filter(
+      (row) => row.scriptHash === validator.scriptHash,
+    );
+    return json(res, {
+      deployment: "fixture-deployment",
+      validator,
+      coverage: { limitedTo: 100, truncated: false },
+      utxos,
+      history,
+      operations:
+        redeemers.length === 0
+          ? []
+          : [
+              {
+                purpose: "spend",
+                validContract: true,
+                count: redeemers.length,
+                memUnits: redeemers.reduce((sum, row) => sum + BigInt(row.memUnits), 0n).toString(),
+                stepUnits: redeemers
+                  .reduce((sum, row) => sum + BigInt(row.stepUnits), 0n)
+                  .toString(),
+                fee: redeemers.reduce((sum, row) => sum + BigInt(row.fee), 0n).toString(),
+              },
+            ],
+    });
   }
   if (url.pathname === "/api/asset") {
     if (state.fail === "all" || state.fail === "asset") return fail(res, 500, "internal_error");

@@ -136,7 +136,25 @@ describe("api client error mapping", () => {
       "fetch",
       vi.fn(async (url: string | URL) => {
         seen.push(String(url));
-        return jsonResponse({ rows: [], da: null, finalization: null });
+        return jsonResponse({
+          header: {
+            header_hash: "ab".repeat(28),
+            height: null,
+            block_start_time: null,
+            block_end_time: "2026-08-13T00:00:00.000Z",
+            header_l2_transaction_count: null,
+            header_deposit_count: null,
+            header_withdrawal_count: null,
+            header_forced_transaction_count: null,
+            materialized_l2_transaction_count: 0,
+            payload_retained_locally: false,
+          },
+          rows: [],
+          da: null,
+          finalization: null,
+          neighbours: { prev: null, next: null },
+          events: { deposits: [], withdrawals: [], forced_transactions: [] },
+        });
       }),
     );
     await api.block("ab/cd?e");

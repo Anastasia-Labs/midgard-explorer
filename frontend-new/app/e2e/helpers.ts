@@ -28,9 +28,9 @@ export async function inject(page: Page, params: string) {
 export const test = base.extend<{ cleanFixture: void }>({
   cleanFixture: [
     async ({ request }, use) => {
-      await request.post(`${FIXTURE}/__control?fail=&slow=0`);
+      await request.post(`${FIXTURE}/__control?fail=&slow=0&health=`);
       await use();
-      await request.post(`${FIXTURE}/__control?fail=&slow=0`);
+      await request.post(`${FIXTURE}/__control?fail=&slow=0&health=`);
     },
     { auto: true },
   ],
@@ -198,7 +198,7 @@ export const txWithUnresolvedInput = (page: Page): Promise<string> =>
     "committed with an unresolved input",
   );
 
-/** A transaction that ran no scripts. The Events tab has to be honest about
+/** A transaction that ran no scripts. The Events tab should be omitted for
  * this case as well as the populated one: most transfers invoke nothing, and a
  * tab that only ever gets exercised with invocations would not notice if the
  * empty state started claiming something it should not. */
@@ -235,7 +235,7 @@ export const txAwaitingFinality = (page: Page): Promise<string> =>
       b.inclusion !== null &&
       b.finalization !== null &&
       IN_FLIGHT_FINALIZATION.has(b.finalization.status),
-    "committed and awaiting L1 finality",
+    "committed and awaiting Cardano finality",
   );
 
 /** A committed transaction whose block gave up on settling. Inclusion in an L2

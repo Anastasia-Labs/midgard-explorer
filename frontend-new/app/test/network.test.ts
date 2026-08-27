@@ -14,6 +14,7 @@ const loadNetwork = async (env: Record<string, string | undefined>) => {
 const KEYS = [
   "NEXT_PUBLIC_NETWORK_LABEL",
   "NEXT_PUBLIC_L1_EXPLORER_TX_URL",
+  "NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL",
   "NEXT_PUBLIC_L1_EXPLORER_NAME",
   "MG_STRICT_CONFIG",
 ];
@@ -201,6 +202,56 @@ describe("assertNetworkConfigured", () => {
     const { assertNetworkConfigured } = await loadNetwork({
       NEXT_PUBLIC_NETWORK_LABEL: "Preprod",
       NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
+      MG_STRICT_CONFIG: "1",
+    });
+    expect(() => assertNetworkConfigured()).not.toThrow();
+  });
+});
+
+/** A Cardano address has no page in this explorer. Without a template it is
+ * text with a copy button, which is what a reader met on the Cardano
+ * transaction page: an address they could copy and not follow. */
+describe("l1AddressUrl", () => {
+  const ADDRESS = "addr_test1wz3q9cphmpqzgpcc45sqzedtkwkj5nn6nwcje8a39ylu7dghn7vqy";
+  const TEMPLATE = "https://preprod.cexplorer.io/address/{address}";
+
+  it("fills the address placeholder", async () => {
+    const { l1AddressUrl } = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL: TEMPLATE,
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(l1AddressUrl(ADDRESS)).toBe(`https://preprod.cexplorer.io/address/${ADDRESS}`);
+  });
+
+  it("is null when unset, so the address renders without a link", async () => {
+    const { l1AddressUrl } = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL: undefined,
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(l1AddressUrl(ADDRESS)).toBeNull();
+  });
+
+  it("refuses a template that names no address", async () => {
+    const { l1AddressUrl } = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL: "https://preprod.cexplorer.io/address/",
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(l1AddressUrl(ADDRESS)).toBeNull();
+  });
+
+  it("refuses a scheme a reader must not be sent to", async () => {
+    const { l1AddressUrl } = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL: "javascript:alert({address})",
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(l1AddressUrl(ADDRESS)).toBeNull();
+  });
+
+  it("is not required configuration: a deployment may leave it unset", async () => {
+    const { assertNetworkConfigured } = await loadNetwork({
+      NEXT_PUBLIC_NETWORK_LABEL: "Preprod",
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
+      NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL: undefined,
       MG_STRICT_CONFIG: "1",
     });
     expect(() => assertNetworkConfigured()).not.toThrow();

@@ -75,9 +75,14 @@ export default defineConfig({
       timeout: 600_000,
       env: {
         NEXT_PUBLIC_API_BASE: `http://127.0.0.1:${FIXTURE_PORT}`,
+        // `.env.local` may point server components at a developer backend.
+        // Override both contexts so the browser suite cannot combine fixture
+        // client requests with real/stale server-rendered data.
+        API_BASE_SERVER: `http://127.0.0.1:${FIXTURE_PORT}`,
         NEXT_PUBLIC_NETWORK_LABEL: "Fixture",
-        NEXT_PUBLIC_L1_EXPLORER_TX_URL: "https://preprod.cardanoscan.io/transaction/{hash}",
-        NEXT_PUBLIC_L1_EXPLORER_NAME: "Cardanoscan",
+        NEXT_PUBLIC_L1_EXPLORER_TX_URL: "https://preprod.cexplorer.io/tx/{hash}",
+        NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL: "https://preprod.cexplorer.io/address/{address}",
+        NEXT_PUBLIC_L1_EXPLORER_NAME: "CExplorer",
       },
     },
   ],

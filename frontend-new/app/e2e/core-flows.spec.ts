@@ -83,6 +83,35 @@ test.describe("search", () => {
     await expect(page).toHaveURL(new RegExp(`/block/${hash}`));
   });
 
+  test("resolves indexed Cardano transactions, validators, and bridge event ids", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const l1Rows = await page.request
+      .get(`${FIXTURE}/api/l1/transactions/1`)
+      .then(async (response) => (await response.json()).rows as Array<{ txHash: string }>);
+    await openSearch(page);
+    await searchInput(page).fill(l1Rows[0]!.txHash);
+    const indexed = page.locator('[data-region="search-prefix"]');
+    await expect(indexed.getByText("Cardano transaction", { exact: true })).toBeVisible();
+    await indexed.getByText("Cardano transaction", { exact: true }).click();
+    await expect(page).toHaveURL(`/l1/transaction/${l1Rows[0]!.txHash}`);
+
+    await openSearch(page);
+    await searchInput(page).fill("a202e037d8");
+    await expect(
+      page.locator('[data-region="search-prefix"]').getByText(/deposit validator/i),
+    ).toBeVisible();
+
+    const deposit = await page.request
+      .get(`${FIXTURE}/api/deposits/1`)
+      .then(async (response) => (await response.json()).rows[0] as { event_id: string });
+    await searchInput(page).fill(deposit.event_id);
+    await expect(
+      page.locator('[data-region="search-prefix"]').getByText("Deposit", { exact: true }),
+    ).toBeVisible();
+  });
+
   test("says a prefix is too short rather than searching for it", async ({ page }) => {
     await page.goto("/");
     await openSearch(page);

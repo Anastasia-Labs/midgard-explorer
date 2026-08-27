@@ -16,7 +16,13 @@ const base = (over: Partial<MetricsResponse> = {}): MetricsResponse =>
       observedFrom: null,
       partial: false,
     },
-    tip: { height: 40, at: "2026-07-31T00:00:00.000Z", ageSeconds: 12, source: "blocks.height" },
+    tip: {
+      headerHash: "ab".repeat(28),
+      height: 40,
+      at: "2026-07-31T00:00:00.000Z",
+      ageSeconds: 12,
+      source: "blocks.height",
+    },
     throughput: {
       transactions: 88,
       blocks: 40,
@@ -55,7 +61,13 @@ describe("networkHealth", () => {
   it("never reports healthy when the tip is far past the observed cadence", () => {
     const h = networkHealth(
       base({
-        tip: { height: 40, at: null, ageSeconds: 21 * 12, source: "blocks.height" },
+        tip: {
+          headerHash: "ab".repeat(28),
+          height: 40,
+          at: null,
+          ageSeconds: 21 * 12,
+          source: "blocks.height",
+        },
       } as Partial<MetricsResponse>),
     );
     expect(h.state).toBe("stalled");
@@ -68,7 +80,7 @@ describe("networkHealth", () => {
     // them whichever number it picked.
     const slowChain = networkHealth(
       base({
-        tip: { height: 40, at: null, ageSeconds: 60, source: "b" },
+        tip: { headerHash: "ab".repeat(28), height: 40, at: null, ageSeconds: 60, source: "b" },
         throughput: {
           transactions: 88,
           blocks: 40,
@@ -80,7 +92,7 @@ describe("networkHealth", () => {
     );
     const fastChain = networkHealth(
       base({
-        tip: { height: 40, at: null, ageSeconds: 60, source: "b" },
+        tip: { headerHash: "ab".repeat(28), height: 40, at: null, ageSeconds: 60, source: "b" },
         throughput: {
           transactions: 88,
           blocks: 40,
@@ -161,7 +173,7 @@ describe("networkHealth", () => {
     for (const metrics of [
       base({ finality: { ...base().finality, abandoned: 5 } } as Partial<MetricsResponse>),
       base({
-        tip: { height: 1, at: null, ageSeconds: 300, source: "b" },
+        tip: { headerHash: "ab".repeat(28), height: 1, at: null, ageSeconds: 300, source: "b" },
       } as Partial<MetricsResponse>),
       base(),
     ]) {
@@ -181,6 +193,7 @@ describe("networkHealth when no interval can be measured", () => {
   const noInterval = (over: Partial<MetricsResponse["throughput"]> = {}) =>
     base({
       tip: {
+        headerHash: base().tip.headerHash,
         height: 20,
         at: "2026-08-04T12:28:29.120Z",
         ageSeconds: 284112,
@@ -202,16 +215,13 @@ describe("networkHealth when no interval can be measured", () => {
     expect(h.headline).toContain("stopped producing blocks");
   });
 
-  it("names the last block and how long ago it was, so the claim is checkable", () => {
+  // The headline already says what happened, the chain tip figure the panel
+  // renders next to this verdict already gives the block and its age, and the
+  // reasons list existed to avoid contradicting those figures, not to restate
+  // them. Nothing here needs a reason.
+  it("gives no reasons: the headline and the chain tip figure already say it", () => {
     const h = networkHealth(noInterval());
-    expect(h.reasons[0]).toContain("#20");
-    expect(h.reasons[0]).toContain("78.9h");
-    expect(h.reasons[0]).toContain("24 hours");
-  });
-
-  it("says the figures below cover the ledger only, not Midgard's L1 activity", () => {
-    const h = networkHealth(noInterval());
-    expect(h.reasons.join(" ")).toContain("indexed separately");
+    expect(h.reasons).toEqual([]);
   });
 
   // The discriminating case against the fix over-reaching: a chain that has
@@ -220,7 +230,7 @@ describe("networkHealth when no interval can be measured", () => {
   it("still reports a chain with no blocks at all as unjudgeable", () => {
     const h = networkHealth(
       base({
-        tip: { height: 0, at: null, ageSeconds: 0, source: "blocks.height" },
+        tip: { headerHash: null, height: null, at: null, ageSeconds: 0, source: "blocks.height" },
         throughput: {
           transactions: 0,
           blocks: 0,

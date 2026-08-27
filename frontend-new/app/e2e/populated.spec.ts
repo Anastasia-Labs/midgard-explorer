@@ -34,6 +34,36 @@ test.describe("populated lists", () => {
     await expect(rowRegion(page).locator("tr, li")).not.toHaveCount(0);
   });
 
+  test("a deposit-only header has no synthetic height and opens by hash", async ({ page }) => {
+    const response = await page.request.get(`${FIXTURE}/api/blocks/1`);
+    const body = await response.json();
+    const row = body.rows.find((candidate: { height: number | null }) => candidate.height === null);
+    expect(row).toBeDefined();
+    expect(row.header_hash).toBe("6f77bd238790f437971176e41b6c04ecf8eb04af01cf6c8fedfbcc8b");
+
+    await page.goto(`/block/${row.header_hash}`);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Header");
+    await expect(page.getByText("Block #0", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByText("This header contains protocol events but no Midgard transactions."),
+    ).toBeVisible();
+
+    await page.getByRole("tab", { name: /Data availability/ }).click();
+    await expect(page.getByText("Payload retained locally.")).toBeVisible();
+
+    await page.getByRole("tab", { name: /Protocol events/ }).click();
+    await expect(page.getByRole("heading", { name: /Deposits/ })).toContainText("(1)");
+    await expect(page.getByText(/published|attested|DA-network available/i)).toHaveCount(0);
+  });
+
+  test("shows the independently indexed Cardano header evidence", async ({ page }) => {
+    await page.goto(`/block/${await firstBlockHash(page)}?tab=l1`);
+    await expect(page.getByText("Observed on Cardano.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Protocol version", { exact: true })).toBeVisible();
+    await expect(page.getByText("Operator key hash", { exact: true })).toBeVisible();
+    await expect(page.getByText(/published|attested|DA-network available/i)).toHaveCount(0);
+  });
+
   test("transactions list flags rows that failed to decode", async ({ page }) => {
     await page.goto("/transactions");
     await expect(rowRegion(page).getByText("Partial decode").first()).toBeVisible();
@@ -44,6 +74,25 @@ test.describe("populated lists", () => {
     await expect(page.getByText("L1", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("L2", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Status key")).toBeVisible();
+  });
+
+  test("deposit ledger IDs are not linked as ordinary Midgard transactions", async ({ page }) => {
+    const deposits = await page.request
+      .get(`${FIXTURE}/api/deposits/1`)
+      .then(async (response) => (await response.json()).rows as Array<{ ledger_tx_id: string }>);
+    const id = deposits[0]!.ledger_tx_id;
+    await page.goto("/deposits");
+    await expect(page.locator(`a[href="/transaction/${id}"]`)).toHaveCount(0);
+  });
+
+  test("reconciles node deposits with the explorer-owned Cardano index", async ({ page }) => {
+    await page.goto("/deposits");
+    const observations = page.getByText(/Cardano observations \(\d+\)/);
+    await expect(observations).toBeVisible();
+    await observations.click();
+    await expect(
+      page.getByText(/current node records|Additional Cardano observations/),
+    ).toBeVisible();
   });
 
   test("withdrawals separate validity from lifecycle status", async ({ page }) => {
@@ -59,6 +108,25 @@ test.describe("populated lists", () => {
     }
   });
 
+  test("withdrawals show the canonical bech32 address and decoded value", async ({ page }) => {
+    await page.goto("/withdrawals");
+    await expect(
+      rowRegion(page)
+        .getByText(/addr_test1/)
+        .first(),
+    ).toBeVisible();
+    await expect(rowRegion(page).getByText(/₳/).first()).toBeVisible();
+  });
+
+  test("withdrawal outrefs are not linked as transaction hashes", async ({ page }) => {
+    const withdrawals = await page.request
+      .get(`${FIXTURE}/api/withdrawals/1`)
+      .then(async (response) => (await response.json()).rows as Array<{ l2_outref: string }>);
+    const outref = withdrawals[0]!.l2_outref;
+    await page.goto("/withdrawals");
+    await expect(page.locator(`a[href="/transaction/${outref}"]`)).toHaveCount(0);
+  });
+
   test("an undecodable bridge row says so instead of showing a wrong amount", async ({ page }) => {
     await page.goto("/deposits");
     await expect(rowRegion(page).getByText("undecodable").first()).toBeVisible();
@@ -69,6 +137,76 @@ test.describe("populated lists", () => {
     for (const label of ["Awaiting", "Projected", "Consumed"]) {
       await expect(rowRegion(page).getByText(label, { exact: true }).first()).toBeVisible();
     }
+  });
+
+  /** The deposits row is the one place both ledgers' addresses sit side by
+   * side, which makes it the check that matters: whatever the rule is, it has
+   * to be the same rule in both columns. */
+  test("marks the Midgard address and the Cardano one it came from", async ({ page }) => {
+    // 1600, not 1440: the Cardano source column is hidden below `2xl`, so at
+    // desktop width this found no column, asserted nothing behind a guard, and
+    // passed. The first version of this test did exactly that.
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.goto("/deposits");
+    await settle(page);
+
+    await expect(page.getByRole("columnheader", { name: "Cardano source" })).toBeVisible();
+
+    // Both addresses in one row: the Midgard recipient, which links to its page
+    // here, and the Cardano source, which links nowhere because this explorer
+    // has no page for it. The rule that has to hold is that neither is bare.
+    const row = rowRegion(page)
+      .getByRole("row")
+      .filter({ hasText: /addr_test/ })
+      .first();
+    await expect(row.locator('svg[viewBox="0 0 5 5"]')).toHaveCount(2);
+  });
+
+  test("known deposit statuses stay readable at desktop width", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/deposits");
+    await settle(page);
+
+    const projected = rowRegion(page).getByText("Projected", { exact: true }).first();
+    await expect(projected).toBeVisible();
+    const layout = await projected.evaluate((element) => {
+      const tableScroller = element.closest("table")?.parentElement;
+      const label = Array.from(element.childNodes).find(
+        (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim() === "Projected",
+      );
+      if (!label) throw new Error("Projected badge has no direct label text node");
+      const range = document.createRange();
+      // Measure the label, not the marker and help control that share its
+      // badge. Each inline child has its own client rectangle even when all
+      // three occupy the same line.
+      range.selectNodeContents(label);
+      return {
+        lineBoxes: range.getClientRects().length,
+        pageWidth: document.documentElement.clientWidth,
+        pageScrollWidth: document.documentElement.scrollWidth,
+        tableScroller: tableScroller
+          ? {
+              className: tableScroller.className,
+              clientWidth: tableScroller.clientWidth,
+              scrollWidth: tableScroller.scrollWidth,
+              overflowX: getComputedStyle(tableScroller).overflowX,
+              right: Math.round(tableScroller.getBoundingClientRect().right),
+            }
+          : null,
+      };
+    });
+
+    expect(layout.lineBoxes, "Projected split across multiple lines").toBe(1);
+    expect(layout.tableScroller, "deposits table has no scroll container").not.toBeNull();
+    expect(layout.tableScroller!.overflowX).toBe("auto");
+    expect(
+      layout.tableScroller!.scrollWidth,
+      `deposits table needs internal scrolling at desktop width: ${layout.tableScroller!.scrollWidth}px > ${layout.tableScroller!.clientWidth}px`,
+    ).toBeLessThanOrEqual(layout.tableScroller!.clientWidth + 1);
+    expect(
+      layout.pageScrollWidth,
+      `deposits page overflows: ${layout.pageScrollWidth}px > ${layout.pageWidth}px`,
+    ).toBeLessThanOrEqual(layout.pageWidth + 1);
   });
 
   test("mobile rows keep identity, status and amount without horizontal scroll", async ({
@@ -138,8 +276,21 @@ test.describe("operational metrics", () => {
     const metrics = page.locator('[data-region="metrics"]');
     await expect(metrics).toBeVisible();
     await expect(metrics.getByText("Chain tip")).toBeVisible();
-    await expect(metrics.getByText("Admission", { exact: true })).toBeVisible();
-    await expect(metrics.getByText("L1 settlement")).toBeVisible();
+    await expect(metrics.getByText("Awaiting settlement")).toBeVisible();
+  });
+
+  // Latency distributions answer "how fast is it usually", which is a deeper
+  // question than "is it moving". Keeping them out of the top row is what lets
+  // that row be read at a glance, so their being in the disclosure is the
+  // behaviour under test, not an accident of layout.
+  test("keeps latency distributions out of the first read", async ({ page }) => {
+    await page.goto("/");
+    const metrics = page.locator('[data-region="metrics"]');
+    await expect(metrics.getByText("Cardano settlement time")).toHaveCount(0);
+
+    await page.getByText("Latency, status breakdown and where each figure comes from").click();
+    await expect(page.getByText("Cardano settlement time")).toBeVisible();
+    await expect(page.getByText("Admission", { exact: true })).toBeVisible();
   });
 
   test("states a health verdict in words, above the figures", async ({ page }) => {
@@ -175,8 +326,20 @@ test.describe("operational metrics", () => {
   test("labels a percentile drawn from too few records", async ({ page }) => {
     await page.goto("/");
     // The fixture settles only a handful of blocks, which is exactly the case
-    // where a p95 must not be presented as a measurement.
-    await expect(page.getByText(/thin sample/)).toBeVisible();
+    // where a p95 must not be presented as a measurement. The percentiles now
+    // sit in the disclosure, and the label has to travel with them: a figure
+    // may be moved out of the first read, but it may never be shown anywhere
+    // without the sample it was measured over.
+    await page.getByText("Latency, status breakdown and where each figure comes from").click();
+    await expect(page.getByText(/thin sample/).first()).toBeVisible();
+  });
+
+  // The corollary, and the reason moving them was safe: no percentile survives
+  // in the top row, so collapsing the disclosure cannot leave an unqualified
+  // distribution on screen.
+  test("shows no percentile outside the disclosure that carries its sample", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator('[data-region="metrics"]').getByText(/p95/)).toHaveCount(0);
   });
 
   test("says when the window covers less history than its label", async ({ page }) => {
@@ -191,16 +354,20 @@ test.describe("operational metrics", () => {
 
   test("names the node column behind every figure", async ({ page }) => {
     await page.goto("/");
-    await page.getByText("Status breakdown and where each figure comes from").click();
+    await page.getByText("Latency, status breakdown and where each figure comes from").click();
     await expect(
       page.getByText("tx_admissions.terminal_at - tx_admissions.first_seen_at"),
     ).toBeVisible();
-    await expect(page.getByText("blocks.height, blocks.time_stamp_tz")).toBeVisible();
+    await expect(
+      page.getByText(
+        "pending_block_finalizations.status, pending_block_finalizations.block_end_time, blocks.height",
+      ),
+    ).toBeVisible();
   });
 
   test("links the oldest block still waiting on L1", async ({ page }) => {
     await page.goto("/");
-    const oldest = page.getByText("Oldest block awaiting L1").locator("..");
+    const oldest = page.getByText("Oldest block awaiting settlement").locator("..");
     await expect(oldest.getByRole("link")).toBeVisible();
     await oldest.getByRole("link").click();
     await expect(page).toHaveURL(/\/block\/[0-9a-f]{56}/);
@@ -287,7 +454,7 @@ test.describe("native assets", () => {
   test("the asset page says its total describes the ledger now, not history", async ({ page }) => {
     const rows = await roster(page);
     await page.goto(`/asset/${rows[0]!.policyId}${rows[0]!.assetName}`);
-    await expect(page.getByText(/describes the ledger now rather than its history/)).toBeVisible();
+    await expect(page.getByText(/Current ledger · .* spendable UTxOs scanned/)).toBeVisible();
   });
 
   test("a quantity past the safe integer range is not rounded", async ({ page }) => {
@@ -329,9 +496,9 @@ test.describe("block detail", () => {
     // because settlement is the whole of a block's story.
     const journey = page.getByRole("region", { name: "Protocol journey" });
     await expect(journey).toBeVisible();
-    await expect(journey.getByRole("list").getByText("Seen on L1")).toBeVisible();
+    await expect(journey.getByRole("list").getByText("Seen on Cardano")).toBeVisible();
     await journey.getByText("Settlement timings and evidence").click();
-    await expect(journey.getByRole("group").getByText("Queued for L1")).toBeVisible();
+    await expect(journey.getByRole("group").getByText("Queued for Cardano")).toBeVisible();
 
     await page.getByRole("tab", { name: "Data availability" }).click();
     await expect(page).toHaveURL(/tab=da/);
@@ -371,6 +538,34 @@ test.describe("block detail", () => {
 });
 
 test.describe("transaction lifecycle", () => {
+  test("keeps the explorer-style technical overview for Midgard transactions", async ({ page }) => {
+    await page.goto(`/transaction/${await txAwaitingFinality(page)}`);
+    const overview = page.getByRole("tabpanel");
+    await expect(overview.getByRole("heading", { name: "Technical details" })).toBeVisible();
+    // Fee is on the summary band above the tabs and is deliberately not
+    // repeated inside Technical details. The reader still sees it once, which
+    // is what this test is for; asserting it twice was asserting the
+    // duplication.
+    await expect(
+      page.locator('[data-region="summary"]').getByText("Fee", { exact: true }),
+    ).toBeVisible();
+    await expect(overview.getByText("Fee", { exact: true })).toHaveCount(0);
+    await expect(overview.getByText("Validity interval", { exact: true })).toBeVisible();
+    await expect(overview.getByText("Network ID", { exact: true })).toBeVisible();
+    await expect(overview.getByText("Format version", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What this transaction does" })).toHaveCount(0);
+    // The summary states a transfer or renders nothing. Its old fallback,
+    // "Applied 2 inputs and created 2 outputs", spent a band above the fold
+    // restating the counts the State tab already carries on its tab badge.
+    await expect(page.getByText(/Applied \d+ inputs? and created \d+ outputs?\./)).toHaveCount(0);
+  });
+
+  test("states a transfer when one address ends up net positive", async ({ page }) => {
+    const payment = await page.request.get(`${FIXTURE}/__payment-tx`).then((r) => r.json());
+    await page.goto(`/transaction/${payment.txId}`);
+    await expect(page.getByText(/Transferred value to/)).toBeVisible();
+  });
+
   test("a committed transaction shows the completed lifecycle and its inputs and outputs", async ({
     page,
   }) => {
@@ -380,7 +575,14 @@ test.describe("transaction lifecycle", () => {
     // settlement band; per-stage timings live behind its disclosure.
     const journey = page.getByRole("region", { name: "Protocol journey" });
     await expect(journey).toBeVisible();
-    await expect(journey.getByText("Committed, awaiting L1 finality")).toBeVisible();
+    // The outcome is stated once, as the record header's badge. It used to be
+    // stated here as well, and beside it the page header carried the node's raw
+    // code, so a settled transaction read "Committed" and "Final on Cardano"
+    // within one screen of each other.
+    await expect(
+      page.locator('[data-region="identity"]').getByText("Committed, awaiting Cardano finality"),
+    ).toBeVisible();
+    await expect(journey.getByText("Committed, awaiting Cardano finality")).toHaveCount(0);
     await journey.getByText("Stage timings and evidence").click();
     // The label appears on the rail and again in the details grid; the details
     // entry is the one that carries the recorded timestamp.
@@ -430,7 +632,10 @@ test.describe("transaction lifecycle", () => {
     await page.goto(`/transaction/${partial}?tab=utxo`);
     await expect(ledger.getByText("Not known in full")).toBeVisible();
     await expect(ledger.getByText(/is visible/)).toBeVisible();
-    await expect(ledger.getByText(/the equation cannot be checked against it/)).toBeVisible();
+    // The caption states the same fact in fewer words than it used to: an
+    // unknown input total, and why. What must never come back is a number on
+    // the left of the "=", which the "At least" assertion below still guards.
+    await expect(ledger.getByText(/Input total unknown/)).toBeVisible();
     await expect(ledger.getByText(/spend side unknown/).first()).toBeVisible();
 
     // The equation row itself: every amount it states must belong to a side
@@ -448,9 +653,12 @@ test.describe("transaction lifecycle", () => {
     // and calling that success would be the worst lie the page could tell.
     await page.goto(`/transaction/${await txInAbandonedBlock(page)}`);
     const journey = page.getByRole("region", { name: "Protocol journey" });
-    await expect(journey.getByText("Finalization abandoned")).toBeVisible();
+    // The outcome is the record header's badge; the rail carries the stage.
+    await expect(
+      page.locator('[data-region="identity"]').getByText("Finalization abandoned"),
+    ).toBeVisible();
     await expect(journey.getByRole("list").getByText("Abandoned")).toBeVisible();
-    await expect(journey.getByRole("list").getByText("Final on L1")).toHaveCount(0);
+    await expect(journey.getByRole("list").getByText("Final on Cardano")).toHaveCount(0);
   });
 
   test("a non-terminal transaction announces that it is being watched", async ({ page }) => {
@@ -474,7 +682,7 @@ test.describe("transaction lifecycle", () => {
     const journey = page.getByRole("region", { name: "Protocol journey" });
     await expect(journey.getByRole("list").getByText("Rejected")).toBeVisible();
     // A rejected transaction never entered a block, so no settlement stage.
-    await expect(journey.getByText("Final on L1")).toHaveCount(0);
+    await expect(journey.getByText("Final on Cardano")).toHaveCount(0);
   });
 
   test("an undecodable transaction keeps everything that does not need the body", async ({
@@ -513,6 +721,38 @@ test.describe("transaction lifecycle", () => {
 });
 
 test.describe("address detail", () => {
+  test("uses paged, finalization-aware history with complete values", async ({ page }) => {
+    const address = await fixtureAddress(page, 0);
+    const response = await page.request.get(
+      `${FIXTURE}/api/address?address=${encodeURIComponent(address)}&page=1`,
+    );
+    expect(response.ok()).toBe(true);
+    const body = await response.json();
+    expect(body.historyPage).toBe(1);
+    expect(body.limit).toBe(25);
+    expect(body.txCount).toBeGreaterThanOrEqual(body.history.length);
+    expect(body.history[0].received).toEqual(
+      expect.objectContaining({ lovelace: expect.any(String), assets: expect.any(Object) }),
+    );
+    expect(
+      body.history.some(
+        (row: { finalization_status: string | null }) => row.finalization_status !== null,
+      ),
+    ).toBe(true);
+  });
+
+  test("shows settlement and native-asset movement in activity", async ({ page }) => {
+    await page.goto(`/address/${await fixtureAddress(page, 0)}`);
+    if (await isNarrow(page)) {
+      await page.getByText("Details", { exact: true }).first().click();
+      await expect(page.getByText("L1 settlement", { exact: true }).first()).toBeVisible();
+    } else {
+      await expect(page.getByRole("columnheader", { name: "L1 settlement" })).toBeVisible();
+    }
+    await expect(page.getByText(/MIDGARD|PATATE/).first()).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Pagination" })).toBeVisible();
+  });
+
   test("warns that the balance undercounts when outputs failed to decode", async ({ page }) => {
     await page.goto(`/address/${await fixtureAddress(page, 1)}`);
     await expect(page.getByText("Balance is incomplete.")).toBeVisible();
