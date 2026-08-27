@@ -151,20 +151,53 @@ Two probes answer separate questions, and a deployment should use both:
 
 - `GET /healthz` reports that the process is alive. It touches no database, so
   it is safe to restart on.
-- `GET /readyz` reports whether both databases can serve a request, and answers
-  `503` naming the one that cannot. Use it to take an instance out of rotation.
-  The failing driver message goes to the log, never to the response.
+- `GET /readyz` reports whether the explorer can actually serve. It checks that
+  each database holds the relations its query path uses, that the index's
+  migrations finished, and that the deployment manifest parses, then answers
+  `503` naming the check that failed. Use it to take an instance out of
+  rotation. The failing driver message goes to the log, never to the response.
+
+  It used to be `SELECT 1` against each database, which reports ready for an
+  empty PostgreSQL that holds none of the tables. That is what CI provisioned,
+  so the boot check called it healthy while the suite would have failed on a
+  missing relation.
 
 ## Checks
 
 ```bash
-cd backend       && pnpm typecheck && pnpm test && pnpm build
+cd backend       && pnpm typecheck && pnpm audit && pnpm test && pnpm build
 cd frontend-new  && ./scripts/ci-local.sh          # add --fast to skip the e2e suite
 ```
 
+`REQUIRE_DB=1` makes the database-backed backend tests fail rather than skip.
+Set it anywhere the result is being used as a gate; without it a run with no
+database reachable reports success having tested very little.
+
+`pnpm audit` fails on any production advisory with no recorded disposition in
+`backend/security-advisories.json`, and passes one that has a written reason.
+
 `.github/workflows/ci.yml` runs the same commands on every push and pull
-request, against a PostgreSQL service, and boots the compiled backend to prove
-the artifact starts.
+request, against a PostgreSQL service carrying both the explorer's own
+migrations and a versioned fixture of the node's schema
+(`backend/test/fixtures/schema/midgard-node.sql`, generated from
+`prisma/schema.prisma`), and boots the compiled backend to prove the artifact
+starts.
+
+### Deployment configuration
+
+`MG_STRICT_CONFIG=1` makes the frontend build refuse to produce an artifact
+that is not deployable: it requires `NEXT_PUBLIC_NETWORK_LABEL`,
+`NEXT_PUBLIC_L1_EXPLORER_TX_URL`, `NEXT_PUBLIC_SITE_URL`, `API_BASE_SERVER`,
+and a `NEXT_PUBLIC_API_BASE` a visitor can actually reach. That last one
+defaulted to `http://localhost:3102`, so a build without it published API
+documentation and copyable examples pointing at each visitor's own machine.
+
+`TRUSTED_PROXY_HOPS` decides whether the backend reads `x-forwarded-for` at
+all. It defaults to `0`, meaning the socket peer is the client identity and the
+header is ignored whoever sent it. Set it to `1` only when the backend sits
+directly behind the bundled nginx edge, which replaces the chain with the
+address it saw rather than appending to it. A private socket peer is not
+evidence of a trusted hop.
 
 On a machine too small to hold the whole end-to-end suite in one process,
 `frontend-new/scripts/e2e-by-file.sh` runs the same tests one spec file at a
