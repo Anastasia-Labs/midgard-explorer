@@ -43,7 +43,7 @@ export const startServer = async () => {
   app.use((req, res, next) => {
     const oldJson = res.json;
 
-    res.json = (data: any) => {
+    res.json = (data: unknown) => {
       return oldJson.call(res, bigintStringify(data));
     };
 
