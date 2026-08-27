@@ -12,23 +12,45 @@ OUT="${1:-../.git/gate-evidence/$(git rev-parse --short HEAD)-live.log}"
 strip() { sed -e 's/^"//' -e 's/"$//'; }
 env_val() { grep -oP "(?<=^$1=).*" .env | head -1 | strip; }
 
+# The database is read out of TEST_INDEXER_POSTGRES_URL, the same variable the
+# suite connects through, rather than assembled from discrete host/port/user
+# variables that nothing constrains to agree with it. Assembling it separately
+# meant the evidence header could name one database while the run wrote to
+# another, which is the one thing a piece of evidence must not do.
+TARGET_ENV="$(node - <<'NODE'
+const dotenv = require("dotenv");
+const { expand } = require("dotenv-expand");
+expand(dotenv.config({ quiet: true }));
+const raw = process.env.TEST_INDEXER_POSTGRES_URL;
+if (!raw) {
+  console.error("TEST_INDEXER_POSTGRES_URL is not set");
+  process.exit(1);
+}
+const u = new URL(raw);
+const q = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+console.log("TARGET_HOST=" + q(u.hostname));
+console.log("TARGET_PORT=" + q(u.port || "5432"));
+console.log("TARGET_USER=" + q(decodeURIComponent(u.username)));
+console.log("TARGET_DB=" + q(decodeURIComponent(u.pathname.replace(/^\//, ""))));
+console.log("PGPASSWORD=" + q(decodeURIComponent(u.password)));
+NODE
+)" || { echo "could not resolve TEST_INDEXER_POSTGRES_URL"; exit 1; }
+eval "$(printf '%s\n' "$TARGET_ENV" | grep -E '^(TARGET_HOST|TARGET_PORT|TARGET_USER|TARGET_DB|PGPASSWORD)=')"
+export PGPASSWORD
+TARGET="$TARGET_HOST:$TARGET_PORT/$TARGET_DB"
+PSQL=(psql -h "$TARGET_HOST" -p "$TARGET_PORT" -U "$TARGET_USER" -d "$TARGET_DB" -X -A -F'|')
+
 {
   echo "sha        = $(git rev-parse HEAD)"
   echo "started    = $(date -Is)"
   echo "koios      = $(env_val KOIOS_BASE_URL)"
   echo "manifest   = $(env_val MIDGARD_MANIFEST_PATH)"
-  # Expanded, not the raw .env line: POSTGRES_URL is composed from the discrete
-  # variables, so the literal line records ${INDEXER_POSTGRES_HOST} rather than
-  # the host the run actually used, which is the one fact this line exists for.
-  echo "index db   = $(env_val INDEXER_POSTGRES_HOST):$(env_val INDEXER_POSTGRES_PORT)/midgard_explorer_test"
+  echo "index db   = $TARGET_USER@$TARGET"
 } > "$OUT"
 
 LIVE_E2E=1 pnpm vitest run test/live-validation.test.mts >> "$OUT" 2>&1
 echo "live suite exit = $?" >> "$OUT"
 
-export PGPASSWORD="$(env_val INDEXER_POSTGRES_PASSWORD)"
-PSQL=(psql -h "$(env_val INDEXER_POSTGRES_HOST)" -p "$(env_val INDEXER_POSTGRES_PORT)"
-      -U "$(env_val INDEXER_POSTGRES_USER)" -d midgard_explorer_test -X -A -F'|')
 
 {
   echo
