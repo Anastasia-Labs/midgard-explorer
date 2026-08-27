@@ -96,4 +96,3 @@ CREATE INDEX "idx_blocks_tx_id" ON "blocks"("tx_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "address_history_tx_id_address_key" ON "address_history"("tx_id", "address");
-
