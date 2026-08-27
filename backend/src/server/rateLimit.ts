@@ -22,14 +22,12 @@ import { rateLimitedPaths } from "./catalogue";
  * every viewer in the world into a single bucket, and the first symptom would
  * be readers getting 429 for someone else's traffic.
  *
- * So the proxy forwards the original address in `x-forwarded-for`, and this
- * reads the first entry of that header, but only when the socket's own peer is
- * one of our proxies: loopback or a private network. A forged header can then
- * only ever SPLIT a bucket, never merge two, and only from inside. Read from
- * any peer, it would instead be a free way to leave the bucket behind: rotate
- * the value, keep the budget, and grow the map with every distinct string.
- * Requests with no trusted chain share the per-source bucket for their real
- * address.
+ * So the edge forwards the original address in `x-forwarded-for`, and this
+ * keys on the entry the edge itself wrote, but only when this process has been
+ * told it sits behind a named edge. Otherwise the socket peer is the identity
+ * and the header is ignored whoever sent it. `clientAddress` below carries the
+ * rules and the reasoning; this is the only other place that describes them,
+ * so keep the two in step.
  */
 
 type Bucket = { count: number; resetAt: number };
