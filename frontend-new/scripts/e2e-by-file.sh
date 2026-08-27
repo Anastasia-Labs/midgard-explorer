@@ -25,7 +25,10 @@ FAILED_SPECS=""
 export E2E_PORT=3210 FIXTURE_PORT=3211 E2E_REUSE_SERVER=1
 
 echo "== build ==" >> $SUM
-MG_STRICT_CONFIG=1 NEXT_PUBLIC_NETWORK_LABEL=Preprod \
+# Must match playwright.config.ts, which builds with "Fixture" and whose specs
+# assert that badge text. This script built with "Preprod", so core-flows failed
+# on every run; the missing exit aggregation is why nobody saw it.
+MG_STRICT_CONFIG=1 NEXT_PUBLIC_NETWORK_LABEL=Fixture \
 NEXT_PUBLIC_API_BASE="${NEXT_PUBLIC_API_BASE:-https://api.explorer.invalid}" \
 API_BASE_SERVER="${API_BASE_SERVER:-http://backend:3101}" \
 NEXT_PUBLIC_SITE_URL="${NEXT_PUBLIC_SITE_URL:-https://explorer.invalid}" \
