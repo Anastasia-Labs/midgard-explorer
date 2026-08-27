@@ -1,3 +1,4 @@
+import { config } from "../config";
 import { Application, NextFunction, Request, Response } from "express";
 import { rateLimitedPaths } from "./catalogue";
 
@@ -61,18 +62,39 @@ function isTrustedProxy(address: string | undefined): boolean {
   return false;
 }
 
-/** The original client address when one of our proxies forwarded it, else the
- * socket address. `x-forwarded-for` is a comma-separated chain and the first
- * entry is the client. req.ip is undefined when the socket is already gone;
- * those share one bucket, which is correct because they are
- * indistinguishable. */
+/**
+ * The address this request is rate limited against.
+ *
+ * A private socket peer used to be enough to trust `x-forwarded-for`, and in
+ * the bundled topology every request arrives from the compose bridge gateway.
+ * Any direct client could therefore send its own header, rotate it per request
+ * and never be limited, while also growing the bucket map with forged
+ * identities.
+ *
+ * The edge is now the only authority on client identity. It overwrites the
+ * chain rather than appending to it, so exactly one hop is trusted and only
+ * when this process has been told it is behind that edge. With
+ * `TRUSTED_PROXY_HOPS` unset, the socket peer is the identity and a forwarded
+ * header is ignored no matter who sent it.
+ *
+ * `req.ip` is undefined when the socket is already gone; those share one
+ * bucket, which is correct because they are indistinguishable.
+ */
 function clientAddress(req: Request): string {
   const peer = req.ip;
-  if (isTrustedProxy(peer)) {
+  if (config.TRUSTED_PROXY_HOPS > 0 && isTrustedProxy(peer)) {
     const forwarded = req.headers?.["x-forwarded-for"];
     const chain = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-    const first = chain?.split(",")[0]?.trim();
-    if (first && first.length > 0) return first;
+    const entries = (chain ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    // Count from the right. The rightmost entry is the one the nearest trusted
+    // hop wrote, and it is the only part a client cannot forge. Taking the
+    // leftmost entry takes whatever the client put there first.
+    const index = entries.length - config.TRUSTED_PROXY_HOPS;
+    const identity = index >= 0 ? entries[index] : undefined;
+    if (identity !== undefined) return identity;
   }
   return peer ?? "unknown";
 }

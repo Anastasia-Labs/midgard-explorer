@@ -36,6 +36,35 @@ ALTER ROLE explorer_reader LOGIN PASSWORD :'role_password';
 -- membership of anything.
 ALTER ROLE explorer_reader NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
 
+-- Revoke before granting, so a rerun narrows the role instead of only adding
+-- to it. Reusing an existing role kept every grant and every membership it had
+-- picked up, and NOINHERIT does not prevent the login from calling SET ROLE to
+-- reach a group it still belongs to. Least privilege has to be re-established
+-- on each run or it is only least privilege on the first.
+DO $revoke$
+DECLARE
+  g record;
+BEGIN
+  FOR g IN
+    SELECT r.rolname
+      FROM pg_auth_members m
+      JOIN pg_roles r ON r.oid = m.roleid
+     WHERE m.member = 'explorer_reader'::regrole
+  LOOP
+    EXECUTE format('REVOKE %I FROM explorer_reader', g.rolname);
+    RAISE NOTICE 'revoked membership of %', g.rolname;
+  END LOOP;
+END
+$revoke$;
+
+REVOKE ALL ON DATABASE :"DBNAME" FROM explorer_reader;
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM explorer_reader;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM explorer_reader;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM explorer_reader;
+REVOKE ALL ON SCHEMA public FROM explorer_reader;
+-- Anything a future default-privilege rule would have handed it.
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
+
 GRANT CONNECT ON DATABASE :"DBNAME" TO explorer_reader;
 GRANT USAGE ON SCHEMA public TO explorer_reader;
 

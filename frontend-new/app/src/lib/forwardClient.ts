@@ -7,16 +7,30 @@
  * limiter would put every viewer in the world into one bucket. The first
  * symptom would be readers getting 429 for someone else's traffic.
  *
- * Appends rather than replaces: `x-forwarded-for` is a chain, and a proxy in
- * front of this one has already written the parts it knows.
+ * The value is only ever the one the trusted edge wrote. This used to copy
+ * whatever the caller sent, so a direct client could supply its own chain,
+ * rotate it per request, evade the limiter entirely and fill its bucket map
+ * with forged identities. The backend counts hops from the right for the same
+ * reason: the rightmost entry is the one the nearest trusted hop wrote, and it
+ * is the only part a client cannot choose.
  */
 type HeaderSource = { get(name: string): string | null };
 
 export function forwardedFrom(source: HeaderSource): Record<string, string> {
-  const existing = source.get("x-forwarded-for");
-  const real = source.get("x-real-ip");
-  const chain = existing ?? real;
-  return chain ? { "x-forwarded-for": chain } : {};
+  // `x-real-ip` is dropped: the backend reads one header, and accepting a
+  // second spelling gave a client a way to state an identity the edge never
+  // wrote.
+  const chain = source.get("x-forwarded-for");
+  if (chain === null) return {};
+  const entries = chain
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  // Only the last entry is forwarded on. Everything to its left was supplied
+  // by something further from the edge, which means it may have been supplied
+  // by the client.
+  const nearest = entries.at(-1);
+  return nearest === undefined ? {} : { "x-forwarded-for": nearest };
 }
 
 export function forwardedForHeader(request: Request): Record<string, string> {

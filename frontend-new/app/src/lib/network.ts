@@ -76,6 +76,35 @@ export function l1AddressUrl(address: string): string | null {
   return L1_EXPLORER_ADDRESS_TEMPLATE.replace(ADDRESS_PLACEHOLDER, encodeURIComponent(address));
 }
 
+/** A URL that a visitor's browser can actually reach.
+ *
+ * `NEXT_PUBLIC_API_BASE` is inlined at build time and defaulted to
+ * `http://localhost:3102`, so a production build that did not set it published
+ * API documentation and copyable examples pointing at each visitor's own
+ * machine. Strict mode is where that has to be caught, because by the time the
+ * page renders the value is already baked into the bundle. */
+function isPublicOrigin(value: string | undefined): boolean {
+  if (value === undefined || value.trim() === "") return false;
+  // The empty string means same-origin and is set deliberately; it is handled
+  // by the caller, not here.
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase();
+  return !(
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "0.0.0.0" ||
+    host.endsWith(".local") ||
+    host.endsWith(".localhost")
+  );
+}
+
 export function assertNetworkConfigured(): void {
   if (process.env.MG_STRICT_CONFIG !== "1") return;
   const missing: string[] = [];
@@ -84,6 +113,26 @@ export function assertNetworkConfigured(): void {
   // configured to anyone looking at the environment. That is the case a
   // build-time check exists for.
   if (L1_EXPLORER_TX_TEMPLATE === null) missing.push("NEXT_PUBLIC_L1_EXPLORER_TX_URL");
+
+  // "" is same-origin behind the proxy and is a valid production choice.
+  const publicBase = process.env.NEXT_PUBLIC_API_BASE;
+  if (publicBase === undefined) {
+    missing.push("NEXT_PUBLIC_API_BASE");
+  } else if (publicBase !== "" && !isPublicOrigin(publicBase)) {
+    missing.push(`NEXT_PUBLIC_API_BASE (not reachable by a visitor: ${publicBase})`);
+  }
+
+  // The server-side base is allowed to be internal, so only its presence and
+  // shape are checked.
+  const serverBase = process.env.API_BASE_SERVER;
+  if (serverBase === undefined || serverBase.trim() === "") {
+    missing.push("API_BASE_SERVER");
+  }
+
+  if (!isPublicOrigin(process.env.NEXT_PUBLIC_SITE_URL)) {
+    missing.push("NEXT_PUBLIC_SITE_URL");
+  }
+
   if (missing.length > 0) {
     throw new Error(`Missing required deployment configuration: ${missing.join(", ")}`);
   }

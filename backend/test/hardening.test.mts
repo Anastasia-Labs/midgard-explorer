@@ -1,6 +1,21 @@
+import { config } from "../src/config.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { rateLimiter, resetRateLimits } from "../src/server/rateLimit.js";
 import { securityHeaders, resolveCorsOrigin } from "../src/server/security.js";
+
+/** Trust is configuration, so a test about trust has to set it. Restored on the
+ * way out so one case cannot decide another's outcome. */
+function withHops(hops: number, body: () => void): void {
+  const mutable = config as { TRUSTED_PROXY_HOPS: number };
+  const original = mutable.TRUSTED_PROXY_HOPS;
+  mutable.TRUSTED_PROXY_HOPS = hops;
+  try {
+    body();
+  } finally {
+    mutable.TRUSTED_PROXY_HOPS = original;
+  }
+}
+
 
 /** Express handles reduced to what these middlewares actually touch. */
 const mkReq = (ip = "1.2.3.4", forwardedFor?: string) =>
@@ -92,27 +107,67 @@ describe("rateLimiter", () => {
    * would be readers getting 429 for someone else's traffic.
    */
   it("separates clients that share one proxy address", () => {
-    const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
-    let passed = 0;
-    limit(mkReq("10.0.0.1", "203.0.113.7"), mkRes().res, () => (passed += 1));
-    limit(mkReq("10.0.0.1", "203.0.113.8"), mkRes().res, () => (passed += 1));
-    expect(passed).toBe(2);
+    // Needs a trusted hop. Without one the peer is the identity and both of
+    // these are the same client, which is the correct answer for an
+    // unconfigured deployment and the wrong one for this scenario.
+    withHops(1, () => {
+      const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
+      let passed = 0;
+      limit(mkReq("10.0.0.1", "203.0.113.7"), mkRes().res, () => (passed += 1));
+      limit(mkReq("10.0.0.1", "203.0.113.8"), mkRes().res, () => (passed += 1));
+      expect(passed).toBe(2);
+    });
   });
 
-  it("reads the client from the front of a forwarded chain", () => {
-    const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
-    let passed = 0;
-    limit(
-      mkReq("10.0.0.1", "203.0.113.7, 10.0.0.9"),
-      mkRes().res,
-      () => (passed += 1),
-    );
-    limit(
-      mkReq("10.0.0.1", "203.0.113.7, 10.0.0.9"),
-      mkRes().res,
-      () => (passed += 1),
-    );
-    expect(passed).toBe(1);
+  /** With no trusted hop configured, the socket peer is the identity and the
+   * header is not read at all. This is the default, and it is what makes a
+   * deployment safe before anyone has thought about its topology. */
+  it("ignores a forwarded chain when no proxy hop is trusted", () => {
+    withHops(0, () => {
+      const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
+      let passed = 0;
+      // Two different forged chains from one peer. Both are the same client.
+      limit(mkReq("10.0.0.1", "203.0.113.7"), mkRes().res, () => (passed += 1));
+      limit(mkReq("10.0.0.1", "203.0.113.8"), mkRes().res, () => (passed += 1));
+      expect(passed).toBe(1);
+    });
+  });
+
+  /** The regression this exists to close. The limiter read the LEFTMOST entry,
+   * which is whatever the client wrote first, so any direct caller could rotate
+   * it per request, never be limited, and grow the bucket map with forged
+   * identities. The rightmost entry is the one the nearest trusted hop wrote. */
+  it("reads the client the trusted hop wrote, not the one the client sent", () => {
+    withHops(1, () => {
+      const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
+      let passed = 0;
+      // The edge appended 10.0.0.9; 203.0.113.7 is the client's own claim.
+      limit(
+        mkReq("10.0.0.1", "203.0.113.7, 10.0.0.9"),
+        mkRes().res,
+        () => (passed += 1),
+      );
+      // A different forged prefix, same real client. One bucket, so refused.
+      limit(
+        mkReq("10.0.0.1", "198.51.100.4, 10.0.0.9"),
+        mkRes().res,
+        () => (passed += 1),
+      );
+      expect(passed).toBe(1);
+    });
+  });
+
+  /** The effect the limiter exists for: two genuinely different viewers get
+   * two budgets. Asserted alongside the case above, because a limiter that
+   * collapsed everyone into one bucket would also pass that one. */
+  it("gives two viewers the edge distinguishes their own budgets", () => {
+    withHops(1, () => {
+      const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
+      let passed = 0;
+      limit(mkReq("10.0.0.1", "203.0.113.7"), mkRes().res, () => (passed += 1));
+      limit(mkReq("10.0.0.1", "203.0.113.8"), mkRes().res, () => (passed += 1));
+      expect(passed).toBe(2);
+    });
   });
 
   /** The forwarded chain is only evidence when a proxy we run wrote it. From
@@ -126,20 +181,14 @@ describe("rateLimiter", () => {
     expect(passed).toBe(1);
   });
 
-  it("still trusts the chain from a loopback proxy", () => {
-    const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
-    let passed = 0;
-    limit(
-      mkReq("::ffff:127.0.0.1", "203.0.113.7"),
-      mkRes().res,
-      () => (passed += 1),
-    );
-    limit(
-      mkReq("::ffff:127.0.0.1", "203.0.113.8"),
-      mkRes().res,
-      () => (passed += 1),
-    );
-    expect(passed).toBe(2);
+  it("trusts a loopback edge only when a hop is configured", () => {
+    withHops(1, () => {
+      const limit = rateLimiter({ limit: 1, windowMs: 60_000 });
+      let passed = 0;
+      limit(mkReq("::ffff:127.0.0.1", "203.0.113.7"), mkRes().res, () => (passed += 1));
+      limit(mkReq("::ffff:127.0.0.1", "203.0.113.8"), mkRes().res, () => (passed += 1));
+      expect(passed).toBe(2);
+    });
   });
 
   it("lets a client back in once the window rolls over", () => {

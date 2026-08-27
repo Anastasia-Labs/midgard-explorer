@@ -32,8 +32,12 @@ services:
     container_name: midgard-explorer-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: explorer
-      POSTGRES_PASSWORD: explorer
+      POSTGRES_USER: ${EXPLORER_POSTGRES_USER:-explorer}
+      # No default. A compose file that ships a known password is a known
+      # password in every deployment that used this file as-is, and the
+      # documentation describes this path as production-capable. Compose fails
+      # with "variable is not set" rather than starting with a guessable one.
+      POSTGRES_PASSWORD: ${EXPLORER_POSTGRES_PASSWORD:?set EXPLORER_POSTGRES_PASSWORD before starting}
       POSTGRES_DB: midgard_explorer
     ports:
       - "127.0.0.1:5435:5432"
