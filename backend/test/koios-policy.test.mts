@@ -130,4 +130,3 @@ describe("bounded response reading", () => {
     expect(await readBounded(new Response("[1,2]"), 1_000, "/tx_info")).toBe("[1,2]");
   });
 });
-

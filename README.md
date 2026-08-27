@@ -178,8 +178,14 @@ order matters. Applying the migration on its own is not a rollout: the old
 binary keeps writing under the old rules against the new schema.
 
 `backend/scripts/rollout.sh --check` prints the current state and readiness
-without changing anything; `--apply` performs step 2 after asking for the
-database name. It does not start or stop writers, because it cannot know what
+without changing anything, and exits with readiness's own exit code, so it can
+be gated on. `--apply` performs step 2. Both read their target from
+`INDEXER_POSTGRES_URL`, the same variable `pnpm indexer:deploy` migrates
+through, so the database being inspected and the database being migrated cannot
+be two different databases. `--apply` refuses to run while any process still
+holds the indexer's advisory leadership lock, and asks for the full
+`host:port/database` rather than the database name, which on its own cannot tell
+two hosts apart. It does not start or stop writers, because it cannot know what
 supervises them.
 
 1. **Stop the current writer.** Set `L1_SYNC_ENABLED=false` and restart it, or
@@ -196,6 +202,14 @@ supervises them.
    `additive only: a source did not complete`. Do not open traffic on those:
    the reorg window has not been reconciled. The three cursors (`l1`,
    `l1:mints`, `l1:rewards`) sit at the same height once a pass has reconciled.
+
+   Readiness answers this for you and keeps the instance out of rotation until
+   it is true. It refuses an index holding rows under `default`, and an index
+   whose cursors have not advanced past zero. Both matter: the migration leaves
+   all three cursors reading zero, so equality between them proves nothing
+   there, and a cursor is written only inside a pass where every source
+   completed, which makes a non-zero one the durable record that a full
+   reconciliation committed.
 5. **Validate the queries before opening traffic.** Every event must carry the
    manifest's identity and never a shared constant:
 
@@ -232,7 +246,14 @@ request, against a PostgreSQL service carrying both the explorer's own
 migrations and a versioned fixture of the node's schema
 (`backend/test/fixtures/schema/midgard-node.sql`, generated from
 `prisma/schema.prisma`), and boots the compiled backend to prove the artifact
-starts.
+starts. Both jobs upload what they printed as an artifact, on success as well
+as failure, so a green run's counts can be read by anyone with access to it.
+Container images are pinned by digest and actions by commit SHA, and the
+workflow token is `contents: read`.
+
+`docs/release/l1-attribution-repair.md` is the release record for the
+attribution repair: identities, commands, counts, representative transactions
+and what remains unproven.
 
 ### Deployment configuration
 

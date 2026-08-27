@@ -70,4 +70,3 @@ Status values:
 2. Add L1 block and epoch drill-down views from existing `l1_tx` rows if operator investigation needs them.
 3. Add a durable L2 asset-movement index before presenting supply or transfer history.
 4. Add historical ledger snapshots only with explicit retention and storage budgets.
-
