@@ -18,7 +18,7 @@ import { TransactionEvents } from "../../../components/ui/transactionevents";
 import { api } from "../../../lib/api";
 import { OUTCOME_TONE, transactionJourney } from "../../../lib/journey";
 import { formatTimestamp, truncateId } from "../../../lib/format";
-import { TERMINAL_TX_STATUSES } from "../../../lib/queryKeys";
+import { TERMINAL_TX_STATUSES } from "../../../lib/txStatus";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
 import { statusOf } from "../../../lib/status-registry";
 import { viewerInit } from "../../../lib/viewerInit";
