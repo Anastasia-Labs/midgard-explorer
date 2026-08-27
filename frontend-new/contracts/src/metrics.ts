@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { HexString, IsoTimestamp } from "./primitives";
+import { Hash32, HexString, IsoTimestamp } from "./primitives";
 
 /** Operational metrics for the overview.
  *
@@ -76,7 +76,7 @@ export const MetricsResponse = Schema.Struct({
     abandoned: Schema.Number,
     oldestUnsettled: Schema.NullOr(
       Schema.Struct({
-        headerHash: Schema.String,
+        headerHash: Hash32,
         status: Schema.String,
         blockEndTime: IsoTimestamp,
         waitingSeconds: Schema.Number,

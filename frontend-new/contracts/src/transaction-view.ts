@@ -1,5 +1,10 @@
 import { Schema } from "effect";
-import { DecimalString, IsoTimestamp, SignedDecimalString } from "./primitives";
+import {
+  DecimalString,
+  Hash28,
+  IsoTimestamp,
+  SignedDecimalString,
+} from "./primitives";
 
 export const AssetMap = Schema.Record({
   key: Schema.String,
@@ -128,14 +133,14 @@ export type WitnessSummary = Schema.Schema.Type<typeof WitnessSummary>;
 
 /** A negative quantity is a burn, which is why this is signed. */
 export const MintedAsset = Schema.Struct({
-  policyId: Schema.String,
+  policyId: Hash28,
   assetName: Schema.String,
   quantity: SignedDecimalString,
 });
 export type MintedAsset = Schema.Schema.Type<typeof MintedAsset>;
 
 export const MintView = Schema.Struct({
-  policyIds: Schema.Array(Schema.String),
+  policyIds: Schema.Array(Hash28),
   assets: Schema.Array(MintedAsset),
 });
 export type MintView = Schema.Schema.Type<typeof MintView>;

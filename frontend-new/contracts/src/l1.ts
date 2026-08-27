@@ -1,5 +1,13 @@
 import { Schema } from "effect";
-import { DecimalString, HexString, IsoTimestamp, SignedDecimalString, paged } from "./primitives";
+import {
+  DecimalString,
+  Hash28,
+  Hash32,
+  HexString,
+  IsoTimestamp,
+  SignedDecimalString,
+  paged,
+} from "./primitives";
 
 /**
  * The explorer's own Cardano L1 index, as served by the indexer routes.
@@ -52,7 +60,7 @@ export type L1EventSummary = Schema.Schema.Type<typeof L1EventSummary>;
 export const L1TxRow = Schema.Struct({
   txHash: HexString,
   blockHeight: Schema.Number,
-  blockHash: Schema.String,
+  blockHash: Hash32,
   slot: Schema.Number,
   epoch: Schema.Number,
   txTime: IsoTimestamp,
@@ -116,7 +124,7 @@ export const L1TxIo = Schema.Struct({
 export type L1TxIo = Schema.Schema.Type<typeof L1TxIo>;
 
 export const L1Redeemer = Schema.Struct({
-  scriptHash: Schema.String,
+  scriptHash: Hash28,
   address: Schema.NullOr(Schema.String),
   purpose: Schema.String,
   memUnits: DecimalString,
@@ -200,7 +208,7 @@ export type L1MidgardAction = Schema.Schema.Type<typeof L1MidgardAction>;
 export const L1TransactionResponse = Schema.Struct({
   txHash: HexString,
   blockHeight: Schema.Number,
-  blockHash: Schema.String,
+  blockHash: Hash32,
   slot: Schema.Number,
   epoch: Schema.Number,
   txTime: IsoTimestamp,
@@ -335,7 +343,7 @@ export const L1DepositObservation = Schema.Struct({
   tx: Schema.Struct({
     txHash: HexString,
     blockHeight: Schema.Number,
-    blockHash: Schema.String,
+    blockHash: Hash32,
     slot: Schema.Number,
     epoch: Schema.Number,
     txTime: IsoTimestamp,
