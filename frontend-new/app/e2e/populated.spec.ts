@@ -226,17 +226,22 @@ test.describe("populated lists", () => {
 test.describe("list filtering and export", () => {
   test("a status filter narrows the whole list, not just the page in view", async ({ page }) => {
     await page.goto("/blocks");
-    const totalText = await page.getByText(/total blocks/).textContent();
-    const before = Number((totalText ?? "").replace(/[^0-9]/g, ""));
+    const total = async () => {
+      const text = await page.getByText(/total blocks/).textContent();
+      return Number((text ?? "").replace(/[^0-9]/g, ""));
+    };
+    const before = await total();
 
     await page.getByLabel("L1 settlement").selectOption("finalized");
     await expect(page).toHaveURL(/status=finalized/);
-    const afterText = await page.getByText(/total blocks/).textContent();
-    const after = Number((afterText ?? "").replace(/[^0-9]/g, ""));
-    // A control that filtered only the rows that happened to arrive would
-    // leave the total untouched, which is the tell for a fake filter.
-    expect(after).toBeLessThan(before);
-    expect(after).toBeGreaterThan(0);
+    // Polled, not read once. The URL changes before the filtered total is
+    // rendered, so a single read observes the pre-filter figure whenever the
+    // re-render lands late, and the result then depends on how busy the machine
+    // is rather than on the code. A control that filtered only the rows that
+    // happened to arrive leaves the total untouched forever, so this still
+    // fails for the reason it exists.
+    await expect.poll(total).toBeLessThan(before);
+    expect(await total()).toBeGreaterThan(0);
   });
 
   test("the filtered view survives being copied out of the address bar", async ({ page }) => {
