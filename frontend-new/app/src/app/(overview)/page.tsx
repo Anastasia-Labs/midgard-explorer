@@ -5,7 +5,7 @@ import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Overview",
-  description: "Latest Midgard L2 blocks and transactions.",
+  description: "Latest Midgard blocks and transactions.",
   alternates: { canonical: "/" },
 };
 

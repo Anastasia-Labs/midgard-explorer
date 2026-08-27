@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Identifier } from "../../components/ui/identifier";
 import { StatusCell } from "../../components/ui/status";
 import { ListTools } from "../../components/ui/listtools";
 import { PageError } from "../../components/ui/pageerror";
-import { PageHeader } from "../../components/ui/primitives";
+import { Count, PageHeader } from "../../components/ui/primitives";
 import { DataTable, Pagination } from "../../components/ui/table";
 import { Timestamp } from "../../components/ui/timestamp";
 import { api } from "../../lib/api";
@@ -52,7 +51,7 @@ export default async function BlocksPage({
       <PageHeader
         entity="block"
         title="Blocks"
-        subtitle="Blocks produced on Midgard, newest first. Open a block to see whether it has settled on Cardano L1, and what it carries."
+        subtitle="Blocks produced on Midgard, newest first. Open a block to see whether it has settled on Cardano, and what it carries."
         meta={
           <span>
             <strong className="font-semibold text-text tabular-nums">
@@ -71,9 +70,13 @@ export default async function BlocksPage({
         columns={[
           { header: "height", path: "height" },
           { header: "header_hash", path: "header_hash" },
-          { header: "tx_count", path: "tx_count" },
+          { header: "l2_transactions", path: "header_l2_transaction_count" },
+          { header: "deposits", path: "header_deposit_count" },
+          { header: "withdrawals", path: "header_withdrawal_count" },
+          { header: "forced_transactions", path: "header_forced_transaction_count" },
           { header: "finalization_status", path: "finalization_status" },
-          { header: "time", path: "time_stamp_tz" },
+          { header: "block_start_time", path: "block_start_time" },
+          { header: "block_end_time", path: "block_end_time" },
         ]}
       />
 
@@ -82,25 +85,36 @@ export default async function BlocksPage({
           caption="Midgard blocks, newest first"
           columns={[
             {
-              header: "Height",
-              cell: (r) => (
-                <Link
-                  href={`/block/${r.header_hash}`}
-                  className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
-                >
-                  #{r.height}
-                </Link>
-              ),
-            },
-            {
               header: "Header hash",
               cell: (r) => <Identifier value={r.header_hash} href={`/block/${r.header_hash}`} />,
-              hideBelow: "md",
             },
             {
-              header: "Txs",
-              cell: (r) => <span className="tabular-nums">{r.tx_count}</span>,
+              header: "Height",
+              cell: (r) =>
+                r.height === null ? <span className="text-text-3">—</span> : `#${r.height}`,
+              hideBelow: "lg",
+            },
+            {
+              header: "L2 txs",
+              cell: (r) => <Count value={r.header_l2_transaction_count} />,
               align: "right",
+            },
+            {
+              header: "Deposits",
+              cell: (r) => <Count value={r.header_deposit_count} />,
+              align: "right",
+            },
+            {
+              header: "Withdrawals",
+              cell: (r) => <Count value={r.header_withdrawal_count} />,
+              align: "right",
+              hideBelow: "lg",
+            },
+            {
+              header: "Forced",
+              cell: (r) => <Count value={r.header_forced_transaction_count} />,
+              align: "right",
+              hideBelow: "lg",
             },
             {
               header: "L1 settlement",
@@ -113,38 +127,49 @@ export default async function BlocksPage({
               hideBelow: "sm",
             },
             {
-              header: "Time",
-              cell: (r) => <Timestamp iso={r.time_stamp_tz} />,
+              header: "Time range",
+              cell: (r) => (
+                <span className="inline-flex items-center gap-1">
+                  <Timestamp iso={r.block_start_time} />
+                  <span className="text-text-3">→</span>
+                  <Timestamp iso={r.block_end_time} />
+                </span>
+              ),
               align: "right",
+              hideBelow: "md",
             },
           ]}
           mobileRow={(r) => ({
             primary: (
-              <Link
+              <Identifier
+                value={r.header_hash}
                 href={`/block/${r.header_hash}`}
-                className="font-mono font-semibold tabular-nums text-link"
-              >
-                #{r.height}
-              </Link>
+                head={10}
+                tail={6}
+              />
             ),
             status:
               r.finalization_status === null ? null : <StatusCell status={r.finalization_status} />,
-            meta: <Timestamp iso={r.time_stamp_tz} />,
+            meta: <Timestamp iso={r.block_end_time} />,
             secondary: (
               <span className="tabular-nums">
-                {r.tx_count} {r.tx_count === 1 ? "transaction" : "transactions"}
+                {r.header_l2_transaction_count} tx · {r.header_deposit_count} deposits ·{" "}
+                {r.header_withdrawal_count} withdrawals · {r.header_forced_transaction_count} forced
               </span>
             ),
             details: [
               {
-                label: "Header hash",
+                label: "Height",
+                value: r.height === null ? "Not assigned" : `#${r.height}`,
+              },
+              {
+                label: "Time range",
                 value: (
-                  <Identifier
-                    value={r.header_hash}
-                    href={`/block/${r.header_hash}`}
-                    head={8}
-                    tail={6}
-                  />
+                  <span className="inline-flex items-center gap-1">
+                    <Timestamp iso={r.block_start_time} />
+                    <span>→</span>
+                    <Timestamp iso={r.block_end_time} />
+                  </span>
                 ),
               },
             ],

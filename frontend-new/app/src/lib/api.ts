@@ -21,7 +21,15 @@ import {
   decodeTransactionResponse,
   decodeTxsPage,
 } from "@midgard-explorer/contracts";
-import { decodeL1Summary, decodeL1Transaction, decodeL1TxsPage } from "@midgard-explorer/contracts";
+import {
+  decodeL1BlockHeader,
+  decodeL1BlockHeaders,
+  decodeL1Deposits,
+  decodeL1Summary,
+  decodeL1Transaction,
+  decodeL1TxsPage,
+  decodeL1Validator,
+} from "@midgard-explorer/contracts";
 import { apiBase } from "./env";
 
 export type ApiErrorCategory =
@@ -166,8 +174,12 @@ export const api = {
       decodeTransactionResponse,
       init,
     ),
-  address: (address: string, init?: FetchInit) =>
-    fetchJson(`/api/address?address=${encodeURIComponent(address)}`, decodeAddressResponse, init),
+  address: (address: string, page: number = 1, init?: FetchInit) =>
+    fetchJson(
+      `/api/address?address=${encodeURIComponent(address)}&page=${page}`,
+      decodeAddressResponse,
+      init,
+    ),
   blockByHeight: (height: number, init?: FetchInit) =>
     fetchJson(`/api/blocks/by-height/${height}`, decodeBlockByHeight, init),
   recentBlocks: (init?: FetchInit) => fetchJson("/api/blocks/recent", decodeRecentBlocks, init),
@@ -186,12 +198,24 @@ export const api = {
       decodeTxsPage,
       init,
     ),
-  depositsPage: (page: number, init?: FetchInit) =>
-    fetchJson(`/api/deposits/${page}`, decodeDepositsPage, init),
-  withdrawalsPage: (page: number, init?: FetchInit) =>
-    fetchJson(`/api/withdrawals/${page}`, decodeWithdrawalsPage, init),
-  forcedTxsPage: (page: number, init?: FetchInit) =>
-    fetchJson(`/api/forced-transactions/${page}`, decodeForcedTxsPage, init),
+  depositsPage: (page: number, init?: FetchInit, id?: string) =>
+    fetchJson(
+      `/api/deposits/${page}${id ? `?id=${encodeURIComponent(id)}` : ""}`,
+      decodeDepositsPage,
+      init,
+    ),
+  withdrawalsPage: (page: number, init?: FetchInit, id?: string) =>
+    fetchJson(
+      `/api/withdrawals/${page}${id ? `?id=${encodeURIComponent(id)}` : ""}`,
+      decodeWithdrawalsPage,
+      init,
+    ),
+  forcedTxsPage: (page: number, init?: FetchInit, id?: string) =>
+    fetchJson(
+      `/api/forced-transactions/${page}${id ? `?id=${encodeURIComponent(id)}` : ""}`,
+      decodeForcedTxsPage,
+      init,
+    ),
   l1TxsPage: (page: number, init?: FetchInit) =>
     fetchJson(`/api/l1/transactions/${page}`, decodeL1TxsPage, init),
   l1Transaction: (txHash: string, init?: FetchInit) =>
@@ -200,6 +224,22 @@ export const api = {
       revalidate: 30,
     }),
   l1Summary: (init?: FetchInit) => fetchJson("/api/l1/summary", decodeL1Summary, init),
+  l1BlockHeaders: (limit = 100, init?: FetchInit) =>
+    fetchJson(`/api/l1/block-headers?limit=${limit}`, decodeL1BlockHeaders, init),
+  l1BlockHeader: (headerHash: string, init?: FetchInit) =>
+    fetchJson(
+      `/api/l1/block-header?headerHash=${encodeURIComponent(headerHash)}`,
+      decodeL1BlockHeader,
+      init,
+    ),
+  l1Deposits: (limit = 100, init?: FetchInit) =>
+    fetchJson(`/api/l1/deposits?limit=${limit}`, decodeL1Deposits, init),
+  l1Validator: (scriptHash: string, init?: FetchInit) =>
+    fetchJson(
+      `/api/l1/validator?scriptHash=${encodeURIComponent(scriptHash)}`,
+      decodeL1Validator,
+      init,
+    ),
 };
 
 /** What the indexer has found on Cardano itself. Independent of the Midgard
@@ -215,7 +255,7 @@ export type {
   L1ValidatorIdentity,
 } from "@midgard-explorer/contracts";
 
-/** Cardano L1 transactions that touch a Midgard validator address.
+/** Cardano transactions that touch a Midgard validator address.
  *
  * These are indexed from preprod by the explorer's own indexer, scanning from
  * block height 0, so this list is complete from the deployment's first
@@ -226,8 +266,12 @@ export type {
 export type { L1TxRow } from "@midgard-explorer/contracts";
 export type { L1TxsPageResponse as L1TxsPage } from "@midgard-explorer/contracts";
 export type {
+  L1BlockHeader,
+  L1DepositObservation,
   L1Event,
+  L1MidgardAction,
   L1Redeemer,
   L1TransactionResponse,
   L1TxIo,
+  L1ValidatorResponse,
 } from "@midgard-explorer/contracts";

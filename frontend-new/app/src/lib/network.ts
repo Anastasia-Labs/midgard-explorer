@@ -23,13 +23,15 @@ export const NETWORK_LABEL = clean(process.env.NEXT_PUBLIC_NETWORK_LABEL);
  */
 const PLACEHOLDER = "{hash}";
 
-const usableTemplate = (raw: string | null): string | null => {
-  if (raw === null || !raw.includes(PLACEHOLDER)) return null;
+const ADDRESS_PLACEHOLDER = "{address}";
+
+const usableTemplate = (raw: string | null, placeholder = PLACEHOLDER): string | null => {
+  if (raw === null || !raw.includes(placeholder)) return null;
   // A template with no placeholder would send every transaction to one page,
   // and a non-http scheme is not somewhere a reader should be sent at all.
   let parsed: URL;
   try {
-    parsed = new URL(raw.replace(PLACEHOLDER, "placeholder"));
+    parsed = new URL(raw.replace(placeholder, "placeholder"));
   } catch {
     return null;
   }
@@ -37,6 +39,14 @@ const usableTemplate = (raw: string | null): string | null => {
 };
 
 const L1_EXPLORER_TX_TEMPLATE = usableTemplate(clean(process.env.NEXT_PUBLIC_L1_EXPLORER_TX_URL));
+
+/** Where a Cardano address is read. Optional, and unset means an address is
+ * shown without a link rather than sent somewhere guessed from the transaction
+ * template: an explorer that serves `/tx/…` need not serve `/address/…`. */
+const L1_EXPLORER_ADDRESS_TEMPLATE = usableTemplate(
+  clean(process.env.NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL),
+  ADDRESS_PLACEHOLDER,
+);
 
 const templateHost = (template: string | null): string | null => {
   if (template === null) return null;
@@ -59,6 +69,11 @@ export const L1_EXPLORER_NAME =
 export function l1TxUrl(hash: string): string | null {
   if (L1_EXPLORER_TX_TEMPLATE === null) return null;
   return L1_EXPLORER_TX_TEMPLATE.replace(PLACEHOLDER, encodeURIComponent(hash));
+}
+
+export function l1AddressUrl(address: string): string | null {
+  if (L1_EXPLORER_ADDRESS_TEMPLATE === null) return null;
+  return L1_EXPLORER_ADDRESS_TEMPLATE.replace(ADDRESS_PLACEHOLDER, encodeURIComponent(address));
 }
 
 export function assertNetworkConfigured(): void {

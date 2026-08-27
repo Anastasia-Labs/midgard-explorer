@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import type { BlockEventMember } from "@midgard-explorer/contracts";
 import type { ReactNode } from "react";
 import { AdaAmount, ValueCell } from "../../../components/ui/amount";
 import { ApiExample } from "../../../components/ui/apiexample";
@@ -7,6 +8,7 @@ import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
 import { Identifier } from "../../../components/ui/identifier";
 import { BlockNav } from "../../../components/ui/blocknav";
 import { IdentityBar } from "../../../components/ui/identitybar";
+import { L1TxLink } from "../../../components/ui/l1link";
 import { Journey } from "../../../components/ui/journey";
 import { PageError } from "../../../components/ui/pageerror";
 import { Callout, Card, PageHeader } from "../../../components/ui/primitives";
@@ -34,7 +36,7 @@ export async function generateMetadata({
   const { headerHash } = await params;
   return {
     title: `Block ${truncateId(headerHash)}`,
-    description: `Midgard L2 block ${headerHash}.`,
+    description: `Midgard block ${headerHash}.`,
   };
 }
 
@@ -44,8 +46,9 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
   const hash = headerHash.toLowerCase();
 
   let data;
+  const init = await viewerInit();
   try {
-    data = await orNotFound(api.block(hash, await viewerInit()));
+    data = await orNotFound(api.block(hash, init));
   } catch (e) {
     return (
       <>
@@ -63,7 +66,11 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
     );
   }
 
-  const first = data.rows[0];
+  // Cardano-observed evidence is independent from the node DB. Its absence
+  // must not make an otherwise valid node block fail to render.
+  const l1Header = await api.l1BlockHeader(hash, init).catch(() => null);
+
+  const header = data.header;
   const finalization = data.finalization;
 
   // Fee total over decodable transactions (BigInt: never Number).
@@ -79,9 +86,9 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
   );
 
   const windowMs =
-    data.da === null
+    header.block_start_time === null
       ? null
-      : new Date(data.da.block_end_time).getTime() - new Date(data.da.block_start_time).getTime();
+      : new Date(header.block_end_time).getTime() - new Date(header.block_start_time).getTime();
 
   const transactionsTab = (
     <DataTable
@@ -131,12 +138,22 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
       rows={data.rows}
       keyOf={(r) => r.tx_id}
       emptyTitle="No transactions in this block"
-      emptyHint="The operator committed this block with nothing in it."
+      emptyHint={
+        (header.header_deposit_count ?? 0) +
+          (header.header_withdrawal_count ?? 0) +
+          (header.header_forced_transaction_count ?? 0) >
+        0
+          ? "This header contains protocol events but no Midgard transactions."
+          : "This header contains no Midgard transactions."
+      }
     />
   );
 
   const daTab = data.da ? (
     <>
+      <div className="p-4 pb-0">
+        <Callout tone="neutral" title="Payload retained locally." />
+      </div>
       <div className="grid gap-x-8 gap-y-2 p-4 sm:grid-cols-2">
         {(
           [
@@ -174,8 +191,83 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
     </>
   ) : (
     <div className="p-4">
-      <Callout tone="neutral" title="No data-availability record for this block yet." />
+      <Callout tone="neutral" title="No payload is retained locally for this header." />
     </div>
+  );
+
+  const l1EvidenceTab = l1Header ? (
+    <Card>
+      <div className="p-4">
+        <Callout tone="neutral" title="Observed on Cardano." />
+      </div>
+      <dl className="grid gap-x-8 gap-y-3 border-t border-border p-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Protocol version" value={l1Header.protocolVersion} />
+        <Field
+          label="Cardano transaction"
+          value={
+            l1Header.l1TxHash ? (
+              <L1TxLink hash={l1Header.l1TxHash} destination="midgard" />
+            ) : (
+              "Carried forward; head transaction not attributed"
+            )
+          }
+        />
+        <Field
+          label="Cardano block"
+          value={l1Header.blockHeight === null ? "Not attributed" : `#${l1Header.blockHeight}`}
+        />
+        <Field
+          label="Window start"
+          value={<Timestamp exact iso={new Date(Number(l1Header.startTime)).toISOString()} />}
+        />
+        <Field
+          label="Window end"
+          value={<Timestamp exact iso={new Date(Number(l1Header.endTime)).toISOString()} />}
+        />
+        <Field
+          label="Previous header"
+          value={
+            <Identifier
+              value={l1Header.prevHeaderHash}
+              href={`/block/${l1Header.prevHeaderHash}`}
+            />
+          }
+        />
+        <Field label="Operator key hash" value={<Identifier value={l1Header.operatorVkey} />} />
+      </dl>
+      <div className="grid grid-cols-2 gap-2 border-t border-border p-4 text-sm text-text-2 sm:grid-cols-3">
+        <span>Midgard transactions: {l1Header.l2TransactionCount}</span>
+        <span>Deposits: {l1Header.depositCount}</span>
+        <span>Withdrawals: {l1Header.withdrawalCount}</span>
+        <span>Forced: {l1Header.forcedTransactionCount}</span>
+        <span>Total events: {l1Header.totalEventCount}</span>
+        <span>Transition steps: {l1Header.transitionStepCount}</span>
+      </div>
+      <div className="grid gap-x-8 gap-y-2 border-t border-border p-4 sm:grid-cols-2">
+        {(
+          [
+            ["Previous UTxOs root", l1Header.prevUtxosRoot],
+            ["UTxOs root", l1Header.utxosRoot],
+            ["Transactions root", l1Header.transactionsRoot],
+            ["Deposits root", l1Header.depositsRoot],
+            ["Withdrawals root", l1Header.withdrawalsRoot],
+            ["Forced transactions root", l1Header.forcedTransactionsRoot],
+            ["Transition trace root", l1Header.transitionTraceRoot],
+            ["Event-to-step root", l1Header.eventToStepRoot],
+          ] as const
+        ).map(([label, root]) => (
+          <div key={label} className="flex items-center justify-between gap-4">
+            <span className="text-sm text-text-3">{label}</span>
+            <Identifier value={root} head={6} tail={6} />
+          </div>
+        ))}
+      </div>
+    </Card>
+  ) : (
+    <Callout tone="neutral" title="Not observed in the Cardano index yet.">
+      The node has this header, but the explorer-owned Cardano index has not attributed its Cardano
+      commitment transaction.
+    </Callout>
   );
 
   return (
@@ -184,10 +276,16 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
         items={[
           { label: "Overview", href: "/" },
           { label: "Blocks", href: "/blocks" },
-          { label: first ? `Block #${first.height}` : "Block" },
+          {
+            label:
+              header.height === null ? `Header ${truncateId(hash)}` : `Block #${header.height}`,
+          },
         ]}
       />
-      <PageHeader entity="block" title={`Block ${first ? `#${first.height}` : ""}`}>
+      <PageHeader
+        entity="block"
+        title={header.height === null ? `Header ${truncateId(hash)}` : `Block #${header.height}`}
+      >
         <span className="flex flex-wrap items-center gap-2">
           <BlockNav neighbours={data.neighbours} />
           {finalization ? <StatusBadge status={finalization.status} /> : null}
@@ -201,13 +299,15 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
           because "is this block final?" is the question a block is opened to
           answer; the counts below are context for that answer. */}
       <Journey
-        model={blockJourney(finalization, first?.height ?? 0)}
+        model={blockJourney(finalization, header.height, hash)}
         detailsLabel="Settlement timings and evidence"
       >
         {finalization ? (
           <p className="mg-micro text-text-3">
             Latest node update: {formatTimestamp(finalization.updatedAt)}
-            {finalization.submitted_tx_hash ? null : " · no L1 settlement transaction recorded yet"}
+            {finalization.submitted_tx_hash
+              ? null
+              : " · no Cardano block-commitment transaction recorded yet"}
           </p>
         ) : null}
       </Journey>
@@ -217,9 +317,21 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
       <SummaryBand
         items={[
           {
-            label: "Transactions",
-            value: data.rows.length,
+            label: "Committed txs",
+            value: header.header_l2_transaction_count ?? "Unknown",
             ...(decodable.length < data.rows.length ? { sub: `${decodable.length} decoded` } : {}),
+          },
+          {
+            label: "Deposits",
+            value: header.header_deposit_count ?? "Unknown",
+          },
+          {
+            label: "Withdrawals",
+            value: header.header_withdrawal_count ?? "Unknown",
+          },
+          {
+            label: "Forced transactions",
+            value: header.header_forced_transaction_count ?? "Unknown",
           },
           { label: "Inputs", value: inputCount },
           {
@@ -234,7 +346,7 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
           {
             label: "Duration",
             value: windowMs === null ? "Not recorded" : formatDuration(windowMs),
-            ...(data.da ? { sub: "Block window" } : {}),
+            sub: "Header window",
           },
         ]}
       />
@@ -248,6 +360,22 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
             content: <Card>{transactionsTab}</Card>,
           },
           { id: "da", label: "Data availability", content: <Card>{daTab}</Card> },
+          { id: "l1", label: "Cardano evidence", content: l1EvidenceTab },
+          {
+            id: "events",
+            label: "Protocol events",
+            count:
+              data.events.deposits.length +
+              data.events.withdrawals.length +
+              data.events.forced_transactions.length,
+            content: (
+              <Card>
+                <EventMembers title="Deposits" rows={data.events.deposits} />
+                <EventMembers title="Withdrawals" rows={data.events.withdrawals} />
+                <EventMembers title="Forced transactions" rows={data.events.forced_transactions} />
+              </Card>
+            ),
+          },
           {
             id: "raw",
             label: "Raw",
@@ -263,6 +391,34 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
         ]}
       />
     </>
+  );
+}
+
+function EventMembers({ title, rows }: { title: string; rows: readonly BlockEventMember[] }) {
+  return (
+    <section className="border-b border-border p-4 last:border-b-0">
+      <h3 className="mb-2 text-sm font-semibold text-text">
+        {title} <span className="font-normal text-text-3">({rows.length})</span>
+      </h3>
+      {rows.length === 0 ? (
+        <p className="text-sm text-text-3">None in this header.</p>
+      ) : (
+        <ul className="space-y-2">
+          {rows.map((row) => (
+            <li
+              key={row.member_id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded border border-border px-3 py-2"
+            >
+              <span className="inline-flex items-center gap-2">
+                <span className="text-xs tabular-nums text-text-3">#{row.ordinal}</span>
+                <Identifier value={row.member_id} head={10} tail={8} />
+              </span>
+              <Timestamp iso={row.source_time_stamp_tz} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

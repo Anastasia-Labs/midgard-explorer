@@ -9,18 +9,19 @@ import { InfoTip } from "../../../components/ui/infotip";
 import { Identifier } from "../../../components/ui/identifier";
 import { IdentityBar } from "../../../components/ui/identitybar";
 import { PageError } from "../../../components/ui/pageerror";
-import { Callout, Card, EmptyState, PageHeader } from "../../../components/ui/primitives";
+import { Callout, Card, Chip, EmptyState, PageHeader } from "../../../components/ui/primitives";
 import { RawData } from "../../../components/ui/rawdata";
 import { StatusCell } from "../../../components/ui/status";
 import { SummaryBand } from "../../../components/ui/summary";
 import { Tabs } from "../../../components/ui/tabs";
 import { Timestamp } from "../../../components/ui/timestamp";
-import { DataTable, DecodeWarn } from "../../../components/ui/table";
+import { DataTable, DecodeWarn, Pagination } from "../../../components/ui/table";
 import { api } from "../../../lib/api";
 import { classify } from "../../../lib/classify";
 import { assetCount, truncateId } from "../../../lib/format";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
 import { viewerInit } from "../../../lib/viewerInit";
+import { parsePage } from "../../../lib/parsePage";
 
 export const dynamic = "force-dynamic";
 
@@ -34,23 +35,30 @@ export async function generateMetadata({
   const { address } = await params;
   return {
     title: `Address ${truncateId(decodeURIComponent(address))}`,
-    description: "Midgard L2 address balance and history.",
+    description: "Midgard address balance and history.",
   };
 }
 
-export default async function AddressPage({ params }: { params: Promise<{ address: string }> }) {
+export default async function AddressPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ address: string }>;
+  searchParams: Promise<{ page?: string }>;
+}) {
   const address = decodeURIComponent((await params).address);
+  const page = parsePage((await searchParams).page);
   if (classify(address).kind !== "address") notFound();
 
   let data;
   try {
-    data = await orNotFound(api.address(address, await viewerInit()));
+    data = await orNotFound(api.address(address, page, await viewerInit()));
   } catch (e) {
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
         <PageHeader entity="address" title="Address" />
-        <IdentityBar overline="L2 address" value={address} />
+        <IdentityBar overline="Midgard address" value={address} mark />
         <PageError message={listErrorMessage(e)} />
       </>
     );
@@ -61,18 +69,6 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
 
   const activityTab = (
     <Card>
-      {/* The confidence rule travels with the columns it qualifies rather than
-          sitting in a paragraph above the page, where it was read once and
-          then forgotten by the time the numbers were reached. */}
-      {/* Explicit {" "} after each element: JSX drops the space between an
-          element and the text that follows it on the same line here, and
-          "Receivedis exact" shipped once already. */}
-      <p className="border-b border-border px-4 py-2.5 mg-micro leading-relaxed text-text-3">
-        <strong className="font-semibold text-text-2">Received</strong> is exact: it reads each
-        transaction&apos;s own outputs. <strong className="font-semibold text-text-2">Spent</strong>{" "}
-        appears only when every input of a transaction resolved, because a transaction&apos;s inputs
-        leave the ledger once it is applied. An unresolved input reads as unknown, never as zero.
-      </p>
       <DataTable
         caption="Transactions involving this address"
         columns={[
@@ -93,8 +89,15 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
           {
             header: "Block",
             cell: (r) =>
-              r.header_hash === null || r.height === null ? (
+              r.header_hash === null ? (
                 <span className="text-text-3">Not in a block</span>
+              ) : r.height === null ? (
+                <Identifier
+                  value={r.header_hash}
+                  href={`/block/${r.header_hash}`}
+                  head={8}
+                  tail={6}
+                />
               ) : (
                 <Link
                   href={`/block/${r.header_hash}`}
@@ -106,12 +109,22 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
             hideBelow: "md",
           },
           {
+            header: "L1 settlement",
+            cell: (r) =>
+              r.finalization_status === null ? (
+                <span className="text-text-3">Not recorded</span>
+              ) : (
+                <StatusCell status={r.finalization_status} />
+              ),
+            hideBelow: "lg",
+          },
+          {
             header: "Received",
             cell: (r) =>
               r.received === null ? (
                 <span className="text-text-3">Unknown</span>
               ) : (
-                <AdaAmount lovelace={r.received} />
+                <ValueCell value={r.received} />
               ),
             align: "right",
           },
@@ -119,7 +132,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
             header: "Spent",
             cell: (r) =>
               r.spentComplete && r.spent !== null ? (
-                <AdaAmount lovelace={r.spent} />
+                <ValueCell value={r.spent} />
               ) : (
                 <span className="inline-flex items-center gap-1 text-text-3">
                   Inputs pruned
@@ -154,7 +167,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
           secondary:
             r.received === null ? null : (
               <span>
-                Received <AdaAmount lovelace={r.received} />
+                Received <ValueCell value={r.received} />
               </span>
             ),
           details: [
@@ -162,9 +175,36 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
               label: "Spent",
               value:
                 r.spentComplete && r.spent !== null ? (
-                  <AdaAmount lovelace={r.spent} />
+                  <ValueCell value={r.spent} />
                 ) : (
                   <span className="text-text-3">Inputs pruned</span>
+                ),
+            },
+            {
+              label: "Block",
+              value:
+                r.header_hash === null ? (
+                  "Not in a block"
+                ) : r.height === null ? (
+                  <Identifier
+                    value={r.header_hash}
+                    href={`/block/${r.header_hash}`}
+                    head={8}
+                    tail={6}
+                  />
+                ) : (
+                  <Link href={`/block/${r.header_hash}`} className="text-link hover:underline">
+                    #{r.height}
+                  </Link>
+                ),
+            },
+            {
+              label: "L1 settlement",
+              value:
+                r.finalization_status === null ? (
+                  "Not recorded"
+                ) : (
+                  <StatusCell status={r.finalization_status} />
                 ),
             },
           ],
@@ -174,16 +214,20 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
         emptyTitle="No transactions for this address"
         emptyHint="This address has not appeared in a transaction on the Midgard ledger yet."
       />
+      <Pagination
+        page={page}
+        hasNextPage={data.hasNextPage}
+        total={data.txCount}
+        limit={data.limit}
+        hrefFor={(p) => `/address/${encodeURIComponent(address)}?page=${p}`}
+      />
     </Card>
   );
 
   const assetsTab = (
     <Card>
       {assets === 0 ? (
-        <EmptyState
-          title="No native assets"
-          hint="This address holds ada only. Assets appear here once a UTxO at this address carries one."
-        />
+        <EmptyState title="No native assets" />
       ) : (
         <div className="p-4">
           <AssetHierarchy assets={data.balance.assets} />
@@ -217,8 +261,8 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
             header: "Flags",
             cell: (u) => (
               <span className="flex gap-1.5">
-                {u.hasDatum ? <Flag>datum</Flag> : null}
-                {u.hasScriptRef ? <Flag>script ref</Flag> : null}
+                {u.hasDatum ? <Chip on="surface-2">datum</Chip> : null}
+                {u.hasScriptRef ? <Chip on="surface-2">script ref</Chip> : null}
                 {u.decodeError ? <DecodeWarn error={u.decodeError} /> : null}
               </span>
             ),
@@ -271,7 +315,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
     <>
       <Breadcrumbs items={CRUMBS} />
       <PageHeader entity="address" title="Address" />
-      <IdentityBar overline="L2 address" value={address} />
+      <IdentityBar overline="Midgard address" value={address} mark />
 
       {data.undecodedOutputs > 0 ? (
         <div className="mb-4">
@@ -332,7 +376,9 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
             content: (
               <>
                 <div className="mb-4">
-                  <ApiExample path={`/api/address?address=${encodeURIComponent(address)}`} />
+                  <ApiExample
+                    path={`/api/address?address=${encodeURIComponent(address)}&page=${page}`}
+                  />
                 </div>
                 <RawData data={data} filename={`address-${truncateId(address, 8, 6)}.json`} />
               </>
@@ -341,13 +387,5 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
         ]}
       />
     </>
-  );
-}
-
-function Flag({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded border border-border bg-surface-2 px-1.5 py-px text-[11px] text-text-3">
-      {children}
-    </span>
   );
 }

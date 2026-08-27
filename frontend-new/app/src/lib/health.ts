@@ -54,6 +54,12 @@ export function networkHealth(metrics: MetricsResponse | null): NetworkHealth {
   }
 
   const { tip, throughput, admission, finality } = metrics;
+  const tipLabel =
+    tip.height === null
+      ? tip.headerHash === null
+        ? "the latest header"
+        : `${tip.headerHash.slice(0, 8)}…`
+      : `#${tip.height}`;
   const p50 = throughput.blockIntervalSeconds.p50;
   const reasons: string[] = [];
 
@@ -73,7 +79,7 @@ export function networkHealth(metrics: MetricsResponse | null): NetworkHealth {
     // Reporting them all as "not enough history" told a reader the chain was
     // too young to judge while the panel beside it read "All time: 6 blocks",
     // which is a contradiction and hid the real answer: the node had stopped.
-    if (tip.height === null || tip.height <= 0) {
+    if (tip.headerHash === null) {
       return {
         state: "unknown",
         headline: "There is not enough history to judge the network yet.",
@@ -82,13 +88,14 @@ export function networkHealth(metrics: MetricsResponse | null): NetworkHealth {
     }
 
     if (throughput.blocks === 0) {
+      // No reasons: the headline already says what happened, the chain tip
+      // figure right below already gives the block and its age, and the
+      // Cardano section further down the page speaks for itself instead of
+      // being pre-announced here.
       return {
         state: "stalled",
         headline: "This Midgard node has stopped producing blocks.",
-        reasons: [
-          `The last block, #${tip.height}, arrived ${seconds(tip.ageSeconds)} ago, and none has been produced in the last ${metrics.window.hours} hours.`,
-          "Figures below cover the Midgard ledger only. Midgard's activity on Cardano is indexed separately and is unaffected by this node being offline.",
-        ],
+        reasons: [],
       };
     }
 
@@ -97,7 +104,7 @@ export function networkHealth(metrics: MetricsResponse | null): NetworkHealth {
       headline: "There is not enough history to judge the network's pace yet.",
       reasons: [
         `Only ${throughput.blocks} ${throughput.blocks === 1 ? "block has" : "blocks have"} arrived in the last ${metrics.window.hours} hours, so no interval between blocks has been measured yet.`,
-        `The last one, #${tip.height}, arrived ${seconds(tip.ageSeconds)} ago.`,
+        `The last one, ${tipLabel}, arrived ${seconds(tip.ageSeconds)} ago.`,
       ],
     };
   }
@@ -131,8 +138,8 @@ export function networkHealth(metrics: MetricsResponse | null): NetworkHealth {
       reasons: [
         `Blocks arrive every ${Math.round(p50)}s and the last one was ${seconds(tip.ageSeconds)} ago.`,
         finality.pending > 0
-          ? `${finality.pending} ${finality.pending === 1 ? "block is" : "blocks are"} waiting on L1, which is the normal state while settlement proceeds.`
-          : "No block is waiting on L1.",
+          ? `${finality.pending} ${finality.pending === 1 ? "block is" : "blocks are"} waiting on Cardano, which is the normal state while settlement proceeds.`
+          : "No block is waiting on Cardano.",
       ],
     };
   }

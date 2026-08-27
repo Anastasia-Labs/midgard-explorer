@@ -15,7 +15,7 @@ export default function Loading() {
           file duplicates the layout rather than importing it. */}
       <header className="mb-5">
         <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
-          <h1 className="mg-brand-green min-w-0 font-display text-[21px] font-semibold tracking-tight text-page-title sm:text-[26px]">
+          <h1 className="mg-brand-green min-w-0 font-display text-2xl font-semibold tracking-tight text-page-title sm:text-title">
             Midgard Blockchain Explorer
           </h1>
           <div className="w-full sm:w-96 lg:w-112">

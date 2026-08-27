@@ -24,7 +24,7 @@ function Tool({
   return (
     <Card>
       <div className="space-y-3 p-4">
-        <h2 className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-text">
+        <h2 className="inline-flex items-center gap-1.5 text-body font-semibold text-text">
           {title}
           <InfoTip subject={title} explain={explain} />
         </h2>
@@ -48,7 +48,7 @@ function Field({
   rows?: number;
 }) {
   const shared =
-    "w-full rounded-lg border border-border-strong bg-surface-2 px-3 py-2 font-mono text-[13px] text-text placeholder:text-text-3";
+    "w-full rounded-lg border border-border-strong bg-surface-2 px-3 py-2 font-mono text-caption text-text placeholder:text-text-3";
   return (
     <label className="block space-y-1.5">
       <span className="mg-overline">{label}</span>
@@ -82,7 +82,7 @@ function Result({ children, tone = "ok" }: { children: ReactNode; tone?: "ok" | 
       className={
         tone === "error"
           ? "rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 mg-caption text-danger"
-          : "rounded-lg border border-border bg-surface-2/40 px-3 py-2 font-mono text-[13px] break-all text-text"
+          : "rounded-lg border border-border bg-surface-2/40 px-3 py-2 font-mono text-caption break-all text-text"
       }
     >
       {children}
@@ -211,7 +211,7 @@ function CborDecoder() {
             tabIndex={0}
             role="region"
             aria-label="Decoded CBOR"
-            className="max-h-80 overflow-auto rounded-lg border border-border bg-surface-2/40 p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap"
+            className="max-h-80 overflow-auto rounded-lg border border-border bg-surface-2/40 p-3 font-mono text-micro leading-relaxed whitespace-pre-wrap"
           >
             {rendered}
           </pre>

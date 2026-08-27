@@ -35,7 +35,7 @@ export async function generateMetadata({
   const label = parsed ? assetLabel(parsed.nameHex).label : unit;
   return {
     title: `Asset ${label}`,
-    description: `Native asset ${unit} on Midgard L2.`,
+    description: `Native asset ${unit} on Midgard.`,
   };
 }
 
@@ -70,11 +70,7 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
   return (
     <>
       <Breadcrumbs items={crumbs} />
-      <PageHeader
-        entity="asset"
-        title={label}
-        subtitle="A native asset on the Midgard L2 ledger."
-      />
+      <PageHeader entity="asset" title={label} subtitle="A native asset on the Midgard ledger." />
       <IdentityBar overline="Asset unit (policy + name)" value={unit} />
 
       {/* Identity leads, because the first question about an asset is which

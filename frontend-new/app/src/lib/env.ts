@@ -5,7 +5,10 @@
 const stripTrailingSlash = (s: string): string => s.replace(/\/+$/, "");
 
 export const PUBLIC_API_BASE = stripTrailingSlash(
-  process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3101",
+  // The bundled reverse proxy is the default public origin. Reaching 3101
+  // directly bypasses shared caching and should be an explicit development
+  // choice, not the application's fallback.
+  process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3102",
 );
 
 export const apiBase = (): string => {

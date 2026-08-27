@@ -45,7 +45,7 @@ export default async function ApiDocsPage() {
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
         title="API reference"
-        subtitle="Read-only JSON access to Midgard L2 and the explorer's Cardano L1 index."
+        subtitle="Read-only JSON access to Midgard and the explorer's Cardano index."
         meta={
           document === null ? (
             <span>Contract unavailable</span>
@@ -62,13 +62,9 @@ export default async function ApiDocsPage() {
         </a>
       </PageHeader>
 
-      <div className="mb-6 grid gap-3 lg:grid-cols-2">
+      <div className="mb-6">
         <Callout tone="info" title="Base URL">
           <code className="break-all font-mono">{PUBLIC_API_BASE}</code>
-        </Callout>
-        <Callout tone="neutral" title="Response rules">
-          {document?.info.description ??
-            "Ledger quantities that can exceed JavaScript's safe integer range are decimal strings."}
         </Callout>
       </div>
 
@@ -88,7 +84,7 @@ export default async function ApiDocsPage() {
               <div>
                 <h2
                   id={`api-${group.name.toLowerCase().replaceAll(" ", "-")}`}
-                  className="text-[15px] font-semibold text-text"
+                  className="text-body font-semibold text-text"
                 >
                   {group.name}
                 </h2>
@@ -101,7 +97,7 @@ export default async function ApiDocsPage() {
                     className="grid gap-2 py-3 first:pt-0 last:pb-0 xl:grid-cols-[minmax(20rem,0.9fr)_1fr] xl:gap-6"
                   >
                     <div className="flex min-w-0 items-start gap-2">
-                      <span className="mt-px rounded border border-success/35 bg-success/10 px-1.5 py-px font-mono text-[11px] font-semibold text-success">
+                      <span className="mt-px rounded border border-success/35 bg-success/10 px-1.5 py-px font-mono text-micro font-semibold text-success">
                         GET
                       </span>
                       <code className="min-w-0 break-all font-mono text-sm text-text">

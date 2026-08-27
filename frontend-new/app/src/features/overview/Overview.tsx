@@ -7,15 +7,15 @@ import type { MetricsResponse, RecentBlockRow, RecentTxRow } from "@midgard-expl
 import type { L1Summary } from "../../lib/api";
 import { SearchBox } from "../../components/search/SearchOverlay";
 import { BRIDGE } from "../../lib/nav";
-import { Icon, type IconName } from "../../components/ui/icons";
+import { Icon } from "../../components/ui/icons";
 import { Identifier } from "../../components/ui/identifier";
 import { NewRowsBanner, useHeldList } from "../../components/ui/livelist";
 import { NetworkMetrics } from "../../components/ui/metrics";
 import { StatusCell } from "../../components/ui/status";
 import { EmptyState, ErrorState, L1L2Badge, Panel } from "../../components/ui/primitives";
 import { Timestamp } from "../../components/ui/timestamp";
+import { contractName } from "../../components/ui/validatorlabel";
 import { cn, groupThousands } from "../../lib/format";
-import { useHydrated } from "../../lib/useHydrated";
 
 /** A stable empty array: a fresh `[]` each render would make the held list
  * think its input changed on every poll. */
@@ -34,26 +34,6 @@ export type OverviewData = {
   metrics: MetricsResponse | null;
   l1: L1Summary | null;
 };
-
-/** The three Midgard-specific concepts. Keeps the overview composed and
- * informative when the network is quiet, instead of ending in empty space. */
-const CONCEPTS: Array<{ icon: IconName; title: string; body: string }> = [
-  {
-    icon: "activity",
-    title: "Transaction lifecycle",
-    body: "A transaction moves from queued through validating and accepted, waits as pending commit, then becomes committed once an L2 block includes it. Rejected transactions stop and keep their reason.",
-  },
-  {
-    icon: "layers",
-    title: "Block finalization",
-    body: "The operator commits L2 blocks, then submits a finalization transaction to Cardano L1. A block is finalized only after that L1 transaction is confirmed and stable.",
-  },
-  {
-    icon: "bridge",
-    title: "L1 ↔ L2 bridge",
-    body: "Deposits move value onto the L2 ledger, withdrawals move it back to L1, and forced transactions are L1-escrowed orders the operator must include.",
-  },
-];
 
 async function fetchOverview(): Promise<OverviewData> {
   // Same-origin route handler; the payload was Effect-validated server-side.
@@ -154,76 +134,48 @@ export function Overview({ initial }: { initial: OverviewData }) {
     refetchInterval: POLL_MS,
   });
 
-  const health = useQuery<{ up: boolean }>({
-    queryKey: ["health"],
-    queryFn: async () => {
-      const res = await fetch("/api/health");
-      if (!res.ok) return { up: false };
-      return await res.json();
-    },
-    refetchInterval: 30_000,
-    staleTime: 15_000,
-  });
-
-  // The health query is client-only, so the server always renders "checking…".
-  // Reading its result before hydration lets a fast fetch win the race and
-  // produce a server/client mismatch, which React resolves by throwing away
-  // the server HTML for this subtree.
-  const hydrated = useHydrated();
-
   const sectionState = (section: unknown): "error" | "success" =>
     section === null ? "error" : "success";
-  const up = hydrated ? health.data?.up : undefined;
 
   return (
     <>
-      {/* Title and search on one line, live status centred beneath them. The
-          subtitle that used to sit under the title described what the
-          navigation already lists and what the panels below already show, so
-          it spent a row of vertical space restating the page. `PageHeader` is
+      {/* Title and search on one line, and nothing else. A second row carried
+          an "Explorer API reachable" chip that the footer already renders from
+          the same query, and a freshness tag that describes the metrics rather
+          than the page; the tag moved to the panel it qualifies. `PageHeader` is
           not used here: it stacks meta under the title at the left margin,
           which is right for the eighteen record pages and wrong for this one.
 
           Flex, not grid. A single implicit grid column is sized to max-content
           and will not shrink, so the title held a 365px column inside a 288px
           header and pushed the whole page past 320px. Flex items shrink. */}
-      <header className="mb-5">
+      {/* Bleeds to the shell's gutters so the wash starts at the page edge
+          rather than inside the content column. The insets mirror `main`'s
+          `px-4 lg:px-6` exactly; any other pair would push the page wider than
+          the viewport. */}
+      <header className="mg-hero-field -mx-4 mb-5 px-4 pt-2 pb-1 lg:-mx-6 lg:px-6">
         <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
-          <h1 className="mg-brand-green min-w-0 font-display text-[21px] font-semibold tracking-tight text-page-title sm:text-[26px]">
+          <h1 className="mg-brand-green min-w-0 font-display text-2xl font-semibold tracking-tight text-page-title sm:text-title">
             Midgard Blockchain Explorer
           </h1>
           <div className="w-full sm:w-96 lg:w-112">
             <SearchBox variant="hero" />
           </div>
         </div>
-
-        <div className="mg-field-surface mx-auto mt-2.5 flex w-fit flex-wrap items-center justify-center gap-x-4 gap-y-1">
-          <RefreshMeta updatedAt={dataUpdatedAt} />
-          <span
-            className={cn(
-              "inline-flex items-center gap-1.5 mg-caption",
-              up === false ? "text-danger" : "text-text-3",
-            )}
-          >
-            <span
-              aria-hidden
-              className={cn(
-                "size-1.5 rounded-full",
-                up === undefined ? "bg-text-3" : up ? "bg-success" : "bg-danger",
-              )}
-            />
-            Explorer API {up === undefined ? "checking…" : up ? "reachable" : "unreachable"}
-          </span>
-        </div>
       </header>
 
       {/* The operations panel leads the page: an explorer's first question is
           whether the chain is healthy right now, which two all-time totals in
-          a strip could never answer. Those totals moved into its header. */}
+          a strip could never answer. Those totals are carried by the Blocks and
+          Transactions figures inside it. The chart, percentiles and node
+          columns sit behind this panel's own disclosure rather than a separate
+          route: a dedicated page for them was not worth a navigation when the
+          whole panel already fits here. */}
       <NetworkMetrics
         metrics={data.metrics}
         totalBlocks={data.totalBlocks}
         totalTxs={data.totalTxs}
+        freshness={<RefreshMeta updatedAt={dataUpdatedAt} />}
       />
 
       {/* Sits directly under the health verdict because it is the one part of
@@ -238,7 +190,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
           <RecentList
             rows={data.recentBlocks}
             state={sectionState(data.recentBlocks)}
-            keyOf={(r) => `${r.header_hash}-${r.tx_id}`}
+            keyOf={(r) => r.header_hash}
             errorMessage="Could not load recent blocks."
             onRetry={() => void refetch()}
             emptyTitle="No blocks yet"
@@ -248,18 +200,19 @@ export function Overview({ initial }: { initial: OverviewData }) {
               <>
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="flex items-center gap-2">
-                    <Link
+                    <Identifier
+                      value={r.header_hash}
                       href={`/block/${r.header_hash}`}
-                      className="font-mono text-[15px] font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
-                    >
-                      #{r.height}
-                    </Link>
+                      head={8}
+                      tail={6}
+                    />
                     {r.finalization_status === null ? null : (
                       <StatusCell status={r.finalization_status} />
                     )}
                   </span>
                   <span className="mg-caption text-text-3">
-                    {r.tx_count} {r.tx_count === 1 ? "transaction" : "transactions"}
+                    {r.height === null ? null : `#${r.height} · `}
+                    {r.header_l2_transaction_count} tx · {r.header_deposit_count} deposits
                   </span>
                 </span>
                 <Timestamp iso={r.time_stamp_tz} />
@@ -291,7 +244,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
                       href={`/block/${r.header_hash}`}
                       className="tabular-nums text-link hover:text-link-hover hover:underline"
                     >
-                      #{r.height}
+                      {r.height === null ? `${r.header_hash.slice(0, 8)}…` : `#${r.height}`}
                     </Link>
                   </span>
                 </span>
@@ -330,32 +283,6 @@ export function Overview({ initial }: { initial: OverviewData }) {
           </div>
         </Panel>
       </div>
-
-      <details className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
-        <summary className="cursor-pointer px-4 py-3 text-[15px] font-semibold text-text">
-          How the Midgard ledger works
-          <span className="ml-2 font-sans mg-caption font-normal text-text-3">
-            What this explorer tracks, and where each record comes from
-          </span>
-        </summary>
-        <div className="grid border-t border-border sm:grid-cols-3">
-          {CONCEPTS.map((c, i) => (
-            <div
-              key={c.title}
-              className={cn(
-                "px-4 py-4",
-                i < CONCEPTS.length - 1 && "border-b border-border sm:border-b-0 sm:border-r",
-              )}
-            >
-              <span className="flex items-center gap-2 text-info">
-                <Icon name={c.icon} size={15} />
-                <span className="text-sm font-semibold text-text">{c.title}</span>
-              </span>
-              <p className="mt-2 mg-caption leading-relaxed text-text-2">{c.body}</p>
-            </div>
-          ))}
-        </div>
-      </details>
     </>
   );
 }
@@ -374,35 +301,46 @@ function L1Activity({ summary }: { summary: L1Summary | null }) {
   return (
     <section className="mb-4 rounded-lg border border-border bg-surface p-4 shadow-(--mg-shadow)">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-display text-[15px] font-semibold text-text">
+        <h2 className="font-display text-body font-semibold text-text">
           Midgard on Cardano preprod
         </h2>
         <ViewAll href="/l1" label="View all" />
       </div>
 
-      <p className="mb-3 text-[13px] leading-relaxed text-text-2">
+      {/* What Midgard has done on Cardano, not how the explorer came to know
+          it. The synced height is the one number here that qualifies the other
+          two rather than reporting activity, so it goes last and quietly. */}
+      <p className="mb-3 text-caption leading-relaxed text-text-2">
         <strong className="font-semibold text-text tabular-nums">
           {groupThousands(String(summary.transactions))}
         </strong>{" "}
-        L1 transactions carrying{" "}
+        Cardano transactions carrying{" "}
         <strong className="font-semibold text-text tabular-nums">
           {groupThousands(String(summary.events))}
         </strong>{" "}
-        contract events, indexed from block height 0 up to block{" "}
+        Midgard contract events.
+      </p>
+
+      {/* Which mechanism drove the activity, not just how much of it there
+          was. Raw identifiers (`stateQueue`, `registeredOperators`) are the
+          contract's own vocabulary, not a reader's; `contractName` is the same
+          prettifier the L1 transaction list uses for the same identifiers. */}
+      <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
+        {top.map((v) => (
+          <li key={v.validator} className="mg-caption text-text-3">
+            <span className="text-text-2">{contractName(v.validator)}</span>{" "}
+            <span className="tabular-nums">{v.count}</span>
+          </li>
+        ))}
+      </ul>
+
+      <p className="mt-3 mg-micro text-text-3">
+        Indexed through Cardano block{" "}
         <span className="font-mono tabular-nums">
           {groupThousands(String(summary.lastSyncedHeight))}
         </span>
         .
       </p>
-
-      <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
-        {top.map((v) => (
-          <li key={v.validator} className="mg-caption text-text-3">
-            <span className="text-text-2">{v.validator}</span>{" "}
-            <span className="tabular-nums">{v.count}</span>
-          </li>
-        ))}
-      </ul>
     </section>
   );
 }

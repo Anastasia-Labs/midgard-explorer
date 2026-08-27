@@ -18,7 +18,7 @@ import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Native assets",
-  description: "Native assets held on the Midgard L2 ledger.",
+  description: "Native assets held on the Midgard ledger.",
 };
 
 export const dynamic = "force-dynamic";
@@ -129,7 +129,7 @@ export default async function AssetsPage() {
           comparing two assets, which is worth a screen whether the list is
           five rows or five hundred. */}
       <section className="mt-4 overflow-hidden rounded-lg border border-border bg-surface">
-        <h2 className="border-b border-border px-4 py-3 text-[15px] font-semibold text-text">
+        <h2 className="border-b border-border px-4 py-3 text-body font-semibold text-text">
           Reading an asset
         </h2>
         <dl className="grid gap-px bg-border sm:grid-cols-3">

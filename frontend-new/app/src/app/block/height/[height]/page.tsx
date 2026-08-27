@@ -10,13 +10,13 @@ import { viewerInit } from "../../../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Block by height",
-  description: "Resolve a Midgard block height to its header hash.",
+  description: "Resolve a legacy Midgard blocks-row identifier to its header hash.",
 };
 
 export const dynamic = "force-dynamic";
 
-/** Height is a search alias, not a second identity for a block: it resolves to
- * the canonical header-hash URL so links and history stay on one address. */
+/** The legacy row identifier is a search alias, not a second identity for a
+ * header: it resolves to the canonical hash URL. */
 export default async function BlockByHeightPage({
   params,
 }: {

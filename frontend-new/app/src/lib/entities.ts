@@ -28,7 +28,8 @@ export type EntityKind =
   | "deposit"
   | "withdrawal"
   | "forcedTransaction"
-  | "l1Transaction";
+  | "l1Transaction"
+  | "validator";
 
 export type Entity = {
   label: string;
@@ -46,7 +47,8 @@ export const ENTITIES = {
   deposit: { label: "Deposit", icon: "arrowDownToLine", hue: 120 },
   withdrawal: { label: "Withdrawal", icon: "arrowUpFromLine", hue: 20 },
   forcedTransaction: { label: "Forced transaction", icon: "zap", hue: 355 },
-  l1Transaction: { label: "Cardano L1 transaction", icon: "layers", hue: 240 },
+  l1Transaction: { label: "Cardano transaction", icon: "layers", hue: 240 },
+  validator: { label: "Validator", icon: "shield", hue: 285 },
 } as const satisfies Record<EntityKind, Entity>;
 
 /** Neutral, and named as what it is. Record types arrive from the backend and

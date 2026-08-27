@@ -7,7 +7,7 @@ import { L1TxLink } from "../../components/ui/l1link";
 import { InfoTip } from "../../components/ui/infotip";
 import { StatusLegend } from "../../components/ui/legend";
 import { PageError } from "../../components/ui/pageerror";
-import { L1L2Badge, PageHeader } from "../../components/ui/primitives";
+import { Callout, L1L2Badge, PageHeader } from "../../components/ui/primitives";
 import { StatusCell } from "../../components/ui/status";
 import { DataTable, Pagination } from "../../components/ui/table";
 import { Timestamp } from "../../components/ui/timestamp";
@@ -20,7 +20,7 @@ import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Deposits",
-  description: "L1 → L2 deposits into Midgard.",
+  description: "Deposits from Cardano into Midgard.",
 };
 
 export const dynamic = "force-dynamic";
@@ -30,13 +30,16 @@ const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Deposits" }];
 export default async function DepositsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; id?: string }>;
 }) {
-  const page = parsePage((await searchParams).page);
+  const query = await searchParams;
+  const page = parsePage(query.page);
+  const id = /^[0-9a-f]+$/i.test(query.id ?? "") ? query.id?.toLowerCase() : undefined;
 
   let data;
+  const init = await viewerInit();
   try {
-    data = await api.depositsPage(page, await viewerInit());
+    data = await api.depositsPage(page, init, id);
   } catch (e) {
     return (
       <>
@@ -46,6 +49,10 @@ export default async function DepositsPage({
       </>
     );
   }
+  const l1Observations = await api.l1Deposits(100, init).catch(() => []);
+  const l1ByTx = new Map(l1Observations.map((row) => [row.txHash, row]));
+  const nodeTxs = new Set(data.rows.map((row) => row.deposit_l1_tx_hash));
+  const unmatchedL1 = l1Observations.filter((row) => !nodeTxs.has(row.txHash));
 
   return (
     <>
@@ -53,7 +60,7 @@ export default async function DepositsPage({
       <PageHeader
         entity="deposit"
         title="Deposits"
-        subtitle="Funds locked on Cardano L1 and credited to an address on the Midgard ledger."
+        subtitle="Funds deposited from Cardano into Midgard."
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
@@ -72,18 +79,31 @@ export default async function DepositsPage({
       />
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
         <DataTable
-          caption="Deposits from Cardano L1 into Midgard"
+          caption="Deposits from Cardano into Midgard"
           columns={[
             {
               header: "L1 tx",
-              cell: (r) => <L1TxLink hash={r.deposit_l1_tx_hash} destination="midgard" />,
+              cell: (r) => <L1TxLink hash={r.deposit_l1_tx_hash} destination="cardano" />,
             },
             {
-              header: "L2 ledger tx",
-              cell: (r) => (
-                <Identifier value={r.ledger_tx_id} href={`/transaction/${r.ledger_tx_id}`} />
-              ),
+              header: "Ledger entry ID",
+              headerNote: "deposit-derived, not an L2 transaction",
+              cell: (r) => <Identifier value={r.ledger_tx_id} />,
               hideBelow: "md",
+            },
+            {
+              header: "Cardano source",
+              cell: (r) => {
+                const addresses = l1ByTx.get(r.deposit_l1_tx_hash)?.fundingAddresses ?? [];
+                return addresses.length === 0 ? (
+                  <span className="text-text-3">Not indexed</span>
+                ) : addresses.length === 1 ? (
+                  <AddressLink address={addresses[0]!} chain="cardano" head={10} tail={8} />
+                ) : (
+                  <span>{addresses.length} funding addresses</span>
+                );
+              },
+              hideBelow: "2xl",
             },
             {
               header: "L2 recipient",
@@ -141,17 +161,26 @@ export default async function DepositsPage({
               <span className="text-text-3">undecodable</span>
             ),
             details: [
-              { label: "L1 tx", value: <L1TxLink hash={r.deposit_l1_tx_hash} destination="midgard" /> },
               {
-                label: "L2 ledger tx",
-                value: (
-                  <Identifier
-                    value={r.ledger_tx_id}
-                    href={`/transaction/${r.ledger_tx_id}`}
-                    head={8}
-                    tail={6}
-                  />
-                ),
+                label: "L1 tx",
+                value: <L1TxLink hash={r.deposit_l1_tx_hash} destination="cardano" />,
+              },
+              {
+                label: "Ledger entry ID",
+                value: <Identifier value={r.ledger_tx_id} head={8} tail={6} />,
+              },
+              {
+                label: "Cardano source",
+                value: (() => {
+                  const addresses = l1ByTx.get(r.deposit_l1_tx_hash)?.fundingAddresses ?? [];
+                  return addresses.length === 0 ? (
+                    "Not indexed"
+                  ) : addresses.length === 1 ? (
+                    <AddressLink address={addresses[0]!} chain="cardano" head={8} tail={6} />
+                  ) : (
+                    `${addresses.length} addresses`
+                  );
+                })(),
               },
               {
                 label: "Projected block",
@@ -171,7 +200,7 @@ export default async function DepositsPage({
           rows={data.rows}
           keyOf={(r) => r.event_id}
           emptyTitle="No deposits yet"
-          emptyHint="Deposits appear once funds are locked on Cardano L1 for an address on this network."
+          emptyHint="Deposits appear once funds are locked on Cardano for an address on this network."
         />
         <StatusLegend kinds={["bridge_status"]} />
         <Pagination
@@ -179,9 +208,39 @@ export default async function DepositsPage({
           hasNextPage={data.hasNextPage}
           total={data.total}
           limit={data.limit}
-          hrefFor={(p) => `/deposits?page=${p}`}
+          hrefFor={(p) => `/deposits?page=${p}${id ? `&id=${id}` : ""}`}
         />
       </section>
+      <details className="mt-4 rounded-lg border border-border bg-surface">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-text-2">
+          Cardano observations ({l1Observations.length})
+        </summary>
+        {unmatchedL1.length > 0 ? (
+          <div className="border-t border-border p-4">
+            <Callout tone="neutral" title="Additional Cardano observations">
+              These are not present on the current node-results page and remain visible from the
+              explorer-owned L1 index.
+            </Callout>
+            <ul className="mt-3 space-y-2">
+              {unmatchedL1.map((row) => (
+                <li
+                  key={`${row.txHash}-${row.outputIndex}`}
+                  className="flex flex-wrap items-center justify-between gap-2"
+                >
+                  <L1TxLink hash={row.txHash} destination="cardano" />
+                  <span className="mg-caption text-text-3">
+                    {row.eventType} · output #{row.outputIndex}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="border-t border-border px-4 py-3 text-sm text-text-3">
+            All indexed observations match the current node records.
+          </p>
+        )}
+      </details>
     </>
   );
 }

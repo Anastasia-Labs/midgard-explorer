@@ -104,7 +104,7 @@ export default async function TransactionsPage({
                   href={`/block/${r.header_hash}`}
                   className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
                 >
-                  #{r.height}
+                  {r.height === null ? `${r.header_hash.slice(0, 8)}…` : `#${r.height}`}
                 </Link>
               ),
               hideBelow: "sm",
@@ -159,7 +159,7 @@ export default async function TransactionsPage({
                 label: "Block",
                 value: (
                   <Link href={`/block/${r.header_hash}`} className="tabular-nums text-link">
-                    #{r.height}
+                    {r.height === null ? `${r.header_hash.slice(0, 8)}…` : `#${r.height}`}
                   </Link>
                 ),
               },

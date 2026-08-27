@@ -7,7 +7,7 @@ import { l1TxUrl } from "./network";
  * required deciding things it could not know. 56 hex is a block header hash and
  * it is equally a minting policy. 64 hex is a transaction hash and it is
  * equally an asset unit with an eight-character name, and it is equally a
- * Cardano L1 transaction. Picking one silently sends a reader to a 404 and
+ * Cardano transaction. Picking one silently sends a reader to a 404 and
  * leaves them believing the record does not exist.
  *
  * So an ambiguous input produces several candidates, ranked by likelihood, and
@@ -16,7 +16,17 @@ import { l1TxUrl } from "./network";
  */
 
 export type CandidateKind =
-  "transaction" | "block" | "blockHeight" | "address" | "asset" | "policy" | "l1Transaction";
+  | "transaction"
+  | "block"
+  | "blockHeight"
+  | "address"
+  | "asset"
+  | "policy"
+  | "l1Transaction"
+  | "deposit"
+  | "withdrawal"
+  | "forcedTransaction"
+  | "validator";
 
 export type Candidate = {
   kind: CandidateKind;
@@ -88,7 +98,7 @@ export function searchCandidates(raw: string): SearchResult {
           {
             kind: "address",
             label: "Address",
-            detail: "L2 ledger address",
+            detail: "Midgard ledger address",
             href: `/address/${input}`,
           },
         ],
@@ -131,7 +141,7 @@ export function searchCandidates(raw: string): SearchResult {
     candidates.push({
       kind: "transaction",
       label: "Transaction",
-      detail: "L2 transaction hash",
+      detail: "Midgard transaction hash",
       href: `/transaction/${hex}`,
     });
     // Only offered when an L1 explorer is configured; a dead link is worse
@@ -140,8 +150,8 @@ export function searchCandidates(raw: string): SearchResult {
     if (l1 !== null) {
       candidates.push({
         kind: "l1Transaction",
-        label: "Cardano L1 transaction",
-        detail: "Opens the configured L1 explorer",
+        label: "Cardano transaction",
+        detail: "Opens the configured Cardano explorer",
         href: l1,
         external: true,
       });
@@ -157,7 +167,7 @@ export function searchCandidates(raw: string): SearchResult {
     candidates.push({
       kind: "block",
       label: "Block",
-      detail: "L2 block header hash",
+      detail: "Midgard block header hash",
       href: `/block/${hex}`,
     });
     candidates.push({

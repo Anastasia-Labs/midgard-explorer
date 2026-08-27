@@ -14,10 +14,10 @@ export default function NotFound() {
         className="mx-auto mb-4"
       />
       <p className="font-mono mg-caption text-page-copy">404 · Not found</p>
-      <h1 className="mt-2 font-display text-[26px] font-semibold tracking-tight text-page-title">
+      <h1 className="mt-2 font-display text-2xl font-semibold tracking-tight text-page-title sm:text-title">
         Page not found
       </h1>
-      <p className="mt-2 text-[15px] text-page-copy">
+      <p className="mt-2 text-body text-page-copy">
         No block, transaction, or address matches this path. Try searching for an identifier, or
         return to the overview.
       </p>

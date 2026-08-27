@@ -17,7 +17,7 @@ import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
   title: "Forced transactions",
-  description: "L1-forced transaction orders processed by Midgard.",
+  description: "Transaction orders escrowed on Cardano and processed by Midgard.",
 };
 
 export const dynamic = "force-dynamic";
@@ -27,13 +27,15 @@ const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Forced transactions"
 export default async function ForcedTransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; id?: string }>;
 }) {
-  const page = parsePage((await searchParams).page);
+  const query = await searchParams;
+  const page = parsePage(query.page);
+  const id = /^[0-9a-f]+$/i.test(query.id ?? "") ? query.id?.toLowerCase() : undefined;
 
   let data;
   try {
-    data = await api.forcedTxsPage(page, await viewerInit());
+    data = await api.forcedTxsPage(page, await viewerInit(), id);
   } catch (e) {
     return (
       <>
@@ -50,7 +52,7 @@ export default async function ForcedTransactionsPage({
       <PageHeader
         entity="forcedTransaction"
         title="Forced transactions"
-        subtitle="Transaction orders escrowed on Cardano L1 that the Midgard operator is obliged to include."
+        subtitle="Transaction orders submitted on Cardano for inclusion in Midgard."
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
@@ -80,8 +82,8 @@ export default async function ForcedTransactionsPage({
               headerNote: "on Cardano",
               cell: (r) => (
                 <span className="inline-flex items-center gap-1.5">
-                  <L1TxLink hash={r.tx_order_l1_tx_hash} destination="midgard" />
-                  <span className="font-mono text-[11px] text-text-3">
+                  <L1TxLink hash={r.tx_order_l1_tx_hash} destination="cardano" />
+                  <span className="font-mono text-micro text-text-3">
                     #{r.tx_order_l1_output_index}
                     <span className="sr-only"> (L1 output index)</span>
                   </span>
@@ -136,8 +138,8 @@ export default async function ForcedTransactionsPage({
                 label: "L1 tx",
                 value: (
                   <span className="inline-flex items-center gap-1.5">
-                    <L1TxLink hash={r.tx_order_l1_tx_hash} destination="midgard" />
-                    <span className="font-mono text-[11px] text-text-3">
+                    <L1TxLink hash={r.tx_order_l1_tx_hash} destination="cardano" />
+                    <span className="font-mono text-micro text-text-3">
                       #{r.tx_order_l1_output_index}
                     </span>
                   </span>
@@ -161,7 +163,7 @@ export default async function ForcedTransactionsPage({
           rows={data.rows}
           keyOf={(r) => r.tx_order_id}
           emptyTitle="No forced transactions yet"
-          emptyHint="These appear when a user escrows an order on Cardano L1 for the operator to include."
+          emptyHint="These appear when a user escrows an order on Cardano for the operator to include."
         />
         <StatusLegend kinds={["bridge_status", "forced_validity"]} />
         <Pagination
@@ -169,7 +171,7 @@ export default async function ForcedTransactionsPage({
           hasNextPage={data.hasNextPage}
           total={data.total}
           limit={data.limit}
-          hrefFor={(p) => `/forced-transactions?page=${p}`}
+          hrefFor={(p) => `/forced-transactions?page=${p}${id ? `&id=${id}` : ""}`}
         />
       </section>
     </>
