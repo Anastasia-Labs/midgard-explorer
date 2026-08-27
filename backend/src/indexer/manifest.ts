@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { z } from "zod";
+import { logger } from "../logger";
 import { scriptHashToAddress, scriptHashToRewardAddress } from "./bech32";
 
 /**
@@ -31,11 +32,53 @@ export function contractPurpose(entryName: string): Purpose {
   return "None";
 }
 
+/** "daParamsGovernorSpend" and "daParamsGovernorMint" are one contract, two
+ * purposes. Stripping the purpose gives the family both share. */
+export function contractFamily(entryName: string): string {
+  for (const suffix of PURPOSE_SUFFIXES) {
+    if (entryName.endsWith(suffix) && entryName.length > suffix.length) {
+      return entryName.slice(0, -suffix.length);
+    }
+  }
+  return entryName;
+}
+
 /** Schema versions this indexer knows how to read. A version outside this set
  * is refused rather than read on a guess: an unknown layout that happens to
  * carry a `contracts` key would otherwise index silently against fields that
  * moved. */
 const SUPPORTED_SCHEMA_VERSIONS = new Set(["midgard-deployment-manifest-v2"]);
+
+/**
+ * Compiled scripts reviewed and recorded as unimplemented placeholders.
+ *
+ * Keyed by the compiled script, not by its hash. Stub status used to be
+ * inferred from one hash appearing under more than one contract family, which
+ * is a naming coincidence rather than a property of the script: it excluded
+ * `reserveWithdraw` because two `fraudProof` entries happened to compile to the
+ * same placeholder, and it would equally have missed a placeholder used by only
+ * one family. Keying on the script also survives a redeployment, because the
+ * bytes are stable while every script hash in the manifest is not.
+ *
+ * Both entries below are Aiken's trivial validators. Seventeen and eighteen
+ * bytes cannot read a script context, so neither can enforce anything; the
+ * address derived from such a hash is shared with any other deployment that
+ * compiled the same placeholder, so indexing one reports unrelated preprod
+ * traffic as Midgard activity.
+ */
+const PLACEHOLDER_SCRIPTS: ReadonlyMap<string, string> = new Map([
+  [
+    "5001010023259800b452689b2b20025735",
+    "17-byte trivial PlutusV3 script; in the 2026-07-15 preprod deployment it " +
+      "backs fraudProofCatalogueSpend, fraudProofSpend and reserveWithdraw",
+  ],
+  [
+    "5101010023259800a518a4d136564004ae69",
+    "18-byte trivial PlutusV3 script; in the 2026-07-15 preprod deployment it " +
+      "backs escapeHatchSpend, escapeHatchMint, fraudProofNonExistentInputNoIndex " +
+      "and fraudProofInvalidRange",
+  ],
+]);
 
 export type ValidatorEntry = {
   entryName: string;
@@ -50,41 +93,11 @@ export type ValidatorEntry = {
   /** Minting policy id, which for a minting script is the script hash. Set for
    * a Mint entry, whose executions are found through the assets it issues. */
   policyId: string | null;
+  /** A reviewed placeholder rather than a deployed validator. Kept in the
+   * manifest so a reader can see the contract exists and is not implemented,
+   * and kept out of every scan. */
+  placeholder: boolean;
 };
-
-/** "daParamsGovernorSpend" and "daParamsGovernorMint" are one contract, two
- * purposes. Stripping the purpose gives the family both share. */
-export function contractFamily(entryName: string): string {
-  for (const suffix of PURPOSE_SUFFIXES) {
-    if (entryName.endsWith(suffix) && entryName.length > suffix.length) {
-      return entryName.slice(0, -suffix.length);
-    }
-  }
-  return entryName;
-}
-
-/**
- * A hash used by more than one contract family is an unimplemented placeholder,
- * not a real validator: several stubs compile to the same trivial script. Its
- * address is shared with unrelated preprod traffic, so indexing it would report
- * other people's transactions as Midgard activity.
- */
-export function findStubHashes(
-  contracts: Record<string, { scriptHash?: string }>,
-): Set<string> {
-  const familiesByHash = new Map<string, Set<string>>();
-  for (const [name, entry] of Object.entries(contracts)) {
-    if (!entry.scriptHash) continue;
-    const set = familiesByHash.get(entry.scriptHash) ?? new Set<string>();
-    set.add(contractFamily(name));
-    familiesByHash.set(entry.scriptHash, set);
-  }
-  const stubs = new Set<string>();
-  for (const [hash, families] of familiesByHash) {
-    if (families.size > 1) stubs.add(hash);
-  }
-  return stubs;
-}
 
 const SCRIPT_HASH = /^[0-9a-f]{56}$/;
 const DEPLOYMENT_ID = /^[0-9a-f]{64}$/;
@@ -103,9 +116,26 @@ const ManifestDocument = z
     network: z.string().min(1),
     createdAt: z.string().min(1),
     manifestId: z.string().optional(),
+    referenceScriptDeployAddress: z.string().min(1).optional(),
+    hubOracleOneShot: z
+      .object({
+        txHash: z.string(),
+        outputIndex: z.number(),
+        outRef: z.string(),
+      })
+      .loose()
+      .optional(),
     contracts: z.record(
       z.string(),
-      z.object({ scriptHash: z.string().optional() }).loose(),
+      z
+        .object({
+          scriptHash: z.string().optional(),
+          // The compiled script. Required of a v2 manifest, because it is part
+          // of what the deployment identity is computed over and it is the only
+          // way to tell a placeholder from a validator.
+          contract: z.object({ cborHex: z.string().min(1) }).loose().optional(),
+        })
+        .loose(),
     ),
     referenceScriptAuthPolicy: z
       .object({ policyId: z.string() })
@@ -141,6 +171,68 @@ export function legacyDeploymentId(
   return `legacy-${digest}`;
 }
 
+/**
+ * Key-sorted JSON, so one document has exactly one serialization.
+ *
+ * Ported from the deployment tooling that writes `manifestId`, and verified
+ * against the deployed manifest by `manifest-identity.test.mts`: the two must
+ * agree byte for byte or the recomputed identity is meaningless.
+ */
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entryValue]) => entryValue !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableJson(entryValue)}`)
+    .join(",")}}`;
+}
+
+/** The subset of a v2 manifest the identity is computed over. `createdAt` and
+ * `updatedAt` are deliberately absent: rewriting the file must not change the
+ * identity of the deployment it describes. */
+function identityInput(doc: Record<string, unknown>): unknown {
+  const oneShot = (doc.hubOracleOneShot ?? {}) as Record<string, unknown>;
+  const authPolicy = (doc.referenceScriptAuthPolicy ?? {}) as Record<string, unknown>;
+  const contracts = (doc.contracts ?? {}) as Record<string, Record<string, unknown>>;
+  return {
+    schemaVersion: doc.schemaVersion,
+    network: doc.network,
+    referenceScriptDeployAddress: doc.referenceScriptDeployAddress,
+    hubOracleOneShot: {
+      txHash: oneShot.txHash,
+      outputIndex: oneShot.outputIndex,
+      outRef: oneShot.outRef,
+    },
+    referenceScriptAuthPolicy: {
+      policyId: authPolicy.policyId,
+      nativeScript: authPolicy.nativeScript,
+      tokenNames: authPolicy.tokenNames,
+    },
+    contracts: Object.fromEntries(
+      Object.entries(contracts)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([name, entry]) => [
+          name,
+          { scriptHash: entry.scriptHash, contract: entry.contract },
+        ]),
+    ),
+  };
+}
+
+/**
+ * Recomputes a v2 deployment identity from the document itself.
+ *
+ * Computed from the raw parsed JSON rather than the decoded document, so what
+ * is hashed is exactly what the file says.
+ */
+export function computeDeploymentId(raw: unknown): string {
+  return createHash("sha256")
+    .update(stableJson(identityInput(raw as Record<string, unknown>)))
+    .digest("hex");
+}
+
 /** One parsed manifest per path, keyed by the file's modification time.
  *
  * This is read on request paths, not only by the sync loop: the withdrawals
@@ -172,10 +264,91 @@ export type Manifest = {
    * constant, so two deployments can never merge in one table. */
   deploymentId: string;
   createdAt: string;
+  /**
+   * Every entry the manifest declares that has a script hash, with the purpose
+   * its name states and whether it is a reviewed placeholder. Nothing is
+   * dropped, so a count taken here matches a count taken from the file.
+   */
+  entries: ValidatorEntry[];
+  /**
+   * One entry per deployed contract, deduplicated by script hash.
+   *
+   * This is the read path's view: what the API lists and what an output address
+   * is attributed to. A contract with both a spend and a mint purpose is one
+   * contract and appears once.
+   */
   validators: ValidatorEntry[];
-  stubHashes: Set<string>;
+  /**
+   * What the indexer scans, deduplicated by purpose AND script hash.
+   *
+   * A contract with both a spend and a mint purpose needs both an address scan
+   * and a policy scan; deduplicating by hash alone dropped the second purpose
+   * and with it every mint the contract ever issued.
+   */
+  scanTargets: ValidatorEntry[];
+  placeholderHashes: Set<string>;
   referenceScriptAuthPolicy: string | null;
 };
+
+/**
+ * Splits the declared contracts into deployed validators and reviewed
+ * placeholders.
+ *
+ * A placeholder is recognised by its compiled script. Where a script hash spans
+ * more than one contract family and the script behind it is not a recorded
+ * placeholder, this throws rather than guessing: silently indexing it reports
+ * other deployments' traffic as Midgard, and silently excluding it drops a real
+ * validator, so the only safe answer is to stop and have the script reviewed.
+ */
+function classifyPlaceholders(
+  path: string,
+  contracts: Record<string, { scriptHash?: string; contract?: { cborHex: string } }>,
+): Set<string> {
+  const familiesByHash = new Map<string, Set<string>>();
+  const scriptsByHash = new Map<string, string | undefined>();
+  for (const [name, entry] of Object.entries(contracts)) {
+    if (!entry.scriptHash) continue;
+    const families = familiesByHash.get(entry.scriptHash) ?? new Set<string>();
+    families.add(contractFamily(name));
+    familiesByHash.set(entry.scriptHash, families);
+    scriptsByHash.set(entry.scriptHash, entry.contract?.cborHex);
+  }
+
+  const placeholders = new Set<string>();
+  for (const [hash, families] of familiesByHash) {
+    const cborHex = scriptsByHash.get(hash);
+    if (cborHex !== undefined && PLACEHOLDER_SCRIPTS.has(cborHex)) {
+      placeholders.add(hash);
+      continue;
+    }
+    if (families.size === 1) continue;
+
+    const shared = Object.entries(contracts)
+      .filter(([, entry]) => entry.scriptHash === hash)
+      .map(([name]) => name)
+      .join(", ");
+    if (cborHex === undefined) {
+      // A manifest with no compiled scripts cannot be checked, so the older,
+      // weaker signal is all there is. Excluding is the conservative side of
+      // the trade: a missing validator shows as absent, an unrelated address
+      // shows as Midgard activity that never happened.
+      logger.warn(
+        `Manifest at ${path} shares script hash ${hash} across families ` +
+          `(${shared}) and carries no compiled script to check it against. ` +
+          `Treating it as a placeholder and excluding it from every scan.`,
+      );
+      placeholders.add(hash);
+      continue;
+    }
+    throw new Error(
+      `Manifest at ${path} shares script hash ${hash} across contract ` +
+        `families (${shared}), but its compiled script is not a recorded ` +
+        `placeholder. Review the script and either record it in ` +
+        `PLACEHOLDER_SCRIPTS or correct the manifest.`,
+    );
+  }
+  return placeholders;
+}
 
 /** Reads and validates the manifest, or throws naming the field at fault.
  *
@@ -227,28 +400,14 @@ export function parseManifest(path: string): Manifest {
   // row already attributed to the declared identity.
   let deploymentId: string;
   if (doc.schemaVersion !== undefined) {
-    if (doc.manifestId === undefined) {
-      throw new Error(
-        `Manifest at ${path} declares schemaVersion ` +
-          `"${doc.schemaVersion}" but has no manifestId. A versioned manifest ` +
-          `must state the deployment identity its rows are attributed to.`,
-      );
-    }
-    if (!DEPLOYMENT_ID.test(doc.manifestId)) {
-      throw new Error(
-        `Manifest at ${path} has a manifestId that is not 64 lowercase hex ` +
-          `characters: ${doc.manifestId}`,
-      );
-    }
-    deploymentId = doc.manifestId;
+    deploymentId = verifiedV2DeploymentId(path, doc, raw);
   } else {
     deploymentId = legacyDeploymentId(network, doc.contracts);
   }
 
-  const stubHashes = findStubHashes(doc.contracts);
+  const placeholderHashes = classifyPlaceholders(path, doc.contracts);
 
-  const seen = new Set<string>();
-  const validators: ValidatorEntry[] = [];
+  const entries: ValidatorEntry[] = [];
   for (const [name, entry] of Object.entries(doc.contracts)) {
     if (entry.scriptHash === undefined) continue;
     if (!SCRIPT_HASH.test(entry.scriptHash)) {
@@ -257,11 +416,8 @@ export function parseManifest(path: string): Manifest {
           `${entry.scriptHash}`,
       );
     }
-    if (stubHashes.has(entry.scriptHash)) continue;
-    if (seen.has(entry.scriptHash)) continue;
-    seen.add(entry.scriptHash);
     const purpose = contractPurpose(name);
-    validators.push({
+    entries.push({
       entryName: name,
       family: contractFamily(name),
       purpose,
@@ -272,8 +428,16 @@ export function parseManifest(path: string): Manifest {
           ? scriptHashToRewardAddress(entry.scriptHash, network)
           : null,
       policyId: purpose === "Mint" ? entry.scriptHash : null,
+      placeholder: placeholderHashes.has(entry.scriptHash),
     });
   }
+
+  const deployed = entries.filter((entry) => !entry.placeholder);
+  const validators = dedupe(deployed, (entry) => entry.scriptHash);
+  const scanTargets = dedupe(
+    deployed,
+    (entry) => `${entry.purpose}:${entry.scriptHash}`,
+  );
 
   // Reference scripts are published to the DEPLOYER'S OWN WALLET address, not
   // to a script address, so the transactions that put Midgard's contracts on
@@ -287,8 +451,92 @@ export function parseManifest(path: string): Manifest {
     network,
     deploymentId,
     createdAt: doc.createdAt,
+    entries,
     validators,
-    stubHashes,
+    scanTargets,
+    placeholderHashes,
     referenceScriptAuthPolicy,
   };
+}
+
+function dedupe(
+  entries: ValidatorEntry[],
+  key: (entry: ValidatorEntry) => string,
+): ValidatorEntry[] {
+  const seen = new Set<string>();
+  const out: ValidatorEntry[] = [];
+  for (const entry of entries) {
+    const k = key(entry);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(entry);
+  }
+  return out;
+}
+
+/**
+ * The declared identity of a v2 manifest, checked against the document.
+ *
+ * A well-formed identity used to be accepted on its shape alone, which proves
+ * only that someone typed 64 hex characters. A contract set edited after
+ * deployment then kept the legitimate identity, and every row indexed from it
+ * was attributed to a deployment that does not describe those scripts.
+ * Recomputing is what makes the identity mean something.
+ */
+function verifiedV2DeploymentId(
+  path: string,
+  doc: ManifestDocument,
+  raw: unknown,
+): string {
+  if (doc.manifestId === undefined) {
+    throw new Error(
+      `Manifest at ${path} declares schemaVersion "${doc.schemaVersion}" but ` +
+        `has no manifestId. A versioned manifest must state the deployment ` +
+        `identity its rows are attributed to.`,
+    );
+  }
+  if (!DEPLOYMENT_ID.test(doc.manifestId)) {
+    throw new Error(
+      `Manifest at ${path} has a manifestId that is not 64 lowercase hex ` +
+        `characters: ${doc.manifestId}`,
+    );
+  }
+
+  // Every field below is hashed into the identity. One that is absent silently
+  // hashes as null, which would let a document opt out of verification by
+  // leaving it out.
+  const required: Array<[string, unknown]> = [
+    ["referenceScriptDeployAddress", doc.referenceScriptDeployAddress],
+    ["hubOracleOneShot", doc.hubOracleOneShot],
+    ["referenceScriptAuthPolicy", doc.referenceScriptAuthPolicy],
+  ];
+  const absent = required.filter(([, value]) => value === undefined || value === null);
+  if (absent.length > 0) {
+    throw new Error(
+      `Manifest at ${path} declares schemaVersion "${doc.schemaVersion}" but ` +
+        `is missing ${absent.map(([name]) => name).join(", ")}, which the ` +
+        `deployment identity is computed over.`,
+    );
+  }
+  for (const [name, entry] of Object.entries(doc.contracts)) {
+    if (entry.contract === undefined) {
+      throw new Error(
+        `Manifest at ${path} has no compiled script for ${name}. A versioned ` +
+          `manifest carries every script it names, both because the identity ` +
+          `is computed over them and because a placeholder cannot be told ` +
+          `from a validator without one.`,
+      );
+    }
+  }
+
+  const recomputed = computeDeploymentId(raw);
+  if (recomputed !== doc.manifestId) {
+    throw new Error(
+      `Manifest at ${path} declares manifestId ${doc.manifestId} but its ` +
+        `contents hash to ${recomputed}. The document has been modified since ` +
+        `it was written, so rows indexed from it would be attributed to a ` +
+        `deployment that does not describe these scripts.`,
+    );
+  }
+  return doc.manifestId;
 }

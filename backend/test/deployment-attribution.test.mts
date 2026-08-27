@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { indexerPrisma } from "../src/indexer/db.js";
 import { ingestTxInfos } from "../src/indexer/ingest.js";
-import { loadManifest } from "../src/indexer/manifest.js";
+import { computeDeploymentId, loadManifest } from "../src/indexer/manifest.js";
 import { parseTxInfo } from "../src/indexer/koios.js";
 import { getL1Validator } from "../src/db/l1.js";
 import { config } from "../src/config.js";
@@ -44,14 +44,24 @@ const infos = parseTxInfo(
 
 const manifest = loadManifest(FIXTURE);
 
-/** The same contract set under a different declared identity. Nothing else
- * differs, so a query that still returns events is filtering on nothing. */
-function manifestUnderOtherIdentity(): string {
+/** A different deployment: the same contracts but for one script, under the
+ * identity that contract set actually hashes to. A query that still returns
+ * events is filtering on nothing.
+ *
+ * The identity cannot simply be relabelled any more. It is recomputed from the
+ * document, so a manifest claiming to be a different deployment while
+ * describing the same scripts is refused outright, which is the point: that is
+ * how an edited contract set kept a legitimate-looking identity. To be a
+ * different deployment it has to describe different scripts. */
+function manifestUnderOtherIdentity(): { path: string; deploymentId: string } {
   const doc = JSON.parse(readFileSync(FIXTURE, "utf8"));
-  doc.manifestId = "b".repeat(64);
+  // A contract the ingested event does not belong to, so the validator under
+  // test is still present and only the deployment it sits in has changed.
+  doc.contracts.depositMint.scriptHash = "b".repeat(56);
+  doc.manifestId = computeDeploymentId(doc);
   const path = join(tmpdir(), `midgard-other-identity-${process.pid}.json`);
   writeFileSync(path, JSON.stringify(doc));
-  return path;
+  return { path, deploymentId: doc.manifestId };
 }
 
 function setManifestPath(path: string): void {
@@ -139,11 +149,13 @@ describe("deployment attribution", () => {
 
   it("returns no events once the deployment identity differs", async () => {
     if (!reachable) return;
-    setManifestPath(manifestUnderOtherIdentity());
+    const other = manifestUnderOtherIdentity();
+    expect(other.deploymentId).not.toBe(manifest.deploymentId);
+    setManifestPath(other.path);
     const result = await getL1Validator(ingestedScriptHash!);
 
     expect(result).not.toBeNull();
-    expect(result!.deployment).toBe("b".repeat(64));
+    expect(result!.deployment).toBe(other.deploymentId);
 
     // Same rows, same validator, different deployment. If this is non-zero the
     // filter is not discriminating and the test above proves nothing.
