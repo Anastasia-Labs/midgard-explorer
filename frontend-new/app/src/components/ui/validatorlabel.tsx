@@ -34,7 +34,16 @@ export function ValidatorLabel({
   const validator = validatorFor(validators, { family });
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
-      <span>{contractName(family)}</span>
+      {validator ? (
+        <a
+          href={`/l1/validator/${validator.scriptHash}`}
+          className="underline decoration-border-strong underline-offset-2 hover:text-link hover:decoration-link"
+        >
+          {contractName(family)}
+        </a>
+      ) : (
+        <span>{contractName(family)}</span>
+      )}
       {validator ? <ManifestBadge entryName={validator.entryName} /> : null}
     </span>
   );
@@ -42,7 +51,7 @@ export function ValidatorLabel({
 
 export function ManifestBadge({ entryName }: { entryName: string }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded border border-success/35 bg-success/10 px-1.5 py-px text-[11px] font-medium text-success">
+    <span className="inline-flex items-center gap-1 rounded border border-success/35 bg-success/10 px-1.5 py-px text-micro font-medium text-success">
       <Icon name="shield" size={12} />
       manifest
       <InfoTip

@@ -70,7 +70,7 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "tx_lifecycle",
     "success",
     "Committed",
-    "Included in a Midgard block. Reversible until that block is final on Cardano L1.",
+    "Included in a Midgard block. Reversible until that block is final on Cardano.",
   ),
   rejected: e(
     "tx_lifecycle",
@@ -84,19 +84,21 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "bridge_status",
     "warning",
     "Awaiting",
-    "Observed on Cardano L1, waiting for its inclusion window. It has not yet changed the Midgard ledger.",
+    "Observed on Cardano, waiting for its inclusion window. It has not yet changed the Midgard ledger.",
   ),
   projected: e(
     "bridge_status",
     "info",
     "Projected",
-    "Reflected in the L2 ledger; the containing block is not final on L1 yet. The projected effect can still be reversed.",
+    "Reflected in the Midgard ledger; the containing block is not final on Cardano yet. The projected effect can still be reversed.",
   ),
   consumed: e(
     "bridge_status",
     "success",
     "Consumed",
-    "The deposit UTxO was spent into the Midgard ledger. Final once the containing block settles on Cardano L1.",
+    // `bridge_status` is shared by deposits, withdrawals and forced
+    // transactions, so this names the event UTxO rather than the deposit one.
+    "The event's Cardano UTxO was consumed and its effect is in the Midgard ledger. Final once the containing block settles.",
   ),
 
   // --- block finalization ----------------------------------------------
@@ -104,7 +106,7 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "finalization",
     "neutral",
     "Pending submission",
-    "The finalization transaction has not been submitted to L1 yet. Every transaction in this block remains reversible.",
+    "The finalization transaction has not been submitted to Cardano yet. Every transaction in this block remains reversible.",
   ),
   submitted_local_finalization_pending: e(
     "finalization",
@@ -116,19 +118,19 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "finalization",
     "info",
     "Submitted (unconfirmed)",
-    "Finalization submitted to Cardano L1 and not yet confirmed. The submission may still fail or be replaced.",
+    "Finalization submitted to Cardano and not yet confirmed. The submission may still fail or be replaced.",
   ),
   observed_waiting_stability: e(
     "finalization",
     "warning",
     "Awaiting stability",
-    "Seen on L1; waiting for the required chain-stability depth. A short Cardano rollback could still remove it.",
+    "Seen on Cardano; waiting for the required chain-stability depth. A short rollback could still remove it.",
   ),
   finalized: e(
     "finalization",
     "success",
     "Finalized",
-    "Settled on Cardano L1. The explorer now treats the containing Midgard block as irreversible.",
+    "Settled on Cardano. The explorer now treats the containing Midgard block as irreversible.",
   ),
   abandoned: e(
     "finalization",
@@ -156,19 +158,19 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "withdrawal_validity",
     "success",
     "Valid",
-    "The withdrawal passed validation. It may proceed to projection and Cardano L1 settlement.",
+    "The withdrawal passed validation. It may proceed to projection and Cardano settlement.",
   ),
   NonExistentWithdrawalUtxo: e(
     "withdrawal_validity",
     "danger",
     "Non-existent UTxO",
-    "The referenced L2 UTxO does not exist. No value can be withdrawn from that reference.",
+    "The referenced Midgard UTxO does not exist. No value can be withdrawn from that reference.",
   ),
   SpentWithdrawalUtxo: e(
     "withdrawal_validity",
     "danger",
     "Spent UTxO",
-    "The referenced L2 UTxO was already spent. Reusing it would be a double spend, so the withdrawal cannot proceed.",
+    "The referenced Midgard UTxO was already spent. Reusing it would be a double spend, so the withdrawal cannot proceed.",
   ),
   IncorrectWithdrawalOwner: e(
     "withdrawal_validity",
@@ -198,7 +200,7 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "withdrawal_validity",
     "danger",
     "Unpayable value",
-    "The value cannot be paid out on Cardano L1. Its amount or asset bundle must be changed to form a valid output.",
+    "The value cannot be paid out on Cardano. Its amount or asset bundle must be changed to form a valid output.",
   ),
 
   // --- forced-transaction operator validity (6 codes) -------------------

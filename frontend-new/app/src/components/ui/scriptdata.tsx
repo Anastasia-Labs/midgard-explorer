@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import type { DatumView, RedeemerView, ScriptWitnessView } from "@midgard-explorer/contracts";
+import type {
+  DatumView,
+  RedeemerView,
+  ScriptRefView,
+  ScriptWitnessView,
+} from "@midgard-explorer/contracts";
 import { cn, truncateId } from "../../lib/format";
 import { CopyButton } from "./identifier";
 import { FieldLabel, InfoTip } from "./infotip";
@@ -33,7 +38,7 @@ function Payload({ cborHex, json, label }: { cborHex: string; json?: unknown; la
               <FieldLabel label={label} />
             )}
           </span>
-          <span className="font-mono text-[11px] text-text-3">{cborHex.length / 2} bytes</span>
+          <span className="font-mono text-micro text-text-3">{cborHex.length / 2} bytes</span>
         </div>
         <div className="inline-flex items-center gap-1">
           {decoded === null ? (
@@ -53,7 +58,7 @@ function Payload({ cborHex, json, label }: { cborHex: string; json?: unknown; la
                   aria-pressed={showing === mode}
                   onClick={() => setShowing(mode)}
                   className={cn(
-                    "rounded px-2 py-0.5 text-[11px] font-medium",
+                    "rounded px-2 py-0.5 text-micro font-medium",
                     showing === mode
                       ? "bg-surface-3 text-text"
                       : "text-text-3 hover:bg-surface-2 hover:text-text-2",
@@ -71,7 +76,7 @@ function Payload({ cborHex, json, label }: { cborHex: string; json?: unknown; la
         tabIndex={0}
         role="region"
         aria-label={`${label} contents`}
-        className="max-h-72 overflow-auto p-3 font-mono text-[11.5px] leading-relaxed break-all whitespace-pre-wrap"
+        className="max-h-72 overflow-auto p-3 font-mono text-caption leading-relaxed break-all whitespace-pre-wrap"
       >
         {showing === "hex" || decoded === null ? cborHex : decoded}
       </pre>
@@ -85,13 +90,9 @@ export function DatumPanel({
 }: {
   datums: Array<{ index: number; address: string; datum: DatumView }>;
 }) {
-  if (datums.length === 0) {
-    return (
-      <p className="rounded-lg border border-border bg-surface px-4 py-3 mg-caption text-text-2">
-        No output of this transaction carries a datum.
-      </p>
-    );
-  }
+  // Nothing rather than a sentence saying there is nothing: the tab count
+  // already reads 0, and the caller renders one empty state for the whole tab.
+  if (datums.length === 0) return null;
   return (
     <div className="space-y-3">
       {datums.map(({ index, address, datum }) => (
@@ -102,6 +103,68 @@ export function DatumPanel({
           <Payload cborHex={datum.cborHex} json={datum.json} label="Inline datum" />
         </div>
       ))}
+    </div>
+  );
+}
+
+const SCRIPT_SOURCE: Record<ScriptWitnessView["source"] | ScriptRefView["source"], string> = {
+  witness_set:
+    "Source: transaction witness set. The displayed hash was recomputed from these versioned-script bytes.",
+  reference_output:
+    "Source: this output's reference script. The displayed hash was recomputed from these versioned-script bytes.",
+};
+
+/** One script, wherever it was carried.
+ *
+ * A witness-set script and an output's reference script are the same record
+ * with the same three facts, so they read the same way: hash and language in
+ * the open, bytes behind a disclosure. A reference script used to render as the
+ * word "script ref" and nothing else, which named a field rather than showing
+ * it. */
+export function ScriptEntry({
+  script,
+  className,
+}: {
+  script: ScriptWitnessView | ScriptRefView;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <span className="font-mono text-caption break-all">{truncateId(script.hash, 12, 8)}</span>
+          <CopyButton value={script.hash} />
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="rounded-full border border-border-strong px-2 py-0.5 text-micro font-medium text-text-2">
+            {script.language}
+          </span>
+          <span className="rounded-full border border-success/35 bg-success/10 px-2 py-0.5 text-micro font-medium text-success">
+            Hash verified
+          </span>
+        </span>
+      </div>
+      <details className="mt-2">
+        <summary className="cursor-pointer mg-caption text-link">
+          Script bytes and provenance
+        </summary>
+        <div className="mt-2">
+          <Payload cborHex={script.cborHex} label="Script bytes" />
+          <p className="mt-1.5 mg-micro text-text-3">{SCRIPT_SOURCE[script.source]}</p>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+/** The reference script an output carries, labelled as what it is. */
+export function ReferenceScript({ script }: { script: ScriptRefView }) {
+  return (
+    <div className="mt-2 border-t border-border pt-2">
+      <p className="mg-overline mb-1.5">
+        <SemanticLabel kind="script" label="Reference script" />
+      </p>
+      <ScriptEntry script={script} />
     </div>
   );
 }
@@ -118,14 +181,7 @@ export function WitnessPanel({
   scripts: readonly ScriptWitnessView[];
   redeemers: readonly RedeemerView[];
 }) {
-  if (scripts.length === 0 && redeemers.length === 0) {
-    return (
-      <p className="rounded-lg border border-border bg-surface px-4 py-3 mg-caption text-text-2">
-        This transaction carries no scripts or redeemers. Nothing ran on chain to authorise it
-        beyond its signatures.
-      </p>
-    );
-  }
+  if (scripts.length === 0 && redeemers.length === 0) return null;
   return (
     <div className="space-y-4">
       {scripts.length > 0 ? (
@@ -136,34 +192,7 @@ export function WitnessPanel({
           <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
             {scripts.map((script) => (
               <li key={script.hash} className="px-3 py-2.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="inline-flex min-w-0 items-center gap-1.5">
-                    <span className="font-mono text-[12.5px] break-all">
-                      {truncateId(script.hash, 12, 8)}
-                    </span>
-                    <CopyButton value={script.hash} />
-                  </span>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="rounded-full border border-border-strong px-2 py-0.5 text-[11px] font-medium text-text-2">
-                      {script.language}
-                    </span>
-                    <span className="rounded-full border border-success/35 bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
-                      Hash verified
-                    </span>
-                  </span>
-                </div>
-                <details className="mt-2">
-                  <summary className="cursor-pointer mg-caption text-link">
-                    Script bytes and provenance
-                  </summary>
-                  <div className="mt-2">
-                    <Payload cborHex={script.cborHex} label="Script bytes" />
-                    <p className="mt-1.5 mg-micro text-text-3">
-                      Source: transaction witness set. The displayed hash was recomputed from these
-                      versioned-script bytes.
-                    </p>
-                  </div>
-                </details>
+                <ScriptEntry script={script} />
               </li>
             ))}
           </ul>
@@ -230,11 +259,11 @@ export function RawCbor({
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-        <h2 className="text-[15px] font-semibold text-text">
+        <h2 className="text-body font-semibold text-text">
           <SemanticLabel kind="cbor" label="Transaction CBOR" />
         </h2>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[11px] text-text-3">{size} bytes</span>
+          <span className="font-mono text-micro text-text-3">{size} bytes</span>
           <CopyButton value={cborHex} />
           <a
             href={`data:application/octet-stream;charset=utf-8,${encodeURIComponent(cborHex)}`}
@@ -255,7 +284,7 @@ export function RawCbor({
         tabIndex={0}
         role="region"
         aria-label="Transaction CBOR bytes"
-        className="max-h-96 overflow-auto p-4 font-mono text-[11.5px] leading-relaxed break-all whitespace-pre-wrap"
+        className="max-h-96 overflow-auto p-4 font-mono text-caption leading-relaxed break-all whitespace-pre-wrap"
       >
         {cborHex}
       </pre>

@@ -42,6 +42,7 @@ import {
 import { formatAda } from "../../lib/format";
 import { flowEdgeVisual, maxEdgeLovelace } from "../../lib/flowEdge";
 import { Icon } from "./icons";
+import { Chip } from "./primitives";
 
 type CanvasData = {
   graphNode: FlowGraphNode;
@@ -67,14 +68,6 @@ function Amount({ lovelace }: { lovelace: bigint }) {
       </span>{" "}
       {formatAda(lovelace)}
       <span className="sr-only"> ada</span>
-    </span>
-  );
-}
-
-function Chip({ children }: { children: string }) {
-  return (
-    <span className="rounded border border-border bg-surface px-1.5 py-px text-[11px] text-text-3">
-      {children}
     </span>
   );
 }
@@ -380,7 +373,8 @@ export function UtxoFlowCanvas({
     // there is nothing for the effect to announce: it only runs the engine.
     if (!needsElk || typeof Worker === "undefined") return;
 
-    const fallBackToDeterministic = () => setLayout({ graph, positions: fallback, state: "fallback" });
+    const fallBackToDeterministic = () =>
+      setLayout({ graph, positions: fallback, state: "fallback" });
     let cancelled = false;
     const worker = new Worker(new URL("../../workers/elk-layout.worker.ts", import.meta.url), {
       name: "midgard-elk-layout",
@@ -558,9 +552,8 @@ export function UtxoFlowCanvas({
 
       <svg data-testid="flow-connectors" aria-hidden="true" className="sr-only" />
       <p className="mt-3 mg-caption text-text-3">
-        Every input is consumed by this transaction and every output is produced by it. No line runs
-        from an input to an output: the ledger does not record which input funded which output, so
-        drawing one would be inventing it. The Table view is the complete non-visual representation.
+        Lines route through the transaction: the ledger does not record which input funded which
+        output.
       </p>
     </div>
   );

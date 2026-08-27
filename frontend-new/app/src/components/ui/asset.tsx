@@ -53,9 +53,7 @@ export function AssetName({ nameHex, className }: { nameHex: string; className?:
           nothing extra and said it only to a mouse. */}
       {canonical ? null : <span className="sr-only"> decoded from {nameHex},</span>}
       {canonical ? null : (
-        <span className="ml-1.5 font-mono text-[11px] text-text-3">
-          {truncateId(nameHex, 8, 4)}
-        </span>
+        <span className="ml-1.5 font-mono text-micro text-text-3">{truncateId(nameHex, 8, 4)}</span>
       )}
     </span>
   );
@@ -117,9 +115,7 @@ export function CoverageNote({ coverage, subject }: { coverage: AssetCoverage; s
   if (complete) {
     return (
       <p className="mg-micro text-page-copy">
-        Complete over the current ledger: all {coverage.total.toLocaleString("en-US")} spendable
-        UTxOs were read. Assets that were minted and fully spent leave no trace here, because this
-        describes the ledger now rather than its history.
+        Current ledger · {coverage.total.toLocaleString("en-US")} spendable UTxOs scanned
       </p>
     );
   }
@@ -127,10 +123,10 @@ export function CoverageNote({ coverage, subject }: { coverage: AssetCoverage; s
     <Callout tone="warning" title={`${subject} is a lower bound.`}>
       <p>
         {coverage.truncated
-          ? `Only ${coverage.scanned.toLocaleString("en-US")} of ${coverage.total.toLocaleString("en-US")} spendable UTxOs were read, so holdings beyond that point are not counted.`
+          ? `${coverage.scanned.toLocaleString("en-US")} of ${coverage.total.toLocaleString("en-US")} UTxOs scanned.`
           : null}
         {coverage.undecoded > 0
-          ? ` ${coverage.undecoded.toLocaleString("en-US")} UTxO${coverage.undecoded === 1 ? "" : "s"} could not be decoded and contribute nothing to these figures.`
+          ? ` ${coverage.undecoded.toLocaleString("en-US")} unreadable.`
           : null}
       </p>
     </Callout>

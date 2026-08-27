@@ -30,14 +30,18 @@ export function L1TxLink({ hash, destination }: { hash: string; destination: L1D
 
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className="rounded border border-border-strong bg-surface-2 px-1 text-[10px] font-medium uppercase text-text-3">
+      <span className="rounded border border-border-strong bg-surface-2 px-1 text-micro font-medium uppercase text-text-3">
         L1
         <span className="sr-only"> (Cardano layer 1)</span>
       </span>
       {href === null ? (
         <span className="whitespace-nowrap font-mono text-sm">{short}</span>
       ) : destination === "midgard" ? (
-        <a href={href} className={linkClass} aria-label={`Midgard context for L1 transaction ${short}`}>
+        <a
+          href={href}
+          className={linkClass}
+          aria-label={`Midgard context for L1 transaction ${short}`}
+        >
           {short}
         </a>
       ) : (

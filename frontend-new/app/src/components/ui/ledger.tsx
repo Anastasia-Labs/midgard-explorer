@@ -46,7 +46,7 @@ function Term({
   return (
     <span className="flex min-w-0 flex-col">
       <span className="mg-overline">{label}</span>
-      <span className="mt-0.5 text-[15px]">{children}</span>
+      <span className="mt-0.5 text-body">{children}</span>
       {sub ? <span className="mt-0.5 mg-micro text-text-3">{sub}</span> : null}
     </span>
   );
@@ -136,7 +136,7 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
           // One string rather than interleaved expressions: JSX drops the
           // space between an expression and the text that follows it here, and
           // "1 of 2inputs" shipped once already.
-          `${eq.unresolvedCount} of ${eq.resolvedCount + eq.unresolvedCount} inputs could not be resolved, so the input total is not stated and the equation cannot be checked against it. Spent inputs leave the ledger, so this is normal for anything but the newest transactions.`
+          `Input total unknown: ${eq.unresolvedCount} of ${eq.resolvedCount + eq.unresolvedCount} inputs are already spent.`
         )}
       </p>
 
@@ -173,7 +173,7 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
                           >
                             <span className="flex min-w-0 items-baseline gap-1.5">
                               <AssetName nameHex={a.assetName} />
-                              <span className="shrink-0 font-mono text-[10px] text-text-3">
+                              <span className="shrink-0 font-mono text-micro text-text-3">
                                 {truncateId(a.policyId, 6, 4)}
                               </span>
                             </span>
@@ -203,12 +203,6 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
               );
             })}
           </ul>
-          {deltas.some((d) => !d.exact) ? (
-            <p className="border-t border-border px-4 py-2.5 mg-micro text-text-3">
-              Where an input did not resolve, only what the address received is shown. A net figure
-              needs both sides.
-            </p>
-          ) : null}
         </div>
       ) : null}
     </section>
@@ -217,7 +211,7 @@ export function LedgerEquation({ tx }: { tx: TransactionView }) {
 
 function Operator({ children }: { children: React.ReactNode }) {
   return (
-    <span aria-hidden className="pb-0.5 font-mono text-[15px] text-text-3">
+    <span aria-hidden className="pb-0.5 font-mono text-body text-text-3">
       {children}
     </span>
   );

@@ -40,10 +40,10 @@ function Brand({ small = false }: { small?: boolean }) {
         </span>
       ) : (
         <span className="flex flex-col leading-none">
-          <span className="mg-brand-green font-display text-[17px] font-bold tracking-[0.02em] text-text">
+          <span className="mg-brand-green font-display text-lg font-bold tracking-[0.02em] text-text">
             MIDGARD
           </span>
-          <span className="mg-brand-green mt-0.5 text-[10.5px] font-semibold tracking-[0.1em] text-text-3">
+          <span className="mg-brand-green mt-0.5 text-micro font-semibold tracking-[0.1em] text-text-3">
             EXPLORER
           </span>
         </span>
@@ -120,7 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex min-w-0 items-center justify-end gap-2">
             <HeaderSearchBox />
             {NETWORK_LABEL === null ? (
-              <span className="hidden items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1 text-[11.5px] font-semibold text-warning sm:inline-flex">
+              <span className="hidden items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1 text-micro font-semibold text-warning sm:inline-flex">
                 <span aria-hidden className="size-1.5 rounded-full bg-warning" />
                 Network not configured
                 <InfoTip
@@ -129,7 +129,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 />
               </span>
             ) : (
-              <span className="hidden items-center gap-1.5 rounded-md border border-border bg-surface-2 px-2.5 py-1 font-mono text-[11.5px] font-semibold text-text-2 sm:inline-flex">
+              <span className="hidden items-center gap-1.5 rounded-md border border-border bg-surface-2 px-2.5 py-1 font-mono text-micro font-semibold text-text-2 sm:inline-flex">
                 <span aria-hidden className="size-1.5 rounded-full bg-accent" />
                 {NETWORK_LABEL}
               </span>
@@ -143,7 +143,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main id="main" className="mx-auto w-full max-w-[96rem] flex-1 px-4 py-6 lg:px-6">
+      <main id="main" className="mx-auto min-w-0 w-full max-w-[96rem] flex-1 px-4 py-6 lg:px-6">
         {children}
       </main>
 
@@ -152,9 +152,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr]">
             <div className="min-w-0">
               <Brand small />
-              <p className="mt-3 max-w-xs text-sm text-text-3">
-                A block explorer for Midgard, the Layer 2 ledger that settles on Cardano.
-              </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 mg-caption text-text-3">
                 <HealthIndicator />
                 {NETWORK_LABEL === null ? null : <span className="font-mono">{NETWORK_LABEL}</span>}

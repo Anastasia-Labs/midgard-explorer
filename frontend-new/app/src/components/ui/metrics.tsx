@@ -48,7 +48,11 @@ const VERDICT_TONE = {
 function Verdict({ health }: { health: NetworkHealth }) {
   const tone = VERDICT_TONE[health.state];
   return (
-    <div data-region="verdict" className="border-b border-border px-4 py-3.5">
+    <div
+      data-region="verdict"
+      data-verdict-state={health.state}
+      className="border-b border-border px-4 py-3.5"
+    >
       <p className="flex items-start gap-2.5">
         <span aria-hidden className={cn("mt-2 size-2 shrink-0 rounded-full", tone.dot)} />
         {/* Larger than the 19px figures at every width, including the phone.
@@ -57,7 +61,28 @@ function Verdict({ health }: { health: NetworkHealth }) {
             where having one matters most. */}
         <span
           className={cn(
-            "text-[21px] leading-snug font-semibold text-balance sm:text-[26px]",
+            /* Stays ahead of the figures below it at both breakpoints. The
+               conclusion is what a reader should take from this panel; the
+               figures are the evidence for it, and evidence does not outrank
+               the finding. Asserted in test/components.test.tsx and again in
+               e2e/populated.spec.ts, which measures both and compares them.
+
+               The last two arbitrary sizes in the app, and they are here on
+               purpose. Tailwind has no step between 2xl (24) and 3xl (30), and
+               `Figure` below is 24. Naming this pair `text-2xl sm:text-3xl`
+               would tie the headline with the figures at base width and fail
+               that comparison; dropping `Figure` to `text-xl` would put it at
+               20px, which is the size its own comment records as too small to
+               be a focal point. Flattening this to `text-3xl` would hold the
+               invariant, but the headlines are sentences ("The network's
+               health cannot be judged right now.") and 30px costs two extra
+               lines on a phone.
+
+               So the third tier is real here, and 26 is the number that makes
+               it work. `scripts/type-scale-check.mjs` carries a baseline of 2
+               to hold exactly this, rather than 0 with an exception nobody
+               can see. */
+            "text-[26px] leading-snug font-semibold text-balance sm:text-[30px]",
             tone.text,
           )}
         >
@@ -65,7 +90,17 @@ function Verdict({ health }: { health: NetworkHealth }) {
         </span>
       </p>
       {health.reasons.length > 0 ? (
-        <ul className="mt-2 space-y-1 pl-4.5">
+        /* Severity decides density. A healthy verdict's reasons restate the
+           interval and the pending count, both of which are tiles a thumb
+           away, so a phone drops them and keeps the sentence. Every other
+           state's reasons are the only place its evidence appears, and a
+           stopped chain is the one thing a reader must not have to scroll
+           for. */
+        <ul
+          data-region="verdict-reasons"
+          data-density={health.state === "healthy" ? "collapsible" : "always"}
+          className={cn("mt-2 space-y-1 pl-4.5", health.state === "healthy" && "max-sm:hidden")}
+        >
           {health.reasons.map((reason) => (
             <li key={reason} className="mg-caption leading-relaxed text-text-2">
               {reason}
@@ -99,7 +134,10 @@ function Figure({
   const figure = (
     <span
       className={cn(
-        "text-[19px] font-semibold tabular-nums",
+        /* The dashboard's primary read. At 19px these sat at the same weight
+           as the labels and the sub-lines around them, so the page had no
+           first fixation and every panel competed equally. */
+        "text-2xl font-semibold leading-tight tracking-tight tabular-nums",
         tone === "success" && "text-success",
         tone === "warning" && "text-warning",
         tone === "danger" && "text-danger",
@@ -249,7 +287,7 @@ function Bars({
           );
         })}
       </svg>
-      <p className="mt-1 flex justify-between text-[11px] text-text-3">
+      <p className="mt-1 flex justify-between text-micro text-text-3">
         <span>{formatTimestamp(series[0]!.hour)}</span>
         <span>{formatTimestamp(series[series.length - 1]!.hour)}</span>
       </p>
@@ -362,9 +400,11 @@ function tipTone(
   return { tone: "danger", note: `${ratio.toFixed(1)}× the usual ${Math.round(p50)}s cadence` };
 }
 
-/** All-time counts sit in the header rather than among the figures: they answer
- * "how big is this chain", which is a different question from "how is it doing
- * right now", and mixing the two invites reading a 24 hour number as a total. */
+/** The degraded branch only. When metrics are available the Blocks and
+ * Transactions figures already carry these totals, so rendering them here as
+ * well would state the same number twice in one panel. When metrics fail there
+ * are no figures to carry them, and the panel would otherwise say nothing about
+ * how big the chain is. */
 function AllTime({ blocks, txs }: { blocks: number | null; txs: number | null }) {
   if (blocks === null && txs === null) return null;
   return (
@@ -382,14 +422,93 @@ function AllTime({ blocks, txs }: { blocks: number | null; txs: number | null })
   );
 }
 
-export function NetworkMetrics({
+/** The four figures a reader arrives asking about: where the chain is, how big
+ * it is, and how much is still waiting on Cardano. Split out of the panel body
+ * only so the panel's two branches (metrics present, metrics null) don't have
+ * to repeat the JSX; there is exactly one caller. */
+function CoreFigures({
   metrics,
   totalBlocks,
   totalTxs,
 }: {
+  metrics: MetricsResponse;
+  totalBlocks: number | null;
+  totalTxs: number | null;
+}) {
+  const { window: w, tip, throughput, finality } = metrics;
+  const tipState = tipTone(tip.ageSeconds, throughput.blockIntervalSeconds.p50);
+  const backlogTone =
+    finality.pending === 0 ? "success" : finality.pending > 50 ? "warning" : "neutral";
+  return (
+    <div
+      data-region="metrics"
+      className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-4"
+    >
+      <Figure
+        label="Chain tip"
+        live={tip.headerHash}
+        value={
+          tip.headerHash === null
+            ? "None"
+            : tip.height === null
+              ? `${tip.headerHash.slice(0, 8)}…`
+              : `#${groupThousands(String(tip.height))}`
+        }
+        sub={tip.ageSeconds === null ? "No blocks" : `${formatDuration(tip.ageSeconds * 1000)} ago`}
+        tone={tipState.tone}
+        term="chainTip"
+        // The cadence note, not the node column. Where the figure came from is
+        // listed once, on the health page.
+        hint={tipState.note}
+      />
+      {/* These values use the same canonical all-time totals as the list
+          pages. Window activity remains useful context, but must not occupy
+          the primary value and appear to contradict the list total. */}
+      <Figure
+        label="Blocks"
+        term="blockThroughput"
+        live={totalBlocks ?? throughput.blocks}
+        value={groupThousands(String(totalBlocks ?? throughput.blocks))}
+        sub={
+          totalBlocks === null
+            ? `${throughput.blocks} in the last ${w.hours}h · total unavailable`
+            : `${throughput.blocks} in the last ${w.hours}h · all time total`
+        }
+      />
+      <Figure
+        label="Transactions"
+        term="transactionThroughput"
+        live={totalTxs ?? throughput.transactions}
+        value={groupThousands(String(totalTxs ?? throughput.transactions))}
+        sub={
+          totalTxs === null
+            ? `${throughput.transactions} in the last ${w.hours}h · total unavailable`
+            : `${throughput.transactions} in the last ${w.hours}h · all time total`
+        }
+      />
+      <Figure
+        label="Awaiting settlement"
+        term="l1Finality"
+        value={groupThousands(String(finality.pending))}
+        sub={`${finality.finalized} settled · ${finality.abandoned} abandoned`}
+        tone={backlogTone}
+      />
+    </div>
+  );
+}
+
+export function NetworkMetrics({
+  metrics,
+  totalBlocks,
+  totalTxs,
+  freshness,
+}: {
   metrics: MetricsResponse | null;
   totalBlocks: number | null;
   totalTxs: number | null;
+  /** How recently these figures were fetched. It belongs to this panel rather
+   * than to the page title: it qualifies these numbers and nothing else. */
+  freshness?: React.ReactNode;
 }) {
   if (metrics === null) {
     return (
@@ -411,14 +530,6 @@ export function NetworkMetrics({
   }
 
   const { window: w, tip, throughput, admission, finality } = metrics;
-  const tipState = tipTone(tip.ageSeconds, throughput.blockIntervalSeconds.p50);
-  const backlogTone =
-    finality.pending === 0 ? "success" : finality.pending > 50 ? "warning" : "neutral";
-  // Nothing happened in the window at all. Distinct from "a slow window":
-  // both counts must be zero before a tile is allowed to show all-time data
-  // in a window-scoped panel.
-  const idle = throughput.blocks === 0 && throughput.transactions === 0;
-
   return (
     <Panel
       title="Network health"
@@ -432,117 +543,38 @@ export function NetworkMetrics({
             )}`
           : `Last ${w.hours} hours`
       }
-      actions={<AllTime blocks={totalBlocks} txs={totalTxs} />}
+      actions={freshness}
       className="mb-4"
     >
       <Verdict health={networkHealth(metrics)} />
 
-      <div
-        data-region="metrics"
-        className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-3 lg:grid-cols-5"
-      >
-        <Figure
-          label="Chain tip"
-          live={tip.height}
-          value={tip.height === null ? "None" : `#${groupThousands(String(tip.height))}`}
-          sub={
-            tip.ageSeconds === null ? "No blocks" : `${formatDuration(tip.ageSeconds * 1000)} ago`
-          }
-          tone={tipState.tone}
-          term="chainTip"
-          hint={`${tipState.note} · ${tip.source}`}
-        />
-        {/* A quiet window used to spend both of these tiles on a zero while the
-            only real figures sat in a caption in the panel's corner. On a node
-            that has been idle for days that is every tile reading nothing, and
-            a reader concludes the explorer is broken rather than that the node
-            is asleep. When the window is empty the tiles fall back to the
-            all-time count, and the label says so: a figure whose basis a
-            reader cannot see is worth less than the zero it replaced. */}
-        <Figure
-          label="Blocks"
-          term="blockThroughput"
-          live={throughput.blocks}
-          value={groupThousands(
-            String(idle && totalBlocks !== null ? totalBlocks : throughput.blocks),
-          )}
-          sub={
-            idle && totalBlocks !== null
-              ? `all time · none in the last ${w.hours}h`
-              : throughput.blockIntervalSeconds.p50 === null
-                ? "Interval not measured"
-                : `every ${Math.round(throughput.blockIntervalSeconds.p50)}s (p50)`
-          }
-          hint={throughput.source}
-        />
-        <Figure
-          label="Transactions"
-          term="transactionThroughput"
-          live={throughput.transactions}
-          value={groupThousands(
-            String(idle && totalTxs !== null ? totalTxs : throughput.transactions),
-          )}
-          sub={
-            idle && totalTxs !== null
-              ? `all time · none in the last ${w.hours}h`
-              : throughput.transactionsPerBlock === null
-                ? "No blocks in window"
-                : `${throughput.transactionsPerBlock.toFixed(1)} per block`
-          }
-          hint={throughput.source}
-        />
-        <Latency label="Admission" term="admissionLatency" p={admission.latency} />
-        <Latency
-          label="L1 settlement"
-          term="l1Finality"
-          p={finality.settlementLatency}
-          // Settlement durations are all-time, not windowed, and a block whose
-          // reported settlement precedes its own end contributes nothing. Say
-          // that, rather than denying the settled count beside it.
-          emptyNote={
-            finality.finalized > 0
-              ? `${finality.finalized} settled, none reported a usable duration`
-              : "Nothing settled yet"
-          }
-        />
-      </div>
+      <CoreFigures metrics={metrics} totalBlocks={totalBlocks} totalTxs={totalTxs} />
 
       <div className="grid divide-y divide-border border-t border-border lg:grid-cols-2 lg:divide-x lg:divide-y-0">
         <ProductionChart series={metrics.series} />
 
         <div>
-          <div className="grid grid-cols-2 divide-x divide-border">
-            <Figure
-              label="Awaiting L1"
-              term="l1Finality"
-              value={groupThousands(String(finality.pending))}
-              sub={`${finality.finalized} settled · ${finality.abandoned} abandoned`}
-              tone={backlogTone}
-              hint={finality.source}
-            />
-            <Figure
-              label="Admission queue"
-              term="admissionQueue"
-              value={groupThousands(String(admission.queueDepth))}
-              sub={
-                admission.rejectionRate === null
-                  ? "No decisions in window"
-                  : `${(admission.rejectionRate * 100).toFixed(1)}% rejected (${admission.rejected} of ${
-                      admission.accepted + admission.rejected
-                    })`
-              }
-              tone={
-                admission.rejectionRate !== null && admission.rejectionRate > 0.25
-                  ? "warning"
-                  : "neutral"
-              }
-              hint={admission.source}
-            />
-          </div>
+          <Figure
+            label="Admission queue"
+            term="admissionQueue"
+            value={groupThousands(String(admission.queueDepth))}
+            sub={
+              admission.rejectionRate === null
+                ? "No decisions in window"
+                : `${(admission.rejectionRate * 100).toFixed(1)}% rejected (${admission.rejected} of ${
+                    admission.accepted + admission.rejected
+                  })`
+            }
+            tone={
+              admission.rejectionRate !== null && admission.rejectionRate > 0.25
+                ? "warning"
+                : "neutral"
+            }
+          />
 
           {finality.oldestUnsettled ? (
             <div className="border-t border-border px-4 py-3">
-              <p className="mg-overline">Oldest block awaiting L1</p>
+              <p className="mg-overline">Oldest block awaiting settlement</p>
               <p className="mt-1 flex flex-wrap items-center gap-2 mg-caption">
                 <Link
                   href={`/block/${finality.oldestUnsettled.headerHash}`}
@@ -563,10 +595,35 @@ export function NetworkMetrics({
 
       <details className="border-t border-border">
         <summary className="cursor-pointer px-4 py-2.5 mg-caption font-medium text-text-2 hover:text-text">
-          Status breakdown and where each figure comes from
+          Latency, status breakdown and where each figure comes from
         </summary>
         <div className="border-t border-border">
-          <h3 className="px-4 pt-3 mg-overline">Block finalization</h3>
+          {/* Distributions rather than current state. A reader who wants to
+              know how fast the chain usually is has asked a deeper question
+              than one who wants to know whether it is moving, and the panel
+              above answers the shallower one first. */}
+          <h3 className="px-4 pt-3 mg-overline">Latency</h3>
+          <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+            <Latency label="Admission" term="admissionLatency" p={admission.latency} />
+            <Latency
+              // "L1 settlement" read as a status, so "No data" looked like
+              // nothing had settled while the sub-line said nine had. This is
+              // a duration.
+              label="Cardano settlement time"
+              term="l1Finality"
+              p={finality.settlementLatency}
+              // Settlement durations are all-time, not windowed, and a block
+              // whose reported settlement precedes its own end contributes
+              // nothing. Say that, rather than denying the settled count
+              // beside it.
+              emptyNote={
+                finality.finalized > 0
+                  ? `${finality.finalized} settled, none reported a usable duration`
+                  : "Nothing settled yet"
+              }
+            />
+          </div>
+          <h3 className="border-t border-border px-4 pt-3 mg-overline">Block finalization</h3>
           <StatusBar counts={metrics.statusBreakdown.finalization} />
           <h3 className="border-t border-border px-4 pt-3 mg-overline">
             Transaction admission ({w.hours}h)

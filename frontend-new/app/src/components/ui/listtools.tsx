@@ -102,7 +102,12 @@ export function ListTools<Row>({
           id={`filter-${filterKey}`}
           value={active}
           onChange={(e) => setFilter(e.target.value)}
-          className="h-9 min-w-0 flex-1 rounded border border-border-strong bg-(--mg-control-bg) px-2 text-sm text-text sm:flex-none"
+          /* `appearance-none` plus an inlined chevron. Left native, this was
+             the one control on the page rendered by the operating system
+             rather than by the design, and it looked unfinished beside
+             everything around it. The arrow is a background image so the
+             control stays a real <select> for keyboard and screen readers. */
+          className="mg-select h-9 min-w-0 flex-1 appearance-none rounded border border-border-strong bg-(--mg-control-bg) py-0 pl-2.5 pr-8 text-sm text-text transition-colors hover:border-text-3 focus-visible:border-focus sm:flex-none"
         >
           <option value="">All</option>
           {options.map((o) => (

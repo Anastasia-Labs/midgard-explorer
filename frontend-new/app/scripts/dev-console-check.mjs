@@ -35,8 +35,9 @@ const env = {
   ...process.env,
   PORT: String(PORT),
   NEXT_PUBLIC_NETWORK_LABEL: "Development",
-  NEXT_PUBLIC_L1_EXPLORER_TX_URL: "https://preprod.cardanoscan.io/transaction/{hash}",
-  NEXT_PUBLIC_L1_EXPLORER_NAME: "Cardanoscan",
+  NEXT_PUBLIC_L1_EXPLORER_TX_URL: "https://preprod.cexplorer.io/tx/{hash}",
+  NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL: "https://preprod.cexplorer.io/address/{address}",
+  NEXT_PUBLIC_L1_EXPLORER_NAME: "CExplorer",
 };
 
 function run(command, args) {
@@ -106,7 +107,7 @@ async function stopDev() {
 }
 
 let up = false;
-for (const deadline = Date.now() + 120_000; Date.now() < deadline; ) {
+for (const deadline = Date.now() + 120_000; Date.now() < deadline;) {
   // Next allows one development server per project directory, so the usual
   // reason this never comes up is another one already running. Reporting that
   // beats two minutes of silence followed by a timeout.

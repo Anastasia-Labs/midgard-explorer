@@ -43,7 +43,7 @@ export const metadata: Metadata = {
     template: "%s · Midgard Explorer",
   },
   description:
-    "Block explorer for the Midgard L2: blocks, transactions, addresses, deposits, withdrawals, and forced transactions.",
+    "Block explorer for Midgard: blocks, transactions, addresses, deposits, withdrawals, and forced transactions.",
   openGraph: {
     siteName: "Midgard Explorer",
     type: "website",

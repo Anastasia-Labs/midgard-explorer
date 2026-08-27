@@ -153,7 +153,7 @@ export function MetricTile({
       </div>
       <p
         className={cn(
-          "mt-2 text-[28px] font-semibold leading-none tracking-tight tabular-nums",
+          "mt-2 text-2xl font-semibold leading-none tracking-tight tabular-nums sm:text-3xl",
           toneText,
         )}
       >
@@ -189,7 +189,7 @@ export function PageHeader({
   return (
     <header className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="flex items-center gap-2 font-display text-[26px] font-semibold tracking-tight text-page-title">
+        <h1 className="flex items-center gap-2 font-display text-2xl font-semibold tracking-tight text-page-title sm:text-title">
           {entity ? (
             <span className="mg-field-icon">
               <EntityIcon kind={entity} size={22} />
@@ -197,7 +197,7 @@ export function PageHeader({
           ) : null}
           {title}
         </h1>
-        {subtitle ? <p className="mt-1 max-w-2xl text-[15px] text-page-copy">{subtitle}</p> : null}
+        {subtitle ? <p className="mt-1 max-w-2xl text-body text-page-copy">{subtitle}</p> : null}
         {meta ? (
           <div className="mg-field-surface mt-2 flex w-fit flex-wrap items-center gap-x-4 gap-y-1 mg-caption text-text-2">
             {meta}
@@ -226,7 +226,7 @@ export function Panel({
     <Card className={className}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold text-text">{title}</h2>
+          <h2 className="text-body font-semibold text-text">{title}</h2>
           {subtitle ? <p className="mt-0.5 mg-caption text-text-3">{subtitle}</p> : null}
         </div>
         {actions}
@@ -240,13 +240,83 @@ export function L1L2Badge({ layer }: { layer: "L1" | "L2" }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded border px-1.5 py-px font-mono text-[11px] font-semibold",
+        "inline-flex items-center rounded border px-1.5 py-px font-mono text-micro font-semibold",
         layer === "L2"
           ? "border-accent/30 bg-accent/10 text-accent"
           : "border-info/30 bg-info/10 text-info",
       )}
     >
       {layer}
+    </span>
+  );
+}
+
+/** A count in a dense table.
+ *
+ * Zero is the overwhelmingly common value in these columns, and rendering it
+ * at the same weight as a real count turned four columns of `/blocks` into a
+ * grid of identical grey digits with nothing for the eye to land on. An em
+ * dash at the muted weight says "none" more directly than `0` does, and it
+ * clears the column so the values that exist can be seen.
+ *
+ * The distinction is carried by weight and character, not by colour alone: the
+ * dash reads as absence in monochrome and to a screen reader, which is given
+ * the word rather than the glyph.
+ */
+export function Count({ value, className }: { value: number | string; className?: string }) {
+  const n = typeof value === "string" ? Number(value) : value;
+  if (!Number.isFinite(n) || n === 0) {
+    return (
+      <span className={cn("text-text-3", className)}>
+        <span aria-hidden>&mdash;</span>
+        <span className="sr-only">none</span>
+      </span>
+    );
+  }
+  return (
+    <span className={cn("font-semibold tabular-nums text-text", className)}>
+      {n.toLocaleString("en-US")}
+    </span>
+  );
+}
+
+/** The small bordered tag that annotates a value: "script", "datum", "3 assets".
+ *
+ * This existed three times, character for character, as a local `Chip` in
+ * `utxoflow`, `utxoflowcanvas` and the transaction tabs, plus twice more
+ * inline and once as a `Flag` on the address page. Six copies of one recipe is
+ * why the type sweep had six places to visit for one decision, and it is the
+ * shape the next arbitrary size would have arrived in. The size lives in
+ * `--text-micro` now, so this component is the only thing that has to know it.
+ *
+ * `on` is the surface underneath, not a meaning: the same tag sits on a flow
+ * node (`surface`) and inside a card (`surface-2`), and the border needs the
+ * one it is actually drawn against. `emphasis` is the only semantic axis, and
+ * it has two values because the tags that carry a fact ("Mint", "Burn") should
+ * outrank the ones that carry a property ("datum"). Coloured status pills are
+ * deliberately not folded in here: those encode state and belong with the
+ * status vocabulary, not with this. */
+export function Chip({
+  children,
+  on = "surface",
+  emphasis = "muted",
+  className,
+}: {
+  children: ReactNode;
+  on?: "surface" | "surface-2";
+  emphasis?: "muted" | "strong";
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "rounded border border-border px-1.5 py-px text-micro",
+        on === "surface" ? "bg-surface" : "bg-surface-2",
+        emphasis === "muted" ? "text-text-3" : "text-text-2",
+        className,
+      )}
+    >
+      {children}
     </span>
   );
 }
@@ -262,6 +332,9 @@ export function Card({
     <section
       className={cn(
         "overflow-hidden rounded-xl border border-border bg-surface shadow-(--mg-shadow)",
+        // A one-pixel lit top edge. Cheap, static, and the difference between
+        // a card that sits on the page and an outline drawn on it.
+        "border-t-(--mg-bevel)",
         className,
       )}
     >

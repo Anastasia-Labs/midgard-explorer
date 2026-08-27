@@ -8,6 +8,8 @@ const HIDE_CLASS = {
   sm: "hidden sm:table-cell",
   md: "hidden md:table-cell",
   lg: "hidden lg:table-cell",
+  xl: "hidden xl:table-cell",
+  "2xl": "hidden 2xl:table-cell",
 } as const;
 
 export type Column<T> = {
@@ -92,16 +94,16 @@ export function DataTable<T>({
         <table className="w-full text-sm">
           <caption className="sr-only">{caption}</caption>
           <thead>
-            <tr className="border-b border-border-strong text-left text-[11px] uppercase tracking-wider text-text-3">
+            <tr className="border-b border-border-strong text-left text-micro uppercase tracking-wider text-text-3">
               {columns.map((c) => (
                 <th
                   key={c.header}
                   scope="col"
-                  className={`px-4 py-2.5 font-medium ${c.hideBelow ? HIDE_CLASS[c.hideBelow] : ""} ${c.align === "right" ? "text-right tabular-nums" : ""}`}
+                  className={`px-3 py-2.5 font-medium ${c.hideBelow ? HIDE_CLASS[c.hideBelow] : ""} ${c.align === "right" ? "text-right tabular-nums" : ""}`}
                 >
                   {c.header}
                   {c.headerNote ? (
-                    <span className="block text-[10px] font-normal normal-case tracking-normal text-text-3">
+                    <span className="block text-micro font-normal normal-case tracking-normal text-text-3">
                       {c.headerNote}
                     </span>
                   ) : null}
@@ -118,7 +120,11 @@ export function DataTable<T>({
                 {columns.map((c) => (
                   <td
                     key={c.header}
-                    className={`px-4 py-3 align-middle ${c.hideBelow ? HIDE_CLASS[c.hideBelow] : ""} ${c.align === "right" ? "text-right tabular-nums" : ""}`}
+                    /* py-2 rather than py-3: at py-3 a single-line row stood
+                       61px tall and nine rows filled a laptop screen, which
+                       reads as an empty page rather than a spacious one. The
+                       reference explorers sit at 40-44px. */
+                    className={`px-3 py-2 align-middle ${c.hideBelow ? HIDE_CLASS[c.hideBelow] : ""} ${c.align === "right" ? "text-right tabular-nums" : ""}`}
                   >
                     {c.cell(row)}
                   </td>

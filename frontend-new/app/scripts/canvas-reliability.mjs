@@ -52,8 +52,9 @@ const MEMORY_PRESSURE_MB = 1024;
 const serverEnv = {
   NEXT_PUBLIC_API_BASE: `http://127.0.0.1:${FIXTURE_PORT}`,
   NEXT_PUBLIC_NETWORK_LABEL: "Fixture",
-  NEXT_PUBLIC_L1_EXPLORER_TX_URL: "https://preprod.cardanoscan.io/transaction/{hash}",
-  NEXT_PUBLIC_L1_EXPLORER_NAME: "Cardanoscan",
+  NEXT_PUBLIC_L1_EXPLORER_TX_URL: "https://preprod.cexplorer.io/tx/{hash}",
+  NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL: "https://preprod.cexplorer.io/address/{address}",
+  NEXT_PUBLIC_L1_EXPLORER_NAME: "CExplorer",
 };
 
 function run(command, args, env = {}) {
@@ -120,10 +121,7 @@ async function resources() {
 /** PIDs listening on a port. `sport = :N` is an exact match, unlike grepping
  * for `:3210`, which also matches 32100. */
 async function listenersOn(port) {
-  const { output } = await run("bash", [
-    "-lc",
-    `ss -ltnpH 'sport = :${port}' 2>/dev/null || true`,
-  ]);
+  const { output } = await run("bash", ["-lc", `ss -ltnpH 'sport = :${port}' 2>/dev/null || true`]);
   return [...new Set([...output.matchAll(/pid=(\d+)/g)].map((m) => Number(m[1])))];
 }
 
@@ -148,7 +146,7 @@ async function processTree(root) {
     }
   }
   const tree = new Set([root]);
-  for (let grew = true; grew; ) {
+  for (let grew = true; grew;) {
     grew = false;
     for (const [pid, ppid] of parentOf) {
       if (!tree.has(pid) && tree.has(ppid)) {
@@ -284,7 +282,8 @@ for (let iteration = 1; iteration <= ITERATIONS; iteration += 1) {
       : Math.min(before.availableMb, during.availableMb);
 
   results.push({ iteration, passed, seconds, availableMb, load: during.load });
-  const pressure = availableMb !== null && availableMb < MEMORY_PRESSURE_MB ? " UNDER PRESSURE" : "";
+  const pressure =
+    availableMb !== null && availableMb < MEMORY_PRESSURE_MB ? " UNDER PRESSURE" : "";
   console.log(
     `iteration ${iteration}/${ITERATIONS}: ${passed ? "pass" : "FAIL"} (${seconds}s, ` +
       `${availableMb ?? "?"}MB free, load ${during.load ?? "?"})${pressure}`,

@@ -26,7 +26,7 @@ export function ApiExample({ path, note }: { path: string; note?: string }) {
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-        <h2 className="text-[15px] font-semibold text-text">
+        <h2 className="text-body font-semibold text-text">
           <SemanticLabel kind="api" label="API" />
         </h2>
         <div className="flex gap-2">
@@ -58,10 +58,9 @@ export function ApiExample({ path, note }: { path: string; note?: string }) {
       >
         {curl}
       </pre>
-      <p className="border-t border-border px-4 py-2.5 mg-micro text-text-3">
-        {note ??
-          "This is the request behind this page. The response below is exactly what it returns."}
-      </p>
+      {note ? (
+        <p className="border-t border-border px-4 py-2.5 mg-micro text-text-3">{note}</p>
+      ) : null}
     </section>
   );
 }

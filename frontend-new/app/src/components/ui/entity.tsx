@@ -25,7 +25,7 @@ export function EntityTag({
   const entity = entityOf(kind);
   return (
     <span
-      className={cn("inline-flex items-center gap-1.5 text-[13px] font-medium", className)}
+      className={cn("inline-flex items-center gap-1.5 text-caption font-medium", className)}
       style={{ color: entityColor(entity.hue) } as CSSProperties}
     >
       <Icon name={entity.icon} size={size} />

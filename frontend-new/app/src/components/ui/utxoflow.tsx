@@ -8,7 +8,9 @@ import { flowModel, type FlowNode, type FlowSide } from "../../lib/flow";
 import { flowEdgeVisual, maxEdgeLovelace, type FlowEdgeFacts } from "../../lib/flowEdge";
 import { formatAda } from "../../lib/format";
 import { Icon } from "./icons";
+import { AddressLink } from "./address";
 import { Identifier } from "./identifier";
+import { Chip } from "./primitives";
 
 const LARGE_FLOW_THRESHOLD = 40;
 
@@ -30,14 +32,6 @@ function Amount({ lovelace }: { lovelace: bigint }) {
       </span>{" "}
       {formatAda(lovelace)}
       <span className="sr-only"> ada</span>
-    </span>
-  );
-}
-
-function Chip({ children }: { children: string }) {
-  return (
-    <span className="rounded border border-border bg-surface px-1.5 py-px text-[11px] text-text-3">
-      {children}
     </span>
   );
 }
@@ -74,7 +68,18 @@ function StaticNode({ node }: { node: FlowNode }) {
         </p>
       ) : (
         <div className="mt-1.5 min-w-0">
-          <Identifier value={node.address} href={node.href ?? undefined} head={8} tail={6} />
+          {/* The same mark the tables use. The diagram is the one view where a
+              reader compares two addresses without either being on screen in
+              full, which is exactly what the mark is for. `size` is smaller
+              than a table row's: a node card is a tighter space and the mark
+              is a hint, not a heading. */}
+          <AddressLink
+            address={node.address}
+            href={node.href ?? undefined}
+            size={16}
+            head={8}
+            tail={6}
+          />
         </div>
       )}
 
@@ -117,7 +122,13 @@ function Column({ side, kind }: { side: FlowSide; kind: "input" | "output" }) {
   const cells = side.nodes.length + (side.hidden > 0 ? 1 : 0);
   return (
     <div
-      className="grid min-w-0 lg:grid-rows-[repeat(var(--flow-rows),minmax(0,1fr))]"
+      // `lg:h-full` is what makes the fr rows measure the same height the
+      // connectors do. Without it the grid keeps `height: auto`, so its tracks
+      // resolve against content while the SVG beside it spans the stretched row,
+      // and the side with fewer nodes top-aligns while its lines stay centred.
+      // On a 1-input 2-output transaction that put the input line 67px below the
+      // card it leaves from.
+      className="grid min-w-0 lg:h-full lg:grid-rows-[repeat(var(--flow-rows),minmax(0,1fr))]"
       style={{ "--flow-rows": Math.max(cells, 1) } as CSSProperties}
     >
       {side.nodes.map((node) => (
@@ -208,7 +219,10 @@ function StaticFlow({ tx, large }: { tx: TransactionView; large: boolean }) {
           an unfinished canvas rather than as a diagram. */}
       <div
         data-testid="flow-diagram"
-        className="mx-auto grid w-full max-w-[62rem] grid-cols-1 items-stretch gap-y-2 lg:grid-cols-[minmax(0,1fr)_56px_176px_56px_minmax(0,1fr)] lg:gap-y-0"
+        // The connector columns were 56px, which squeezed a bezier drawn across
+        // a square viewBox into a hook. 96px gives the curve room to read as a
+        // curve without taking width from the node columns.
+        className="mx-auto grid w-full max-w-[62rem] grid-cols-1 items-stretch gap-y-2 lg:grid-cols-[minmax(0,1fr)_96px_176px_96px_minmax(0,1fr)] lg:gap-y-0"
       >
         <div>
           <p className="mb-1 mg-overline text-text-3 lg:hidden">Consumed inputs</p>
@@ -261,6 +275,21 @@ function FlowLegend() {
   );
 }
 
+/** The one fact the diagram's shape cannot carry: why lines route through the
+ * transaction rather than from an input to an output.
+ *
+ * Outside `FlowLegend` on purpose. The legend is desktop-only because it
+ * describes lines that only the desktop layout draws, but this holds at every
+ * width, and folding it into the legend silently dropped it on mobile. */
+function FlowRouting() {
+  return (
+    <p className="mt-3 mg-caption text-text-3">
+      Lines route through the transaction: the ledger does not record which input funded which
+      output.
+    </p>
+  );
+}
+
 export function UtxoFlow({ tx }: { tx: TransactionView }) {
   const totalNodes = tx.inputs.length + tx.outputs.length + 1;
   const large = totalNodes >= LARGE_FLOW_THRESHOLD;
@@ -269,10 +298,7 @@ export function UtxoFlow({ tx }: { tx: TransactionView }) {
    * this view knows and nothing else can see. Publishing it keeps a reader
    * informed and lets a test wait on the state rather than on a duration. */
   const [canvasState, setCanvasState] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const onCanvasSettled = useCallback(
-    (outcome: "ready" | "error") => setCanvasState(outcome),
-    [],
-  );
+  const onCanvasSettled = useCallback((outcome: "ready" | "error") => setCanvasState(outcome), []);
 
   return (
     <div
@@ -312,12 +338,7 @@ export function UtxoFlow({ tx }: { tx: TransactionView }) {
       ) : null}
 
       <FlowLegend />
-
-      <p className="mt-3 mg-caption text-text-3">
-        Every input is consumed by this transaction and every output is produced by it. No line runs
-        from an input to an output: the ledger does not record which input funded which output, so
-        drawing one would be inventing it. The Table view is the complete non-visual representation.
-      </p>
+      <FlowRouting />
     </div>
   );
 }

@@ -45,7 +45,7 @@ export function NewRowsBanner({
       // `polite`, never `assertive`: this is worth knowing, not worth
       // interrupting what a screen reader is already saying.
       aria-live="polite"
-      className="flex w-full items-center justify-center gap-2 border-b border-border bg-accent/10 px-4 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-accent/15"
+      className="flex w-full items-center justify-center gap-2 border-b border-border bg-accent/10 px-4 py-2 text-caption font-medium text-accent transition-colors hover:bg-accent/15"
     >
       <Icon name="arrowRight" size={14} className="-rotate-90" />
       {count} new {noun}

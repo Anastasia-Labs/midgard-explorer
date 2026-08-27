@@ -28,9 +28,31 @@ export type SummaryItem = {
  * and there is no such thing as an empty cell to paint over.
  */
 
-export function SummaryBand({ items }: { items: SummaryItem[] }) {
+export function SummaryBand({
+  items,
+  /** `attached` drops the band's own card so it can sit inside one.
+   *
+   * A record page used to stack an identity card and a summary card, two
+   * bordered blocks saying what the page is about, which cost 172px before any
+   * content. Attached, the same cells are the lower half of the identity card. */
+  variant = "standalone",
+}: {
+  items: SummaryItem[];
+  variant?: "standalone" | "attached";
+}) {
   return (
-    <dl className="mb-5 flex flex-wrap gap-px overflow-hidden rounded-lg border border-border bg-border">
+    <dl
+      // Same seam the ledger section uses. A label like "Fee" appears in more
+      // than one region of a record page, so an assertion about the band needs
+      // to be able to name the band.
+      data-region="summary"
+      className={cn(
+        "flex flex-wrap gap-px bg-border",
+        variant === "standalone"
+          ? "mb-5 overflow-hidden rounded-lg border border-border"
+          : "mt-3.5 -mx-4 -mb-3.5 border-t border-border",
+      )}
+    >
       {/* `grow` rather than `flex-1` on the cells: `flex-1` also sets a basis
           of 0, and which of the two declarations wins depends on the order
           Tailwind emits them, not on the order written here. */}
@@ -54,7 +76,7 @@ export function SummaryBand({ items }: { items: SummaryItem[] }) {
               className={cn(
                 "block font-semibold tabular-nums text-text [overflow-wrap:anywhere]",
                 "[&_time]:whitespace-normal",
-                it.emphasis ? "text-[26px] leading-tight" : "text-[18px] leading-snug",
+                it.emphasis ? "text-2xl leading-tight" : "text-lg leading-snug",
               )}
             >
               {it.value}

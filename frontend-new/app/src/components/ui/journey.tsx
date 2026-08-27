@@ -153,10 +153,17 @@ export function JourneyIndicator({ status }: { status: string }) {
 export function Journey({
   model,
   detailsLabel = "Stage timings and evidence",
+  /** Whether this section states the outcome in words.
+   *
+   * A page that already carries the same model's headline as its one status
+   * badge sets this false: two renderings of one answer, one under the other,
+   * is the duplication the badge was meant to end. */
+  showHeadline = true,
   children,
 }: {
   model: JourneyModel;
   detailsLabel?: string;
+  showHeadline?: boolean;
   children?: React.ReactNode;
 }) {
   const rail = railStages(model.stages);
@@ -177,11 +184,13 @@ export function Journey({
       aria-label="Protocol journey"
       className="mb-4 overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)"
     >
-      <div className="px-4 pt-3">
-        <h2 className={cn("text-[15px] font-semibold", OUTCOME_TONE[model.outcome])}>
-          {model.headline}
-        </h2>
-      </div>
+      {showHeadline ? (
+        <div className="px-4 pt-3">
+          <h2 className={cn("text-body font-semibold", OUTCOME_TONE[model.outcome])}>
+            {model.headline}
+          </h2>
+        </div>
+      ) : null}
 
       {/* The rail scrolls rather than wrapping: a wrapped rail reads as two
           journeys. `-mx-4 px-4` keeps the scroll edge flush with the card.
@@ -190,7 +199,10 @@ export function Journey({
       <ol
         tabIndex={0}
         aria-label={`Stages: ${rail.map((s) => s.label).join(", ")}`}
-        className="mt-2 -mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 sm:mx-0 sm:px-4"
+        className={cn(
+          "-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 sm:mx-0 sm:px-4",
+          showHeadline ? "mt-2" : "pt-3",
+        )}
       >
         {rail.map((s, i) => (
           <li key={s.key} className="flex shrink-0 items-center gap-2">
@@ -200,7 +212,13 @@ export function Journey({
         ))}
       </ol>
 
-      <p className="px-4 pt-1.5 pb-3 mg-caption leading-relaxed text-text-2">{model.explanation}</p>
+      {model.explanation ? (
+        <p className="px-4 pt-1.5 pb-3 mg-caption leading-relaxed text-text-2">
+          {model.explanation}
+        </p>
+      ) : (
+        <div className="pb-3" />
+      )}
 
       <details className="border-t border-border">
         <summary className="cursor-pointer px-4 py-2 mg-caption font-medium text-text-2 hover:text-text">
@@ -226,13 +244,15 @@ export function Journey({
                 {stageTime(s)}
                 {deltas[i] ? <span className="ml-2 text-text-2">{deltas[i]}</span> : null}
               </dd>
-              {s.evidence?.blockHeight !== undefined && s.evidence.blockHash ? (
+              {s.evidence?.blockHash ? (
                 <dd className="mt-1 mg-micro">
                   <Link
                     href={`/block/${s.evidence.blockHash}`}
                     className="inline-flex items-center gap-1 text-link hover:text-link-hover hover:underline"
                   >
-                    Block #{s.evidence.blockHeight}
+                    {s.evidence.blockHeight === undefined
+                      ? `${s.evidence.blockHash.slice(0, 8)}…`
+                      : `Block #${s.evidence.blockHeight}`}
                     <Icon name="arrowRight" size={11} />
                   </Link>
                 </dd>
@@ -242,7 +262,7 @@ export function Journey({
                   L1 tx: <L1TxLink hash={s.evidence.l1TxHash} destination="midgard" />
                 </dd>
               ) : null}
-              <dd className="mt-1 font-mono text-[11px] text-text-3">source: {s.source}</dd>
+              <dd className="mt-1 font-mono text-micro text-text-3">source: {s.source}</dd>
             </div>
           ))}
         </dl>

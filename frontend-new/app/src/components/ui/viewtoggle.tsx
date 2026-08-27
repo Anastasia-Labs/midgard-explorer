@@ -84,7 +84,7 @@ export function ViewToggle({
               onClick={() => select(v.id)}
               onKeyDown={(e) => onKey(e, i)}
               className={cn(
-                "rounded-[7px] px-3 py-1.5 text-[13px] font-medium transition-colors",
+                "rounded-[7px] px-3 py-1.5 text-caption font-medium transition-colors",
                 on
                   ? "bg-surface text-text shadow-sm ring-1 ring-border"
                   : "text-text-2 hover:text-text",

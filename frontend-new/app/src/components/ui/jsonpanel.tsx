@@ -41,9 +41,7 @@ export function JsonPanel({
         )}
       >
         <h2
-          className={
-            full ? "text-[15px] font-semibold text-text" : "text-sm font-semibold text-text"
-          }
+          className={full ? "text-body font-semibold text-text" : "text-sm font-semibold text-text"}
         >
           {semantic ? (
             <SemanticLabel kind={semantic} label={title} />

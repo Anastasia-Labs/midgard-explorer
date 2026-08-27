@@ -48,8 +48,8 @@ export async function SourceBanner() {
         role="status"
         className="border-b border-warning/45 bg-warning/10 px-4 py-2 text-center text-sm font-medium text-warning"
       >
-        <strong className="font-semibold">Test fixture, not live data.</strong> Midgard L2 figures
-        on this site come from the database <code className="font-mono">{source.l2Database}</code>,
+        <strong className="font-semibold">Test fixture, not live data.</strong> Midgard figures on
+        this site come from the database <code className="font-mono">{source.l2Database}</code>,
         which is not the live node.
       </div>
     );

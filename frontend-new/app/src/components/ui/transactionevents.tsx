@@ -3,7 +3,7 @@ import { scriptInvocations } from "../../lib/transactionEvents";
 import { AddressLink } from "./address";
 import { CopyButton, Identifier } from "./identifier";
 import { InfoTip } from "./infotip";
-import { Callout, Card } from "./primitives";
+import { Card } from "./primitives";
 import { SemanticLabel } from "./semantic";
 
 function ExecutionBudget({ mem, steps }: { mem: string; steps: string }) {
@@ -22,31 +22,20 @@ export function TransactionEvents({ tx }: { tx: TransactionView }) {
 
   return (
     <div className="space-y-4">
-      <Callout
-        tone="neutral"
-        title="Midgard native transactions do not emit an event-log collection."
-      >
-        The records below are authoritative script invocations from the witness set. They are not
-        reconstructed EVM-style logs, and no datum is presented as an emitted event.
-      </Callout>
-
       <Card>
         <div className="border-b border-border px-4 py-3">
-          <h2 className="text-[15px] font-semibold text-text">
+          <h2 className="text-body font-semibold text-text">
+            {/* The SemanticLabel carries what a protocol event is on hover, so
+                the section no longer restates it in a callout and a subtitle. */}
             <SemanticLabel
               kind="protocolEvent"
               label={`Script invocations (${invocations.length})`}
             />
           </h2>
-          <p className="mt-0.5 mg-caption text-text-3">
-            Redeemer purpose and canonical index identify the script or policy that the ledger ran.
-          </p>
         </div>
 
         {invocations.length === 0 ? (
-          <p className="px-4 py-5 text-sm text-text-2">
-            This transaction carries no redeemers, so it has no recorded script invocations.
-          </p>
+          <p className="px-4 py-5 text-sm text-text-3">No script invocations.</p>
         ) : (
           <ol className="divide-y divide-border">
             {invocations.map((invocation) => (

@@ -56,9 +56,27 @@ function Marker({ state }: { state: StateClass }) {
   );
 }
 
-export function StatusBadge({ status, className }: { status: string; className?: string }) {
-  const { tone, label, explain, known } = statusOf(status);
-  const state: StateClass = known ? STATE_CLASS[tone] : "unknown";
+/** The badge itself, given a resolved answer.
+ *
+ * Separated from `StatusBadge` because not every state a page states comes from
+ * a status code. A transaction's authoritative lifecycle answer is the journey
+ * model's, which resolves the node's code together with inclusion and Cardano
+ * finality; rendering the raw code beside it produced two badges disagreeing
+ * about one transaction. */
+export function ToneBadge({
+  tone,
+  label,
+  explain,
+  recognized = true,
+  className,
+}: {
+  tone: StatusTone;
+  label: string;
+  explain?: string | undefined;
+  recognized?: boolean | undefined;
+  className?: string | undefined;
+}) {
+  const state: StateClass = recognized ? STATE_CLASS[tone] : "unknown";
   return (
     <span className="inline-flex min-w-0 max-w-full items-center gap-1">
       <span
@@ -67,17 +85,42 @@ export function StatusBadge({ status, className }: { status: string; className?:
           // can be arbitrarily long and carry no spaces to break on. Without
           // this an unrecognised code widens its row, and at 320px that pushes
           // the whole page into a horizontal scroll.
-          "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs wrap-anywhere",
+          "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs",
+          // Registry labels are short product copy. Breaking "Projected" into
+          // a column of letters made a valid desktop row look corrupted. Node
+          // status codes are an open set, though, and an unknown unbroken code
+          // must still break instead of widening the page. The registry
+          // boundary is the one place that knows which rule is safe.
+          //
+          // Normal wrapping, not `whitespace-nowrap`: a recognized label may be
+          // several words ("Pending submission"), and forbidding every break
+          // put 61px of horizontal scroll on the overview at 320px. Normal
+          // breaks at spaces and never inside a word, which is all "Projected"
+          // needed.
+          recognized ? null : "wrap-anywhere",
           TONE_CLASS[tone],
           className,
         )}
       >
         <Marker state={state} />
         {label}
-        {known ? null : <span className="sr-only">(unrecognized status)</span>}
+        {recognized ? null : <span className="sr-only">(unrecognized status)</span>}
       </span>
-      <InfoTip explain={explain} subject={label} />
+      {explain ? <InfoTip explain={explain} subject={label} /> : null}
     </span>
+  );
+}
+
+export function StatusBadge({ status, className }: { status: string; className?: string }) {
+  const { tone, label, explain, known } = statusOf(status);
+  return (
+    <ToneBadge
+      tone={tone}
+      label={label}
+      explain={explain}
+      recognized={known}
+      className={className}
+    />
   );
 }
 
@@ -85,8 +128,13 @@ export function StatusBadge({ status, className }: { status: string; className?:
  * is. The badge alone leaves a reader ranking codes from memory. */
 export function StatusCell({ status }: { status: string }) {
   return (
-    <span className="inline-flex items-center gap-2">
-      <StatusBadge status={status} />
+    /* `min-w-0 max-w-full` for the same reason the badge itself carries them:
+       without it this wrapper keeps its content width under a `min-w-0` parent,
+       so "Pending submission" beside the indicator pushed the overview 18px
+       past a 320px viewport. The indicator does not shrink, so the badge text
+       is what gives way. */
+    <span className="inline-flex min-w-0 max-w-full items-center gap-2">
+      <StatusBadge status={status} className="min-w-0" />
       <JourneyIndicator status={status} />
     </span>
   );

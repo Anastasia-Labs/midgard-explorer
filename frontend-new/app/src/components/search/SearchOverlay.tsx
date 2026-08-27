@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EntityIcon } from "../ui/entity";
 import { Icon } from "../ui/icons";
-import { MIN_PREFIX, isPrefixQuery, searchCandidates, type Candidate } from "../../lib/search";
+import { MIN_PREFIX, searchCandidates, type Candidate } from "../../lib/search";
 import { cn, truncateId } from "../../lib/format";
 
 const RECENT_KEY = "mg_recent_searches";
@@ -13,20 +13,28 @@ const RECENT_MAX = 5;
 /** A partial-identifier match from the backend's prefix search. */
 type PrefixHit =
   | { kind: "transaction"; txId: string; height: number | null; headerHash: string | null }
-  | { kind: "block"; headerHash: string; height: number };
+  | { kind: "block"; headerHash: string; height: number | null }
+  | { kind: "l1Transaction"; txHash: string; blockHeight: number }
+  | { kind: "validator"; scriptHash: string; family: string }
+  | { kind: "address"; address: string }
+  | { kind: "deposit"; eventId: string; txHash: string }
+  | { kind: "withdrawal"; eventId: string; txHash: string }
+  | { kind: "forcedTransaction"; orderId: string; txHash: string };
 
 /** One array, so "no suggestions" is referentially stable across renders. */
 const EMPTY_HITS: PrefixHit[] = [];
 
-const hitCandidate = (hit: PrefixHit): Candidate =>
-  hit.kind === "block"
-    ? {
+const hitCandidate = (hit: PrefixHit): Candidate => {
+  switch (hit.kind) {
+    case "block":
+      return {
         kind: "block",
-        label: `Block #${hit.height}`,
+        label: hit.height === null ? "Midgard header" : `Block #${hit.height}`,
         detail: truncateId(hit.headerHash, 12, 8),
         href: `/block/${hit.headerHash}`,
-      }
-    : {
+      };
+    case "transaction":
+      return {
         kind: "transaction",
         label: "Transaction",
         detail:
@@ -35,6 +43,50 @@ const hitCandidate = (hit: PrefixHit): Candidate =>
             : `${truncateId(hit.txId, 12, 8)} in block #${hit.height}`,
         href: `/transaction/${hit.txId}`,
       };
+    case "l1Transaction":
+      return {
+        kind: "l1Transaction",
+        label: "Cardano transaction",
+        detail: `${truncateId(hit.txHash, 12, 8)} in Cardano block #${hit.blockHeight}`,
+        href: `/l1/transaction/${hit.txHash}`,
+      };
+    case "validator":
+      return {
+        kind: "validator",
+        label: `${hit.family} validator`,
+        detail: truncateId(hit.scriptHash, 12, 8),
+        href: `/l1/validator/${hit.scriptHash}`,
+      };
+    case "address":
+      return {
+        kind: "address",
+        label: "Address",
+        detail: truncateId(hit.address, 16, 10),
+        href: `/address/${hit.address}`,
+      };
+    case "deposit":
+      return {
+        kind: "deposit",
+        label: "Deposit",
+        detail: truncateId(hit.eventId, 12, 8),
+        href: `/deposits?id=${hit.eventId}`,
+      };
+    case "withdrawal":
+      return {
+        kind: "withdrawal",
+        label: "Withdrawal",
+        detail: truncateId(hit.eventId, 12, 8),
+        href: `/withdrawals?id=${hit.eventId}`,
+      };
+    case "forcedTransaction":
+      return {
+        kind: "forcedTransaction",
+        label: "Forced transaction",
+        detail: truncateId(hit.orderId, 12, 8),
+        href: `/forced-transactions?id=${hit.orderId}`,
+      };
+  }
+};
 
 function readRecent(): string[] {
   try {
@@ -80,9 +132,11 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
   const [answer, setAnswer] = useState<{ query: string; hits: PrefixHit[] } | null>(null);
 
   const raw = value.trim();
-  const prefixQuery = isPrefixQuery(raw);
-  const hits = prefixQuery && answer?.query === raw ? answer.hits : EMPTY_HITS;
-  const searching = prefixQuery && answer?.query !== raw;
+  const lookupQuery =
+    (/^[0-9a-fA-F]{6,}$/.test(raw) || /^(?:addr|stake)(?:_test)?1[0-9a-z]+$/.test(raw)) &&
+    !raw.toLowerCase().startsWith("asset1");
+  const hits = lookupQuery && answer?.query === raw ? answer.hits : EMPTY_HITS;
+  const searching = lookupQuery && answer?.query !== raw;
 
   const result = value.trim() === "" ? null : searchCandidates(value);
   const candidates = result?.ok ? result.candidates : [];
@@ -92,7 +146,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
   // not worth an error message while someone is mid-word, and an empty answer
   // still resolves the query so the reader stops seeing "searching".
   useEffect(() => {
-    if (!prefixQuery) return;
+    if (!lookupQuery) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       fetch(`/api/search?q=${encodeURIComponent(raw)}`, { signal: controller.signal })
@@ -109,7 +163,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [prefixQuery, raw]);
+  }, [lookupQuery, raw]);
 
   const open = useCallback(() => {
     setReason(null);
@@ -175,7 +229,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
       setReason(r.reason);
       return;
     }
-    const first = r.candidates[0] ?? (hits.length > 0 ? hitCandidate(hits[0]!) : undefined);
+    const first = (hits.length > 0 ? hitCandidate(hits[0]!) : undefined) ?? r.candidates[0];
     if (!first) {
       setReason(
         searching
@@ -206,7 +260,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
           className={cn(
             "flex w-full items-center gap-2.5 rounded-lg border border-border text-left text-text-3 transition-colors hover:border-border-strong hover:text-text-2",
             variant === "hero"
-              ? "bg-(--mg-hero-search-bg) px-4 py-2.5 text-[15px] shadow-(--mg-shadow)"
+              ? "bg-(--mg-hero-search-bg) px-4 py-2.5 text-body shadow-(--mg-shadow)"
               : "bg-surface-2/60 px-3 py-1.5 text-sm",
           )}
         >
@@ -221,7 +275,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
                 placeholder as soon as it opens. */}
             {variant === "hero" ? "Search address, transaction, block or asset" : "Search"}
           </span>
-          <kbd className="rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-[11px] text-text-3">
+          <kbd className="rounded border border-border bg-surface px-1.5 py-0.5 font-mono text-micro text-text-3">
             ⌘K
           </kbd>
         </button>
@@ -288,7 +342,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
                 ×
               </button>
             ) : null}
-            <kbd className="rounded border border-border px-1.5 py-0.5 font-mono text-[11px] text-text-3">
+            <kbd className="rounded border border-border px-1.5 py-0.5 font-mono text-micro text-text-3">
               ↵
             </kbd>
           </div>
@@ -351,10 +405,10 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
             </div>
           ) : null}
 
-          {isPrefixQuery(value) ? (
+          {lookupQuery ? (
             <div className="mt-3" data-region="search-prefix">
               <p className="mg-overline">
-                Starting with <span className="font-mono normal-case">{value.trim()}</span>
+                Indexed matches for <span className="font-mono normal-case">{value.trim()}</span>
               </p>
               {searching ? (
                 <p className="mt-1 px-2 py-1.5 mg-caption text-text-3">Searching…</p>

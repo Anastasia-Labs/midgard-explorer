@@ -8,7 +8,7 @@ export type LedgerRowSpec = {
   status?: ReactNode;
   meta?: ReactNode;
   secondary?: ReactNode;
-  details?: Array<{ label: string; value: ReactNode }>;
+  details?: Array<{ key?: string; label: string; value: ReactNode }>;
 };
 
 export function LedgerRow({ spec }: { spec: LedgerRowSpec }) {
@@ -30,8 +30,11 @@ export function LedgerRow({ spec }: { spec: LedgerRowSpec }) {
             Details
           </summary>
           <dl className="mt-1 space-y-1.5">
-            {spec.details.map((d) => (
-              <div key={d.label} className="flex items-start justify-between gap-3">
+            {spec.details.map((d, index) => (
+              <div
+                key={d.key ?? `${d.label}-${index}`}
+                className="flex items-start justify-between gap-3"
+              >
                 <dt className="mg-overline shrink-0">{d.label}</dt>
                 <dd className="min-w-0 text-right mg-caption">{d.value}</dd>
               </div>
