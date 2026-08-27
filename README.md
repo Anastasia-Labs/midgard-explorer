@@ -160,12 +160,52 @@ Two probes answer separate questions, and a deployment should use both:
   It used to be `SELECT 1` against each database, which reports ready for an
   empty PostgreSQL that holds none of the tables. That is what CI provisioned,
   so the boot check called it healthy while the suite would have failed on a
-  missing relation.
+  missing relation. It also counted only unfinished rows in `_prisma_migrations`,
+  and a migration that was never applied has no row there, so a schema one
+  migration behind this build answered ready.
+
+`backend/scripts/probe-readiness.ts` runs the same checks without starting a
+server, which is what to use before sending traffic:
+
+```bash
+cd backend && npx ts-node scripts/probe-readiness.ts
+```
+
+### Rolling out an indexer change
+
+The index is written by exactly one process and read by all of them, so the
+order matters. Applying the migration on its own is not a rollout: the old
+binary keeps writing under the old rules against the new schema.
+
+1. **Stop the current writer.** Set `L1_SYNC_ENABLED=false` and restart it, or
+   stop the process. The advisory lock refuses a second writer, so a new
+   instance started first will simply not index.
+2. **Deploy the new binary and its migration together.** `pnpm build`, then
+   `pnpm indexer:deploy`. Readiness fails until both have happened, which is the
+   point: an instance holding one without the other reports `503` rather than
+   serving.
+3. **Start exactly one indexer.** Every other instance runs with
+   `L1_SYNC_ENABLED=false` and serves reads.
+4. **Wait for the reindex to finish and every source to complete.** A pass that
+   reconciles logs the counts it wrote; a pass that could not logs
+   `additive only: a source did not complete`. Do not open traffic on those:
+   the reorg window has not been reconciled. The three cursors (`l1`,
+   `l1:mints`, `l1:rewards`) sit at the same height once a pass has reconciled.
+5. **Validate the queries before opening traffic.** Every event must carry the
+   manifest's identity and never a shared constant:
+
+   ```sql
+   SELECT deployment, count(*) FROM l1_event GROUP BY deployment;
+   ```
+
+   One row, whose deployment is the manifest's `manifestId`. A `default` row
+   means rows were written before the attribution repair and are unreachable by
+   any query the UI makes.
 
 ## Checks
 
 ```bash
-cd backend       && pnpm typecheck && pnpm audit && pnpm test && pnpm build
+cd backend       && pnpm typecheck && pnpm run audit:gate && pnpm test && pnpm build
 cd frontend-new  && ./scripts/ci-local.sh          # add --fast to skip the e2e suite
 ```
 
@@ -173,8 +213,14 @@ cd frontend-new  && ./scripts/ci-local.sh          # add --fast to skip the e2e 
 Set it anywhere the result is being used as a gate; without it a run with no
 database reachable reports success having tested very little.
 
-`pnpm audit` fails on any production advisory with no recorded disposition in
-`backend/security-advisories.json`, and passes one that has a written reason.
+`pnpm run audit:gate` fails on any production advisory with no recorded
+disposition in `backend/security-advisories.json`, and passes one that has a
+written reason. It also fails when the audit could not be produced at all: a
+missing `pnpm`, an empty report, a parse failure and an unrecognised shape were
+all read as zero advisories, so the gate reported success without running.
+
+The name is `audit:gate` rather than `audit` because `pnpm audit` is pnpm's own
+command and takes precedence over a script of the same name.
 
 `.github/workflows/ci.yml` runs the same commands on every push and pull
 request, against a PostgreSQL service carrying both the explorer's own

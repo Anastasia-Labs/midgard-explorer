@@ -16,7 +16,7 @@
     "indexer:generate": "prisma generate --config prisma.indexer.config.ts",
     "indexer:deploy": "prisma migrate deploy --config prisma.indexer.config.ts",
     "verify:vendor": "vitest run test/vendor-provenance.test.mts",
-    "audit": "node scripts/audit-gate.mjs"
+    "audit:gate": "node scripts/audit-gate.mjs"
   },
   "author": "",
   "license": "ISC",

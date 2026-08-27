@@ -116,7 +116,11 @@ jobs:
           INDEXER_POSTGRES_URL="$TEST_INDEXER_POSTGRES_URL" pnpm indexer:deploy
 
       - name: Dependency advisories, gated on recorded dispositions
-        run: pnpm audit
+        # `audit:gate`, not `audit`. `pnpm audit` is pnpm's own command and
+        # wins over a script of that name, so this step ran the builtin: it
+        # never read security-advisories.json and exited 1 on the advisory that
+        # is recorded. The name cannot be shadowed.
+        run: pnpm run audit:gate
 
       - run: pnpm typecheck
 
