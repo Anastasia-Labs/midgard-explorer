@@ -177,6 +177,11 @@ The index is written by exactly one process and read by all of them, so the
 order matters. Applying the migration on its own is not a rollout: the old
 binary keeps writing under the old rules against the new schema.
 
+`backend/scripts/rollout.sh --check` prints the current state and readiness
+without changing anything; `--apply` performs step 2 after asking for the
+database name. It does not start or stop writers, because it cannot know what
+supervises them.
+
 1. **Stop the current writer.** Set `L1_SYNC_ENABLED=false` and restart it, or
    stop the process. The advisory lock refuses a second writer, so a new
    instance started first will simply not index.
