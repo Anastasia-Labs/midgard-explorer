@@ -14,6 +14,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Read-only by default. Without this the token carries whatever the repository
+# default grants, which for many repositories is write to contents, packages and
+# more, handed to every third-party action in the run. Nothing here writes to
+# the repository.
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend
@@ -25,7 +32,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -72,13 +79,13 @@ jobs:
       L1_SYNC_ENABLED: "false"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 11.10.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
@@ -115,16 +122,56 @@ jobs:
           pnpm indexer:deploy
           INDEXER_POSTGRES_URL="$TEST_INDEXER_POSTGRES_URL" pnpm indexer:deploy
 
+      - name: Record a completed reconciliation in the CI index
+        # Readiness refuses an index that has never finished a pass in which
+        # every source completed, which is exactly the state a freshly migrated
+        # database is in, and exactly the state the attribution rollout passes
+        # through. Nothing indexes here (L1_SYNC_ENABLED=false), so the record
+        # is seeded like the node schema above: as a fixture, so the boot check
+        # below tests the server rather than the absence of an indexer. The
+        # probe's discriminating cases are in test/readiness-probes.test.mts.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d midgard_explorer_ci -v ON_ERROR_STOP=1 -c \
+            "INSERT INTO sync_cursor (source, last_block_height, updated_at)
+             VALUES ('l1', 1, now()), ('l1:mints', 1, now()), ('l1:rewards', 1, now())
+             ON CONFLICT (source) DO NOTHING;"
+
+      - name: Open the evidence record
+        # .git/gate-evidence/ is a local directory that is never pushed, so the
+        # only evidence a reviewer could read was on one machine. What the
+        # gate proves is recorded here and uploaded below, on success as well
+        # as failure.
+        run: |
+          mkdir -p gate-evidence
+          {
+            echo "commit     = ${{ github.sha }}"
+            echo "ref        = ${{ github.ref }}"
+            echo "run        = ${{ github.run_id }} attempt ${{ github.run_attempt }}"
+            echo "started    = $(date -Is)"
+            echo "node       = $(node --version)"
+            echo "pnpm       = $(pnpm --version)"
+            echo "migrations = $(ls prisma-indexer/migrations | grep -c '^2')"
+          } > gate-evidence/run.txt
+
       - name: Dependency advisories, gated on recorded dispositions
         # `audit:gate`, not `audit`. `pnpm audit` is pnpm's own command and
         # wins over a script of that name, so this step ran the builtin: it
         # never read security-advisories.json and exited 1 on the advisory that
         # is recorded. The name cannot be shadowed.
-        run: pnpm run audit:gate
+        run: |
+          set -o pipefail
+          pnpm run audit:gate 2>&1 | tee gate-evidence/audit.log
 
       - run: pnpm typecheck
 
-      - run: pnpm test
+      - name: Tests
+        # `set -o pipefail`, because bash's default would report the exit code
+        # of `tee` and a failing suite would pass the step.
+        run: |
+          set -o pipefail
+          pnpm test 2>&1 | tee gate-evidence/test.log
 
       - run: pnpm build
 
@@ -139,9 +186,17 @@ jobs:
             sleep 1
             curl -fsS http://127.0.0.1:3101/healthz > /dev/null && break
           done
-          curl -fsS http://127.0.0.1:3101/healthz | tee /dev/stderr | grep -q '"status":"ok"'
-          curl -fsS http://127.0.0.1:3101/readyz | tee /dev/stderr | grep -q '"ready":true'
+          curl -fsS http://127.0.0.1:3101/healthz | tee -a gate-evidence/probes.log | grep -q '"status":"ok"'
+          curl -fsS http://127.0.0.1:3101/readyz | tee -a gate-evidence/probes.log | grep -q '"ready":true'
           kill $SERVER_PID
+
+      - name: Preserve the evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-gate-evidence
+          path: backend/gate-evidence
+          retention-days: 30
 
   frontend:
     name: Frontend
@@ -152,13 +207,13 @@ jobs:
         working-directory: frontend-new
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 11.10.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
@@ -170,12 +225,19 @@ jobs:
         run: pnpm --filter @midgard-explorer/app exec playwright install --with-deps chromium
 
       - name: Run the same gate the local script runs
-        run: ./scripts/ci-local.sh
+        run: |
+          set -o pipefail
+          mkdir -p gate-evidence
+          ./scripts/ci-local.sh 2>&1 | tee gate-evidence/ci-local.log
 
-      - name: Keep the report when the gate fails
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Preserve the evidence
+        # On success too. A green run whose output nobody can read is not
+        # evidence of anything, and the counts in it are what a reviewer needs.
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-report
-          path: frontend-new/app/playwright-report
-          retention-days: 7
+          name: frontend-gate-evidence
+          path: |
+            frontend-new/gate-evidence
+            frontend-new/app/playwright-report
+          retention-days: 30

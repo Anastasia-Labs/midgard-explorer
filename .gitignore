@@ -27,3 +27,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# CI writes the gate evidence here before uploading it as an artifact.
+gate-evidence/
