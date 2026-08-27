@@ -21,8 +21,6 @@ const valid = {
   API_RATE_LIMIT_MAX: "120",
   API_RATE_LIMIT_WINDOW_MS: "60000",
   LOG_LOCATION: "./logs",
-  NODE_RPC_HOST: "localhost",
-  NODE_RPC_PORT: "3000",
   POSTGRES_HOST: "localhost",
   POSTGRES_PORT: "5433",
   POSTGRES_USER: "u",
