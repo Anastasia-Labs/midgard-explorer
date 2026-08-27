@@ -182,11 +182,18 @@ without changing anything, and exits with readiness's own exit code, so it can
 be gated on. `--apply` performs step 2. Both read their target from
 `INDEXER_POSTGRES_URL`, the same variable `pnpm indexer:deploy` migrates
 through, so the database being inspected and the database being migrated cannot
-be two different databases. `--apply` refuses to run while any process still
-holds the indexer's advisory leadership lock, and asks for the full
-`host:port/database` rather than the database name, which on its own cannot tell
-two hosts apart. It does not start or stop writers, because it cannot know what
-supervises them.
+be two different databases. `--apply` TAKES the indexer's advisory leadership
+lock and holds it across the migration, on a session that is idle rather than
+sleeping, so it is released the instant the script ends or is killed. Checking
+that the lock was free and then migrating would only have proved it was free at
+one instant: the checking connection closes, releases, and a supervised writer
+can restart into the gap. A writer that restarts now finds the lock held and
+does not index. Stopping the supervisor is still a precondition, because the
+lock stops a restarted writer from indexing, not from starting.
+
+It asks for the full `host:port/database` rather than the database name, which
+on its own cannot tell two hosts apart. It does not start or stop writers,
+because it cannot know what supervises them.
 
 1. **Stop the current writer.** Set `L1_SYNC_ENABLED=false` and restart it, or
    stop the process. The advisory lock refuses a second writer, so a new
@@ -204,12 +211,14 @@ supervises them.
    `l1:mints`, `l1:rewards`) sit at the same height once a pass has reconciled.
 
    Readiness answers this for you and keeps the instance out of rotation until
-   it is true. It refuses an index holding rows under `default`, and an index
-   whose cursors have not advanced past zero. Both matter: the migration leaves
-   all three cursors reading zero, so equality between them proves nothing
-   there, and a cursor is written only inside a pass where every source
-   completed, which makes a non-zero one the durable record that a full
-   reconciliation committed.
+   it is true. It refuses an index holding rows under `default`, and cursors
+   that are not all past zero AND equal. Each half is needed. The migration
+   leaves all three reading zero, so equality alone passes the worst moment;
+   and three different non-zero heights mean three different passes covering
+   three different windows, so every mint between the mint cursor and the
+   primary one is missing while the row counts look healthy. A cursor is
+   written only inside a pass where every source completed, which is what makes
+   the pair a record of a completed reconciliation rather than a progress bar.
 5. **Validate the queries before opening traffic.** Every event must carry the
    manifest's identity and never a shared constant:
 

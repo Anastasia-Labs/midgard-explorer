@@ -11,9 +11,9 @@ alongside it. Nothing has been pushed, merged, or applied to production.
 |---|---|
 | Branch | `wip/remediation` |
 | Base | `develop` at `0c04d18a05857f4be00e2d17839ecf6d464d3266` |
-| Commits ahead of `develop` | 137 |
-| Commits in the branch's whole history | 173 |
-| Relationship to `develop` | `develop` is an ancestor of HEAD: the branch is ahead by 137, behind by 0, so there is nothing to rebase |
+| Relationship to `develop` | `develop` is an ancestor of HEAD, behind by 0, so there is nothing to rebase |
+| Commits ahead of `develop` | recount with `git rev-list --count develop..HEAD` rather than trusting a number here. A count written into this file is stale the moment the commit writing it lands, which has already produced one off-by-one correction |
+| Pushed | no. No remote contains this HEAD |
 | Network | Cardano preprod |
 | Chain source | Koios `https://preprod.koios.rest/api/v1` |
 | Manifest | the tx-validation deployment's `contract-deployment-info.json` |
@@ -58,16 +58,43 @@ indexed and when the index may be rewritten.
 
 Each is run as one continuous run against a clean worktree, and its output is
 written to `.git/gate-evidence/<short-sha>-{backend,frontend}.log` with the
-commit, the exit code of every step and the machine's load at the start. CI
-uploads the same output as artifacts (`backend-gate-evidence`,
-`frontend-gate-evidence`) on success as well as failure, which is where a
-reviewer without this working tree should read it. A document cannot carry the
-result of the gate that runs on the commit introducing it, so the counts below
-are the last measured run and the evidence files are authoritative.
+commit and the exit code of every step. A document cannot carry the result of
+the gate that runs on the commit introducing it, so the counts below are the
+last measured run and the evidence files are authoritative.
+
+CI is configured to upload the same output as artifacts
+(`backend-gate-evidence`, `frontend-gate-evidence`) on success as well as
+failure. **That configuration has never run.** The branch is unpushed, no remote
+contains this HEAD, and no artifact exists. Until a run happens the evidence is
+local only, and the upload itself is unproven; the first push is what tests it.
 
 A re-run that passes does not convert a failed run into a green one. Only a
 single clean run counts, and a run that failed is recorded rather than
 discarded.
+
+### The frontend gate is not yet reliably green
+
+Three full runs, two failures:
+
+| Run | Result | Failure |
+|---|---|---|
+| `505066b` | 424 passed, 1 failed | 30s timeout on `page.goto`, `help-affordances.spec.ts:140` |
+| `268ac27` run 1 | 424 passed, 1 failed | 90s timeout inside axe `page.evaluate`, `populated.spec.ts:817` |
+| `268ac27` run 2 | 425 passed, 0 failed | none |
+
+Neither failure was an assertion, they were different tests, and both cases pass
+in under six seconds in isolation on an idle machine. That points at capacity on
+a two-core box rather than at the product.
+
+It is not proved, and the difference matters. The logs sampled load and free
+memory **once, at the start**, and the first failing run started at load 2.81
+with 2.4 GiB available, which looks healthy. What the machine did during the
+eleven minutes that followed was never recorded, so the resource explanation is
+the likely one rather than the evidenced one.
+`frontend-new/scripts/gate-evidence.sh` now samples throughout and records the
+peak, so the next failure is attributable instead of argued about. A clean run
+on hosted CI against an immutable pushed SHA would settle it better than any
+further local run, and that needs a push.
 
 Backend: **402 passed, 8 skipped, 0 failed** across 47 files, every step exit 0.
 The 8 skipped are the whole of `test/live-validation.test.mts`, which is
@@ -168,6 +195,49 @@ unintentionally. The process holding the lock was started inside a shell
 subshell, and killing the subshell did not kill the `psql` session inside it, so
 the lock stayed held. That is exactly the situation the preflight exists for: a
 writer an operator believes they stopped.
+
+### Rehearsal 4: the preflight became a reservation
+
+The check above proved leadership was free at one instant and reserved nothing.
+The `psql` that answered closed and released, so a supervised writer could be
+restarted into the gap between the answer and the migration. `--apply` now takes
+the lock and holds it across `indexer:deploy`, on an idle session.
+
+| Test | Result |
+|---|---|
+| `--apply` while a real writer holds leadership | REFUSED, exit 1, migration not applied |
+| A writer started while the rollout holds the lock | Logged `L1 sync not started: another process holds the indexer lock`, and indexed nothing: `l1_tx` unchanged at 141 |
+| The holder session's state | `idle`, which is the property the design turns on |
+| The migration itself, under the held lock | Applied, 141 transactions and 158 events preserved, lock released, 0 advisory locks after |
+| The rollout SIGKILLed while holding the lock | 0 advisory locks afterwards, lock re-acquirable. No trap runs on SIGKILL; the fd closing is what releases it |
+
+Two defects were found by running this rather than reasoning about it, and both
+are the kind that reads as correct on the page:
+
+- Holding the session open with `SELECT pg_sleep(1800)` does not work. Killing
+  `psql` closes the socket, but PostgreSQL only notices a departed client when
+  the backend next writes, and one inside `pg_sleep` will not for half an hour.
+  Measured: `psql` gone, `pg_stat_activity` still `active`, lock still held. An
+  idle session is what makes a departed client noticed immediately.
+- `psql` inherited the shell's fd 9, so it was itself a writer on the FIFO it
+  was reading and EOF could never arrive. A SIGKILLed rollout left leadership
+  held on a database with no process visibly holding it. `9>&-` on the child is
+  the fix.
+
+### One incident, recorded
+
+During rehearsal the harness invoked `rollout.sh --apply` without overriding
+`INDEXER_POSTGRES_URL`, so the script resolved `.env` and targeted **production**.
+Nothing was migrated. The confirmation asks for the full `host:port/database`,
+the harness typed the rehearsal database, and the script aborted. That control
+was added because naming the database alone cannot tell two hosts apart; it
+turned out to also be what stands between a mistyped harness and the live index.
+
+The SIGKILL that followed left an orphaned holder session on production, which
+was terminated. Production was verified before and after: 141 transactions, 158
+events under `default`, cursor 5082691, the column default intact, the repair
+migration unapplied, and zero advisory locks. The rehearsal harness now refuses
+to run unless the resolved target is the rehearsal database.
 
 ## Production state
 
