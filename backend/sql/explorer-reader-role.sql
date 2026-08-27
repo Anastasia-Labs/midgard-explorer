@@ -62,8 +62,6 @@ REVOKE ALL ON ALL TABLES IN SCHEMA public FROM explorer_reader;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM explorer_reader;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM explorer_reader;
 REVOKE ALL ON SCHEMA public FROM explorer_reader;
--- Anything a future default-privilege rule would have handed it.
-REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
 
 GRANT CONNECT ON DATABASE :"DBNAME" TO explorer_reader;
 GRANT USAGE ON SCHEMA public TO explorer_reader;

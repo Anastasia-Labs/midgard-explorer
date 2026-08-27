@@ -108,6 +108,13 @@ does exactly that and nothing else:
 psql -h <primary-host> -U postgres -d midgard \
      -v role_password="'a-strong-password'" \
      -f backend/sql/explorer-reader-role.sql
+
+`explorer_reader` still inherits anything this database grants to `PUBLIC`,
+because every role is a member of it. Closing that is a database-wide privilege
+change affecting the node's own login too, so it lives in
+`backend/sql/explorer-reader-revoke-public.sql` and is run deliberately, after
+checking which roles depend on those grants. The file names the query to run
+first.
 ```
 
 It names the tables the explorer reads one by one rather than granting on the
