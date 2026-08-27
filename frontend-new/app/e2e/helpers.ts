@@ -25,7 +25,29 @@ export async function inject(page: Page, params: string) {
  *
  * Import `test` from here rather than from `@playwright/test` so this cannot be
  * forgotten in a new spec file. */
-export const test = base.extend<{ cleanFixture: void }>({
+export const test = base.extend<{ cleanFixture: void; pinnedClock: void }>({
+  /** The browser's clock, pinned just after the fixture's own anchor.
+   *
+   * Every timestamp in `fixtures/data.mjs` is built from one absolute instant,
+   * `Date.UTC(2026, 6, 28)`. `relativeTime` renders anything up to 30 days old
+   * as `Nd ago` and everything older as a full `YYYY-MM-DD HH:MM:SS UTC`
+   * string, which is far wider. So the rendered width of every timestamp
+   * column depended on the wall-clock date of the run, and the suite passed
+   * until the fixture aged past 30 days and then failed on every machine
+   * forever after. It failed first as `deposits table needs internal
+   * scrolling at desktop width: 1465px > 1390px`, which reads like a layout
+   * regression and is a calendar.
+   *
+   * Pinning here rather than re-anchoring the data keeps the fixture
+   * byte-identical and deterministic. A fixture built from a fixed instant is
+   * only deterministic when it is read against a fixed instant. */
+  pinnedClock: [
+    async ({ page }, use) => {
+      await page.clock.setFixedTime(new Date("2026-07-28T12:05:00Z"));
+      await use();
+    },
+    { auto: true },
+  ],
   cleanFixture: [
     async ({ request }, use) => {
       await request.post(`${FIXTURE}/__control?fail=&slow=0&health=`);
