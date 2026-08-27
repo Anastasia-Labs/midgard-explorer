@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { indexerPrisma } from "../src/indexer/db.js";
 import { syncOnce } from "../src/indexer/sync.js";
+import { fetchAccountUpdates, fetchTxInfo } from "../src/indexer/koios.js";
 import { loadManifest, contractPurpose } from "../src/indexer/manifest.js";
 import { getL1Validator } from "../src/db/l1.js";
 import { probeIndexDatabase, probeNodeDatabase, probeManifest } from "../src/server/probes.js";
@@ -74,30 +75,39 @@ describe.skipIf(!LIVE)("live deployment validation", () => {
     expect(total).toBeGreaterThan(0);
   });
 
-  it("covers every purpose the manifest declares", () => {
-    const purposes = new Set(
-      manifest.validators.map((v) => contractPurpose(v.entryName)),
-    );
-    // Observer is gone: the deployed manifest has no such entry.
-    expect(purposes.has("Observer" as never)).toBe(false);
-    expect(purposes.has("Mint")).toBe(true);
-    expect(purposes.has("Withdraw")).toBe(true);
-    expect(purposes.has("Spend")).toBe(true);
+  it("scans every purpose the manifest declares, not only the ones it kept", () => {
+    // Counted against the document rather than against what survived parsing.
+    // The old version asserted that at least one Mint and one Withdraw entry
+    // existed, which stayed true while three purposes were being dropped.
+    const declared = manifest.entries.filter((e) => !e.placeholder);
+    const scannedNames = new Set(manifest.scanTargets.map((v) => v.entryName));
+    for (const entry of declared) {
+      expect(scannedNames.has(entry.entryName)).toBe(true);
+    }
 
-    // Every Mint entry has a policy to scan and every Withdraw entry a reward
+    // Every Mint target has a policy to scan and every Withdraw target a reward
     // account. Without these the scan silently covers only Spend.
-    for (const v of manifest.validators) {
+    for (const v of manifest.scanTargets) {
       if (v.purpose === "Mint") expect(v.policyId).toBe(v.scriptHash);
       if (v.purpose === "Withdraw") {
         expect(v.rewardAddress).toMatch(/^stake_test1|^stake1/);
       }
     }
+    // Observer is gone: the deployed manifest has no such entry.
+    const purposes = new Set(manifest.entries.map((v) => contractPurpose(v.entryName)));
+    expect(purposes.has("Observer" as never)).toBe(false);
   });
 
-  it("indexes the withdraw registration the address scan could never see", async () => {
+  it("indexes the reward-account transaction the address scan could never see", async () => {
     // Verified on preprod 2026-08-27: the phasMembership reward account is
     // registered, and this transaction was absent from the index because
     // nothing is ever paid to or spent from the enterprise address.
+    //
+    // This proves the reward-account SOURCE, not a withdraw execution. The
+    // transaction is a stake_registration with no withdrawals and no Plutus
+    // contracts, so it carries no withdraw redeemer to index. Indexing an
+    // execution is proved on the ingest path in withdraw-execution.test.mts,
+    // because no Withdraw execution exists on this deployment to point at.
     const row = await indexerPrisma.l1Tx.findUnique({
       where: {
         txHash:
@@ -105,6 +115,39 @@ describe.skipIf(!LIVE)("live deployment validation", () => {
       },
     });
     expect(row).not.toBeNull();
+  });
+
+  it("indexes every withdraw redeemer the chain currently has", async () => {
+    // Today both sides are empty, and the assertion says so out loud rather
+    // than passing silently: the moment a withdrawal is submitted against one
+    // of these scripts, this fails unless the indexer picked it up.
+    const withdrawHashes = new Set(
+      manifest.scanTargets
+        .filter((v) => v.purpose === "Withdraw")
+        .map((v) => v.scriptHash),
+    );
+    expect(withdrawHashes.size).toBeGreaterThan(0);
+
+    const indexed = await indexerPrisma.l1Redeemer.findMany({
+      where: { purpose: "reward" },
+      select: { scriptHash: true, txHash: true },
+    });
+    for (const row of indexed) {
+      expect(withdrawHashes.has(row.scriptHash)).toBe(true);
+    }
+
+    const onChain = await fetchAccountUpdates(
+      manifest.scanTargets
+        .map((v) => v.rewardAddress)
+        .filter((a): a is string => a !== null),
+    );
+    const executions = await fetchTxInfo(onChain.map((u) => u.txHash));
+    const expected = executions.filter((info) =>
+      (info.plutus_contracts ?? []).some(
+        (c) => c.input?.redeemer?.purpose === "reward",
+      ),
+    );
+    expect(indexed.length).toBe(expected.length);
   });
 
   it("passes every readiness probe against the real databases", async () => {
