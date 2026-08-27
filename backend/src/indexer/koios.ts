@@ -331,6 +331,20 @@ export async function readBounded(
  * `?offset=2&limit=2` return different rows on `/address_txs`, and an offset
  * past the end returns an empty array, which is the loop's exit condition.
  */
+/**
+ * Ascending order, stated rather than inherited.
+ *
+ * Offset pagination is only stable if the ordering is both deterministic and
+ * append-only at the end. Koios answers `/address_txs` newest-first by default,
+ * so a transaction confirmed between two page requests takes offset 0 and
+ * shifts every later page down by one: one row is returned twice and one is
+ * never seen at all, and the cursor then advances past the row that was
+ * skipped. Ascending by height puts new rows after everything already read, so
+ * the pages behind the reader do not move. `tx_hash` breaks ties within a
+ * block, because height alone does not define a total order.
+ */
+const ORDER_BY_HEIGHT = "block_height.asc,tx_hash.asc";
+
 const KOIOS_PAGE_SIZE = 1000;
 
 /**
@@ -357,11 +371,14 @@ async function postAllPages<T>(
   path: string,
   body: unknown,
   parse: (json: unknown) => T[],
+  order: string,
 ): Promise<T[]> {
   const out: T[] = [];
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const sep = path.includes("?") ? "&" : "?";
-    const query = `${path}${sep}offset=${page * KOIOS_PAGE_SIZE}&limit=${KOIOS_PAGE_SIZE}`;
+    const query =
+      `${path}${sep}offset=${page * KOIOS_PAGE_SIZE}` +
+      `&limit=${KOIOS_PAGE_SIZE}&order=${order}`;
     const rows = parse(await post(query, body));
     out.push(...rows);
     if (rows.length < KOIOS_PAGE_SIZE) return out;
@@ -380,10 +397,12 @@ export async function fetchAddressTxs(
   const out: KoiosAddressTx[] = [];
   for (const batch of chunk(addresses)) {
     out.push(
-      ...(await postAllPages("/address_txs", {
-        _addresses: batch,
-        _after_block_height: afterBlockHeight,
-      }, parseAddressTxs)),
+      ...(await postAllPages(
+        "/address_txs",
+        { _addresses: batch, _after_block_height: afterBlockHeight },
+        parseAddressTxs,
+        ORDER_BY_HEIGHT,
+      )),
     );
   }
   return out;
@@ -410,6 +429,8 @@ export async function fetchAccountUpdates(
         "/account_updates",
         { _stake_addresses: batch },
         parseAccountRows,
+        // One row per account, not per update, so the account is the key.
+        "stake_address.asc",
       )),
     );
   }
@@ -478,6 +499,7 @@ export async function fetchPolicyAssets(policyId: string): Promise<string[]> {
     "/policy_asset_list",
     { _asset_policy: policyId },
     (json) => z.array(policyAssetSchema).parse(json),
+    "asset_name.asc",
   );
   return rows.map((r) => r.asset_name ?? "");
 }
@@ -499,6 +521,7 @@ export async function fetchAssetTxs(
       _history: true,
     },
     parseAddressTxs,
+    ORDER_BY_HEIGHT,
   );
 }
 

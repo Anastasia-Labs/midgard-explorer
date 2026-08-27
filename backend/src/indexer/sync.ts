@@ -10,13 +10,20 @@ import {
   fetchPolicyAssets as realFetchPolicyAssets,
   fetchTxInfo as realFetchTxInfo,
 } from "./koios";
+import {
+  acquireLeadership as realAcquireLeadership,
+  type Leadership,
+} from "./leadership";
 import { loadManifest } from "./manifest";
 
 const SOURCE = "l1";
 
-/** Per-scan cursors for the sources address history cannot see. Each advances
- * only when its own scan completes, so one failing source cannot make another
- * look further ahead than it is. */
+/** Per-source cursors. `l1` and `l1:mints` are incremental: each records the
+ * height through which that source has confirmed coverage, and a scan is asked
+ * for everything above it. `l1:rewards` is not incremental, because Koios
+ * `/account_updates` has no height filter and returns the whole history of an
+ * account every time; it records the height through which the last COMPLETE
+ * reward scan was confirmed, which is what the reconciliation gate reads. */
 const SOURCE_MINTS = "l1:mints";
 const SOURCE_REWARDS = "l1:rewards";
 
@@ -32,15 +39,41 @@ export type SyncDeps = {
   fetchEpochParams: typeof realFetchEpochParams;
 };
 
+export type SyncResult = {
+  scanned: number;
+  ingested: number;
+  /** Whether every source completed, which is what allows the reorg window to
+   * be deleted and rewritten and the cursors to advance. */
+  reconciled: boolean;
+};
+
 /**
- * One pass. Re-scans the last L1_REORG_LOOKBACK_BLOCKS so a rolled-back block
- * is noticed: everything at or above the scan floor is deleted and rewritten
- * from what the chain currently reports. Preprod reorgs are shallow, so a
- * fixed lookback beats a rollback log.
+ * One pass.
+ *
+ * Re-scans the last L1_REORG_LOOKBACK_BLOCKS so a rolled-back block is noticed:
+ * everything at or above the scan floor is deleted and rewritten from what the
+ * chain currently reports. Preprod reorgs are shallow, so a fixed lookback
+ * beats a rollback log.
+ *
+ * Two rules make that safe, and neither held before.
+ *
+ * The floor is ONE number shared by every source and by the delete. Each source
+ * used to scan from its own cursor while the delete used the primary cursor's
+ * floor, so with the primary and mint cursors both at 100 and a lookback of 20,
+ * everything from height 80 was deleted while the mint scan asked only for
+ * transactions above 100. A mint-only transaction at height 90 was erased and
+ * never requested again.
+ *
+ * And the window is deleted only when EVERY source completed. A failed policy
+ * scan used to log and carry on into the same destructive rewrite, so the rows
+ * only that source could see were dropped from a window it had not read. A pass
+ * with a failed source still writes what it found, because every write is an
+ * upsert and adding rows cannot lose any; it just does not delete, and it moves
+ * no cursor, so the next pass reconciles the same window again.
  */
 export async function syncOnce(
   deps: Partial<SyncDeps> = {},
-): Promise<{ scanned: number; ingested: number }> {
+): Promise<SyncResult> {
   const fetchAddressTxs = deps.fetchAddressTxs ?? realFetchAddressTxs;
   const fetchTxInfo = deps.fetchTxInfo ?? realFetchTxInfo;
   const fetchPolicyAssets = deps.fetchPolicyAssets ?? realFetchPolicyAssets;
@@ -48,20 +81,38 @@ export async function syncOnce(
   const fetchAccountUpdates = deps.fetchAccountUpdates ?? realFetchAccountUpdates;
   const fetchEpochParams = deps.fetchEpochParams ?? realFetchEpochParams;
 
-  const { validators, referenceScriptAuthPolicy, deploymentId } = loadManifest(
-    config.MIDGARD_MANIFEST_PATH,
-  );
-  const addresses = validators.map((v) => v.address);
+  const { scanTargets, validators, referenceScriptAuthPolicy, deploymentId } =
+    loadManifest(config.MIDGARD_MANIFEST_PATH);
 
-  const cursor = await getSyncCursor(SOURCE);
+  // Address history is asked for spend targets only.
+  //
+  // It used to be asked for every retained entry. The enterprise address of a
+  // mint-only or withdraw-only script is not somewhere Midgard ever pays: it is
+  // simply an address derivable from a script hash, so anything found there is
+  // someone else's transaction being reported as protocol activity. An entry
+  // whose name carries no purpose suffix is still scanned by address, because
+  // its purpose is undeclared and this is the only source that could see it.
+  const addresses = [
+    ...new Set(
+      scanTargets
+        .filter((v) => v.purpose === "Spend" || v.purpose === "None")
+        .map((v) => v.address),
+    ),
+  ];
+
+  const primaryCursor = (await getSyncCursor(SOURCE))?.lastBlockHeight ?? 0;
+  const mintCursor = (await getSyncCursor(SOURCE_MINTS))?.lastBlockHeight ?? 0;
+  // The reward scan has no height filter and always covers from genesis, so it
+  // constrains nothing here.
   const scanFloor = Math.max(
     0,
-    (cursor?.lastBlockHeight ?? 0) - config.L1_REORG_LOOKBACK_BLOCKS,
+    Math.min(primaryCursor, mintCursor) - config.L1_REORG_LOOKBACK_BLOCKS,
   );
 
   const rows = await fetchAddressTxs(addresses, scanFloor);
-
   const hashes = new Set(rows.map((r) => r.tx_hash));
+  let observedTip = Math.max(scanFloor, primaryCursor, mintCursor);
+  for (const row of rows) observedTip = Math.max(observedTip, row.block_height);
 
   // Policy scan. Two things address history cannot see are found here, and
   // they turned out to be one scan rather than two.
@@ -77,35 +128,25 @@ export async function syncOnce(
   // visible to the address scan, whose earliest hit was 4939843. They carry a
   // token under the reference-script auth policy, which is itself one of the
   // Mint entries, so sweeping it separately scanned one policy twice per pass.
-  //
-  // Incremental from this source's own cursor, and the cursor moves only if
-  // the whole scan finished. The gate used to be `scanFloor === 0`, which stops
-  // being true a few blocks in, so a scan that failed once was never retried
-  // despite an error handler that said the next full pass would.
-  const mintCursor = (await getSyncCursor(SOURCE_MINTS))?.lastBlockHeight ?? 0;
   const policies = [
     ...new Set(
-      [
-        ...validators.map((v) => v.policyId),
-        referenceScriptAuthPolicy,
-      ].filter((id): id is string => id !== null),
+      [...scanTargets.map((v) => v.policyId), referenceScriptAuthPolicy].filter(
+        (id): id is string => id !== null,
+      ),
     ),
   ];
-  let mintTip = mintCursor;
   let mintsCompleted = false;
   try {
     for (const policyId of policies) {
       for (const assetName of await fetchPolicyAssets(policyId)) {
-        for (const tx of await fetchAssetTxs(policyId, assetName, mintCursor)) {
+        for (const tx of await fetchAssetTxs(policyId, assetName, scanFloor)) {
           hashes.add(tx.tx_hash);
-          mintTip = Math.max(mintTip, tx.block_height);
+          observedTip = Math.max(observedTip, tx.block_height);
         }
       }
     }
     mintsCompleted = true;
   } catch (err) {
-    // The address scan's results are the bulk of the data and must still
-    // commit. No cursor is written, so the next tick tries the policies again.
     logger.error(`L1 policy scan failed, retrying next tick: ${String(err)}`);
   }
 
@@ -114,9 +155,13 @@ export async function syncOnce(
   // hash, which shares no bytes with the payment address. Verified on preprod:
   // the phasMembership reward account is registered and its registration
   // transaction was absent from the index.
-  const rewardAddresses = validators
-    .map((v) => v.rewardAddress)
-    .filter((addr): addr is string => addr !== null);
+  const rewardAddresses = [
+    ...new Set(
+      scanTargets
+        .map((v) => v.rewardAddress)
+        .filter((addr): addr is string => addr !== null),
+    ),
+  ];
   let rewardsCompleted = false;
   try {
     for (const update of await fetchAccountUpdates(rewardAddresses)) {
@@ -133,33 +178,34 @@ export async function syncOnce(
   // accepted here destroys history instead of merely omitting it.
   const infos = hashList.length > 0 ? await fetchTxInfo(hashList) : [];
 
-  // Never let an empty window move the cursor. Seeding the reduce with
-  // scanFloor would write back (cursor - lookback) whenever the scan finds
-  // nothing, so the cursor walks backward one lookback per poll and each tick
-  // re-scans an ever-wider range from Koios. Self-healing, but pure waste.
-  const tip =
-    rows.length > 0
-      ? rows.reduce((max, r) => Math.max(max, r.block_height), scanFloor)
-      : (cursor?.lastBlockHeight ?? scanFloor);
+  // Every source read the same window and finished it, so the index may be
+  // reconciled against the chain's current view. Short of that, the pass is
+  // additive only.
+  const reconciled = mintsCompleted && rewardsCompleted;
 
   // Everything above is network and pure computation. Everything below is one
-  // unit of work: clear the reorg window, rewrite it, move the cursor. The
+  // unit of work: clear the reorg window, rewrite it, move the cursors. The
   // delete used to run before the fetch, so a full rescan emptied the index and
   // only refilled it if Koios answered. A reader never sees that window now,
   // and a failed pass rolls back to the previous index rather than a hole.
   const result = await indexerPrisma.$transaction(
     async (tx) => {
-      // A transaction that vanished from the chain has no row in `rows` and
-      // would otherwise survive forever, so the window is still cleared first,
-      // just inside the boundary.
-      await deleteFromBlockHeight(scanFloor, tx);
+      if (reconciled) {
+        // A transaction that vanished from the chain has no row in any source
+        // and would otherwise survive forever, so the window is cleared first,
+        // just inside the boundary.
+        await deleteFromBlockHeight(scanFloor, tx);
+      }
       const written = await ingestTxInfos(infos, validators, deploymentId, tx);
-      await setSyncCursor(SOURCE, tip, tx);
-      // Each secondary source advances only if its own scan finished. A source
-      // that threw leaves its cursor where it was and is retried, rather than
-      // being carried forward by a sibling that happened to succeed.
-      if (mintsCompleted) await setSyncCursor(SOURCE_MINTS, mintTip, tx);
-      if (rewardsCompleted) await setSyncCursor(SOURCE_REWARDS, tip, tx);
+      if (reconciled) {
+        // One height for all three, because all three covered the same window.
+        // Seeded from the previous cursors above, so an empty window leaves
+        // them where they were rather than walking backward one lookback per
+        // poll and re-scanning an ever-wider range.
+        await setSyncCursor(SOURCE, observedTip, tx);
+        await setSyncCursor(SOURCE_MINTS, observedTip, tx);
+        await setSyncCursor(SOURCE_REWARDS, observedTip, tx);
+      }
       return written;
     },
     // A full rescan writes every transaction, utxo, asset and redeemer in one
@@ -176,13 +222,14 @@ export async function syncOnce(
   logger.info(
     `L1 sync: scanned ${rows.length} rows from height ${scanFloor}, wrote ` +
       `${result.txs} txs, ${result.events} events, ${result.headers} headers, ` +
-      `${result.ios} utxos, ${result.assets} assets, ${result.redeemers} redeemers`,
+      `${result.ios} utxos, ${result.assets} assets, ${result.redeemers} redeemers` +
+      `${reconciled ? "" : " (additive only: a source did not complete)"}`,
   );
-  return { scanned: rows.length, ingested: result.txs };
+  return { scanned: rows.length, ingested: result.txs, reconciled };
 }
 
 /**
- * Second line of defence behind the stub exclusion in manifest.ts. A validator
+ * Second line of defence behind the placeholder exclusion in manifest.ts. A validator
  * whose address saw traffic before this deployment existed is almost certainly
  * a placeholder script sharing an address with unrelated preprod activity.
  * This warns rather than excludes: a heuristic should never silently drop a
@@ -249,33 +296,22 @@ export async function healCursorIfDataWasWiped(): Promise<boolean> {
 
 /** Background loop. Failures are logged and retried on the next tick: sync
  * problems must never take down the read path. */
-/** Chosen once and never derived from anything mutable: two processes sharing
- * this database must compute the same number to contend for the same lock. */
-const SYNC_ADVISORY_LOCK = 4_017_260_827;
-
-/**
- * Only one indexer at a time may write, across processes.
- *
- * The in-process guard below stops one process from overlapping itself. It says
- * nothing about a second process pointed at the same database, where two passes
- * can delete and rewrite the same reorg window concurrently and the older chain
- * snapshot can commit last. A session-scoped advisory lock is held for the life
- * of the process and released when its connection ends, including on a crash.
- */
-async function acquireLeadership(): Promise<boolean> {
-  const [row] = await indexerPrisma.$queryRaw<Array<{ locked: boolean }>>`
-    SELECT pg_try_advisory_lock(${SYNC_ADVISORY_LOCK}::bigint) AS locked;`;
-  return row?.locked === true;
-}
-
 export type SyncHandle = {
   /** Resolves once the loop has stopped and any pass in flight has finished.
    * Shutdown must await this before disconnecting Prisma, or a transaction is
    * cut mid-write. */
   stop: () => Promise<void>;
   /** Resolves when the bootstrap sequence has finished and the first pass has
-   * been attempted. Exposed so a test does not have to sleep. */
+   * been attempted. Read by the lifecycle tests, which would otherwise have to
+   * sleep and guess. */
   started: Promise<void>;
+};
+
+export type StartSyncDeps = {
+  acquireLeadership: typeof realAcquireLeadership;
+  syncOnce: typeof syncOnce;
+  warnOnPreDeploymentActivity: typeof warnOnPreDeploymentActivity;
+  healCursorIfDataWasWiped: typeof healCursorIfDataWasWiped;
 };
 
 /**
@@ -290,11 +326,23 @@ export type SyncHandle = {
  * long a pass takes, and a scan with Koios retries can exceed the interval, so
  * two passes could delete and rewrite the same window at once. A timeout
  * scheduled after each pass finishes cannot do that.
+ *
+ * Leadership is re-checked before every pass rather than only at boot. The lock
+ * lives on one connection, and a connection that dies takes the lock with it;
+ * carrying on writing after that is the two-writer race the lock was taken to
+ * prevent.
  */
-export function startSync(): SyncHandle {
+export function startSync(deps: Partial<StartSyncDeps> = {}): SyncHandle {
+  const acquireLeadership = deps.acquireLeadership ?? realAcquireLeadership;
+  const pass = deps.syncOnce ?? syncOnce;
+  const warnOnActivity =
+    deps.warnOnPreDeploymentActivity ?? warnOnPreDeploymentActivity;
+  const healCursor = deps.healCursorIfDataWasWiped ?? healCursorIfDataWasWiped;
+
   let stopping = false;
   let timer: NodeJS.Timeout | null = null;
   let inFlight: Promise<unknown> = Promise.resolve();
+  let leadership: Leadership | null = null;
 
   const started = (async () => {
     // Fail fast and loudly: an unreadable manifest means every row would be
@@ -307,29 +355,40 @@ export function startSync(): SyncHandle {
     }
 
     try {
-      await healCursorIfDataWasWiped();
+      await healCursor();
     } catch (err) {
       logger.error(`Cursor consistency check failed: ${String(err)}`);
     }
 
-    if (!(await acquireLeadership().catch(() => false))) {
+    leadership = await acquireLeadership();
+    if (!leadership) {
       logger.warn(
         "L1 sync not started: another process holds the indexer lock. " +
           "The read path is unaffected.",
       );
       return;
     }
+    if (stopping) return;
 
     try {
-      await warnOnPreDeploymentActivity();
+      await warnOnActivity();
     } catch (err) {
       logger.error(`Pre-deployment activity check failed: ${String(err)}`);
     }
 
     const tick = async () => {
       if (stopping) return;
+      if (!(await leadership!.verify())) {
+        logger.error(
+          "L1 sync is stopping: the connection holding the indexer lock is " +
+            "gone, so another process may now be writing. The read path is " +
+            "unaffected.",
+        );
+        stopping = true;
+        return;
+      }
       try {
-        await syncOnce();
+        await pass();
       } catch (err) {
         logger.error(`L1 sync failed, retrying next interval: ${String(err)}`);
       }
@@ -352,6 +411,7 @@ export function startSync(): SyncHandle {
       if (timer) clearTimeout(timer);
       await started.catch(() => undefined);
       await inFlight.catch(() => undefined);
+      await leadership?.release();
     },
   };
 }

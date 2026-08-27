@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { indexerPrisma } from "../src/indexer/db.js";
+import { getSyncCursor, indexerPrisma } from "../src/indexer/db.js";
 import { syncOnce } from "../src/indexer/sync.js";
 import { loadManifest } from "../src/indexer/manifest.js";
 import { config } from "../src/config.js";
@@ -104,8 +104,16 @@ describe("reference script deployment sweep", () => {
 
     // The cursor moved past the deployment block, so the next pass asks Koios
     // only for what came after it rather than re-reading the whole history.
+    //
+    // The floor is the reconciliation floor shared by every source, not this
+    // source's own cursor. Scanning from its own cursor is what let the pass
+    // delete a window it had not read: the delete ran from
+    // `cursor - lookback` while the policy scan asked from `cursor`, so a
+    // mint-only transaction in between was erased and never requested again.
+    const covered = (await getSyncCursor("l1:mints"))!.lastBlockHeight;
     expect(floors.length).toBeGreaterThan(0);
-    expect(Math.min(...floors)).toBe(4939807);
+    expect(covered).toBeGreaterThan(0);
+    expect(Math.min(...floors)).toBe(covered - config.L1_REORG_LOOKBACK_BLOCKS);
   });
 
   // The regression the durable marker exists to close: a failed sweep used to

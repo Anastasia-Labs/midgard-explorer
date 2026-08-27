@@ -4,7 +4,11 @@ import { indexerPrisma } from "../src/indexer/db.js";
 import { deleteFromBlockHeight } from "../src/indexer/ingest.js";
 import { getSyncCursor } from "../src/indexer/db.js";
 import { parseTxInfo } from "../src/indexer/koios.js";
-import { syncOnce, warnOnPreDeploymentActivity } from "../src/indexer/sync.js";
+import {
+  syncOnce,
+  warnOnPreDeploymentActivity,
+  type SyncDeps,
+} from "../src/indexer/sync.js";
 import { truncateL1 } from "./helpers/truncate.mjs";
 
 /**
@@ -26,6 +30,27 @@ const addressTxs = load("address-txs.json");
 // only becomes an array at the Zod boundary.
 const txInfo = parseTxInfo(load("tx-info-state-queue.json"));
 
+/**
+ * Every network dependency, stubbed.
+ *
+ * Five of the six call sites below used to pass only the fetchers the case was
+ * about. An omitted dependency does not fail, it falls through to the real
+ * implementation, so those tests reached live Koios for account updates and
+ * epoch parameters on every run: hermetic in intent, networked in fact, and
+ * green either way. The return type is the COMPLETE `SyncDeps` rather than a
+ * partial one, so adding a seventh fetcher stops this file compiling instead of
+ * quietly reopening the hole.
+ */
+const hermetic = (over: Partial<SyncDeps> = {}): SyncDeps => ({
+  fetchAddressTxs: async () => [],
+  fetchTxInfo: async () => [],
+  fetchPolicyAssets: async () => [],
+  fetchAssetTxs: async () => [],
+  fetchAccountUpdates: async () => [],
+  fetchEpochParams: async () => null,
+  ...over,
+});
+
 let reachable = false;
 
 /** Bounded probe. A stopped container on WSL2 black-holes TCP rather than
@@ -46,7 +71,9 @@ beforeAll(async () => {
     await probe();
     reachable = true;
     await truncateL1();
-    await indexerPrisma.syncCursor.deleteMany({ where: { source: "l1" } });
+    await indexerPrisma.syncCursor.deleteMany({
+      where: { source: { in: ["l1", "l1:mints", "l1:rewards"] } },
+    });
   } catch (err) {
     console.warn(`Skipping: indexer Postgres unreachable. ${String(err)}`);
   }
@@ -55,7 +82,9 @@ beforeAll(async () => {
 afterAll(async () => {
   if (reachable) {
     await truncateL1();
-    await indexerPrisma.syncCursor.deleteMany({ where: { source: "l1" } });
+    await indexerPrisma.syncCursor.deleteMany({
+      where: { source: { in: ["l1", "l1:mints", "l1:rewards"] } },
+    });
     await indexerPrisma.$disconnect();
   }
 });
@@ -63,14 +92,12 @@ afterAll(async () => {
 describe("syncOnce", () => {
   it("ingests and advances the cursor", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    const r = await syncOnce({
-      fetchAddressTxs: async () => addressTxs,
-      fetchTxInfo: async () => txInfo,
-      // The deployment sweep reaches Koios. Stubbed empty so these tests
-      // stay hermetic; sweep behaviour is covered in its own test.
-      fetchPolicyAssets: async () => [],
-      fetchAssetTxs: async () => [],
-    });
+    const r = await syncOnce(
+      hermetic({
+        fetchAddressTxs: async () => addressTxs,
+        fetchTxInfo: async () => txInfo,
+      }),
+    );
     expect(r.ingested).toBeGreaterThanOrEqual(1);
     const cursor = await getSyncCursor("l1");
     expect(cursor?.lastBlockHeight).toBeGreaterThan(0);
@@ -78,17 +105,10 @@ describe("syncOnce", () => {
 
   it("adds no duplicates on a second run", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    const deps = {
+    const deps = hermetic({
       fetchAddressTxs: async () => addressTxs,
       fetchTxInfo: async () => txInfo,
-      // Every network dep is stubbed, not just the ones this case exercises.
-      // An omitted dep falls through to the real implementation, so the test
-      // reached live Koios and timed out for a reason unrelated to duplicates.
-      fetchPolicyAssets: async () => [],
-      fetchAssetTxs: async () => [],
-      fetchAccountUpdates: async () => [],
-      fetchEpochParams: async () => null,
-    };
+    });
     await syncOnce(deps);
     const before = await indexerPrisma.l1Tx.count();
     await syncOnce(deps);
@@ -97,49 +117,31 @@ describe("syncOnce", () => {
 
   it("removes rows for a block whose hash changed", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    await syncOnce({
-      fetchAddressTxs: async () => addressTxs,
-      fetchTxInfo: async () => txInfo,
-      // The deployment sweep reaches Koios. Stubbed empty so these tests
-      // stay hermetic; sweep behaviour is covered in its own test.
-      fetchPolicyAssets: async () => [],
-      fetchAssetTxs: async () => [],
-    });
+    await syncOnce(
+      hermetic({
+        fetchAddressTxs: async () => addressTxs,
+        fetchTxInfo: async () => txInfo,
+      }),
+    );
     expect(await indexerPrisma.l1Tx.count()).toBeGreaterThan(0);
 
     // Chain now reports nothing at those heights: the block was rolled back.
-    await syncOnce({
-      fetchAddressTxs: async () => [],
-      fetchTxInfo: async () => [],
-      // The deployment sweep reaches Koios. Stubbed empty so these tests
-      // stay hermetic; sweep behaviour is covered in its own test.
-      fetchPolicyAssets: async () => [],
-      fetchAssetTxs: async () => [],
-    });
+    await syncOnce(hermetic());
     expect(await indexerPrisma.l1Tx.count()).toBe(0);
   });
 
   it("does not move the cursor backwards when the window is empty", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    await syncOnce({
-      fetchAddressTxs: async () => addressTxs,
-      fetchTxInfo: async () => txInfo,
-      // The deployment sweep reaches Koios. Stubbed empty so these tests
-      // stay hermetic; sweep behaviour is covered in its own test.
-      fetchPolicyAssets: async () => [],
-      fetchAssetTxs: async () => [],
-    });
+    await syncOnce(
+      hermetic({
+        fetchAddressTxs: async () => addressTxs,
+        fetchTxInfo: async () => txInfo,
+      }),
+    );
     const advanced = (await getSyncCursor("l1"))!.lastBlockHeight;
     expect(advanced).toBeGreaterThan(0);
 
-    await syncOnce({
-      fetchAddressTxs: async () => [],
-      fetchTxInfo: async () => [],
-      // The deployment sweep reaches Koios. Stubbed empty so these tests
-      // stay hermetic; sweep behaviour is covered in its own test.
-      fetchPolicyAssets: async () => [],
-      fetchAssetTxs: async () => [],
-    });
+    await syncOnce(hermetic());
     const after = (await getSyncCursor("l1"))!.lastBlockHeight;
     expect(after).toBe(advanced);
   });
@@ -148,16 +150,13 @@ describe("syncOnce", () => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
     const before = await getSyncCursor("l1");
     await expect(
-      syncOnce({
-        fetchAddressTxs: async () => {
-          throw new Error("Koios 503");
-        },
-        fetchTxInfo: async () => [],
-        // The deployment sweep reaches Koios. Stubbed empty so these tests
-        // stay hermetic; sweep behaviour is covered in its own test.
-        fetchPolicyAssets: async () => [],
-        fetchAssetTxs: async () => [],
-      }),
+      syncOnce(
+        hermetic({
+          fetchAddressTxs: async () => {
+            throw new Error("Koios 503");
+          },
+        }),
+      ),
     ).rejects.toThrow(/503/);
     const after = await getSyncCursor("l1");
     expect(after?.lastBlockHeight).toBe(before?.lastBlockHeight);
@@ -165,7 +164,7 @@ describe("syncOnce", () => {
 });
 
 /**
- * The stub exclusion in manifest.ts is structural. This is the empirical
+ * The placeholder exclusion in manifest.ts is structural. This is the empirical
  * cross-check: activity predating the deployment means the address is shared
  * with something that is not Midgard.
  */
