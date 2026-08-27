@@ -14,8 +14,11 @@
 #
 # --apply does NOT start or stop your writer. Stopping the old one and starting
 # exactly one new one is left to whatever supervises the process, because this
-# script cannot know what that is. It does REFUSE to migrate while a writer
-# still holds indexer leadership, which is the part it can check for itself.
+# script cannot know what that is. What it does do is TAKE indexer leadership
+# and hold it across the migration, so a writer that is still running, or that a
+# supervisor restarts mid-migration, cannot index against a schema and a cursor
+# moving under it. Stopping the supervisor as well remains a precondition: the
+# lock stops a restarted writer from indexing, not from starting.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -76,10 +79,13 @@ echo "  repair migration applied = $([ "$UNAPPLIED" = "0" ] && echo yes || echo 
 # so a change there cannot leave this preflight testing a number nothing uses.
 LOCK_ID=$(grep -oP 'SYNC_ADVISORY_LOCK = \K[0-9_]+' src/indexer/leadership.ts | tr -d '_')
 [ -n "$LOCK_ID" ] || { echo "could not read the leadership lock id from src/indexer/leadership.ts"; exit 1; }
+# Observation only, and it says so. `psql -c` opens a session, takes the lock
+# and closes, which releases it, so this reports whether leadership was held at
+# one instant. --apply does not rely on it; it takes the lock and keeps it.
 LEADER_HELD=$("${Q[@]}" "SELECT NOT pg_try_advisory_lock($LOCK_ID);")
 LEADER_APPS=$("${Q[@]}" "SELECT string_agg(DISTINCT application_name, ', ') FROM pg_stat_activity
               WHERE application_name LIKE 'midgard-explorer-l1-indexer%';")
-echo "  writer holding leadership = $([ "$LEADER_HELD" = "t" ] && echo YES || echo no)${LEADER_APPS:+  ($LEADER_APPS)}"
+echo "  leadership held (at this instant) = $([ "$LEADER_HELD" = "t" ] && echo YES || echo no)${LEADER_APPS:+  ($LEADER_APPS)}"
 
 echo
 echo "--- readiness on this build ---"
@@ -97,16 +103,92 @@ if [ "$MODE" != "--apply" ]; then
   exit "$READY_EXIT"
 fi
 
-# Preflight. The migration resets the cursors, and a writer that is still
-# running will start re-indexing against a schema it was not built for, from a
-# cursor that moved under it. Warning about it was not enough: the advisory
-# lock already proves the answer, so it is asked rather than assumed.
-if [ "$LEADER_HELD" = "t" ]; then
+# Preflight, and more than a preflight.
+#
+# The migration resets the cursors, and a writer still running will re-index
+# against a schema it was not built for, from a cursor that moved under it.
+# Asking `pg_try_advisory_lock` in a one-shot `psql -c` and then migrating is
+# not enough: that session closes, the lock goes with it, and a supervised
+# writer can be restarted into the window between the answer and the migration.
+# The check proved leadership was free at an instant; it reserved nothing.
+#
+# So this TAKES leadership and holds it, on a session that stays open across
+# `indexer:deploy`. A restarting writer then finds the lock held, does not
+# index, and retries, which is exactly what the lock is for. psql is started
+# directly rather than inside a subshell, because killing a subshell does not
+# kill the psql inside it and the lock would outlive the script.
+# The holder session is fed from a FIFO and does nothing between statements, so
+# it is IDLE rather than busy. That is the whole design: holding the session
+# open with `SELECT pg_sleep(1800)` looked equivalent and was not. Killing psql
+# closes the socket, but PostgreSQL only notices a gone client when the backend
+# next tries to write, and a backend inside pg_sleep is not going to for half an
+# hour. Rehearsed and measured: psql was gone, `pg_stat_activity` still showed
+# the session `active` on `pg_sleep(1800)`, and the lock was still held.
+#
+# An idle backend, by contrast, is reading from its socket, so it sees EOF
+# immediately. Closing fd 9 ends the session and releases the lock at once, and
+# because the kernel closes fds when a process dies, that happens even if this
+# script is SIGKILLed. No timeout is needed and none is used.
+LOCK_LOG=$(mktemp)
+LOCK_FIFO=$(mktemp -u)
+mkfifo "$LOCK_FIFO"
+# Opened read-write. `exec 9>fifo` blocks until a reader appears, and the reader
+# is started on the next line, so a plain write open deadlocks against itself.
+# Read-write never blocks, and psql still sees EOF when this fd closes, because
+# EOF is "no writers left" and this is the only one.
+exec 9<>"$LOCK_FIFO"
+# `9>&-` matters more than it looks. Without it psql inherits fd 9, so psql is
+# itself a writer on the FIFO it is reading, EOF can never arrive, and the
+# session outlives the script: a SIGKILLed rollout left leadership held on a
+# database with no process visibly holding it. Measured, not theorised. Closing
+# the fd in the child is what makes "the writer dies, the lock goes" true.
+psql -h "$HOST" -p "$PORT" -U "$USER" -d "$DB" -X -A -t -q -f "$LOCK_FIFO" \
+  9>&- > "$LOCK_LOG" 2>&1 &
+LOCK_PID=$!
+release_lock() {
+  # Both, deliberately. Closing the fd is the mechanism that works when this
+  # script is SIGKILLed and no trap runs at all: the kernel closes the fd, psql
+  # reads EOF and exits. Killing psql is the mechanism that works when the shell
+  # is blocked somewhere the trap cannot promptly reach. Either one alone leaves
+  # a case where leadership outlives the rollout, and neither is expensive.
+  #
+  # This is only safe because the session is IDLE. A backend killed mid-pg_sleep
+  # keeps running and keeps the lock; an idle one ends immediately.
+  exec 9>&- 2>/dev/null || true
+  kill "$LOCK_PID" 2>/dev/null || true
+  wait "$LOCK_PID" 2>/dev/null || true
+  rm -f "$LOCK_FIFO" "$LOCK_LOG"
+}
+trap release_lock EXIT INT TERM
+
+printf "SET application_name = 'midgard-explorer-rollout-lock';\n" >&9
+printf "SELECT pg_try_advisory_lock(%s);\n" "$LOCK_ID" >&9
+
+# Confirmed from a SEPARATE session against pg_locks, not by parsing the
+# holder's own output: what matters is that the server records the lock as
+# granted to that session, which is the thing a restarting writer will collide
+# with.
+LOCK_TAKEN=no
+for _ in $(seq 1 100); do
+  if [ "$("${Q[@]}" "SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+           WHERE l.locktype = 'advisory' AND l.granted
+             AND a.application_name = 'midgard-explorer-rollout-lock';")" = "1" ]; then
+    LOCK_TAKEN=yes
+    break
+  fi
+  sleep 0.1
+done
+if [ "$LOCK_TAKEN" != "yes" ]; then
   echo
-  echo "REFUSING: a process still holds indexer leadership on $TARGET."
-  echo "Stop the writer, confirm the lock is released, and re-run."
+  echo "REFUSING: could not take indexer leadership on $TARGET."
+  echo "A writer holds it, or the connection failed: $(head -3 "$LOCK_LOG" | tr '\n' ' ')"
+  echo "Stop the writer AND its supervisor, so it cannot restart, then re-run."
   exit 1
 fi
+echo
+echo "Holding indexer leadership for this migration, on an idle session named"
+echo "'midgard-explorer-rollout-lock'. A writer that restarts now will find the"
+echo "lock held and will not index. It is released the moment this script ends."
 
 STALE=$("${Q[@]}" "SELECT count(*) FROM l1_event WHERE deployment='default';")
 echo
@@ -119,6 +201,9 @@ echo "  so the next writer re-indexes from genesis. Expect a full"
 echo "  Koios re-scan and an index that is incomplete until it ends."
 echo "  Keep this deployment OUT OF ROTATION until readiness passes"
 echo "  again: it reports NOT READY for the whole re-index."
+echo "  Its supervisor must be stopped too, not just the process:"
+echo "  leadership is held for this migration, so a restart cannot"
+echo "  index, but it will also not be the one writer you wanted."
 echo "=============================================================="
 # The full host:port/database, not the database name alone. Two hosts commonly
 # carry the same database name, and naming only the database is exactly the
@@ -126,7 +211,16 @@ echo "=============================================================="
 read -r -p "Type $TARGET to continue: " CONFIRM
 [ "$CONFIRM" = "$TARGET" ] || { echo "aborted"; exit 1; }
 
-pnpm indexer:deploy
+# Also without fd 9, so the migration cannot keep the holder alive after this
+# script is gone.
+pnpm indexer:deploy 9>&-
+# Released here rather than left to the trap, so the window in which this script
+# holds leadership is the migration and nothing after it.
+release_lock
+trap - EXIT INT TERM
+echo
+echo "  leadership released, advisory locks now on $DB = $("${Q[@]}" \
+  "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory';")"
 echo
 echo "--- after the migration ---"
 "${Q[@]}" "SELECT '  column default  = '||coalesce(column_default,'(none)') FROM information_schema.columns
