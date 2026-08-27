@@ -154,6 +154,8 @@ describe("reference script deployment sweep", () => {
         throw new Error("Koios 429 rate limited");
       },
       fetchAssetTxs: async () => [],
+      fetchAccountUpdates: async () => [],
+      fetchEpochParams: async () => null,
     } as never);
 
     expect(requested.flat()).toContain("a".repeat(64));

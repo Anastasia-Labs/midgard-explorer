@@ -75,6 +75,8 @@ describe("sync atomicity", () => {
       ],
       fetchPolicyAssets: async () => [],
       fetchAssetTxs: async () => [],
+      fetchAccountUpdates: async () => [],
+      fetchEpochParams: async () => null,
       fetchTxInfo: async () => {
         rowsDuringFetch = await indexerPrisma.l1Tx.count();
         return [];
@@ -92,6 +94,8 @@ describe("sync atomicity", () => {
         ],
         fetchPolicyAssets: async () => [],
         fetchAssetTxs: async () => [],
+        fetchAccountUpdates: async () => [],
+        fetchEpochParams: async () => null,
         fetchTxInfo: async () => {
           throw new Error("Koios rate limited");
         },
