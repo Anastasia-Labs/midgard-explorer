@@ -26,6 +26,9 @@ export E2E_PORT=3210 FIXTURE_PORT=3211 E2E_REUSE_SERVER=1
 
 echo "== build ==" >> $SUM
 MG_STRICT_CONFIG=1 NEXT_PUBLIC_NETWORK_LABEL=Preprod \
+NEXT_PUBLIC_API_BASE="${NEXT_PUBLIC_API_BASE:-https://api.explorer.invalid}" \
+API_BASE_SERVER="${API_BASE_SERVER:-http://backend:3101}" \
+NEXT_PUBLIC_SITE_URL="${NEXT_PUBLIC_SITE_URL:-https://explorer.invalid}" \
 NEXT_PUBLIC_L1_EXPLORER_TX_URL='https://preprod.cexplorer.io/tx/{hash}' \
 NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL='https://preprod.cexplorer.io/address/{address}' \
 NEXT_PUBLIC_L1_EXPLORER_NAME=CExplorer \

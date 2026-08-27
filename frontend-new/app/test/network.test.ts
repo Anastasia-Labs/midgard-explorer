@@ -16,8 +16,21 @@ const KEYS = [
   "NEXT_PUBLIC_L1_EXPLORER_TX_URL",
   "NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL",
   "NEXT_PUBLIC_L1_EXPLORER_NAME",
+  "NEXT_PUBLIC_API_BASE",
+  "API_BASE_SERVER",
+  "NEXT_PUBLIC_SITE_URL",
   "MG_STRICT_CONFIG",
 ];
+
+/** Strict mode also requires the deployment's own URLs, because a production
+ * build defaulted the public API base to localhost and published documentation
+ * and examples pointing at each visitor's own machine. Cases about the L1
+ * explorer templates supply them so they fail on the thing they are about. */
+const DEPLOYMENT_URLS = {
+  NEXT_PUBLIC_API_BASE: "https://api.example.test",
+  API_BASE_SERVER: "http://backend:3101",
+  NEXT_PUBLIC_SITE_URL: "https://explorer.example.test",
+};
 let saved: Record<string, string | undefined> = {};
 
 const CEXPLORER = "https://preprod.cexplorer.io/tx/{hash}";
@@ -203,6 +216,7 @@ describe("assertNetworkConfigured", () => {
       NEXT_PUBLIC_NETWORK_LABEL: "Preprod",
       NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
       MG_STRICT_CONFIG: "1",
+      ...DEPLOYMENT_URLS,
     });
     expect(() => assertNetworkConfigured()).not.toThrow();
   });
@@ -253,6 +267,7 @@ describe("l1AddressUrl", () => {
       NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
       NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL: undefined,
       MG_STRICT_CONFIG: "1",
+      ...DEPLOYMENT_URLS,
     });
     expect(() => assertNetworkConfigured()).not.toThrow();
   });

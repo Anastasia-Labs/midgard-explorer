@@ -15,9 +15,7 @@ describe("design tokens", () => {
   });
 
   it("declares every token the app renders against", () => {
-    const declared = new Set(
-      [...css.matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((m) => m[1]),
-    );
+    const declared = new Set([...css.matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((m) => m[1]));
     expect(declared.size).toBeGreaterThan(0);
   });
 

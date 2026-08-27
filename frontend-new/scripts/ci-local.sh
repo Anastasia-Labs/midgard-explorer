@@ -54,7 +54,15 @@ step "unit tests: app"
 pnpm --filter @midgard-explorer/app exec vitest run
 
 step "production build"
+# Strict mode requires the deployment's own URLs. The public API base used to
+# default to localhost, so a production build published documentation and
+# copyable examples pointing at each visitor's own machine. `.invalid` is the
+# reserved TLD: these are placeholders that are shaped like real public origins
+# and can never resolve.
 MG_STRICT_CONFIG=1 \
+NEXT_PUBLIC_API_BASE="${NEXT_PUBLIC_API_BASE:-https://api.explorer.invalid}" \
+API_BASE_SERVER="${API_BASE_SERVER:-http://backend:3101}" \
+NEXT_PUBLIC_SITE_URL="${NEXT_PUBLIC_SITE_URL:-https://explorer.invalid}" \
 NEXT_PUBLIC_NETWORK_LABEL="${NEXT_PUBLIC_NETWORK_LABEL:-Preprod}" \
 NEXT_PUBLIC_L1_EXPLORER_TX_URL="${NEXT_PUBLIC_L1_EXPLORER_TX_URL:-https://preprod.cexplorer.io/tx/{hash}}" \
 NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL="${NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL:-https://preprod.cexplorer.io/address/{address}}" \

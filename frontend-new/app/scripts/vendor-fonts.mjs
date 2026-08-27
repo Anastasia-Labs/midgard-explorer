@@ -40,7 +40,9 @@ for (const { family, file, weight } of FAMILIES) {
   const url = chosen?.match(/url\((https:\/\/fonts\.gstatic\.com[^)]+\.woff2)\)/)?.[1];
   if (!url) throw new Error(`No woff2 URL for ${family}`);
 
-  const bytes = Buffer.from(await (await fetch(url, { headers: { "user-agent": UA } })).arrayBuffer());
+  const bytes = Buffer.from(
+    await (await fetch(url, { headers: { "user-agent": UA } })).arrayBuffer(),
+  );
   if (bytes.subarray(0, 4).toString() !== "wOF2") {
     throw new Error(`${family} did not return a woff2 file`);
   }
