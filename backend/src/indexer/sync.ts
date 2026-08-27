@@ -5,6 +5,7 @@ import { deleteFromBlockHeight, ingestTxInfos } from "./ingest";
 import {
   fetchAddressTxs as realFetchAddressTxs,
   fetchAssetTxs as realFetchAssetTxs,
+  fetchEpochParams as realFetchEpochParams,
   fetchPolicyAssets as realFetchPolicyAssets,
   fetchTxInfo as realFetchTxInfo,
 } from "./koios";
@@ -20,6 +21,7 @@ export type SyncDeps = {
   // time out.
   fetchPolicyAssets: typeof realFetchPolicyAssets;
   fetchAssetTxs: typeof realFetchAssetTxs;
+  fetchEpochParams: typeof realFetchEpochParams;
 };
 
 /**
@@ -35,6 +37,7 @@ export async function syncOnce(
   const fetchTxInfo = deps.fetchTxInfo ?? realFetchTxInfo;
   const fetchPolicyAssets = deps.fetchPolicyAssets ?? realFetchPolicyAssets;
   const fetchAssetTxs = deps.fetchAssetTxs ?? realFetchAssetTxs;
+  const fetchEpochParams = deps.fetchEpochParams ?? realFetchEpochParams;
 
   const { validators, referenceScriptAuthPolicy } = loadManifest(config.MIDGARD_MANIFEST_PATH);
   const addresses = validators.map((v) => v.address);
@@ -108,6 +111,12 @@ export async function syncOnce(
     // go. Prisma's 5 second default would abort it part way through.
     { maxWait: 15_000, timeout: 180_000 },
   );
+
+  // Outside the transaction above and allowed to fail on its own. These
+  // parameters annotate what the indexer already wrote; a Koios outage here
+  // must not roll back a completed chain scan, and a page with no parameters
+  // shows units without a percentage rather than nothing at all.
+  await refreshProtocolParams(fetchEpochParams);
 
   logger.info(
     `L1 sync: scanned ${rows.length} rows from height ${scanFloor}, wrote ` +
@@ -203,4 +212,63 @@ export function startSync(): void {
   };
   void tick();
   setInterval(tick, config.L1_SYNC_INTERVAL_MS).unref();
+}
+
+/** Records the current epoch's execution limits, upserted by epoch.
+ *
+ * History is kept rather than overwritten: a transaction is measured against
+ * the parameters of its own epoch, and a single mutable row would restate old
+ * figures against today's limits every time governance changed one.
+ */
+export async function refreshProtocolParams(
+  fetch: typeof realFetchEpochParams = realFetchEpochParams,
+): Promise<void> {
+  await storeEpochParams(fetch);
+  await backfillMissingProtocolParams(fetch);
+}
+
+async function storeEpochParams(
+  fetch: typeof realFetchEpochParams,
+  epochNo?: number,
+): Promise<boolean> {
+  try {
+    const params = await fetch(epochNo);
+    if (!params) return false;
+    const { epochNo: observed, ...limits } = params;
+    await indexerPrisma.l1ProtocolParams.upsert({
+      where: { epochNo: observed },
+      create: { epochNo: observed, ...limits },
+      update: { ...limits, observedAt: new Date() },
+    });
+    return true;
+  } catch (error) {
+    logger.warn(`Could not read Cardano protocol parameters: ${String(error)}`);
+    return false;
+  }
+}
+
+/** Fills in the epochs the indexer already holds transactions for.
+ *
+ * Storing only the current epoch would leave every transaction indexed before
+ * today without a limit to be measured against, which is most of them on a
+ * first sync. The set is bounded by the epochs actually present in `l1_tx`,
+ * so this asks for what a page can display and nothing else, and it stops
+ * asking once an epoch is on record.
+ */
+export async function backfillMissingProtocolParams(
+  fetch: typeof realFetchEpochParams = realFetchEpochParams,
+): Promise<number> {
+  const [present, known] = await Promise.all([
+    indexerPrisma.l1Tx.findMany({ distinct: ["epoch"], select: { epoch: true } }),
+    indexerPrisma.l1ProtocolParams.findMany({ select: { epochNo: true } }),
+  ]);
+  const have = new Set(known.map((row) => row.epochNo));
+  const missing = present.map((row) => row.epoch).filter((epoch) => !have.has(epoch));
+
+  let stored = 0;
+  for (const epoch of missing) {
+    if (await storeEpochParams(fetch, epoch)) stored += 1;
+  }
+  if (stored > 0) logger.info(`Recorded Cardano protocol parameters for ${stored} epoch(s)`);
+  return stored;
 }

@@ -1,8 +1,8 @@
 import { indexerPrisma, type IndexerTx } from "./db";
 import type { KoiosAsset, KoiosPlutusContract, KoiosTxInfo, KoiosUtxo } from "./koios";
 import type { ValidatorEntry } from "./manifest";
+import { classifyOutput } from "./eventClassification";
 import { decodeStateQueueDatum } from "./stateQueueDatum";
-import { classifyEvent } from "./userEventDatum";
 import { logger } from "../logger";
 
 /** Outputs at addresses we do not track are ignored. A transaction commonly
@@ -185,23 +185,14 @@ export async function ingestTxInfos(
       if (!validator) continue;
 
       const datumValue = out.inline_datum?.value ?? null;
-      const header =
-        validator.family === "stateQueue" && datumValue !== null
-          ? decodeStateQueueDatum(datumValue)
-          : null;
-
       // An unrecognised datum is stored raw and flagged rather than dropped:
-      // losing an event is worse than not understanding it yet.
-      const user = header === null && datumValue !== null
-        ? classifyEvent(validator.family, datumValue)
-        : { eventType: "unknown", decoded: null };
-
-      const eventType =
-        header !== null
-          ? "blockCommitment"
-          : datumValue !== null
-            ? user.eventType
-            : "noDatum";
+      // losing an event is worse than not understanding it yet. The same call
+      // backs `scripts/redecode-l1-events.ts`, so a decoder landing later
+      // reclassifies old rows exactly as it classifies new ones.
+      const { eventType, decoded: decodedFields, header } = classifyOutput(
+        validator.family,
+        datumValue,
+      );
 
       if (eventType === "unknown") {
         logger.warn(
@@ -220,12 +211,12 @@ export async function ingestTxInfos(
           outputIndex: index,
           lovelace: BigInt(out.value),
           datum: datumValue as never,
-          decoded: user.decoded as never,
+          decoded: decodedFields as never,
         },
         update: {
           validator: validator.family,
           eventType,
-          decoded: user.decoded as never,
+          decoded: decodedFields as never,
         },
       });
       events += 1;

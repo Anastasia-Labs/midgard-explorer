@@ -423,47 +423,27 @@ export async function decodeTransaction(
     capabilities: {
       collateral: {
         state: "not_supported",
-        reason:
-          "Midgard native transaction version 1 rejects Cardano collateral inputs, total collateral, and collateral return.",
       },
       metadata: {
         state: auxiliaryDataHash === null ? "not_present" : "hash_only",
-        reason:
-          auxiliaryDataHash === null
-            ? "No auxiliary-data hash is declared."
-            : "The native body commits to auxiliary data by hash but does not carry the metadata body, so CIP-20 text cannot be decoded here.",
       },
       certificates: {
         state: "not_supported",
-        reason:
-          "Midgard native transaction version 1 rejects Cardano certificates.",
       },
       withdrawals: {
         state: requiredObservers.length === 0 ? "not_present" : "available",
-        reason:
-          requiredObservers.length === 0
-            ? "No required withdrawal observers are declared."
-            : "Midgard preserves zero-value Cardano withdrawal scripts as required observers; it does not carry a withdrawal amount.",
       },
       governance: {
         state: "not_supported",
-        reason:
-          "Midgard native transaction version 1 rejects voting procedures, proposals, treasury values, and donations.",
       },
       protocolEvents: {
         state: "not_emitted",
-        reason:
-          "The L2 transaction format emits no event-log collection; datums, redeemers, and state changes are shown instead.",
       },
       executionTrace: {
         state: "commitment_only",
-        reason:
-          "The node commits a transition-trace root at block level but does not expose an authoritative per-transaction execution trace.",
       },
       consumedBy: {
         state: "not_indexed",
-        reason:
-          "The node exposes the current UTxO ledger but no historical outref-to-spending-transaction index.",
       },
     },
     witnesses: {

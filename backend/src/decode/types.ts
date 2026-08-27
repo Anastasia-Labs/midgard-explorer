@@ -173,7 +173,6 @@ export type CapabilityView = {
     | "not_emitted"
     | "not_indexed"
     | "commitment_only";
-  reason: string;
 };
 
 /** A single minted or burned asset. A negative quantity is a burn. */

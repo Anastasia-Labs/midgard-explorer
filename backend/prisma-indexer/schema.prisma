@@ -52,18 +52,18 @@ model L1Tx {
 /// differs. `sourceTxHash`/`sourceIndex` point at the UTxO being referenced,
 /// which for an output is this transaction itself.
 model L1TxIo {
-  id           Int     @id @default(autoincrement())
-  txHash       String  @map("tx_hash")
-  kind         String
-  position     Int
-  sourceTxHash String  @map("source_tx_hash")
-  sourceIndex  Int     @map("source_index")
-  address      String?
-  paymentCred  String? @map("payment_cred")
-  stakeAddr    String? @map("stake_addr")
-  lovelace     BigInt
-  datumHash    String? @map("datum_hash")
-  inlineDatum  Json?   @map("inline_datum")
+  id            Int     @id @default(autoincrement())
+  txHash        String  @map("tx_hash")
+  kind          String
+  position      Int
+  sourceTxHash  String  @map("source_tx_hash")
+  sourceIndex   Int     @map("source_index")
+  address       String?
+  paymentCred   String? @map("payment_cred")
+  stakeAddr     String? @map("stake_addr")
+  lovelace      BigInt
+  datumHash     String? @map("datum_hash")
+  inlineDatum   Json?   @map("inline_datum")
   refScriptHash String? @map("ref_script_hash")
 
   tx     L1Tx        @relation(fields: [txHash], references: [txHash], onDelete: Cascade)
@@ -120,11 +120,11 @@ model L1Redeemer {
 }
 
 model L1Event {
-  id          Int     @id @default(autoincrement())
-  txHash      String  @map("tx_hash")
+  id          Int    @id @default(autoincrement())
+  txHash      String @map("tx_hash")
   validator   String
-  eventType   String  @map("event_type")
-  outputIndex Int     @map("output_index")
+  eventType   String @map("event_type")
+  outputIndex Int    @map("output_index")
   lovelace    BigInt
   datum       Json?
 
@@ -155,28 +155,49 @@ model L1BlockHeader {
   // actually true.
   l1TxHash               String? @map("l1_tx_hash")
   blockHeight            Int?    @map("block_height")
-  prevUtxosRoot          String @map("prev_utxos_root")
-  utxosRoot              String @map("utxos_root")
-  withdrawalsRoot        String @map("withdrawals_root")
-  forcedTransactionsRoot String @map("forced_transactions_root")
-  transactionsRoot       String @map("transactions_root")
-  depositsRoot           String @map("deposits_root")
-  transitionTraceRoot    String @map("transition_trace_root")
-  eventToStepRoot        String @map("event_to_step_root")
-  withdrawalCount        BigInt @map("withdrawal_count")
-  forcedTransactionCount BigInt @map("forced_transaction_count")
-  l2TransactionCount     BigInt @map("l2_transaction_count")
-  depositCount           BigInt @map("deposit_count")
-  totalEventCount        BigInt @map("total_event_count")
-  transitionStepCount    BigInt @map("transition_step_count")
-  startTime              BigInt @map("start_time")
-  endTime                BigInt @map("end_time")
-  prevHeaderHash         String @map("prev_header_hash")
-  operatorVkey           String @map("operator_vkey")
-  protocolVersion        BigInt @map("protocol_version")
+  prevUtxosRoot          String  @map("prev_utxos_root")
+  utxosRoot              String  @map("utxos_root")
+  withdrawalsRoot        String  @map("withdrawals_root")
+  forcedTransactionsRoot String  @map("forced_transactions_root")
+  transactionsRoot       String  @map("transactions_root")
+  depositsRoot           String  @map("deposits_root")
+  transitionTraceRoot    String  @map("transition_trace_root")
+  eventToStepRoot        String  @map("event_to_step_root")
+  withdrawalCount        BigInt  @map("withdrawal_count")
+  forcedTransactionCount BigInt  @map("forced_transaction_count")
+  l2TransactionCount     BigInt  @map("l2_transaction_count")
+  depositCount           BigInt  @map("deposit_count")
+  totalEventCount        BigInt  @map("total_event_count")
+  transitionStepCount    BigInt  @map("transition_step_count")
+  startTime              BigInt  @map("start_time")
+  endTime                BigInt  @map("end_time")
+  prevHeaderHash         String  @map("prev_header_hash")
+  operatorVkey           String  @map("operator_vkey")
+  protocolVersion        BigInt  @map("protocol_version")
 
   @@index([l1TxHash])
   @@index([prevUtxosRoot])
   @@index([blockHeight])
   @@map("l1_block_header")
+}
+
+/// Cardano protocol parameters, as the chain reported them for one epoch.
+///
+/// Stored rather than hard-coded because these are governance-changeable
+/// values, not constants: a percentage rendered against a compiled-in limit
+/// silently becomes wrong the epoch after a parameter update, and nothing in
+/// the interface would show that it had. Keeping the epoch alongside them lets
+/// a reader see which parameter set a figure was measured against.
+///
+/// Only the fields the explorer actually renders are kept. The rest of the
+/// parameter set is not stored so that no page can quietly start depending on
+/// a value nothing verifies.
+model L1ProtocolParams {
+  epochNo      Int      @id @map("epoch_no")
+  maxTxExMem   BigInt   @map("max_tx_ex_mem")
+  maxTxExSteps BigInt   @map("max_tx_ex_steps")
+  /// When the explorer read them, not when the epoch began.
+  observedAt   DateTime @default(now()) @map("observed_at")
+
+  @@map("l1_protocol_params")
 }

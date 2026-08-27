@@ -2,9 +2,36 @@ import { config } from "../config";
 import { prisma } from "../db";
 import { indexerPrisma, getSyncCursor } from "../indexer/db";
 import { loadManifest } from "../indexer/manifest";
+import {
+  decodeDepositDatum,
+  decodeSchedulerDatum,
+  decodeWithdrawalDatum,
+} from "../indexer/userEventDatum";
+import { decodeSchedulerRedeemer } from "../decode/schedulerRedeemer";
 import { logger } from "../logger";
 
 const PAGE_SIZE = 25;
+
+/** Whether the contract governing a family actually validated.
+ *
+ * Deposits, withdrawals and block commitments used to report `true` with
+ * nothing behind it: the value was a literal in the row builder, not a reading
+ * of anything. Paying to a script address runs no script, so most of those
+ * transactions carry no redeemer for that family and there is no verdict to
+ * report. Null says exactly that, and is not the same answer as success.
+ *
+ * A family with several redeemers passes only if every one of them passed: a
+ * transaction is valid or it is not, and one failing script fails the phase.
+ */
+export function contractVerdict(
+  redeemers: ReadonlyArray<{ scriptHash: string; validContract: boolean }>,
+  familyOf: (scriptHash: string) => string | undefined,
+  family: string,
+): boolean | null {
+  const rows = redeemers.filter((row) => familyOf(row.scriptHash) === family);
+  if (rows.length === 0) return null;
+  return rows.every((row) => row.validContract);
+}
 
 export async function getL1TransactionsPage(
   page: number,
@@ -44,36 +71,224 @@ export async function getL1TransactionsPage(
  * caller that has to filter by kind is a caller that can get the filter wrong.
  */
 export async function getL1Transaction(txHash: string) {
-  const tx = await indexerPrisma.l1Tx.findUnique({
-    where: { txHash },
-    include: {
-      events: true,
-      redeemers: true,
-      // Native assets belong to the UTxO they were found in, so they are
-      // nested. Mints belong to no UTxO and would be lost by that join, so
-      // they come from the ioId-less rows instead.
-      ios: {
-        include: { assets: true },
-        orderBy: [{ kind: "asc" }, { position: "asc" }],
+  const [tx, committedHeaders, spenders] = await Promise.all([
+    indexerPrisma.l1Tx.findUnique({
+      where: { txHash },
+      include: {
+        events: true,
+        redeemers: true,
+        // Native assets belong to the UTxO they were found in, so they are
+        // nested. Mints belong to no UTxO and would be lost by that join, so
+        // they come from the ioId-less rows instead.
+        ios: {
+          include: { assets: true },
+          orderBy: [{ kind: "asc" }, { position: "asc" }],
+        },
+        assets: { where: { ioId: null } },
       },
-      assets: { where: { ioId: null } },
-    },
-  });
+    }),
+    indexerPrisma.l1BlockHeader.findMany({
+      where: { l1TxHash: txHash },
+      select: { headerHash: true },
+      orderBy: { headerHash: "asc" },
+    }),
+    // Which indexed transaction spent each output this one produced. The index
+    // holds Midgard-related transactions only, so the absence of a row means no
+    // indexed transaction consumed that output. It does not mean unspent, and
+    // the response must not be read as saying so.
+    indexerPrisma.l1TxIo.findMany({
+      where: { kind: "input", sourceTxHash: txHash },
+      select: { sourceIndex: true, txHash: true },
+    }),
+  ]);
   if (!tx) return null;
+
+  // The transaction's OWN epoch, not the current one. Execution limits are
+  // governance-changeable, so measuring a two-year-old transaction against
+  // today's parameters would restate history. Null when that epoch was never
+  // recorded, which the response says plainly rather than substituting the
+  // nearest epoch we happen to hold.
+  const protocolParams = await indexerPrisma.l1ProtocolParams.findUnique({
+    where: { epochNo: tx.epoch },
+    select: { epochNo: true, maxTxExMem: true, maxTxExSteps: true },
+  });
 
   const { ios, assets, ...rest } = tx;
   const of = (kind: string) => ios.filter((io) => io.kind === kind);
 
+  // Only a UTxO this transaction produced can carry a spender. An input's
+  // consumer is this transaction itself, so answering the question there would
+  // restate the row it is printed on.
+  const spentByIndex = new Map(spenders.map((row) => [row.sourceIndex, row.txHash]));
+  const produced = <T extends { sourceIndex: number }>(io: T) => ({
+    ...io,
+    spentBy: spentByIndex.get(io.sourceIndex) ?? null,
+  });
+
+  // Deposit and header events remain useful even if deployment identity is
+  // temporarily unavailable. Only redeemer-to-family attribution depends on
+  // the manifest, so degrade that part instead of failing the whole record.
+  let familyByScript = new Map<string, string>();
+  try {
+    const manifest = loadManifest(config.MIDGARD_MANIFEST_PATH);
+    familyByScript = new Map(
+      manifest.validators.map((validator) => [validator.scriptHash, validator.family]),
+    );
+  } catch (error) {
+    logger.warn(`Could not attribute L1 redeemers to Midgard validators: ${String(error)}`);
+  }
+  const actionFamilies = new Set<string>();
+  const actions: Array<{
+    kind: "deposit" | "withdrawal" | "block_commitment" | "scheduler_shift" | "validator_execution";
+    family: string;
+    outputIndex: number | null;
+    lovelace: bigint | null;
+    operation: string | null;
+    validContract: boolean | null;
+    operator: string | null;
+    startTime: bigint | null;
+    /* What the scheduler passed over when it skipped an operator. "none" is a
+     * decoded answer; null means this action cannot neglect anything. */
+    neglected: "none" | "deposit" | "withdrawal" | "txOrder" | null;
+    /* Who the user event names, from its own datum. Re-decoded from the stored
+     * datum rather than read from the stored decode, so a row indexed before
+     * the decoder existed answers too. Amounts stay out of here: a deposit's
+     * value is the event UTxO's value, which is already `lovelace`, and a
+     * withdrawal's l2_value is not one of the fields the decoder extracts. */
+    userEvent:
+      | {
+          kind: "deposit";
+          l2PaymentCredential: string;
+          l2StakeCredential: string | null;
+          l2NetworkId: number;
+          inclusionTime: bigint;
+        }
+      | {
+          kind: "withdrawal";
+          l2Owner: string;
+          l2OutRef: { txHash: string; index: number };
+          inclusionTime: bigint;
+        }
+      | null;
+    headerHash: string | null;
+  }> = [];
+
+  const contractValidity = (family: string): boolean | null =>
+    contractVerdict(tx.redeemers, (hash) => familyByScript.get(hash), family);
+
+  for (const event of tx.events) {
+    if (event.eventType === "blockCommitment") {
+      if (!actions.some((action) => action.kind === "block_commitment")) {
+        actions.push({
+          kind: "block_commitment",
+          family: event.validator,
+          outputIndex: event.outputIndex,
+          lovelace: null,
+          operation: null,
+          validContract: contractValidity(event.validator),
+          operator: null,
+          startTime: null,
+          neglected: null,
+          userEvent: null,
+          headerHash: committedHeaders[0]?.headerHash ?? null,
+        });
+      }
+      actionFamilies.add(event.validator);
+      continue;
+    }
+    if (event.eventType === "deposit" || event.eventType === "withdrawal") {
+      const deposit = event.eventType === "deposit" ? decodeDepositDatum(event.datum) : null;
+      const withdrawal =
+        event.eventType === "withdrawal" ? decodeWithdrawalDatum(event.datum) : null;
+      actions.push({
+        kind: event.eventType,
+        family: event.validator,
+        outputIndex: event.outputIndex,
+        lovelace: event.eventType === "deposit" ? event.lovelace : null,
+        operation: null,
+        validContract: contractValidity(event.validator),
+        operator: null,
+        startTime: null,
+        neglected: null,
+        userEvent: deposit
+          ? {
+              kind: "deposit",
+              l2PaymentCredential: deposit.l2PaymentCredential,
+              l2StakeCredential: deposit.l2StakeCredential,
+              l2NetworkId: deposit.l2NetworkId,
+              inclusionTime: deposit.inclusionTime,
+            }
+          : withdrawal
+            ? {
+                kind: "withdrawal",
+                l2Owner: withdrawal.l2Owner,
+                l2OutRef: withdrawal.l2OutRef,
+                inclusionTime: withdrawal.inclusionTime,
+              }
+            : null,
+        headerHash: null,
+      });
+      actionFamilies.add(event.validator);
+      continue;
+    }
+    if (event.validator === "scheduler") {
+      const redeemer = tx.redeemers.find(
+        (row) => familyByScript.get(row.scriptHash) === "scheduler" && row.purpose === "spend",
+      );
+      const decodedRedeemer = redeemer ? decodeSchedulerRedeemer(redeemer.datum) : null;
+      const decodedDatum = decodeSchedulerDatum(event.datum);
+      if (decodedRedeemer) {
+        actions.push({
+          kind: "scheduler_shift",
+          family: "scheduler",
+          outputIndex: event.outputIndex,
+          lovelace: null,
+          operation: decodedRedeemer.action,
+          validContract: redeemer?.validContract ?? null,
+          operator: decodedDatum?.state === "activeOperator" ? decodedDatum.operator : null,
+          startTime: decodedDatum?.state === "activeOperator" ? decodedDatum.startTime : null,
+          neglected: "neglected" in decodedRedeemer ? decodedRedeemer.neglected.kind : null,
+          userEvent: null,
+          headerHash: null,
+        });
+        actionFamilies.add("scheduler");
+      }
+    }
+  }
+
+  for (const redeemer of tx.redeemers) {
+    const family = familyByScript.get(redeemer.scriptHash);
+    if (!family || actionFamilies.has(family)) continue;
+    actions.push({
+      kind: "validator_execution",
+      family,
+      outputIndex: null,
+      lovelace: null,
+      operation: redeemer.purpose,
+      validContract: redeemer.validContract,
+      operator: null,
+      startTime: null,
+      neglected: null,
+      userEvent: null,
+      headerHash: null,
+    });
+    actionFamilies.add(family);
+  }
+
+  // Singular by nature: a transaction returns at most one collateral change
+  // output. Stored with kind "collateral_output" and position 0.
+  const collateralReturn = of("collateral_output")[0];
+
   return {
     ...rest,
+    actions,
     inputs: of("input"),
-    outputs: of("output"),
+    outputs: of("output").map(produced),
     referenceInputs: of("reference"),
     collateral: of("collateral"),
-    // Singular by nature: a transaction returns at most one collateral change
-    // output. Stored with kind "collateral_output" and position 0.
-    collateralOutput: of("collateral_output")[0] ?? null,
+    collateralOutput: collateralReturn ? produced(collateralReturn) : null,
     mints: assets,
+    protocolParams,
   };
 }
 
@@ -82,11 +297,30 @@ export async function getL1Transaction(txHash: string) {
 export async function getL1Deposits(limit = 25) {
   const take =
     Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 100) : 25;
-  return indexerPrisma.l1Event.findMany({
+  const rows = await indexerPrisma.l1Event.findMany({
     where: { validator: "deposit" },
     orderBy: [{ id: "desc" }],
     take,
-    include: { tx: true },
+    include: { tx: { include: { ios: { where: { kind: "input" } } } } },
+  });
+  return rows.map((row) => {
+    const decoded = row.decoded as { l1OutRef?: { txHash?: string; index?: number } } | null;
+    const source = decoded?.l1OutRef;
+    const fundingAddresses = source
+      ? [
+          ...new Set(
+            row.tx.ios
+              .filter(
+                (input) =>
+                  input.sourceTxHash === source.txHash && input.sourceIndex === source.index,
+              )
+              .map((input) => input.address)
+              .filter((address): address is string => address !== null),
+          ),
+        ]
+      : [];
+    const { ios: _ios, ...tx } = row.tx;
+    return { ...row, fundingAddresses, tx };
   });
 }
 
@@ -100,6 +334,107 @@ export async function getL1BlockHeaders(limit: number) {
         ? Math.min(Math.floor(limit), 100)
         : 25,
   });
+}
+
+/** One header as observed in the Cardano commitment transaction. This is
+ * deliberately separate from the node's `da_payloads`: it is durable L1
+ * evidence, not a claim that a DA network published or retained anything. */
+export async function getL1BlockHeader(headerHash: string) {
+  return indexerPrisma.l1BlockHeader.findUnique({ where: { headerHash } });
+}
+
+/** Manifest identities do not depend on the node database. */
+export function getManifestValidators() {
+  return loadManifest(config.MIDGARD_MANIFEST_PATH).validators;
+}
+
+/** Existing indexed evidence for one validator from the active deployment.
+ * No chain scan and no inferred identity: the script hash must be present in
+ * the deployment manifest, then all rows come from the explorer-owned L1 DB. */
+export async function getL1Validator(scriptHash: string) {
+  const manifest = loadManifest(config.MIDGARD_MANIFEST_PATH);
+  const validator = manifest.validators.find((row) => row.scriptHash === scriptHash) ?? null;
+  if (!validator) return null;
+
+  const [redeemers, ios, events, operations] = await Promise.all([
+    indexerPrisma.l1Redeemer.findMany({
+      where: { scriptHash },
+      orderBy: [{ tx: { txTime: "desc" } }, { id: "desc" }],
+      take: 100,
+      include: { tx: true },
+    }),
+    indexerPrisma.l1TxIo.findMany({
+      where: { address: validator.address },
+      orderBy: [{ tx: { txTime: "desc" } }, { id: "desc" }],
+      take: 100,
+      include: { tx: true, assets: true },
+    }),
+    indexerPrisma.l1Event.findMany({
+      where: { validator: validator.family, deployment: manifest.manifestId },
+      orderBy: [{ tx: { txTime: "desc" } }, { id: "desc" }],
+      take: 100,
+      include: { tx: true },
+    }),
+    indexerPrisma.l1Redeemer.groupBy({
+      by: ["purpose", "validContract"],
+      where: { scriptHash },
+      _count: { _all: true },
+      _sum: { memUnits: true, stepUnits: true, fee: true },
+    }),
+  ]);
+
+  const outputIds = ios.filter((row) => row.kind === "output").map((row) => row.id);
+  const outputRefs = ios
+    .filter((row) => row.kind === "output")
+    .map((row) => ({ sourceTxHash: row.sourceTxHash, sourceIndex: row.sourceIndex }));
+  const spent = outputRefs.length === 0
+    ? []
+    : await indexerPrisma.l1TxIo.findMany({
+        where: {
+          kind: { in: ["input", "collateral"] },
+          OR: outputRefs,
+        },
+        select: { sourceTxHash: true, sourceIndex: true },
+      });
+  const spentRefs = new Set(spent.map((row) => `${row.sourceTxHash}#${row.sourceIndex}`));
+  const utxos = ios.filter(
+    (row) =>
+      outputIds.includes(row.id) &&
+      !spentRefs.has(`${row.sourceTxHash}#${row.sourceIndex}`),
+  );
+
+  const history = new Map<
+    string,
+    { txHash: string; blockHeight: number; txTime: Date; ioCount: number; executionCount: number; eventCount: number }
+  >();
+  const touch = (tx: { txHash: string; blockHeight: number; txTime: Date }) => {
+    const current = history.get(tx.txHash) ?? { ...tx, ioCount: 0, executionCount: 0, eventCount: 0 };
+    history.set(tx.txHash, current);
+    return current;
+  };
+  for (const row of ios) touch(row.tx).ioCount += 1;
+  for (const row of redeemers) touch(row.tx).executionCount += 1;
+  for (const row of events) touch(row.tx).eventCount += 1;
+
+  return {
+    deployment: manifest.manifestId,
+    validator,
+    coverage: { limitedTo: 100, truncated: redeemers.length === 100 || ios.length === 100 || events.length === 100 },
+    utxos,
+    history: [...history.values()]
+      .sort((a, b) => b.txTime.getTime() - a.txTime.getTime() || b.txHash.localeCompare(a.txHash))
+      .slice(0, 100),
+    operations: operations
+      .map((row) => ({
+        purpose: row.purpose,
+        validContract: row.validContract,
+        count: row._count._all,
+        memUnits: row._sum.memUnits ?? 0n,
+        stepUnits: row._sum.stepUnits ?? 0n,
+        fee: row._sum.fee ?? 0n,
+      }))
+      .sort((a, b) => b.count - a.count || a.purpose.localeCompare(b.purpose)),
+  };
 }
 
 /**

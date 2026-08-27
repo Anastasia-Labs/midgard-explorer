@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { scriptHashToAddress } from "./bech32";
 
 const PURPOSE_SUFFIXES = ["Spend", "Mint", "Withdraw", "Observer"];
@@ -44,7 +44,32 @@ export function findStubHashes(
   return stubs;
 }
 
-export function loadManifest(path: string) {
+/** One parsed manifest per path, keyed by the file's modification time.
+ *
+ * This is read on request paths, not only by the sync loop: the withdrawals
+ * listing needs the network to encode an address, and the L1 handlers need the
+ * script-hash-to-validator map. Reading, parsing, validating and deriving a
+ * bech32 address per validator on every request is work the request did not
+ * need to do, on a thread that cannot do anything else while it happens.
+ *
+ * Keying on mtime rather than caching forever means an operator who replaces a
+ * manifest sees the new deployment without restarting the process. Failures are
+ * not cached: a manifest that could not be read has to keep saying so. */
+const parsed = new Map<string, { mtimeMs: number; manifest: Manifest }>();
+
+export function loadManifest(path: string): Manifest {
+  const mtimeMs = statSync(path).mtimeMs;
+  const hit = parsed.get(path);
+  if (hit && hit.mtimeMs === mtimeMs) return hit.manifest;
+
+  const manifest = parseManifest(path);
+  parsed.set(path, { mtimeMs, manifest });
+  return manifest;
+}
+
+export type Manifest = ReturnType<typeof parseManifest>;
+
+function parseManifest(path: string) {
   const raw = JSON.parse(readFileSync(path, "utf8"));
 
   if (!raw.contracts) {

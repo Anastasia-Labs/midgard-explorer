@@ -171,11 +171,20 @@ export const isOverSizeLimit = (
   limit: number = MAX_RESPONSE_BYTES,
 ): boolean => byteLength > limit;
 
-async function postOnce(path: string, body: unknown): Promise<Response> {
+async function sendOnce(path: string, body: unknown): Promise<Response> {
+  // `body === undefined` is the GET case rather than a POST with no payload:
+  // Koios reads parameters from the query string for the endpoints that take
+  // them that way, and sending a body would change the endpoint, not the shape.
+  const init: RequestInit =
+    body === undefined
+      ? { method: "GET" }
+      : {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        };
   return fetch(`${config.KOIOS_BASE_URL}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
+    ...init,
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 }
@@ -184,13 +193,22 @@ async function postOnce(path: string, body: unknown): Promise<Response> {
  * A 400 retried three times is three wrong answers instead of one. */
 const isRetryable = (status: number) => status === 429 || status >= 500;
 
+/** Same retry, size bound and error reporting as `post`, without a body. */
+async function get(path: string): Promise<unknown> {
+  return send(path, undefined);
+}
+
 async function post(path: string, body: unknown): Promise<unknown> {
+  return send(path, body);
+}
+
+async function send(path: string, body: unknown): Promise<unknown> {
   let res: Response | null = null;
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
     try {
-      res = await postOnce(path, body);
+      res = await sendOnce(path, body);
       if (!isRetryable(res.status)) break;
       lastError = new Error(`Koios ${path} responded ${res.status}`);
     } catch (err) {
@@ -325,4 +343,40 @@ export async function fetchAssetTxs(
       _history: true,
     }),
   );
+}
+
+const epochParamsSchema = z.object({
+  epoch_no: z.number(),
+  // Koios sends these as JSON numbers. Both are within Number's exact integer
+  // range today (1.75e7 and 1e10), but they cross into the database as BigInt
+  // because a limit is a ledger quantity and every other one here already does.
+  max_tx_ex_mem: z.number(),
+  max_tx_ex_steps: z.number(),
+});
+
+export type KoiosEpochParams = {
+  epochNo: number;
+  maxTxExMem: bigint;
+  maxTxExSteps: bigint;
+};
+
+/** Protocol parameters for one epoch, or the current one when none is named.
+ *
+ * Only the two execution limits are lifted out. They are what the explorer
+ * renders a script's budget against, and a limit that is compiled in rather
+ * than read is wrong from the first governance action that changes it, without
+ * anything on the page saying so. These do change: preprod epoch 301 allowed
+ * 16,500,000 memory units per transaction and epoch 307 allowed 17,500,000.
+ *
+ * Koios returns epochs newest first, so `limit=1` is the current one. */
+export async function fetchEpochParams(epochNo?: number): Promise<KoiosEpochParams | null> {
+  const query = epochNo === undefined ? "limit=1" : `_epoch_no=${epochNo}`;
+  const rows = z.array(epochParamsSchema).parse(await get(`/epoch_params?${query}`));
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    epochNo: row.epoch_no,
+    maxTxExMem: BigInt(row.max_tx_ex_mem),
+    maxTxExSteps: BigInt(row.max_tx_ex_steps),
+  };
 }
