@@ -224,6 +224,37 @@ are the kind that reads as correct on the page:
   held on a database with no process visibly holding it. `9>&-` on the child is
   the fix.
 
+### Rehearsal 5: the signal handlers
+
+Releasing the lock in a trap that RETURNS is not the same as handling the
+signal. Bash carries on from where the signal interrupted it, so
+`trap release_lock EXIT INT TERM` would have released leadership on a SIGTERM
+between the confirmation and `indexer:deploy`, then run the migration anyway,
+unprotected: the mechanism meant to prevent the two-writer state reaching it by
+itself. The handlers release and then exit, with the conventional 128+signal
+status so a supervisor can tell an interrupted rollout from a refused one.
+
+The same cleanup also silenced the shell. `exec` with only redirections applies
+them to the shell and they persist, so `exec 9>&- 2>/dev/null` closed fd 9 and
+sent every later error to `/dev/null`, which would have made a failure after the
+release invisible. Closing an fd that is not open is not an error in bash, so
+the suppression bought nothing and cost the diagnostics.
+
+| Test | Result |
+|---|---|
+| SIGINT while holding the lock | exit **130**, migration not applied, 0 advisory locks, zero occurrences of `Applying migration` |
+| SIGTERM while holding the lock | exit **143**, migration not applied, 0 advisory locks, zero occurrences of `Applying migration` |
+| SIGKILL while holding the lock | exit **137**, 0 advisory locks, migration not applied |
+| A normal `--apply` | Lock trace sampled four times a second reads `0 1 0`: free before, held for the whole migration, free after. Migration applied, 141 transactions and 158 events preserved |
+| Errors after the release | `ERROR: relation "l1_tx" does not exist` appears in the output, from a command that runs after leadership is released |
+
+One harness note worth keeping: a background child of a non-interactive shell
+has SIGINT set to `SIG_IGN`, and a signal ignored on entry cannot be trapped. A
+first run therefore showed the INT handler doing nothing, which was the harness
+disarming it rather than the script failing. With job control enabled the
+handler fires. An operator pressing Ctrl-C in a terminal is the job-control
+case.
+
 ### One incident, recorded
 
 During rehearsal the harness invoked `rollout.sh --apply` without overriding

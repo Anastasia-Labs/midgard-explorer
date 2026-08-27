@@ -145,21 +145,44 @@ exec 9<>"$LOCK_FIFO"
 psql -h "$HOST" -p "$PORT" -U "$USER" -d "$DB" -X -A -t -q -f "$LOCK_FIFO" \
   9>&- > "$LOCK_LOG" 2>&1 &
 LOCK_PID=$!
+LOCK_RELEASED=0
 release_lock() {
-  # Both, deliberately. Closing the fd is the mechanism that works when this
-  # script is SIGKILLed and no trap runs at all: the kernel closes the fd, psql
-  # reads EOF and exits. Killing psql is the mechanism that works when the shell
-  # is blocked somewhere the trap cannot promptly reach. Either one alone leaves
-  # a case where leadership outlives the rollout, and neither is expensive.
+  if [ "$LOCK_RELEASED" = "1" ]; then return 0; fi
+  LOCK_RELEASED=1
+  # Closing the fd and killing psql, deliberately. The fd close is what works
+  # when this script is SIGKILLed and no trap runs at all: the kernel closes it,
+  # psql reads EOF and exits. The kill is what works when the shell is blocked
+  # somewhere a trap cannot promptly reach. Either alone leaves a case where
+  # leadership outlives the rollout, and neither is expensive.
   #
-  # This is only safe because the session is IDLE. A backend killed mid-pg_sleep
+  # Both are only safe because the session is IDLE. A backend killed mid-pg_sleep
   # keeps running and keeps the lock; an idle one ends immediately.
-  exec 9>&- 2>/dev/null || true
+  #
+  # No `2>/dev/null` on this line. `exec` with only redirections applies them to
+  # THIS SHELL and they persist: `exec 9>&- 2>/dev/null` closed fd 9 and also
+  # sent every later error from the rollout to /dev/null, so a psql failure
+  # after the release would have been silent. Closing an fd that is not open is
+  # not an error in bash, so nothing needs suppressing.
+  exec 9>&-
   kill "$LOCK_PID" 2>/dev/null || true
   wait "$LOCK_PID" 2>/dev/null || true
   rm -f "$LOCK_FIFO" "$LOCK_LOG"
+  return 0
 }
-trap release_lock EXIT INT TERM
+
+# Three traps, not one.
+#
+# `trap release_lock EXIT INT TERM` looks equivalent and is not: a handler that
+# RETURNS lets bash carry on from where the signal interrupted it. A SIGTERM
+# between the confirmation and `indexer:deploy` would have released leadership
+# and then run the migration anyway, unprotected, which is the exact state the
+# lock exists to prevent, reached by the mechanism meant to prevent it. The
+# signal handlers therefore release and then exit, with the conventional
+# 128+signal status so a supervisor can tell an interrupted rollout from a
+# refused one.
+trap release_lock EXIT
+trap 'release_lock; trap - EXIT INT TERM; exit 130' INT
+trap 'release_lock; trap - EXIT INT TERM; exit 143' TERM
 
 printf "SET application_name = 'midgard-explorer-rollout-lock';\n" >&9
 printf "SELECT pg_try_advisory_lock(%s);\n" "$LOCK_ID" >&9
