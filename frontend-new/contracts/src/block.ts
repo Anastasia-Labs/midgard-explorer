@@ -3,7 +3,7 @@ import { HexString, IsoTimestamp, paged } from "./primitives";
 import { TransactionView } from "./transaction-view";
 
 export const BlockTxRow = Schema.Struct({
-  height: Schema.Number,
+  height: Schema.NullOr(Schema.Number),
   header_hash: HexString,
   tx_id: HexString,
   time_stamp_tz: IsoTimestamp,
@@ -32,6 +32,34 @@ export const BlockDa = Schema.Struct({
 });
 export type BlockDa = Schema.Schema.Type<typeof BlockDa>;
 
+export const BlockHeader = Schema.Struct({
+  header_hash: HexString,
+  height: Schema.NullOr(Schema.Number),
+  block_start_time: Schema.NullOr(IsoTimestamp),
+  block_end_time: IsoTimestamp,
+  header_l2_transaction_count: Schema.NullOr(Schema.Number),
+  header_deposit_count: Schema.NullOr(Schema.Number),
+  header_withdrawal_count: Schema.NullOr(Schema.Number),
+  header_forced_transaction_count: Schema.NullOr(Schema.Number),
+  materialized_l2_transaction_count: Schema.Number,
+  payload_retained_locally: Schema.Boolean,
+});
+export type BlockHeader = Schema.Schema.Type<typeof BlockHeader>;
+
+export const BlockEventMember = Schema.Struct({
+  member_id: HexString,
+  ordinal: Schema.Number,
+  source_time_stamp_tz: IsoTimestamp,
+});
+export type BlockEventMember = Schema.Schema.Type<typeof BlockEventMember>;
+
+export const BlockEvents = Schema.Struct({
+  deposits: Schema.Array(BlockEventMember),
+  withdrawals: Schema.Array(BlockEventMember),
+  forced_transactions: Schema.Array(BlockEventMember),
+});
+export type BlockEvents = Schema.Schema.Type<typeof BlockEvents>;
+
 /** L1 settlement state; `submitted_tx_hash` is the Cardano anchoring transaction. */
 export const BlockFinalization = Schema.Struct({
   status: Schema.String,
@@ -43,12 +71,12 @@ export const BlockFinalization = Schema.Struct({
 });
 export type BlockFinalization = Schema.Schema.Type<typeof BlockFinalization>;
 
-/** The block either side of this one. Null at each end of the chain, and null
- * for both when the chain holds a single block. Heights here are block heights,
- * so they will not be one apart: a height is the lowest row id in its block. */
+/** The header either side of this one. Null at each end of the chain, and null
+ * for both when the chain holds a single header. `height` is only the nullable,
+ * legacy `blocks` row identifier retained for backwards compatibility. */
 export const BlockNeighbour = Schema.Struct({
-  height: Schema.Number,
-  header_hash: Schema.String,
+  height: Schema.NullOr(Schema.Number),
+  header_hash: HexString,
 });
 export type BlockNeighbour = Schema.Schema.Type<typeof BlockNeighbour>;
 
@@ -59,21 +87,30 @@ export const BlockNeighbours = Schema.Struct({
 export type BlockNeighbours = Schema.Schema.Type<typeof BlockNeighbours>;
 
 export const BlockResponse = Schema.Struct({
+  header: BlockHeader,
   rows: Schema.Array(BlockTxRow),
   da: Schema.NullOr(BlockDa),
   finalization: Schema.NullOr(BlockFinalization),
-  /** Optional so a backend that predates this field still decodes. */
-  neighbours: Schema.optional(BlockNeighbours),
+  neighbours: BlockNeighbours,
+  events: BlockEvents,
 });
 export type BlockResponse = Schema.Schema.Type<typeof BlockResponse>;
 
 export const RecentBlockRow = Schema.Struct({
-  height: Schema.Number,
+  height: Schema.NullOr(Schema.Number),
   header_hash: HexString,
-  tx_id: HexString,
+  tx_id: Schema.NullOr(HexString),
+  block_start_time: IsoTimestamp,
+  block_end_time: IsoTimestamp,
   time_stamp_tz: IsoTimestamp,
   tx_count: Schema.Number,
-  finalization_status: Schema.NullOr(Schema.String),
+  header_l2_transaction_count: Schema.Number,
+  header_deposit_count: Schema.Number,
+  header_withdrawal_count: Schema.Number,
+  header_forced_transaction_count: Schema.Number,
+  materialized_l2_transaction_count: Schema.Number,
+  payload_retained_locally: Schema.Boolean,
+  finalization_status: Schema.String,
 });
 export type RecentBlockRow = Schema.Schema.Type<typeof RecentBlockRow>;
 
@@ -94,12 +131,19 @@ export const TotalResponse = Schema.Struct({
 export type TotalResponse = Schema.Schema.Type<typeof TotalResponse>;
 
 export const BlocksPageRow = Schema.Struct({
-  height: Schema.Number,
+  height: Schema.NullOr(Schema.Number),
   header_hash: HexString,
+  block_start_time: IsoTimestamp,
+  block_end_time: IsoTimestamp,
   time_stamp_tz: IsoTimestamp,
   tx_count: Schema.Number,
-  /** Null when the node has no finalization record for the block yet. */
-  finalization_status: Schema.NullOr(Schema.String),
+  header_l2_transaction_count: Schema.Number,
+  header_deposit_count: Schema.Number,
+  header_withdrawal_count: Schema.Number,
+  header_forced_transaction_count: Schema.Number,
+  materialized_l2_transaction_count: Schema.Number,
+  payload_retained_locally: Schema.Boolean,
+  finalization_status: Schema.String,
 });
 export type BlocksPageRow = Schema.Schema.Type<typeof BlocksPageRow>;
 

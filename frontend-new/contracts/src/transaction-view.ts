@@ -150,7 +150,6 @@ export const CapabilityView = Schema.Struct({
     "not_indexed",
     "commitment_only",
   ),
-  reason: Schema.String,
 });
 export type CapabilityView = Schema.Schema.Type<typeof CapabilityView>;
 

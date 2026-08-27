@@ -19,7 +19,7 @@ export type TxAdmission = Schema.Schema.Type<typeof TxAdmission>;
 /** The L2 block that included the transaction. Present once a block carries it,
  * which is what makes settlement state reachable from a transaction. */
 export const TxInclusion = Schema.Struct({
-  height: Schema.Number,
+  height: Schema.NullOr(Schema.Number),
   header_hash: HexString,
   time_stamp_tz: IsoTimestamp,
 });
@@ -84,7 +84,7 @@ export const TransactionResponse = Schema.Union(
 export type TransactionResponse = Schema.Schema.Type<typeof TransactionResponse>;
 
 export const RecentTxRow = Schema.Struct({
-  height: Schema.Number,
+  height: Schema.NullOr(Schema.Number),
   header_hash: HexString,
   tx_id: HexString,
   time_stamp_tz: IsoTimestamp,
@@ -98,7 +98,7 @@ export const RecentTxsResponse = Schema.Struct({
 export type RecentTxsResponse = Schema.Schema.Type<typeof RecentTxsResponse>;
 
 export const TxPageRow = Schema.Struct({
-  height: Schema.Number,
+  height: Schema.NullOr(Schema.Number),
   header_hash: HexString,
   tx_id: HexString,
   time_stamp_tz: IsoTimestamp,

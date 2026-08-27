@@ -23,7 +23,11 @@ export const WithdrawalRow = Schema.Struct({
   withdrawal_l1_output_index: Schema.Number,
   l2_outref: HexString,
   l2_value: Schema.NullOr(ValueView),
+  l2_value_raw: HexString,
+  l2_value_decode_error: Schema.NullOr(Schema.String),
   l1_address: HexString,
+  l1_address_bech32: Schema.NullOr(Schema.String),
+  l1_address_decode_error: Schema.NullOr(Schema.String),
   /** Null until the node has validated the withdrawal (backend: string | null). */
   validity: Schema.NullOr(StatusString),
   status: StatusString,

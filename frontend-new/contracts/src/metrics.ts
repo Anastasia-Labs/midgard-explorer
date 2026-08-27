@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { IsoTimestamp } from "./primitives";
+import { HexString, IsoTimestamp } from "./primitives";
 
 /** Operational metrics for the overview.
  *
@@ -42,6 +42,7 @@ export type StatusCount = Schema.Schema.Type<typeof StatusCount>;
 export const MetricsResponse = Schema.Struct({
   window: MetricsWindow,
   tip: Schema.Struct({
+    headerHash: Schema.NullOr(HexString),
     height: Schema.NullOr(Schema.Number),
     at: Schema.NullOr(IsoTimestamp),
     ageSeconds: Schema.NullOr(Schema.Number),
