@@ -8,6 +8,7 @@ import {
   getL1TransactionsPage,
   getL1Validator,
 } from "../../db/l1";
+import { parseHexOfLength } from "../validate";
 
 /** Midgard's on-chain footprint on Cardano, read from the explorer's own
  * store. Unlike the rest of the API these answer whether or not the Midgard
@@ -31,16 +32,16 @@ export async function getL1SummaryRoute(_req: Request, res: Response) {
 }
 
 export async function getL1TransactionsPageRoute(req: Request, res: Response) {
+  // Coerced, not rejected. See the convention note above: a page number is a
+  // navigation hint and there is no wrong resource to serve.
   const page = Number(req.params.page);
   return res.json(await getL1TransactionsPage(page));
 }
 
 export async function getL1TransactionRoute(req: Request, res: Response) {
-  const txHash = String(req.query.txHash ?? "");
-  if (!/^[0-9a-f]{64}$/.test(txHash)) {
-    return res.status(400).json({ error: "txHash must be 64 hex characters." });
-  }
-  const tx = await getL1Transaction(txHash);
+  const parsed = parseHexOfLength(req.query.txHash, 64, "txHash");
+  if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+  const tx = await getL1Transaction(parsed.value);
   if (!tx) return res.status(404).json({ error: "Not found." });
   return res.json(tx);
 }
@@ -51,21 +52,17 @@ export async function getL1BlockHeadersRoute(req: Request, res: Response) {
 }
 
 export async function getL1BlockHeaderRoute(req: Request, res: Response) {
-  const headerHash = String(req.query.headerHash ?? "").toLowerCase();
-  if (!/^[0-9a-f]{56}$/.test(headerHash)) {
-    return res.status(400).json({ error: "headerHash must be 56 hex characters." });
-  }
-  const header = await getL1BlockHeader(headerHash);
+  const parsed = parseHexOfLength(req.query.headerHash, 56, "headerHash");
+  if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+  const header = await getL1BlockHeader(parsed.value);
   if (!header) return res.status(404).json({ error: "Not found." });
   return res.json(header);
 }
 
 export async function getL1ValidatorRoute(req: Request, res: Response) {
-  const scriptHash = String(req.query.scriptHash ?? "").toLowerCase();
-  if (!/^[0-9a-f]{56}$/.test(scriptHash)) {
-    return res.status(400).json({ error: "scriptHash must be 56 hex characters." });
-  }
-  const validator = await getL1Validator(scriptHash);
+  const parsed = parseHexOfLength(req.query.scriptHash, 56, "scriptHash");
+  if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+  const validator = await getL1Validator(parsed.value);
   if (!validator) return res.status(404).json({ error: "Not found." });
   return res.json(validator);
 }

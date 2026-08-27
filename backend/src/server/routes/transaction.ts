@@ -15,6 +15,7 @@ import {
   decodeTransactionSafe,
 } from "../../decode/transaction";
 import { isHexOfLength, toHex } from "../../utils";
+import { parsePageParam } from "../validate";
 
 export async function getTransactionRoute(req: Request, res: Response) {
   const txHash = req.query.tx_hash;
@@ -136,10 +137,9 @@ export async function getRecentTransactionsRoute(_req: Request, res: Response) {
 }
 
 export async function getTransactionsPageRoute(req: Request, res: Response) {
-  const page = Number(req.params.page);
-  if (!Number.isFinite(page) || page < 1) {
-    return res.status(400).json({ error: "Invalid page." });
-  }
+  const parsedPage = parsePageParam(req.params.page);
+  if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
+  const page = parsedPage.value;
 
   const { rows, hasNextPage, total, limit } = await getTransactionsPage(
     page,

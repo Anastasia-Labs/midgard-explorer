@@ -3,6 +3,7 @@ import { getAddressHistory, getAddressUtxos } from "../../db/address";
 import { computeBalance, decodeTransactionSafe, decodeUtxos } from "../../decode/transaction";
 import type { ValueView } from "../../decode/types";
 import { toHex } from "../../utils";
+import { parsePageQuery } from "../validate";
 
 function sumValues(values: ValueView[]): ValueView {
   let lovelace = 0n;
@@ -25,11 +26,9 @@ export async function getAddressRoute(req: Request, res: Response) {
   if (typeof address !== "string" || address.length === 0) {
     return res.status(400).json({ error: "Missing address query param." });
   }
-  const rawPage = req.query.page;
-  const page = rawPage === undefined ? 1 : Number(rawPage);
-  if (!Number.isInteger(page) || page < 1) {
-    return res.status(400).json({ error: "Invalid page." });
-  }
+  const parsedPage = parsePageQuery(req.query.page);
+  if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
+  const page = parsedPage.value;
 
   const [history, utxos] = await Promise.all([
     getAddressHistory(address, page),

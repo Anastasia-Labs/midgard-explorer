@@ -8,6 +8,7 @@ import { getWithdrawalsPage } from "../../db/withdrawals";
 import { loadManifest } from "../../indexer/manifest";
 import { logger } from "../../logger";
 import { toHex } from "../../utils";
+import { parseOptionalHexQuery, parsePageParam } from "../validate";
 
 /** The network the L1 address is encoded for, or null when the deployment
  * manifest cannot be read.
@@ -30,14 +31,12 @@ const NO_NETWORK =
   "The deployment manifest could not be read, so the address network is unknown.";
 
 export async function getWithdrawalsPageRoute(req: Request, res: Response) {
-  const page = Number(req.params.page);
-  if (!Number.isFinite(page) || page < 1) {
-    return res.status(400).json({ error: "Invalid page." });
-  }
-  const id = typeof req.query.id === "string" ? req.query.id.toLowerCase() : undefined;
-  if (id !== undefined && !/^[0-9a-f]+$/.test(id)) {
-    return res.status(400).json({ error: "id must be hexadecimal." });
-  }
+  const parsedPage = parsePageParam(req.params.page);
+  if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
+  const page = parsedPage.value;
+  const parsedId = parseOptionalHexQuery(req.query.id);
+  if (!parsedId.ok) return res.status(400).json({ error: parsedId.error });
+  const id = parsedId.value;
   const { rows, hasNextPage, total, limit } = await getWithdrawalsPage(page, id);
   const network = networkFor(config.MIDGARD_MANIFEST_PATH);
   const payload = rows.map((row) => {
