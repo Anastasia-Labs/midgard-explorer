@@ -82,6 +82,8 @@ Four full runs, two failures:
 | `268ac27` run 1 | 424 passed, 1 failed | 90s timeout inside axe `page.evaluate`, `populated.spec.ts:817` |
 | `268ac27` run 2 | 425 passed, 0 failed | none |
 | audit cleanups, uncommitted worktree | 425 passed, 0 failed | none |
+| `4c6a068` | 423 passed, 2 failed | the fixture's relative-time window expired, below |
+| `4c6a068` + clock pin | 425 passed, 0 failed | none |
 
 Neither failure was an assertion, they were different tests, and both cases pass
 in under six seconds in isolation on an idle machine. That points at capacity on
@@ -97,8 +99,11 @@ peak, so the next failure is attributable instead of argued about. A clean run
 on hosted CI against an immutable pushed SHA would settle it better than any
 further local run, and that needs a push.
 
-Backend: **419 passed, 8 skipped, 0 failed** across 48 files, every step exit 0,
-under the documented command with `REQUIRE_DB=1`.
+Backend: **440 passed, 8 skipped, 0 failed** across 49 files, every step exit 0,
+under the documented command with `REQUIRE_DB=1`. Recorded in
+`.git/gate-evidence/4c6a068-backend.log` against sha `4c6a068` with a clean
+worktree, so the log proves the commit it names rather than a worktree that
+merely started from one.
 
 The 8 skipped are the whole of `test/live-validation.test.mts`, which is
 `describe.skipIf(!LIVE)` and reaches live Koios and the node's database. They
@@ -116,9 +121,43 @@ browser also resident. That is one clean run under measured pressure, not proof
 the timeouts are gone. Two of four recorded runs have passed, and hosted
 CI against a pushed SHA remains the thing that would settle it.
 
+### The suite had an expiry date
+
+The run at `4c6a068` failed twice on one assertion, on both projects, with
+identical pixel values:
+
+```
+deposits table needs internal scrolling at desktop width: 1465px > 1390px
+```
+
+It reads as a stylesheet regression. It is a calendar. Every timestamp in
+`e2e/fixtures/data.mjs` is built from one fixed instant, `Date.UTC(2026, 6, 28)`.
+`relativeTime` renders an age up to 30 days as `Nd ago` and anything older as a
+full `YYYY-MM-DD HH:MM:SS UTC` string, roughly three times the width. The
+fixture crossed 30 days overnight, the timestamp column widened, and the table
+began overflowing its container on every machine, permanently.
+
+The same tree passed this test hours earlier, which is the tell: nothing in the
+tree changed, so the input that changed was outside it.
+
+`test/format.test.ts` did cover the beyond-30-days branch, using a date 208 days
+old. That proved the branch existed without ever locating its edge, so the edge
+was free to arrive unannounced. It now has 29, 30 and 31 day cases and one
+asserting the absolute form is more than twice the width of the relative one,
+which is the property that breaks the layout.
+
+The fix pins the browser clock in the shared `test` fixture in `e2e/helpers.ts`
+rather than re-anchoring the data, which keeps the fixture byte-identical: a
+fixture built from a fixed instant is only deterministic when it is read
+against a fixed instant.
+
+The class is contained rather than assumed contained. The codebase has exactly
+one age threshold, `lib/format.ts:43`, and one fixture anchor. The backend
+renders no relative time, so it cannot carry this defect.
+
 ### `REQUIRE_DB=1` is the whole difference between a real result and a believed one
 
-The same worktree run *without* the flag reported 419 passed, 0 failed. With it,
+The same worktree run *without* the flag reported no failures at all. With it,
 three tests failed: `indexer-sync-atomicity` twice and
 `indexer-deployment-sweep` once, each a 5s timeout rather than an assertion.
 
@@ -130,8 +169,8 @@ Koios API. The suite was reaching the network, and the failures carried
 
 The three call sites now stub all six, matching `indexer-sync.test.mts` and
 `indexer-reconciliation.test.mts`. The suite runs 15s faster for no longer
-waiting on Koios, and the reported count is unchanged at 419 because those three
-were passing without the flag all along.
+waiting on Koios, and the count did not move because those three were passing
+without the flag all along.
 
 
 ## Live validation
