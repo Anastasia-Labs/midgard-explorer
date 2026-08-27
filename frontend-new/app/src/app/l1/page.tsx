@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ValueCell } from "../../components/ui/amount";
 import { Breadcrumbs } from "../../components/ui/breadcrumbs";
 import { Identifier } from "../../components/ui/identifier";
@@ -15,18 +16,18 @@ import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {
-  title: "Cardano L1 activity",
+  title: "Cardano activity",
   description: "Midgard's transactions on the Cardano preprod chain.",
 };
 
 export const dynamic = "force-dynamic";
 
-const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Cardano L1" }];
+const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Cardano" }];
 
 /** Midgard's own footprint on the Cardano preprod chain.
  *
  * Distinct from /transactions, which lists transactions inside the Midgard
- * ledger. These are the L1 transactions that touch a Midgard validator
+ * ledger. These are the Cardano transactions that touch a Midgard validator
  * address: contract deployment, block commitments to the state queue,
  * operator registration, and user deposits.
  *
@@ -56,7 +57,7 @@ export default async function L1Page({
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="transaction" title="Cardano L1 activity" />
+        <PageHeader entity="transaction" title="Cardano activity" />
         <PageError message={listErrorMessage(e)} />
       </>
     );
@@ -67,14 +68,14 @@ export default async function L1Page({
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
         entity="transaction"
-        title="Cardano L1 activity"
-        subtitle="Midgard's transactions on the Cardano preprod chain, newest first. Indexed from block height 0, so this covers the deployment from its first transaction onward."
+        title="Cardano activity"
+        subtitle="Midgard contract activity observed on Cardano preprod, newest first."
         meta={
           <span>
             <strong className="font-semibold text-text tabular-nums">
               {groupThousands(String(data.total))}
             </strong>{" "}
-            L1 transactions
+            Cardano transactions
           </span>
         }
       />
@@ -82,6 +83,17 @@ export default async function L1Page({
       <div className="mb-4">
         <DeploymentNote />
       </div>
+
+      {/* The other half of Midgard's L1 footprint. This list is every Cardano
+          transaction touching a validator; that one is only the block headers,
+          which is the question most readers arrive with and which no list of
+          transactions answers on its own. */}
+      <p className="mb-4 text-sm text-text-2">
+        Looking for the block headers Midgard commits to Cardano?{" "}
+        <Link className="text-link hover:text-link-hover hover:underline" href="/l1/commitments">
+          State commitments
+        </Link>
+      </p>
 
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
         <DataTable
@@ -137,35 +149,52 @@ export default async function L1Page({
               align: "right",
             },
           ]}
-          mobileRow={(r) => ({
-            primary: (
-              <Identifier
-                value={r.txHash}
-                href={`/l1/transaction/${r.txHash}`}
-                head={10}
-                tail={6}
-              />
-            ),
-            meta: <Timestamp iso={r.txTime} />,
-            secondary: <ValueCell value={{ lovelace: r.fee, assets: {} }} />,
-            details: [
-              {
-                label: "Block",
-                value: <span className="tabular-nums">#{r.blockHeight}</span>,
-              },
-              {
-                label: "Epoch",
-                value: <span className="tabular-nums">{r.epoch}</span>,
-              },
-              ...[...new Set(r.events.map((event) => event.validator))].map((family) => ({
-                label: "Contract",
-                value: <ValidatorLabel family={family} validators={validators} />,
-              })),
-            ],
-          })}
+          mobileRow={(r) => {
+            const families = [...new Set(r.events.map((event) => event.validator))];
+            return {
+              primary: (
+                <Identifier
+                  value={r.txHash}
+                  href={`/l1/transaction/${r.txHash}`}
+                  head={10}
+                  tail={6}
+                />
+              ),
+              meta: <Timestamp iso={r.txTime} />,
+              secondary: <ValueCell value={{ lovelace: r.fee, assets: {} }} />,
+              details: [
+                {
+                  label: "Block",
+                  value: <span className="tabular-nums">#{r.blockHeight}</span>,
+                },
+                {
+                  label: "Epoch",
+                  value: <span className="tabular-nums">{r.epoch}</span>,
+                },
+                ...(families.length === 0
+                  ? []
+                  : [
+                      {
+                        label: "Contracts",
+                        value: (
+                          <span className="flex flex-wrap justify-end gap-x-2 gap-y-1">
+                            {families.map((family) => (
+                              <ValidatorLabel
+                                key={family}
+                                family={family}
+                                validators={validators}
+                              />
+                            ))}
+                          </span>
+                        ),
+                      },
+                    ]),
+              ],
+            };
+          }}
           rows={data.rows}
           keyOf={(r) => r.txHash}
-          emptyTitle="No L1 activity indexed yet"
+          emptyTitle="No Cardano activity indexed yet"
           emptyHint="The indexer scans Cardano preprod for transactions at Midgard's validator addresses. If this is empty, the indexer has not completed its first pass."
         />
         <Pagination
