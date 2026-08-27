@@ -2,9 +2,6 @@ import { prisma } from "../db";
 
 const HISTORY_LIMIT = 25;
 
-export async function getAllAddressHistory() {
-  return prisma.addressHistory.findMany();
-}
 
 /**
  * Current spendable UTxOs owned by an address. The node's live ledger is

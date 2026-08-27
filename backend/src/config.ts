@@ -45,6 +45,17 @@ const shape = {
   DB_IDLE_TIMEOUT_MS: positive.default(30_000),
   DB_STATEMENT_TIMEOUT_MS: positive.default(10_000),
   RESPONSE_CACHE_MAX_ENTRIES: positive.default(1_000),
+  // Declared in the Config type and passed into the cache, but never parsed:
+  // the `as Config` cast below hid the mismatch, so the value was `undefined`
+  // and `cachedBytes > undefined` is always false. The byte ceiling was off in
+  // every deployment while the code read as though it were on.
+  RESPONSE_CACHE_MAX_BYTES: positive.default(64 * 1024 * 1024),
+  // How many proxy hops in front of this process are trusted to state the
+  // client address. 0, the default, means none: the socket peer is the
+  // identity and `x-forwarded-for` is ignored whoever sent it. A private peer
+  // is not evidence of a trusted hop, which is what made the limiter evadable
+  // by any client willing to send its own header.
+  TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(8).default(0),
   API_RATE_LIMIT_MAX: positive.default(120),
   API_RATE_LIMIT_WINDOW_MS: positive.default(60_000),
   LOG_LOCATION: required,
@@ -84,7 +95,7 @@ const shape = {
  * against them rather than kept in step by memory. */
 export const CONFIG_KEYS = Object.keys(shape);
 
-const schema = z
+export const configSchema = z
   .object(shape)
   .superRefine((value, ctx) => {
     if (
@@ -104,7 +115,7 @@ const schema = z
 export function parseConfig(
   env: NodeJS.ProcessEnv | Record<string, unknown>,
 ): Config {
-  const parsed = schema.safeParse(env);
+  const parsed = configSchema.safeParse(env);
   if (!parsed.success) {
     // Every bad variable at once. Fixing configuration one restart per variable
     // is how a five minute problem becomes an hour. Names only, never values:
@@ -114,7 +125,10 @@ export function parseConfig(
       .join("\n  ");
     throw new Error(`Invalid backend configuration:\n  ${detail}`);
   }
-  return parsed.data as Config;
+  // No cast. `Config` is derived from this schema, so a field declared in the
+  // type and absent from the schema is a compile error rather than a value
+  // that is silently undefined at runtime.
+  return parsed.data;
 }
 
 export const config: Config = parseConfig(process.env);

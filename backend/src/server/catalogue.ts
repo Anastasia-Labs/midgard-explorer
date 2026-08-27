@@ -79,8 +79,13 @@ export type Endpoint = {
   handler: RequestHandler;
 };
 
-const hex64 = { type: "string", pattern: "^[0-9a-fA-F]{64}$" };
-const hex56 = { type: "string", pattern: "^[0-9a-fA-F]{56}$" };
+// Lowercase, matching what the routes actually accept. The document advertised
+// a case-insensitive pattern while every hash route rejects uppercase, so a
+// client that followed the schema got a 400 the schema said was valid. Cardano
+// hashes are canonically lowercase and stored that way, so widening the routes
+// instead would turn a clear rejection into a silent miss.
+const hex64 = { type: "string", pattern: "^[0-9a-f]{64}$" };
+const hex56 = { type: "string", pattern: "^[0-9a-f]{56}$" };
 const pageSchema = { type: "integer", minimum: 1 };
 const limitSchema = { type: "integer", minimum: 1, maximum: 100, default: 25 };
 

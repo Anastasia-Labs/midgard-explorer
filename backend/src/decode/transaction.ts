@@ -562,17 +562,6 @@ export async function decodeUtxos(
   });
 }
 
-/** Decode a bare Midgard-native value CBOR (e.g. withdrawal_utxos.l2_value). */
-export async function decodeValueSafe(
-  valueCbor: Uint8Array,
-): Promise<ValueView | null> {
-  try {
-    const codec = await getCodec();
-    return toValueView(codec.decodeMidgardValue(Buffer.from(valueCbor)));
-  } catch {
-    return null;
-  }
-}
 
 export type SafeDecode =
   | { transaction: TransactionView; error: null }

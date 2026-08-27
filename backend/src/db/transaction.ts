@@ -2,17 +2,8 @@ import { prisma } from "../db";
 import { config } from "../config";
 import { toBytes } from "../utils";
 
-export async function getAllImmutableTxs() {
-  return prisma.immutableTx.findMany();
-}
 
-export async function getAllMempoolTxs() {
-  return prisma.mempoolTx.findMany();
-}
 
-export async function getAllProcessedMempoolTxs() {
-  return prisma.processedMempoolTx.findMany();
-}
 
 // Checks tiers in priority order: immutable (committed), processed_mempool
 // (pending_commit), mempool (accepted). A tx may exist in multiple tiers

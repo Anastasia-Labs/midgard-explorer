@@ -111,8 +111,13 @@ export function cachePublicJson(
         const length = Number(res.getHeader("Content-Length") ?? 0);
         entry.bytes = Number.isFinite(length) ? length : 0;
         cachedBytes += entry.bytes;
+        // `responses.size > 1` kept one entry no matter how large it was, so a
+        // single response bigger than the whole budget stayed cached forever
+        // and the ceiling it was measured against did nothing. Evicting down to
+        // empty is correct: an entry that cannot fit the budget must not be
+        // held, and the next request simply misses.
         while (
-          responses.size > 1 &&
+          responses.size > 0 &&
           (responses.size > maxEntries || cachedBytes > maxBytes)
         ) {
           const oldest = responses.keys().next().value as string | undefined;
