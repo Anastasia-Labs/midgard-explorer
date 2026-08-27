@@ -4,9 +4,10 @@ import { AddressLink } from "../../../components/ui/address";
 import { Icon } from "../../../components/ui/icons";
 import { Identifier } from "../../../components/ui/identifier";
 import { LedgerEquation } from "../../../components/ui/ledger";
-import { Card } from "../../../components/ui/primitives";
+import { Card, Chip } from "../../../components/ui/primitives";
+import { ReferenceScript } from "../../../components/ui/scriptdata";
 import { SemanticLabel, SemanticValue } from "../../../components/ui/semantic";
-import { Chip, CredentialDetails, OutputState } from "./shared";
+import { CredentialDetails, OutputState } from "./shared";
 import { UtxoFlow } from "../../../components/ui/utxoflow";
 import { ViewToggle } from "../../../components/ui/viewtoggle";
 
@@ -81,20 +82,17 @@ export function StateTab({ tx }: { tx: TransactionView }) {
                   <OutputState output={output} />
                 </div>
                 <CredentialDetails identity={output.identity} />
-                {output.hasDatum || output.hasScriptRef ? (
+                {output.hasDatum ? (
                   <div className="mt-1.5 flex gap-1.5">
-                    {output.hasDatum ? (
-                      <Chip>
-                        <SemanticValue kind="datum">datum</SemanticValue>
-                      </Chip>
-                    ) : null}
-                    {output.hasScriptRef ? (
-                      <Chip>
-                        <SemanticValue kind="script">script ref</SemanticValue>
-                      </Chip>
-                    ) : null}
+                    <Chip>
+                      <SemanticValue kind="datum">datum</SemanticValue>
+                    </Chip>
                   </div>
                 ) : null}
+                {/* The reference script was a chip reading "script ref". Its
+                    hash, language and bytes were all in the payload and none of
+                    them reached the page. */}
+                {output.scriptRef ? <ReferenceScript script={output.scriptRef} /> : null}
                 {Object.keys(output.value.assets).length > 0 ? (
                   <div className="mt-2 border-t border-border pt-2">
                     <AssetHierarchy assets={output.value.assets} />

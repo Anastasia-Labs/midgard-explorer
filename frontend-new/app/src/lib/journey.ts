@@ -1,5 +1,5 @@
 import type { BlockFinalization, TxAdmission, TxInclusion } from "@midgard-explorer/contracts";
-import { statusOf } from "./status-registry";
+import { statusOf, type StatusTone } from "./status-registry";
 
 /** Normalized presentation model for a record's path through the protocol.
  *
@@ -37,6 +37,16 @@ export type JourneyStage = {
 };
 
 export type JourneyOutcome = "active" | "complete" | "failed" | "unknown";
+
+/** The status tone an outcome carries, so a badge stating the journey's answer
+ * takes its colour from the same resolution the stepper does rather than from a
+ * second mapping that can drift out of step with it. */
+export const OUTCOME_TONE: Record<JourneyOutcome, StatusTone> = {
+  complete: "success",
+  active: "info",
+  failed: "danger",
+  unknown: "warning",
+};
 
 export type JourneyModel = {
   kind: "transaction" | "block" | "deposit" | "withdrawal";
@@ -163,7 +173,14 @@ type L1Detail = "compact" | "full";
 function l1Stages(finalization: BlockFinalization | null, detail: L1Detail): JourneyStage[] {
   if (finalization === null) {
     return [
-      stage("final", "Final on L1", "future", "pending_block_finalizations", null, "not_recorded"),
+      stage(
+        "final",
+        "Final on Cardano",
+        "future",
+        "pending_block_finalizations",
+        null,
+        "not_recorded",
+      ),
     ];
   }
 
@@ -178,7 +195,7 @@ function l1Stages(finalization: BlockFinalization | null, detail: L1Detail): Jou
   // transaction hash rather than by a time.
   const queuedStage = stage(
     "queued_for_l1",
-    "Queued for L1",
+    "Queued for Cardano",
     "reached",
     "pending_block_finalizations",
     queued,
@@ -212,7 +229,7 @@ function l1Stages(finalization: BlockFinalization | null, detail: L1Detail): Jou
 
   const submitted = stage(
     "submitted",
-    "Submitted to L1",
+    "Submitted to Cardano",
     finalization.submitted_tx_hash ? "reached" : isAbandoned ? "failed" : "future",
     "pending_block_finalizations",
     null,
@@ -223,7 +240,7 @@ function l1Stages(finalization: BlockFinalization | null, detail: L1Detail): Jou
 
   const seenOnL1 = stage(
     "seen_on_l1",
-    "Seen on L1",
+    "Seen on Cardano",
     observed !== null ? "reached" : isAbandoned ? "failed" : "future",
     "pending_block_finalizations",
     observed,
@@ -234,7 +251,7 @@ function l1Stages(finalization: BlockFinalization | null, detail: L1Detail): Jou
 
   const final = stage(
     "final",
-    isAbandoned ? "Abandoned" : "Final on L1",
+    isAbandoned ? "Abandoned" : "Final on Cardano",
     isFinal ? "reached" : isAbandoned ? "failed" : "current",
     "pending_block_finalizations",
     // `updatedAt` is the settlement transition's own timestamp; it only stands
@@ -259,7 +276,7 @@ function settlementStages(
       stage("included", "In a block", "future", "blocks", null, "not_applicable"),
       stage(
         "final",
-        "Final on L1",
+        "Final on Cardano",
         "future",
         "pending_block_finalizations",
         null,
@@ -270,12 +287,17 @@ function settlementStages(
   return [
     stage(
       "included",
-      `Block #${inclusion.height}`,
+      inclusion.height === null
+        ? `Header ${inclusion.header_hash.slice(0, 8)}…`
+        : `Block #${inclusion.height}`,
       "reached",
-      "blocks",
+      "pending_block_finalizations",
       inclusion.time_stamp_tz,
       "recorded",
-      { blockHeight: inclusion.height, blockHash: inclusion.header_hash },
+      {
+        ...(inclusion.height === null ? {} : { blockHeight: inclusion.height }),
+        blockHash: inclusion.header_hash,
+      },
     ),
     ...l1Stages(finalization, "compact"),
   ];
@@ -320,11 +342,11 @@ export function transactionJourney(input: {
     : hasUnknownStage
       ? "Settlement stage not recognized"
       : settled
-        ? "Final on Cardano L1"
+        ? "Final on Cardano"
         : abandoned
           ? "Finalization abandoned"
           : inclusion !== null
-            ? "Committed, awaiting L1 finality"
+            ? "Committed, awaiting Cardano finality"
             : resolved.label;
 
   const explanation = failed
@@ -332,11 +354,11 @@ export function transactionJourney(input: {
     : hasUnknownStage
       ? UNKNOWN_STAGE_EXPLANATION
       : settled
-        ? "The block carrying this transaction is settled on Cardano L1."
+        ? ""
         : abandoned
           ? "The node stopped trying to finalize the block carrying this transaction."
           : inclusion !== null
-            ? "Reversible until the block carrying it becomes final on Cardano L1."
+            ? "Reversible until the block carrying it becomes final on Cardano."
             : resolved.explain;
 
   return { kind: "transaction", outcome, headline, explanation, stages, rawStatus: status };
@@ -398,12 +420,23 @@ export function journeyProgress(status: string): JourneyProgress {
   };
 }
 
-export function blockJourney(finalization: BlockFinalization | null, height: number): JourneyModel {
+export function blockJourney(
+  finalization: BlockFinalization | null,
+  height: number | null,
+  headerHash: string,
+): JourneyModel {
   // A block is its own inclusion, so it composes the closed stage with the L1
   // stages directly rather than borrowing a transaction's shape.
   const [closedAt, closedKind] = recorded(finalization?.blockEndTime ?? null, true);
   const stages = [
-    stage("closed", `Block #${height}`, "reached", "blocks", closedAt, closedKind),
+    stage(
+      "closed",
+      height === null ? `Header ${headerHash.slice(0, 8)}…` : `Block #${height}`,
+      "reached",
+      "pending_block_finalizations",
+      closedAt,
+      closedKind,
+    ),
     ...l1Stages(finalization, "full"),
   ];
 
@@ -423,14 +456,14 @@ export function blockJourney(finalization: BlockFinalization | null, height: num
   // The headline answers "is this block final?" rather than restating the
   // status code, which the badge beside the title already carries.
   const headline = settled
-    ? "Final on Cardano L1"
+    ? "Final on Cardano"
     : abandoned
       ? "Finalization abandoned"
       : finalization === null
         ? "No finalization record yet"
         : hasUnknownStage
           ? "Settlement stage not recognized"
-          : "Committed, awaiting L1 finality";
+          : "Committed, awaiting Cardano finality";
 
   return {
     kind: "block",
@@ -438,9 +471,9 @@ export function blockJourney(finalization: BlockFinalization | null, height: num
     headline,
     explanation:
       finalization === null
-        ? "The node has not recorded a finalization attempt for this block yet, so this block is not yet on its way to Cardano L1."
+        ? "The node has not recorded a finalization attempt for this block yet, so this block is not yet on its way to Cardano."
         : settled
-          ? "This block and every transaction in it are settled on Cardano L1 at the required stability depth."
+          ? ""
           : hasUnknownStage
             ? UNKNOWN_STAGE_EXPLANATION
             : (resolved?.explain ?? UNKNOWN_STAGE_EXPLANATION),

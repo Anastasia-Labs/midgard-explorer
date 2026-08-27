@@ -22,15 +22,13 @@ export const GLOSSARY = {
     label: "Block throughput",
     category: "Explorer",
     meaning: "The number of Midgard blocks produced in the stated observation window.",
-    consequence:
-      "A sustained zero means no block was produced in that window.",
+    consequence: "A sustained zero means no block was produced in that window.",
   },
   transactionThroughput: {
     label: "Transaction throughput",
     category: "Explorer",
     meaning: "The number of Midgard transactions included during the stated observation window.",
-    consequence:
-      "Read it against the window and block count beside it.",
+    consequence: "Read it against the window and block count beside it.",
   },
   admissionLatency: {
     label: "Admission latency",
@@ -197,6 +195,29 @@ export const GLOSSARY = {
     consequence:
       "A consumed output is historical and no longer contributes to the current ledger balance.",
   },
+  stateCommitment: {
+    label: "State commitment",
+    category: "Ledger",
+    meaning:
+      "The Midgard block header written into a Cardano transaction, holding the Merkle roots for that block's transactions, deposits, withdrawals, forced transactions and state transition.",
+    consequence:
+      "It is what Cardano actually records about a Midgard block. The block's contents are not on Cardano, so this is the durable evidence a block was committed, not a copy of what it contained.",
+  },
+  merkleRoot: {
+    label: "Merkle root",
+    category: "Ledger",
+    meaning:
+      "A single hash summarising a whole set of items, so any one item can be proven a member of the set without publishing the rest.",
+    consequence:
+      "A matching root proves the set has not changed since it was committed. It does not by itself reveal or retrieve any item in that set.",
+  },
+  settlementTransaction: {
+    label: "Settlement transaction",
+    category: "Ledger",
+    meaning: "The Cardano transaction that carried this state commitment onto the L1 chain.",
+    consequence:
+      "Until a commitment is attributed to one, the explorer has seen the header re-output by a later transaction but has not yet observed the transaction that first committed it.",
+  },
   datumHash: {
     label: "Datum hash",
     category: "Script",
@@ -249,8 +270,7 @@ export const GLOSSARY = {
     label: "Protocol event",
     category: "Script",
     meaning: "A Midgard action classified from an authoritative validator output and its datum.",
-    consequence:
-      "An event the explorer cannot classify is still shown, with its raw datum.",
+    consequence: "An event the explorer cannot classify is still shown, with its raw datum.",
   },
   mintBurn: {
     label: "Mint / burn",
@@ -290,8 +310,7 @@ export const GLOSSARY = {
     label: "API request",
     category: "Explorer",
     meaning: "The public HTTP request the explorer used to load this record.",
-    consequence:
-      "Reuse it to fetch the same record yourself. It returns schema-validated JSON.",
+    consequence: "Reuse it to fetch the same record yourself. It returns schema-validated JSON.",
   },
   cbor: {
     label: "CBOR",
@@ -324,13 +343,13 @@ export const GLOSSARY = {
     label: "Asset mark",
     category: "Explorer",
     meaning: "A deterministic circular mark generated from an asset's policy and name bytes.",
-    consequence: "It helps distinguish nearby rows. It is generated from the bytes, not supplied by the issuer.",
+    consequence:
+      "It helps distinguish nearby rows. It is generated from the bytes, not supplied by the issuer.",
   },
   statusMarker: {
     label: "Status marker",
     category: "Explorer",
-    meaning:
-      "The shape beside a status label carries the same distinction its color does.",
+    meaning: "The shape beside a status label carries the same distinction its color does.",
     consequence: "Four shapes: progress, waiting, success, and failure.",
   },
 } as const satisfies Record<string, GlossaryEntry>;

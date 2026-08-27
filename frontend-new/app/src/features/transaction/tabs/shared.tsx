@@ -1,10 +1,5 @@
-import type { ReactNode } from "react";
-import type {
-  AddressIdentityView,
-  CapabilityView,
-  OutputView,
-  TransactionView,
-} from "@midgard-explorer/contracts";
+import type { AddressIdentityView, OutputView, TransactionView } from "@midgard-explorer/contracts";
+import { Chip } from "../../../components/ui/primitives";
 import { Identifier } from "../../../components/ui/identifier";
 import { Detail } from "../../../components/ui/detail";
 import { SemanticLabel, SemanticValue } from "../../../components/ui/semantic";
@@ -15,14 +10,6 @@ import type { SemanticIconKind } from "../../../lib/semantic-icons";
  * `CredentialDetails` and `OutputState` are used by both State and Details, so
  * neither tab can own them; the rest live here for the same reason the tabs do,
  * which is that the route file should compose tabs rather than contain them. */
-
-export function Chip({ children }: { children: ReactNode }) {
-  return (
-    <span className="rounded border border-border bg-surface px-1.5 py-px text-[11px] text-text-3">
-      {children}
-    </span>
-  );
-}
 
 export function CredentialDetails({ identity }: { identity: AddressIdentityView }) {
   return (
@@ -89,7 +76,7 @@ export function OutputState({ output }: { output: OutputView }) {
         ? "Not in current ledger"
         : "State not checked";
   return (
-    <span className={`rounded border px-2 py-0.5 text-[11px] font-medium ${style}`}>{label}</span>
+    <span className={`rounded border px-2 py-0.5 text-micro font-medium ${style}`}>{label}</span>
   );
 }
 
@@ -147,50 +134,6 @@ export function EvidenceHash({
           <Identifier value={value} head={10} tail={8} />
         )}
       </dd>
-    </div>
-  );
-}
-
-const CAPABILITY_LABEL: Record<CapabilityView["state"], string> = {
-  available: "Available",
-  not_present: "Not present",
-  hash_only: "Hash only",
-  not_supported: "Not in native format",
-  not_emitted: "Not emitted",
-  not_indexed: "Not indexed",
-  commitment_only: "Commitment only",
-};
-
-export function CapabilityRow({
-  label,
-  kind,
-  capability,
-}: {
-  label: string;
-  kind: SemanticIconKind;
-  capability: CapabilityView;
-}) {
-  const positive = capability.state === "available";
-  const neutral = capability.state === "not_present";
-  return (
-    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[13rem_auto_1fr] sm:items-start">
-      <dt className="mg-overline">
-        <SemanticLabel kind={kind} label={label} />
-      </dt>
-      <dd>
-        <span
-          className={
-            positive
-              ? "rounded border border-success/35 bg-success/10 px-2 py-0.5 text-xs font-medium text-success"
-              : neutral
-                ? "rounded border border-border-strong px-2 py-0.5 text-xs font-medium text-text-3"
-                : "rounded border border-warning/35 bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning"
-          }
-        >
-          {CAPABILITY_LABEL[capability.state]}
-        </span>
-      </dd>
-      <dd className="text-sm leading-relaxed text-text-2">{capability.reason}</dd>
     </div>
   );
 }
