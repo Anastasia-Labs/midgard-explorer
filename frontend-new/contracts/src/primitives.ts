@@ -44,7 +44,9 @@ export const IsoTimestamp = Schema.String.pipe(
 );
 export type IsoTimestamp = Schema.Schema.Type<typeof IsoTimestamp>;
 
-/** A blake2b-224 hash: script hashes, policy ids, payment credentials. */
+/** A blake2b-224 hash: script hashes, policy ids, payment credentials, and a
+ * Midgard L2 block header hash, which is 28 bytes and not 32. Measured on the
+ * node's `blocks.header_hash`. */
 export const Hash28 = Schema.String.pipe(
   Schema.pattern(/^[0-9a-fA-F]{56}$/),
   Schema.brand("Hash28"),

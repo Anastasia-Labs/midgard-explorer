@@ -1,10 +1,5 @@
 import { Schema } from "effect";
-import {
-  DecimalString,
-  Hash28,
-  IsoTimestamp,
-  SignedDecimalString,
-} from "./primitives";
+import { DecimalString, Hash28, IsoTimestamp, SignedDecimalString } from "./primitives";
 
 export const AssetMap = Schema.Record({
   key: Schema.String,

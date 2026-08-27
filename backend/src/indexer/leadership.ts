@@ -45,6 +45,18 @@ export async function acquireLeadership(): Promise<Leadership | null> {
     keepAlive: true,
   });
 
+  // Registered before connecting, not after. An `error` event on a pg client
+  // with no listener is thrown as an unhandled exception, and the window
+  // between connecting and attaching the handler is exactly when a refused or
+  // dropped connection surfaces one.
+  let lost = false;
+  client.on("error", (err) => {
+    lost = true;
+    logger.error(
+      `Indexer leadership connection failed, leadership is no longer held: ${String(err)}`,
+    );
+  });
+
   try {
     await client.connect();
     const { rows } = await client.query<{ locked: boolean }>(
@@ -60,15 +72,6 @@ export async function acquireLeadership(): Promise<Leadership | null> {
     await client.end().catch(() => undefined);
     return null;
   }
-
-  let lost = false;
-  // An error on this connection means the session ended, and with it the lock.
-  client.on("error", (err) => {
-    lost = true;
-    logger.error(
-      `Indexer leadership connection failed, leadership is no longer held: ${String(err)}`,
-    );
-  });
 
   return {
     verify: async () => {
