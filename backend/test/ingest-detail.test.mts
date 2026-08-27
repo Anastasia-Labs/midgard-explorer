@@ -3,6 +3,11 @@ import { indexerPrisma } from "../src/indexer/db.js";
 import { ingestTxInfos } from "../src/indexer/ingest.js";
 import { truncateL1 } from "./helpers/truncate.mjs";
 
+/** These cases pass no validators, so no event row is written and the identity
+ * is never queried back. It is still stated explicitly: the parameter exists so
+ * that no call site can leave attribution to a column default. */
+const DEPLOYMENT = "f".repeat(64);
+
 /** A transaction whose every section is populated, shaped exactly like a real
  * Koios response. Each section has a distinct, checkable count so a test that
  * loses one section names which one. */
@@ -54,7 +59,7 @@ describe("ingestTxInfos full detail", () => {
   afterAll(async () => { await indexerPrisma.$disconnect(); });
 
   it("stores the scalar fields Koios reports about the transaction", async () => {
-    await ingestTxInfos([tx], []);
+    await ingestTxInfos([tx], [], DEPLOYMENT);
     const row = await indexerPrisma.l1Tx.findUniqueOrThrow({ where: { txHash: "a".repeat(64) } });
     expect(row.fee).toBe(560587n);
     expect(row.size).toBe(2003);
@@ -70,14 +75,14 @@ describe("ingestTxInfos full detail", () => {
     ["reference", 1, "addr_test1_ref"],
     ["collateral", 1, "addr_test1_col"],
   ])("stores %s UTxOs", async (kind, count, address) => {
-    await ingestTxInfos([tx], []);
+    await ingestTxInfos([tx], [], DEPLOYMENT);
     const rows = await indexerPrisma.l1TxIo.findMany({ where: { kind } });
     expect(rows).toHaveLength(count);
     expect(rows[0]!.address).toBe(address);
   });
 
   it("attaches an output's native assets to that output", async () => {
-    await ingestTxInfos([tx], []);
+    await ingestTxInfos([tx], [], DEPLOYMENT);
     const out = await indexerPrisma.l1TxIo.findFirstOrThrow({ where: { kind: "output" } });
     const assets = await indexerPrisma.l1TxAsset.findMany({ where: { ioId: out.id } });
     expect(assets).toHaveLength(1);
@@ -85,7 +90,7 @@ describe("ingestTxInfos full detail", () => {
   });
 
   it("stores minted assets against the transaction, not against a UTxO", async () => {
-    await ingestTxInfos([tx], []);
+    await ingestTxInfos([tx], [], DEPLOYMENT);
     const mints = await indexerPrisma.l1TxAsset.findMany({ where: { kind: "mint" } });
     expect(mints).toHaveLength(1);
     expect(mints[0]!.ioId).toBeNull();
@@ -93,7 +98,7 @@ describe("ingestTxInfos full detail", () => {
   });
 
   it("stores the redeemer, which is what names the operation invoked", async () => {
-    await ingestTxInfos([tx], []);
+    await ingestTxInfos([tx], [], DEPLOYMENT);
     const [r] = await indexerPrisma.l1Redeemer.findMany();
     expect(r!.purpose).toBe("spend");
     expect(r!.memUnits).toBe(26028n);
@@ -117,6 +122,7 @@ describe("ingestTxInfos full detail", () => {
         },
       ] as never,
       [],
+      DEPLOYMENT,
     );
     const rows = await indexerPrisma.l1TxIo.findMany({ where: { kind: "collateral_output" } });
     expect(rows).toHaveLength(1);
@@ -126,8 +132,8 @@ describe("ingestTxInfos full detail", () => {
   });
 
   it("is idempotent, so a reorg rescan does not duplicate rows", async () => {
-    await ingestTxInfos([tx], []);
-    await ingestTxInfos([tx], []);
+    await ingestTxInfos([tx], [], DEPLOYMENT);
+    await ingestTxInfos([tx], [], DEPLOYMENT);
     expect(await indexerPrisma.l1TxIo.count()).toBe(4);
     expect(await indexerPrisma.l1TxAsset.count()).toBe(2);
     expect(await indexerPrisma.l1Redeemer.count()).toBe(1);

@@ -113,9 +113,15 @@ async function writeTxDetail(info: KoiosTxInfo, tx: IndexerTx): Promise<{
   return { ios, assets, redeemers };
 }
 
+/** `deployment` is required rather than defaulted. It was previously left to
+ * the column default, so every row landed under one shared value while the
+ * validator query filtered on the manifest's real identity: events were
+ * ingested correctly and no query could return them. A required parameter is
+ * what stops that from being reintroduced by a caller that forgets. */
 export async function ingestTxInfos(
   infos: KoiosTxInfo[],
   validators: ValidatorEntry[],
+  deployment: string,
   tx: IndexerTx = indexerPrisma,
 ): Promise<{
   txs: number; events: number; headers: number;
@@ -207,14 +213,18 @@ export async function ingestTxInfos(
         create: {
           txHash: info.tx_hash,
           validator: validator.family,
+          deployment,
           eventType,
           outputIndex: index,
           lovelace: BigInt(out.value),
           datum: datumValue as never,
           decoded: decodedFields as never,
         },
+        // A re-ingest under a different manifest re-attributes the row rather
+        // than leaving it under the identity it first arrived with.
         update: {
           validator: validator.family,
+          deployment,
           eventType,
           decoded: decodedFields as never,
         },

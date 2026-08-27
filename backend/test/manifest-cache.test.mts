@@ -65,10 +65,13 @@ describe("loadManifest", () => {
   });
 
   it("keeps rejecting a manifest it cannot read", () => {
-    const path = writeManifest({ network: "Preprod", contracts: null });
-    expect(() => loadManifest(path)).toThrow(/no contracts key/);
+    const path = writeManifest({ ...MANIFEST, contracts: null });
+    expect(() => loadManifest(path)).toThrow(/not a valid document/);
+    // The message names the field at fault, so an operator does not have to
+    // diff the document against a schema to find it.
+    expect(() => loadManifest(path)).toThrow(/contracts/);
     // Twice: a cache that stored the failure would answer the second call with
     // something other than the error.
-    expect(() => loadManifest(path)).toThrow(/no contracts key/);
+    expect(() => loadManifest(path)).toThrow(/not a valid document/);
   });
 });

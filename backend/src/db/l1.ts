@@ -370,7 +370,7 @@ export async function getL1Validator(scriptHash: string) {
       include: { tx: true, assets: true },
     }),
     indexerPrisma.l1Event.findMany({
-      where: { validator: validator.family, deployment: manifest.manifestId },
+      where: { validator: validator.family, deployment: manifest.deploymentId },
       orderBy: [{ tx: { txTime: "desc" } }, { id: "desc" }],
       take: 100,
       include: { tx: true },
@@ -417,7 +417,7 @@ export async function getL1Validator(scriptHash: string) {
   for (const row of events) touch(row.tx).eventCount += 1;
 
   return {
-    deployment: manifest.manifestId,
+    deployment: manifest.deploymentId,
     validator,
     coverage: { limitedTo: 100, truncated: redeemers.length === 100 || ios.length === 100 || events.length === 100 },
     utxos,
@@ -487,14 +487,14 @@ let identity: SourceIdentity | null = null;
 export async function getSourceIdentity(): Promise<SourceIdentity | null> {
   if (identity) return identity;
   try {
-    const { manifestId, network, createdAt, validators } = loadManifest(
+    const { deploymentId, network, createdAt, validators } = loadManifest(
       config.MIDGARD_MANIFEST_PATH,
     );
     const [row] = await prisma.$queryRaw<Array<{ db: string }>>`
       SELECT current_database() AS db;`;
     if (!row?.db) throw new Error("the connection did not name its database");
     identity = {
-      deployment: manifestId,
+      deployment: deploymentId,
       network,
       deployedAt: createdAt,
       l2Database: row.db,

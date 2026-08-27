@@ -39,7 +39,9 @@ export async function syncOnce(
   const fetchAssetTxs = deps.fetchAssetTxs ?? realFetchAssetTxs;
   const fetchEpochParams = deps.fetchEpochParams ?? realFetchEpochParams;
 
-  const { validators, referenceScriptAuthPolicy } = loadManifest(config.MIDGARD_MANIFEST_PATH);
+  const { validators, referenceScriptAuthPolicy, deploymentId } = loadManifest(
+    config.MIDGARD_MANIFEST_PATH,
+  );
   const addresses = validators.map((v) => v.address);
 
   const cursor = await getSyncCursor(SOURCE);
@@ -103,7 +105,7 @@ export async function syncOnce(
       // would otherwise survive forever, so the window is still cleared first,
       // just inside the boundary.
       await deleteFromBlockHeight(scanFloor, tx);
-      const written = await ingestTxInfos(infos, validators, tx);
+      const written = await ingestTxInfos(infos, validators, deploymentId, tx);
       await setSyncCursor(SOURCE, tip, tx);
       return written;
     },

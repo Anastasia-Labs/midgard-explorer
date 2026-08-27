@@ -26,7 +26,7 @@ const infos = parseTxInfo(
     ),
   ),
 );
-const { validators } = loadManifest(
+const { validators, deploymentId } = loadManifest(
   new URL("./fixtures/manifest-sample.json", import.meta.url).pathname,
 );
 
@@ -50,7 +50,7 @@ beforeAll(async () => {
     await probe();
     reachable = true;
     await truncateL1();
-    await ingestTxInfos(infos, validators);
+    await ingestTxInfos(infos, validators, deploymentId);
   } catch (err) {
     console.warn(`Skipping: indexer Postgres unreachable. ${String(err)}`);
   }
@@ -476,7 +476,7 @@ describe("consumed-by attribution", () => {
   beforeAll(async () => {
     if (!reachable) return;
     await truncateL1();
-    await ingestTxInfos(infos, validators);
+    await ingestTxInfos(infos, validators, deploymentId);
   });
 
   afterAll(async () => {

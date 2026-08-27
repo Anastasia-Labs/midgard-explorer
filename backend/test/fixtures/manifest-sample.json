@@ -1,22 +1,53 @@
 {
   "schemaVersion": "midgard-deployment-manifest-v2",
+  "manifestId": "268c40fc3d521049e970cd3b3e0be3ef6ae1bd0acc034d580be806896b6a7f7e",
   "network": "Preprod",
   "createdAt": "2026-07-15T17:25:29.605Z",
   "contracts": {
-    "hubOracleMint": { "scriptHash": "5fdec6ae62250ad27a21ad01d646238b6e95991b738f513f58a91b81" },
-    "stateQueueSpend": { "scriptHash": "5712b8d11b58e1fcef4f16067b3b07e40073a64212012099005b21d8" },
-    "depositSpend": { "scriptHash": "a202e037d840240718ad200165abb3ad2a4e7a9bb12c9fb1293fcf35" },
-    "depositMint": { "scriptHash": "0ccf8d1c17a606a898194617a46409879b39afd1ee33e07377f937ba" },
-    "daParamsGovernorSpend": { "scriptHash": "008c416cdcfe3081a32202a605b777e3790947cdd00900cf72343958" },
-    "daParamsGovernorMint": { "scriptHash": "008c416cdcfe3081a32202a605b777e3790947cdd00900cf72343958" },
-    "daAttestationSpend": { "scriptHash": "65976139558770f54efbe6a16cc2ae078007e347c2bff6e8e9f3a948" },
-    "daAttestationMint": { "scriptHash": "65976139558770f54efbe6a16cc2ae078007e347c2bff6e8e9f3a948" },
-    "escapeHatchSpend": { "scriptHash": "bd3ae991b5aafccafe5ca70758bd36a9b2f872f57f6d3a1ffa0eb777" },
-    "escapeHatchMint": { "scriptHash": "bd3ae991b5aafccafe5ca70758bd36a9b2f872f57f6d3a1ffa0eb777" },
-    "fraudProofNonExistentInputNoIndex": { "scriptHash": "bd3ae991b5aafccafe5ca70758bd36a9b2f872f57f6d3a1ffa0eb777" },
-    "fraudProofInvalidRange": { "scriptHash": "bd3ae991b5aafccafe5ca70758bd36a9b2f872f57f6d3a1ffa0eb777" },
-    "fraudProofCatalogueSpend": { "scriptHash": "22c9a103ed3f2fa97c982d76d6e2af50c5d54ac306983b196c8fcdab" },
-    "fraudProofSpend": { "scriptHash": "22c9a103ed3f2fa97c982d76d6e2af50c5d54ac306983b196c8fcdab" },
-    "reserveWithdraw": { "scriptHash": "22c9a103ed3f2fa97c982d76d6e2af50c5d54ac306983b196c8fcdab" }
+    "hubOracleMint": {
+      "scriptHash": "5fdec6ae62250ad27a21ad01d646238b6e95991b738f513f58a91b81"
+    },
+    "stateQueueSpend": {
+      "scriptHash": "5712b8d11b58e1fcef4f16067b3b07e40073a64212012099005b21d8"
+    },
+    "depositSpend": {
+      "scriptHash": "a202e037d840240718ad200165abb3ad2a4e7a9bb12c9fb1293fcf35"
+    },
+    "depositMint": {
+      "scriptHash": "0ccf8d1c17a606a898194617a46409879b39afd1ee33e07377f937ba"
+    },
+    "daParamsGovernorSpend": {
+      "scriptHash": "008c416cdcfe3081a32202a605b777e3790947cdd00900cf72343958"
+    },
+    "daParamsGovernorMint": {
+      "scriptHash": "008c416cdcfe3081a32202a605b777e3790947cdd00900cf72343958"
+    },
+    "daAttestationSpend": {
+      "scriptHash": "65976139558770f54efbe6a16cc2ae078007e347c2bff6e8e9f3a948"
+    },
+    "daAttestationMint": {
+      "scriptHash": "65976139558770f54efbe6a16cc2ae078007e347c2bff6e8e9f3a948"
+    },
+    "escapeHatchSpend": {
+      "scriptHash": "bd3ae991b5aafccafe5ca70758bd36a9b2f872f57f6d3a1ffa0eb777"
+    },
+    "escapeHatchMint": {
+      "scriptHash": "bd3ae991b5aafccafe5ca70758bd36a9b2f872f57f6d3a1ffa0eb777"
+    },
+    "fraudProofNonExistentInputNoIndex": {
+      "scriptHash": "bd3ae991b5aafccafe5ca70758bd36a9b2f872f57f6d3a1ffa0eb777"
+    },
+    "fraudProofInvalidRange": {
+      "scriptHash": "bd3ae991b5aafccafe5ca70758bd36a9b2f872f57f6d3a1ffa0eb777"
+    },
+    "fraudProofCatalogueSpend": {
+      "scriptHash": "22c9a103ed3f2fa97c982d76d6e2af50c5d54ac306983b196c8fcdab"
+    },
+    "fraudProofSpend": {
+      "scriptHash": "22c9a103ed3f2fa97c982d76d6e2af50c5d54ac306983b196c8fcdab"
+    },
+    "reserveWithdraw": {
+      "scriptHash": "22c9a103ed3f2fa97c982d76d6e2af50c5d54ac306983b196c8fcdab"
+    }
   }
 }

@@ -21,7 +21,7 @@ const infos = parseTxInfo(
     ),
   ),
 );
-const { validators } = loadManifest(
+const { validators, deploymentId } = loadManifest(
   new URL("./fixtures/manifest-sample.json", import.meta.url).pathname,
 );
 
@@ -60,21 +60,21 @@ afterAll(async () => {
 describe("ingestTxInfos", () => {
   it("writes a transaction with its events", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    const r = await ingestTxInfos(infos, validators);
+    const r = await ingestTxInfos(infos, validators, deploymentId);
     expect(r.txs).toBe(1);
     expect(r.events).toBeGreaterThanOrEqual(1);
   });
 
   it("writes a block header from the state queue datum", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    await ingestTxInfos(infos, validators);
+    await ingestTxInfos(infos, validators, deploymentId);
     expect(await indexerPrisma.l1BlockHeader.count()).toBeGreaterThanOrEqual(1);
   });
 
   it("is idempotent across repeated ingests", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
     await truncateL1();
-    await ingestTxInfos(infos, validators);
+    await ingestTxInfos(infos, validators, deploymentId);
     const afterFirst = {
       txs: await indexerPrisma.l1Tx.count(),
       events: await indexerPrisma.l1Event.count(),
@@ -86,8 +86,8 @@ describe("ingestTxInfos", () => {
     expect(afterFirst.txs).toBeGreaterThan(0);
     expect(afterFirst.events).toBeGreaterThan(0);
     expect(afterFirst.headers).toBeGreaterThan(0);
-    await ingestTxInfos(infos, validators);
-    await ingestTxInfos(infos, validators);
+    await ingestTxInfos(infos, validators, deploymentId);
+    await ingestTxInfos(infos, validators, deploymentId);
     expect({
       txs: await indexerPrisma.l1Tx.count(),
       events: await indexerPrisma.l1Event.count(),
@@ -97,7 +97,7 @@ describe("ingestTxInfos", () => {
 
   it("never records an event for a stub validator address", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    await ingestTxInfos(infos, validators);
+    await ingestTxInfos(infos, validators, deploymentId);
     const families = validators.map((v) => v.family);
     const rows = await indexerPrisma.l1Event.findMany();
     for (const row of rows) expect(families).toContain(row.validator);
@@ -112,7 +112,7 @@ describe("ingestTxInfos", () => {
   it("attributes the transaction to the head header only", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
     await truncateL1();
-    await ingestTxInfos(infos, validators);
+    await ingestTxInfos(infos, validators, deploymentId);
 
     const headers = await indexerPrisma.l1BlockHeader.findMany();
     expect(headers.length).toBe(2);
@@ -132,11 +132,11 @@ describe("ingestTxInfos", () => {
   it("does not overwrite attribution when a header is seen again", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
     await truncateL1();
-    await ingestTxInfos(infos, validators);
+    await ingestTxInfos(infos, validators, deploymentId);
     const before = await indexerPrisma.l1BlockHeader.findMany({
       orderBy: { headerHash: "asc" },
     });
-    await ingestTxInfos(infos, validators);
+    await ingestTxInfos(infos, validators, deploymentId);
     const after = await indexerPrisma.l1BlockHeader.findMany({
       orderBy: { headerHash: "asc" },
     });
@@ -146,7 +146,7 @@ describe("ingestTxInfos", () => {
   it("removes headers as well as transactions on rollback", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
     await truncateL1();
-    await ingestTxInfos(infos, validators);
+    await ingestTxInfos(infos, validators, deploymentId);
     expect(await indexerPrisma.l1BlockHeader.count()).toBeGreaterThan(0);
     await deleteFromBlockHeight(infos[0].block_height);
     // The head header sat at this height, so it goes. A carried-forward header
@@ -157,7 +157,7 @@ describe("ingestTxInfos", () => {
 
   it("deletes from a block height for reorg reconciliation", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
-    await ingestTxInfos(infos, validators);
+    await ingestTxInfos(infos, validators, deploymentId);
     await deleteFromBlockHeight(infos[0].block_height);
     expect(await indexerPrisma.l1Tx.count()).toBe(0);
     expect(await indexerPrisma.l1Event.count()).toBe(0);
