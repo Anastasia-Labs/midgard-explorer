@@ -74,13 +74,14 @@ discarded.
 
 ### The frontend gate is not yet reliably green
 
-Three full runs, two failures:
+Four full runs, two failures:
 
 | Run | Result | Failure |
 |---|---|---|
 | `505066b` | 424 passed, 1 failed | 30s timeout on `page.goto`, `help-affordances.spec.ts:140` |
 | `268ac27` run 1 | 424 passed, 1 failed | 90s timeout inside axe `page.evaluate`, `populated.spec.ts:817` |
 | `268ac27` run 2 | 425 passed, 0 failed | none |
+| audit cleanups, uncommitted worktree | 425 passed, 0 failed | none |
 
 Neither failure was an assertion, they were different tests, and both cases pass
 in under six seconds in isolation on an idle machine. That points at capacity on
@@ -96,16 +97,41 @@ peak, so the next failure is attributable instead of argued about. A clean run
 on hosted CI against an immutable pushed SHA would settle it better than any
 further local run, and that needs a push.
 
-Backend: **402 passed, 8 skipped, 0 failed** across 47 files, every step exit 0.
+Backend: **419 passed, 8 skipped, 0 failed** across 48 files, every step exit 0,
+under the documented command with `REQUIRE_DB=1`.
+
 The 8 skipped are the whole of `test/live-validation.test.mts`, which is
 `describe.skipIf(!LIVE)` and reaches live Koios and the node's database. They
 are opt-in by design, not quarantined: `LIVE_E2E=1 pnpm vitest run
 test/live-validation.test.mts` runs them, and `backend/scripts/live-evidence.sh`
 is what runs them for the record.
 
-Frontend: **425 passed, 17 skipped, 0 failed** on the run of record. The 17
-skipped are viewport-conditional cases that a project skips when they do not
-apply to it.
+Frontend: **425 passed, 17 skipped, 0 failed** of 442, plus 431 unit tests
+(416 app, 12 contracts, 3 ui), every step exit 0. The 17 skipped are
+viewport-conditional cases that a project skips when they do not apply to it.
+
+The sampler recorded peak load 5.00 and a floor of 1.2 GiB available across the
+6.2 minute e2e run, and it passed at that floor with a headless Playwright MCP
+browser also resident. That is one clean run under measured pressure, not proof
+the timeouts are gone. Two of four recorded runs have passed, and hosted
+CI against a pushed SHA remains the thing that would settle it.
+
+### `REQUIRE_DB=1` is the whole difference between a real result and a believed one
+
+The same worktree run *without* the flag reported 419 passed, 0 failed. With it,
+three tests failed: `indexer-sync-atomicity` twice and
+`indexer-deployment-sweep` once, each a 5s timeout rather than an assertion.
+
+`syncOnce` takes six injectable fetch seams and those three call sites stubbed
+four, so `fetchAccountUpdates` and `fetchEpochParams` fell through to the live
+Koios API. The suite was reaching the network, and the failures carried
+`fetch failed` and `Koios 429 rate limited` to say so. `deps` is
+`Partial<SyncDeps>`, so omitting a seam is type-legal and nothing flagged it.
+
+The three call sites now stub all six, matching `indexer-sync.test.mts` and
+`indexer-reconciliation.test.mts`. The suite runs 15s faster for no longer
+waiting on Koios, and the reported count is unchanged at 419 because those three
+were passing without the flag all along.
 
 
 ## Live validation
