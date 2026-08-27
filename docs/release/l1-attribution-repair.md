@@ -11,8 +11,9 @@ alongside it. Nothing has been pushed, merged, or applied to production.
 |---|---|
 | Branch | `wip/remediation` |
 | Base | `develop` at `0c04d18a05857f4be00e2d17839ecf6d464d3266` |
-| Commits ahead of `develop` | 132 |
-| Commits in the branch's whole history | 168 |
+| Commits ahead of `develop` | 137 |
+| Commits in the branch's whole history | 173 |
+| Relationship to `develop` | `develop` is an ancestor of HEAD: the branch is ahead by 137, behind by 0, so there is nothing to rebase |
 | Network | Cardano preprod |
 | Chain source | Koios `https://preprod.koios.rest/api/v1` |
 | Manifest | the tx-validation deployment's `contract-deployment-info.json` |
@@ -43,27 +44,42 @@ indexed and when the index may be rewritten.
 | `d00792c` | The CI node fixture carries the 18 relations the read path queries, not 7 |
 | `49b7b15` | Live evidence is captured by the run that produces it |
 | `6449f6d` | The rollout is a script, in the order it was rehearsed |
+| `5838c42` | Readiness refuses an index that has not finished a reconciliation |
+| `4847361` | The rollout script's target is the URL Prisma migrates through |
+| `7466552` | Every advisory disposition carries an owner and an expiry |
+| `c5949fa` | Images pinned by digest, actions by SHA, gate output kept as artifacts |
 
 ## Gates
 
-Run on the exact HEAD recorded in each row, in a single continuous run each.
+| Gate | Command |
+|---|---|
+| Backend | `REQUIRE_DB=1 pnpm typecheck && pnpm build && pnpm run audit:gate && pnpm test` |
+| Frontend | `frontend-new/scripts/ci-local.sh` |
 
-| Gate | Command | Result |
-|---|---|---|
-| Backend | `pnpm typecheck && pnpm build && pnpm run audit:gate && pnpm test` | typecheck, build, audit and tests all exit 0 |
-| Frontend | `frontend-new/scripts/ci-local.sh` | exit 0, "Gate green" |
+Each is run as one continuous run against a clean worktree, and its output is
+written to `.git/gate-evidence/<short-sha>-{backend,frontend}.log` with the
+commit, the exit code of every step and the machine's load at the start. CI
+uploads the same output as artifacts (`backend-gate-evidence`,
+`frontend-gate-evidence`) on success as well as failure, which is where a
+reviewer without this working tree should read it. A document cannot carry the
+result of the gate that runs on the commit introducing it, so the counts below
+are the last measured run and the evidence files are authoritative.
 
-Backend tests: **402 passed, 8 skipped, 0 failed** across 47 files. The 8 skipped
-are the whole of `test/live-validation.test.mts`, which is `describe.skipIf(!LIVE)`
-and reaches live Koios and the node's database. They are opt-in by design, not
-quarantined: `LIVE_E2E=1 pnpm vitest run test/live-validation.test.mts` runs
-them, and `backend/scripts/live-evidence.sh` is what runs them for the record.
+A re-run that passes does not convert a failed run into a green one. Only a
+single clean run counts, and a run that failed is recorded rather than
+discarded.
 
-Frontend tests: **425 passed, 17 skipped, 0 failed**.
+Backend: **402 passed, 8 skipped, 0 failed** across 47 files, every step exit 0.
+The 8 skipped are the whole of `test/live-validation.test.mts`, which is
+`describe.skipIf(!LIVE)` and reaches live Koios and the node's database. They
+are opt-in by design, not quarantined: `LIVE_E2E=1 pnpm vitest run
+test/live-validation.test.mts` runs them, and `backend/scripts/live-evidence.sh`
+is what runs them for the record.
 
-CI uploads both jobs' output as artifacts on success as well as failure
-(`backend-gate-evidence`, `frontend-gate-evidence`), so the same figures are
-readable by anyone with access to the run.
+Frontend: **425 passed, 17 skipped, 0 failed** on the run of record. The 17
+skipped are viewport-conditional cases that a project skips when they do not
+apply to it.
+
 
 ## Live validation
 
@@ -126,20 +142,32 @@ This claim is about this deployment's reward accounts, not about Cardano.
 
 ## Rollout rehearsal
 
-Run at `49b7b15` against a `pg_dump` copy of production restored into a separate
-database. Production was never written to. All seven steps passed:
+Run twice, each time against a `pg_dump` copy of production restored into a
+separate database that was dropped afterwards. Production was never written to,
+and its counts were re-read at the end of each run to prove it.
 
-1. Readiness on the new build without the migration: NOT READY, naming the
-   missing migration
-2. `pnpm indexer:deploy`: column default dropped, cursors reset to 0,
-   **141 transactions and 158 events preserved**, nothing deleted
-3. Readiness after: the schema probes pass
-4. One writer, from the compiled `dist/index.js`: full re-index from height 0
-5. **141 to 224 transactions, 158 to 240 events, zero rows left under
-   `default`**, one deployment row, three cursors equal
-6. SIGTERM: clean drain in 2 seconds, no forced exit
-7. The advisory lock is re-acquirable by a fresh client, so leadership was
-   released rather than leaked
+The second rehearsal is the one that matters, because it is the one that
+exercises the deployment mechanism rather than only the migration. Every step
+below is a recorded exit code, not a description.
+
+| Step | Result |
+|---|---|
+| `rollout.sh --check`, un-migrated | **exit 1**, naming the missing migration and the 158 unreachable rows |
+| `rollout.sh --apply` while a writer held the leadership lock | **REFUSED, exit 1.** The migration was not applied |
+| `rollout.sh --apply` with the lock released | Migration applied to the database it had just inspected, by name. Column default dropped, cursors reset to 0, **141 transactions and 158 events preserved**, nothing deleted |
+| `rollout.sh --check`, migrated but not yet re-indexed | **exit 1.** The schema probes pass and the reconciliation probe refuses. This is the interval the first rehearsal reported as ready |
+| One writer, from the compiled `dist/index.js` | Full re-index from height 0, in about a minute |
+| `rollout.sh --check`, after one reconciled pass | **exit 0.** 225 transactions, 241 events, **zero rows under `default`**, one deployment row, three cursors equal at 5106529 |
+| SIGTERM | Exited in 1 second. Zero advisory locks left on the database, and the lock re-acquirable by a fresh client, so leadership was released rather than leaked |
+
+Production was re-read immediately afterwards and still holds 141 transactions,
+158 events all attributed `default`, and cursor `l1` at 5082691.
+
+One detail worth keeping: the refusal in step 2 happened twice, the second time
+unintentionally. The process holding the lock was started inside a shell
+subshell, and killing the subshell did not kill the `psql` session inside it, so
+the lock stayed held. That is exactly the situation the preflight exists for: a
+writer an operator believes they stopped.
 
 ## Production state
 
