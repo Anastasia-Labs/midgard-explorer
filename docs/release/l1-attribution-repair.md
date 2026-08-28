@@ -232,6 +232,62 @@ that a withdraw execution is indexed. Proving that requires a chain mutation, so
 the coverage for it is hermetic, in `backend/test/withdraw-execution.test.mts`.
 This claim is about this deployment's reward accounts, not about Cardano.
 
+## What the migrations do to an existing index
+
+Two migrations in this branch change data rather than only shape, and one of
+them is destructive. Read this before upgrading any database that holds rows.
+
+### `20260807164120_tx_detail` deletes every row in `l1_tx`
+
+It adds five required columns with no default, which Postgres cannot do to a
+populated table, so the migration clears the table first and the indexer
+re-fetches the rows from Koios. The delete cascades to `l1_event`.
+
+This runs **only where that migration has not already been applied**. Check
+before upgrading:
+
+```sql
+SELECT migration_name, finished_at, rolled_back_at
+  FROM "_prisma_migrations"
+ WHERE migration_name IN ('20260807164120_tx_detail',
+                          '20260827120000_deployment_attribution_repair')
+ ORDER BY migration_name;
+```
+
+A row with `finished_at` set and `rolled_back_at` null means that migration is
+already applied and its delete will not run again. A missing row on a populated
+database means the upgrade needs a maintenance window: the index is emptied and
+rebuilt from genesis, the deployment stays out of rotation for the whole
+re-index, and readiness stays red until the cursors reconcile. How long that
+takes depends on the chain range and Koios throughput, so measure it in the
+target environment rather than assuming this one's figure.
+
+Measured on the local index on 2026-08-28: `tx_detail` applied and finished,
+230 rows in `l1_tx`, 246 in `l1_event`, all three cursors agreeing at 5107562,
+and every event attributed to the manifest identity with none under `default`.
+On that index the repair migration below is a no-op.
+
+### `20260827120000_deployment_attribution_repair` resets cursors, and only sometimes
+
+It drops the column default so a writer cannot omit the deployment again, then
+resets the three L1 cursors **only if** at least one event is still attributed
+to `default`. On an index with no mis-attributed rows the update matches nothing,
+so the migration is safe to apply to a fresh deployment and safe to re-run.
+
+### Recording and rollback
+
+Record before and after: the two migration rows above, the counts from `l1_tx`
+and `l1_event`, the three `sync_cursor` values, and the attribution breakdown by
+deployment.
+
+Rollback is restoring the pre-migration backup. The deleted rows are derived
+from the chain and are not reconstructible by hand, so a backup that has been
+proven restorable is the only way back.
+
+Do not edit either migration to soften this. Both are applied to persistent
+databases, and changing a file Prisma has already recorded produces a checksum
+mismatch that blocks every later migration.
+
 ## Rollout rehearsal
 
 Run twice, each time against a `pg_dump` copy of production restored into a
