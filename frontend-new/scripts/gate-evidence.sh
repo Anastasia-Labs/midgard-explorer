@@ -30,7 +30,12 @@ sample() {
 }
 sample > "$SAMPLES" &
 SAMPLER=$!
-trap 'kill "$SAMPLER" 2>/dev/null; rm -f "$SAMPLES"' EXIT INT TERM
+# `|| true` is load-bearing twice. The sampler is already reaped below, so this
+# kill fails, and under `set -e` a failing command in an EXIT trap both aborts
+# the trap before `rm` runs and replaces the script's exit status. The effect
+# was that a green gate exited 1 and leaked its temp file, and every caller that
+# piped this script read the pipe's status instead and never saw it.
+trap 'kill "$SAMPLER" 2>/dev/null || true; rm -f "$SAMPLES"' EXIT INT TERM
 
 {
   echo "sha      = $(git rev-parse HEAD)"
