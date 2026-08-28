@@ -74,7 +74,9 @@ discarded.
 
 ### The frontend gate is not yet reliably green
 
-Nine full runs, four failures:
+Nine full suite executions are recorded below: five passed and four had test
+failures. The suite at `3eacacf` passed, but its evidence wrapper exited 1, so
+it was not valid gate evidence.
 
 | Run | Result | Failure |
 |---|---|---|
@@ -88,9 +90,12 @@ Nine full runs, four failures:
 | `3eacacf` | 425 passed, 0 failed | none in the suite; the evidence wrapper still exited 1 |
 | `24ff9b0` | 425 passed, 0 failed | none |
 
-Neither failure was an assertion, they were different tests, and both cases pass
-in under six seconds in isolation on an idle machine. That points at capacity on
-a two-core box rather than at the product.
+The failures had two different causes. The `4c6a068` failures were deterministic
+assertions caused by the fixture clock crossing its 30-day boundary, and are
+fixed by pinning the clock. The failures at `505066b`, the first `268ac27` run,
+and `8e2d4ba` were timeouts rather than assertions; the affected tests passed
+quickly in isolation, while the `8e2d4ba` run recorded severe resource
+exhaustion.
 
 It is not proved, and the difference matters. The logs sampled load and free
 memory **once, at the start**, and the first failing run started at load 2.81
@@ -121,9 +126,9 @@ viewport-conditional cases that a project skips when they do not apply to it.
 The sampler recorded peak load 5.00 and a floor of 1.2 GiB available across the
 6.2 minute e2e run, and it passed at that floor with a headless Playwright MCP
 browser also resident. That is one clean run under measured pressure, not proof
-the timeouts are gone. Five of nine recorded runs have passed, the last
-three consecutively, and hosted CI against a pushed SHA remains the thing
-that would settle it.
+the timeouts are gone. Five of the nine historical suite executions listed above
+passed. Current-tip gate results are recorded in the local evidence file and,
+after publication, the hosted CI artifacts.
 
 ### The suite had an expiry date
 
