@@ -233,11 +233,15 @@ jobs:
       - name: Preserve the evidence
         # On success too. A green run whose output nobody can read is not
         # evidence of anything, and the counts in it are what a reviewer needs.
+        # This keeps the textual gate log, and the traces and error contexts
+        # Playwright writes under test-results when a test retries or fails.
+        # The line reporter is what runs here, so there is no HTML report to
+        # collect, and naming one meant the useful directory went unkept.
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: frontend-gate-evidence
           path: |
             frontend-new/gate-evidence
-            frontend-new/app/playwright-report
+            frontend-new/app/test-results
           retention-days: 30
