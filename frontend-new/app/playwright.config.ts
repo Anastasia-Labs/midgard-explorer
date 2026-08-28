@@ -40,6 +40,10 @@ export default defineConfig({
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
+  // A test that passes only on retry is a defect, not a pass. Retries stay on
+  // so the report still shows what flaked and the trace is captured; this is
+  // what makes the run red when one does, instead of leaving it to a reader.
+  failOnFlakyTests: !!process.env.CI,
   reporter: process.env.CI ? "line" : "list",
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
