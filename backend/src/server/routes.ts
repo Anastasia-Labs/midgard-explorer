@@ -1,32 +1,10 @@
 import { Express } from "express";
-import {
-  getBlockRoute,
-  getRecentBlocksRoute,
-  getTotalBlocksRoute,
-  getBlocksPageRoute,
-} from "./routes/block";
-import { getAddressRoute } from "./routes/address";
-import {
-  getTotalTransactionsRoute,
-  getTransactionRoute,
-  getRecentTransactionsRoute,
-  getTransactionsPageRoute,
-} from "./routes/transaction";
-import { getDepositsPageRoute } from "./routes/deposits";
-import { getWithdrawalsPageRoute } from "./routes/withdrawals";
-import { getForcedTransactionsPageRoute } from "./routes/forcedTransactions";
+import { registerCatalogue } from "./catalogue";
 
+/** Every public route comes from the endpoint catalogue, which is also what
+ * the OpenAPI document, the rate-limit mounts and the reference page derive
+ * from. Adding a route here rather than there would make it undocumented and
+ * unlimited, so there is nothing to add here. */
 export function registerRoutes(app: Express) {
-  app.get("/api/block", getBlockRoute);
-  app.get("/api/transaction", getTransactionRoute);
-  app.get("/api/address", getAddressRoute);
-  app.get("/api/blocks/recent", getRecentBlocksRoute);
-  app.get("/api/blocks/total", getTotalBlocksRoute);
-  app.get("/api/blocks/:page", getBlocksPageRoute);
-  app.get("/api/transactions/total", getTotalTransactionsRoute);
-  app.get("/api/transactions/recent", getRecentTransactionsRoute);
-  app.get("/api/transactions/:page", getTransactionsPageRoute);
-  app.get("/api/deposits/:page", getDepositsPageRoute);
-  app.get("/api/withdrawals/:page", getWithdrawalsPageRoute);
-  app.get("/api/forced-transactions/:page", getForcedTransactionsPageRoute);
+  registerCatalogue(app);
 }

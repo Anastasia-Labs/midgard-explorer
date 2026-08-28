@@ -39,7 +39,8 @@ describe("encoding-shape corpus (codec compatibility)", () => {
       if (e.assetOutputs) {
         for (const a of e.assetOutputs) {
           const carrying = view.outputs.find(
-            (o) => o.value.assets[a.policyId]?.[a.assetName] === BigInt(a.quantity),
+            (o) =>
+              o.value.assets[a.policyId]?.[a.assetName] === BigInt(a.quantity),
           );
           expect(
             carrying,

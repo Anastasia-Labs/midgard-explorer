@@ -1,0 +1,1139 @@
+/** Representative, not merely abundant. Every lifecycle state the status
+ * registry knows about appears at least once, plus the awkward shapes:
+ * undecodable rows, empty blocks, many-transaction blocks, multi-asset values,
+ * and maximum-length identifiers. */
+
+const hex = (seed, len) => {
+  let out = "";
+  let x = seed >>> 0;
+  while (out.length < len) {
+    x = (x * 1664525 + 1013904223) >>> 0;
+    out += x.toString(16).padStart(8, "0");
+  }
+  return out.slice(0, len);
+};
+
+export const txId = (n) => hex(n * 7919 + 11, 64);
+export const blockHash = (n) => hex(n * 6271 + 3, 56);
+export const l1TxHash = (n) => hex(n * 5231 + 17, 64);
+export const eventId = (n) => hex(n * 4409 + 29, 64);
+
+/** Addresses must carry a valid BIP-173 checksum: the app rejects malformed
+ * ones in place, so a fixture with a made-up checksum would 404 rather than
+ * exercise the address route. Generated here rather than hard-coded. */
+const BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+
+function bech32Polymod(values) {
+  const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  let chk = 1;
+  for (const v of values) {
+    const top = chk >>> 25;
+    chk = ((chk & 0x1ffffff) << 5) ^ v;
+    for (let i = 0; i < 5; i++) if ((top >>> i) & 1) chk ^= GEN[i];
+  }
+  return chk;
+}
+
+function bech32HrpExpand(hrp) {
+  const out = [];
+  for (let i = 0; i < hrp.length; i++) out.push(hrp.charCodeAt(i) >>> 5);
+  out.push(0);
+  for (let i = 0; i < hrp.length; i++) out.push(hrp.charCodeAt(i) & 31);
+  return out;
+}
+
+function bech32Encode(hrp, bytes) {
+  let acc = 0;
+  let bits = 0;
+  const words = [];
+  for (const b of bytes) {
+    acc = (acc << 8) | b;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      words.push((acc >> bits) & 31);
+    }
+  }
+  if (bits > 0) words.push((acc << (5 - bits)) & 31);
+  const mod = bech32Polymod([...bech32HrpExpand(hrp), ...words, 0, 0, 0, 0, 0, 0]) ^ 1;
+  const checksum = Array.from({ length: 6 }, (_, i) => (mod >> (5 * (5 - i))) & 31);
+  return `${hrp}1${[...words, ...checksum].map((w) => BECH32_CHARSET[w]).join("")}`;
+}
+
+const addrBytes = (seed) => Array.from({ length: 29 }, (_, i) => (seed * 31 + i * 7 + 3) & 0xff);
+
+export const ADDRESSES = [
+  bech32Encode("addr_test", addrBytes(1)),
+  bech32Encode("addr_test", addrBytes(2)),
+  bech32Encode("addr_test", addrBytes(3)),
+];
+
+const value = (lovelace, assets = {}) => ({ lovelace: String(lovelace), assets });
+
+const sumValues = (values) => {
+  let lovelace = 0n;
+  const assets = {};
+  for (const entry of values) {
+    lovelace += BigInt(entry.lovelace);
+    for (const [policyId, names] of Object.entries(entry.assets)) {
+      const policy = assets[policyId] ?? {};
+      for (const [assetName, quantity] of Object.entries(names)) {
+        policy[assetName] = String(BigInt(policy[assetName] ?? "0") + BigInt(quantity));
+      }
+      assets[policyId] = policy;
+    }
+  }
+  return value(lovelace, assets);
+};
+
+const utf8Hex = (s) => Buffer.from(s, "utf8").toString("hex");
+
+const addressIdentity = (seed, kind = "PubKey") => ({
+  payment: { kind, hash: hex(1700 + seed, 56) },
+  stake: seed % 3 === 0 ? { kind: "PubKey", hash: hex(1800 + seed, 56) } : null,
+  protected: seed % 2 === 0,
+  networkId: 0,
+});
+
+/** Asset names an explorer has to survive, not just the pleasant ones. A name
+ * is bytes chosen by whoever minted the asset, so the set below includes the
+ * two that matter for safety: bytes that are not valid UTF-8, and valid UTF-8
+ * carrying a right-to-left override, which renders as a different name from
+ * the one the ledger holds. Both must fall back to hex. */
+export const ASSET_POLICIES = {
+  plain: hex(101, 56),
+  noName: hex(102, 56),
+  hostile: hex(103, 56),
+};
+
+export const ASSET_NAMES = {
+  /** "MIDGARD" */
+  plain: utf8Hex("MIDGARD"),
+  /** "PATATE", the CIP-14 spec's own example name. */
+  patate: "504154415445",
+  /** No name at all, which is different from an unreadable one. */
+  empty: "",
+  /** Not valid UTF-8. */
+  binary: "fffe0102",
+  /** "USD" + U+202E + "C": reads reversed, impersonating another token. */
+  bidi: utf8Hex("USD‮C"),
+};
+
+const MULTI_ASSET = {
+  [ASSET_POLICIES.plain]: {
+    [ASSET_NAMES.plain]: "1",
+    [ASSET_NAMES.patate]: "4500000000",
+  },
+  [ASSET_POLICIES.noName]: { [ASSET_NAMES.empty]: "7" },
+  [ASSET_POLICIES.hostile]: {
+    [ASSET_NAMES.binary]: "18446744073709551615",
+    [ASSET_NAMES.bidi]: "42",
+  },
+};
+
+/** A transaction view whose arithmetic is real.
+ *
+ * Fixture amounts used to be arbitrary, so inputs never equalled outputs plus
+ * fee and the balanced case, which every genuine transaction satisfies, could
+ * not be rendered at all. When every input resolves, the first output now
+ * absorbs whatever the others and the fee leave over, so the equation holds.
+ * When an input is unresolvable the amounts stay arbitrary, which is correct:
+ * nothing can be checked in that case anyway. */
+const view = (n, { pending = false, outputs = 2, inputs = 2, validity = "TxIsValid" } = {}) => {
+  const fee = 170000 + n * 1013;
+  const inputA = 9_500_000 + n * 1000;
+  // Most transactions keep one unresolvable input, the common case once a
+  // transaction is applied. A transaction with a spend redeemer resolves the
+  // canonical target as well; otherwise the fixture would claim a script ran
+  // while withholding the output that proves which script it was.
+  const hasSpendRedeemer = n % 2 === 1;
+  // A one-input transaction has nothing to leave unresolved, so it resolves.
+  const singleInput = inputs === 1;
+  const allResolved = singleInput || n % 4 === 0 || hasSpendRedeemer;
+  const inputB = singleInput || !allResolved ? null : 3_400_000 + n * 500;
+  const inputARef = txId(n + 500);
+  const inputBRef = txId(n + 900);
+  const scriptIsInputA = hasSpendRedeemer && inputARef.localeCompare(inputBRef) < 0;
+  const scriptIsInputB = hasSpendRedeemer && !scriptIsInputA;
+
+  const tail = Array.from({ length: Math.max(0, outputs - 1) }, (_, i) => 2_100_000 + i * 500_000);
+  const tailSum = tail.reduce((a, b) => a + b, 0);
+  const remainder = inputA + (inputB ?? 0) - fee - tailSum;
+  // A remainder that would be non-positive means the fixture cannot balance
+  // this shape; fall back rather than emit a negative output.
+  const balanced = allResolved && remainder > 0;
+  const amounts = balanced
+    ? [remainder, ...tail]
+    : Array.from({ length: outputs }, (_, i) => 2_100_000 + i * 500_000);
+
+  return {
+    txId: txId(n),
+    formatVersion: 1,
+    validity,
+    fee: String(fee),
+    validityInterval: { start: n % 3 === 0 ? String(1000 + n) : null, end: null },
+    networkId: 0,
+    inputs: [
+      {
+        txId: inputARef,
+        index: 0,
+        resolved: {
+          address: ADDRESSES[n % ADDRESSES.length],
+          addressKind: scriptIsInputA ? "Script" : "PubKey",
+          identity: addressIdentity(n, scriptIsInputA ? "Script" : "PubKey"),
+          value: value(inputA),
+        },
+      },
+      ...(singleInput
+        ? []
+        : [
+            {
+              txId: inputBRef,
+              index: 1,
+              resolved:
+                inputB === null
+                  ? null
+                  : {
+                      address: ADDRESSES[(n + 1) % ADDRESSES.length],
+                      addressKind: scriptIsInputB ? "Script" : "PubKey",
+                      identity: addressIdentity(n + 1, scriptIsInputB ? "Script" : "PubKey"),
+                      value: value(inputB),
+                    },
+            },
+          ]),
+    ],
+    referenceInputs:
+      n % 4 === 0
+        ? [
+            {
+              txId: txId(n + 77),
+              index: 0,
+              resolved: {
+                address: ADDRESSES[(n + 2) % ADDRESSES.length],
+                addressKind: "Script",
+                identity: addressIdentity(n + 2, "Script"),
+                value: value(4_200_000, MULTI_ASSET),
+              },
+            },
+          ]
+        : [],
+    outputs: amounts.map((lovelace, i) => {
+      const hasDatum = i === 1;
+      const hasScriptRef = n % 5 === 0 && i === 0;
+      return {
+        index: i,
+        address: ADDRESSES[(n + i) % ADDRESSES.length],
+        // Datum-bearing outputs are the script ones, which is what makes the
+        // graph's script/key distinction visible in the fixture.
+        addressKind: hasDatum || hasScriptRef ? "Script" : "PubKey",
+        identity: addressIdentity(n + i, hasDatum || hasScriptRef ? "Script" : "PubKey"),
+        value: i === 0 && n % 3 === 0 ? value(lovelace, MULTI_ASSET) : value(lovelace),
+        hasDatum,
+        hasScriptRef,
+        datum: hasDatum
+          ? {
+              cborHex: hex(1200 + n + i, 64),
+              // One datum in three is left undecodable so the hex-only
+              // fallback is exercised rather than assumed.
+              json: (n + i) % 3 === 0 ? null : { constructor: 0, fields: [n + i] },
+            }
+          : null,
+        scriptRef: hasScriptRef
+          ? {
+              hash: hex(1300 + n, 56),
+              language: "PlutusV3",
+              cborHex: hex(1400 + n, 80),
+              source: "reference_output",
+              hashVerified: true,
+            }
+          : null,
+        state: {
+          status: i === 0 ? "unspent" : "not_in_current_ledger",
+          consumedBy: i === 0 ? null : { txId: txId(n + 2000), index: 0 },
+        },
+      };
+    }),
+    mint:
+      n % 6 === 0
+        ? {
+            policyIds: [hex(303, 56), hex(304, 56)],
+            assets: [
+              { policyId: hex(303, 56), assetName: "4d4944", quantity: String(1000 + n) },
+              // A negative quantity is a burn, and the UI must not read it as a mint.
+              { policyId: hex(304, 56), assetName: "424e", quantity: String(-(50 + n)) },
+            ],
+          }
+        : null,
+    requiredObservers: n % 5 === 0 ? [hex(1900 + n, 56)] : [],
+    requiredSigners: [hex(2000 + n, 56)],
+    scriptIntegrityHash: n % 2 === 0 ? hex(2100 + n, 64) : null,
+    auxiliaryDataHash: n % 5 === 0 ? hex(2200 + n, 64) : null,
+    capabilities: {
+      collateral: {
+        state: "not_supported",
+      },
+      metadata: {
+        state: n % 5 === 0 ? "hash_only" : "not_present",
+      },
+      certificates: {
+        state: "not_supported",
+      },
+      withdrawals: {
+        state: n % 5 === 0 ? "available" : "not_present",
+      },
+      governance: {
+        state: "not_supported",
+      },
+      protocolEvents: {
+        state: "not_emitted",
+      },
+      executionTrace: {
+        state: "commitment_only",
+      },
+      consumedBy: {
+        state: "available",
+      },
+    },
+    witnesses: {
+      vkeyCount: 1 + (n % 3),
+      scriptCount: n % 2,
+      redeemerCount: n % 2,
+      scripts: Array.from({ length: n % 2 }, (_, i) => ({
+        hash: hex(1500 + n + i, 56),
+        language: "PlutusV3",
+        cborHex: hex(1550 + n + i, 96),
+        source: "witness_set",
+        hashVerified: true,
+      })),
+      redeemers: Array.from({ length: n % 2 }, (_, i) => ({
+        cborHex: hex(1600 + n + i, 48),
+        tag: 0,
+        purpose: "spend",
+        index: i,
+        data: { constructor: 0, fields: [{ int: String(n) }] },
+        exUnits: { mem: String(500_000 + n), steps: String(120_000_000 + n) },
+      })),
+    },
+    cborHex: null,
+    cborTruncated: false,
+    size: 350 + (n % 40) * 7,
+    ...(pending ? { pending: true } : {}),
+  };
+};
+
+/** Blocks 1..40; block 3 is empty, block 5 carries many transactions. */
+export const DEPOSIT_ONLY_HEADER_HASH = "6f77bd238790f437971176e41b6c04ecf8eb04af01cf6c8fedfbcc8b";
+
+export const BLOCKS = Array.from({ length: 40 }, (_, i) => {
+  const number = 40 - i;
+  return {
+    number,
+    // Header 39 is deposit-only. It never had a `blocks` row and therefore has
+    // no legacy row identifier, while remaining a first-class journal header.
+    height: number === 39 ? null : number,
+    header_hash: number === 39 ? DEPOSIT_ONLY_HEADER_HASH : blockHash(number),
+    tx_id: number === 39 ? null : txId(number),
+    time_stamp_tz: new Date(Date.UTC(2026, 6, 28, 12, 0, 0) - i * 21_000).toISOString(),
+  };
+});
+
+const txCountForBlock = (height) => (height === 3 || height === 39 ? 0 : height === 5 ? 12 : 2);
+
+export const blockRows = (height) =>
+  Array.from({ length: txCountForBlock(height) }, (_, i) => {
+    const n = height * 100 + i;
+    const undecodable = height === 7 && i === 1;
+    return {
+      height,
+      header_hash: blockHash(height),
+      tx_id: txId(n),
+      time_stamp_tz: new Date(
+        Date.UTC(2026, 6, 28, 12, 0, 0) - (40 - height) * 21_000,
+      ).toISOString(),
+      transaction: undecodable ? null : view(n),
+      decodeError: undecodable ? "unsupported output encoding (legacy CML)" : null,
+    };
+  });
+
+export const blockDa = (height) =>
+  height === 9
+    ? null
+    : {
+        utxos_root: hex(height * 11 + 1, 64),
+        transactions_root: hex(height * 11 + 2, 64),
+        deposits_root: hex(height * 11 + 3, 64),
+        withdrawals_root: hex(height * 11 + 4, 64),
+        forced_transactions_root: hex(height * 11 + 5, 64),
+        transition_trace_root: hex(height * 11 + 6, 64),
+        event_to_step_root: hex(height * 11 + 7, 64),
+        l2_transaction_count: txCountForBlock(height),
+        deposit_count: height === 39 ? 1 : height % 3,
+        withdrawal_count: height === 39 ? 0 : height % 2,
+        forced_transaction_count: height % 4 === 0 ? 1 : 0,
+        total_event_count:
+          txCountForBlock(height) +
+          (height === 39 ? 1 : height % 3) +
+          (height === 39 ? 0 : height % 2),
+        transition_step_count: txCountForBlock(height) * 2,
+        block_start_time: new Date(Date.UTC(2026, 6, 28, 11, 59, 40)).toISOString(),
+        block_end_time: new Date(Date.UTC(2026, 6, 28, 12, 0, 0)).toISOString(),
+      };
+
+/** Every finalization status the registry knows, cycled across blocks, plus one
+ * the registry does not know. Transactions already exercise an unrecognized
+ * lifecycle status via TX_STATUSES; blocks had no equivalent, so the
+ * unknown-settlement-stage path had never rendered.
+ *
+ * The length matters. Transaction n sits in block (40 - n), so a cycle the same
+ * length as TX_STATUSES phase-locks the two: with seven entries, every single
+ * committed transaction landed in an abandoned block, and "committed, awaiting
+ * L1 finality" (the most common real state there is) could not be produced at
+ * all. Eight entries are co-prime with the seven lifecycle statuses, so every
+ * pairing occurs. `finalized` appears twice, which is both what makes the
+ * length eight and a fair weighting: most blocks do settle. */
+const FINALIZATION_STATUSES = [
+  "finalized",
+  "observed_waiting_stability",
+  "submitted_unconfirmed",
+  "submitted_local_finalization_pending",
+  "pending_submission",
+  "abandoned",
+  "some_future_finalization_stage",
+  "finalized",
+];
+
+export const blockFinalization = (height) => {
+  if (height === 11) return null;
+  const status = FINALIZATION_STATUSES[height % FINALIZATION_STATUSES.length];
+  const blockEndMs = Date.UTC(2026, 6, 28, 12, 0, 0) - (40 - height) * 21_000;
+  const createdMs = blockEndMs + 1_400;
+  const observed =
+    status === "observed_waiting_stability" || status === "finalized"
+      ? new Date(createdMs + 18_000).toISOString()
+      : null;
+  const updatedMs =
+    status === "finalized"
+      ? createdMs + 42_000
+      : status === "abandoned"
+        ? createdMs + 35_000
+        : observed
+          ? new Date(observed).getTime()
+          : createdMs + 4_000;
+  return {
+    status,
+    submitted_tx_hash: status === "pending_submission" ? null : l1TxHash(height),
+    blockEndTime: new Date(blockEndMs).toISOString(),
+    createdAt: new Date(createdMs).toISOString(),
+    updatedAt: new Date(updatedMs).toISOString(),
+    observedConfirmedAt: observed,
+  };
+};
+
+export const blockHeader = (number) => {
+  const block = BLOCKS.find((b) => b.number === number);
+  if (!block) return null;
+  const da = blockDa(number);
+  const end = block.time_stamp_tz;
+  const start = new Date(new Date(end).getTime() - 20_000).toISOString();
+  return {
+    header_hash: block.header_hash,
+    height: block.height,
+    block_start_time: start,
+    block_end_time: end,
+    header_l2_transaction_count: txCountForBlock(number),
+    header_deposit_count: number === 39 ? 1 : number % 3,
+    header_withdrawal_count: number === 39 ? 0 : number % 2,
+    header_forced_transaction_count: number % 4 === 0 ? 1 : 0,
+    materialized_l2_transaction_count: block.height === null ? 0 : txCountForBlock(number),
+    payload_retained_locally: da !== null,
+  };
+};
+
+export const blockEvents = (number) => ({
+  deposits:
+    number === 39
+      ? [
+          {
+            member_id: eventId(39),
+            ordinal: 0,
+            source_time_stamp_tz: BLOCKS.find((b) => b.number === number).time_stamp_tz,
+          },
+        ]
+      : [],
+  withdrawals: [],
+  forced_transactions: [],
+});
+
+/** Transaction lifecycle: one of every known status, plus an unknown one so the
+ * "unrecognized status" path is exercised. */
+export const TX_STATUSES = [
+  "committed",
+  "pending_commit",
+  "accepted",
+  "validating",
+  "queued",
+  "rejected",
+  "some_future_status",
+];
+
+export const TXS = Array.from({ length: 60 }, (_, i) => {
+  const n = i + 1;
+  const status = TX_STATUSES[i % TX_STATUSES.length];
+  // Only a transaction that reached a ledger tier has a body to decode, so a
+  // rejected or still-admitting one can never also be undecodable.
+  const undecodable = i % 17 === 5 && ["committed", "pending_commit", "accepted"].includes(status);
+  const txTimeMs = Date.UTC(2026, 6, 28, 12, 0, 0) - i * 37_000;
+  const firstSeenMs = txTimeMs - 24_000;
+  const admissionStatus =
+    status === "queued" || status === "validating" || status === "rejected" ? status : "accepted";
+  const validationStartedAt =
+    admissionStatus === "queued" ? null : new Date(firstSeenMs + 1_700).toISOString();
+  const terminalAt =
+    admissionStatus === "accepted" || admissionStatus === "rejected"
+      ? new Date(firstSeenMs + 5_900).toISOString()
+      : null;
+  const updatedAt = terminalAt ?? validationStartedAt ?? new Date(firstSeenMs).toISOString();
+  return {
+    n,
+    status,
+    header_hash: blockHash(40 - (i % 40)),
+    tx_id: txId(n),
+    time_stamp_tz: new Date(txTimeMs).toISOString(),
+    admission: {
+      status: admissionStatus,
+      firstSeenAt: new Date(firstSeenMs).toISOString(),
+      validationStartedAt,
+      terminalAt,
+      updatedAt,
+      attemptCount: admissionStatus === "queued" ? 0 : 1,
+      requestCount: n % 5 === 0 ? 2 : 1,
+      submitSource: n % 9 === 0 ? "backfill" : "native",
+    },
+    transaction: undecodable ? null : view(n, { pending: status !== "committed" }),
+    decodeError: undecodable ? "unsupported output encoding (legacy CML)" : null,
+  };
+});
+
+/** A route-only stress transaction. Keeping it out of TXS prevents ordinary
+ * list and search payloads from carrying 500 outputs while still giving the
+ * production-browser suite a deterministic high-density graph. */
+export const FLOW_STRESS_TX = {
+  n: 9001,
+  status: "committed",
+  header_hash: blockHash(40),
+  tx_id: txId(9001),
+  time_stamp_tz: new Date(Date.UTC(2026, 6, 28, 12, 1, 0)).toISOString(),
+  admission: {
+    status: "accepted",
+    firstSeenAt: new Date(Date.UTC(2026, 6, 28, 12, 0, 54)).toISOString(),
+    validationStartedAt: new Date(Date.UTC(2026, 6, 28, 12, 0, 55)).toISOString(),
+    terminalAt: new Date(Date.UTC(2026, 6, 28, 12, 0, 56)).toISOString(),
+    updatedAt: new Date(Date.UTC(2026, 6, 28, 12, 0, 56)).toISOString(),
+    attemptCount: 1,
+    requestCount: 1,
+    submitSource: "native",
+  },
+  transaction: view(9001, { outputs: 500 }),
+  decodeError: null,
+};
+
+/** A transaction whose two sides hold different numbers of nodes.
+ *
+ * Every other fixture is 2-in 2-out, where both flow columns are the same
+ * height and a connector drawn against the wrong height still lands on its
+ * card. That symmetry hid a real misalignment for the whole life of the
+ * diagram: on 1-in 3-out the input line left from 67px below its card. Route
+ * only, like the stress transaction, so list payloads keep their usual shapes.
+ */
+export const FLOW_UNEQUAL_TX = {
+  n: 9002,
+  status: "committed",
+  header_hash: blockHash(39),
+  tx_id: txId(9002),
+  time_stamp_tz: new Date(Date.UTC(2026, 6, 28, 12, 2, 0)).toISOString(),
+  admission: {
+    status: "accepted",
+    firstSeenAt: new Date(Date.UTC(2026, 6, 28, 12, 1, 54)).toISOString(),
+    validationStartedAt: new Date(Date.UTC(2026, 6, 28, 12, 1, 55)).toISOString(),
+    terminalAt: new Date(Date.UTC(2026, 6, 28, 12, 1, 56)).toISOString(),
+    updatedAt: new Date(Date.UTC(2026, 6, 28, 12, 1, 56)).toISOString(),
+    attemptCount: 1,
+    requestCount: 1,
+    submitSource: "native",
+  },
+  transaction: view(9002, { inputs: 1, outputs: 3 }),
+  decodeError: null,
+};
+
+/** The payment shape: one input, change back to the spender, value to someone
+ * else. Exactly one address ends up net positive, which is the only case the
+ * action summary can state in a sentence.
+ *
+ * Every listed fixture transaction spends from both of the addresses it pays,
+ * so none of them has a single net recipient and the summary's surviving branch
+ * had nothing to render on. A branch no fixture reaches is a branch no test can
+ * check. */
+export const PAYMENT_TX = {
+  n: 9003,
+  status: "committed",
+  header_hash: blockHash(38),
+  tx_id: txId(9003),
+  time_stamp_tz: new Date(Date.UTC(2026, 6, 28, 12, 3, 0)).toISOString(),
+  admission: {
+    status: "accepted",
+    firstSeenAt: new Date(Date.UTC(2026, 6, 28, 12, 2, 54)).toISOString(),
+    validationStartedAt: new Date(Date.UTC(2026, 6, 28, 12, 2, 55)).toISOString(),
+    terminalAt: new Date(Date.UTC(2026, 6, 28, 12, 2, 56)).toISOString(),
+    updatedAt: new Date(Date.UTC(2026, 6, 28, 12, 2, 56)).toISOString(),
+    attemptCount: 1,
+    requestCount: 1,
+    submitSource: "native",
+  },
+  transaction: view(9003, { inputs: 1, outputs: 2 }),
+  decodeError: null,
+};
+
+const BRIDGE_STATUSES = ["awaiting", "projected", "consumed", "finalized"];
+
+export const DEPOSITS = Array.from({ length: 47 }, (_, i) => ({
+  event_id: eventId(i + 1),
+  deposit_l1_tx_hash: l1TxHash(i + 1),
+  ledger_tx_id: txId(i + 200),
+  ledger_address: ADDRESSES[i % ADDRESSES.length],
+  status: BRIDGE_STATUSES[i % BRIDGE_STATUSES.length],
+  inclusion_time: new Date(Date.UTC(2026, 6, 28, 11, 0, 0) - i * 61_000).toISOString(),
+  projected_header_hash: i % 5 === 0 ? null : blockHash(40 - (i % 40)),
+  value: i % 11 === 3 ? null : value(25_000_000 + i * 130_000, i % 4 === 0 ? MULTI_ASSET : {}),
+}));
+
+const WITHDRAWAL_VALIDITY = [
+  "WithdrawalIsValid",
+  "NonExistentWithdrawalUtxo",
+  "SpentWithdrawalUtxo",
+  "IncorrectWithdrawalOwner",
+  "IncorrectWithdrawalValue",
+  "IncorrectWithdrawalSignature",
+  "TooManyTokensInWithdrawal",
+  "UnpayableWithdrawalValue",
+];
+
+export const WITHDRAWALS = Array.from({ length: 39 }, (_, i) => ({
+  event_id: eventId(i + 500),
+  withdrawal_l1_tx_hash: l1TxHash(i + 500),
+  withdrawal_l1_output_index: i % 4,
+  l2_outref: txId(i + 700),
+  l2_value: i % 9 === 4 ? null : value(12_000_000 + i * 90_000),
+  l2_value_raw: hex(i * 37 + 5, 24),
+  l2_value_decode_error:
+    i % 9 === 4 ? "Failed to decode l2_value as Midgard SDK Plutus data." : null,
+  l1_address: hex(i * 31 + 7, 58),
+  l1_address_bech32: i % 13 === 6 ? null : ADDRESSES[i % ADDRESSES.length],
+  l1_address_decode_error:
+    i % 13 === 6 ? "Failed to decode l1_address as Midgard SDK Plutus data." : null,
+  validity: i % 7 === 2 ? null : WITHDRAWAL_VALIDITY[i % WITHDRAWAL_VALIDITY.length],
+  status: BRIDGE_STATUSES[i % BRIDGE_STATUSES.length],
+  inclusion_time: new Date(Date.UTC(2026, 6, 28, 10, 30, 0) - i * 73_000).toISOString(),
+  projected_header_hash: i % 6 === 0 ? null : blockHash(40 - (i % 40)),
+}));
+
+const FORCED_VALIDITY = [
+  "TxIsValid",
+  "NonExistentInputUtxo",
+  "InvalidSignature",
+  "FailedScript",
+  "FeeTooLow",
+  "UnbalancedTx",
+];
+
+export const FORCED = Array.from({ length: 28 }, (_, i) => ({
+  tx_order_id: eventId(i + 900),
+  tx_order_l1_tx_hash: l1TxHash(i + 900),
+  tx_order_l1_output_index: i % 3,
+  tx_id: txId(i + 1100),
+  operator_validity: FORCED_VALIDITY[i % FORCED_VALIDITY.length],
+  status: BRIDGE_STATUSES[i % BRIDGE_STATUSES.length],
+  inclusion_time: new Date(Date.UTC(2026, 6, 28, 9, 45, 0) - i * 97_000).toISOString(),
+  projected_header_hash: i % 4 === 0 ? null : blockHash(40 - (i % 40)),
+}));
+
+const l1Asset = (n, quantity, kind = "output") => ({
+  kind,
+  policyId: hex(700 + n, 56),
+  assetName: utf8Hex(n % 2 === 0 ? "MIDGARD" : `TOKEN${n}`),
+  fingerprint: `asset1fixture${String(n).padStart(4, "0")}`,
+  quantity: String(quantity),
+});
+
+/** Mirrors validators derived from the fixture deployment manifest. Addresses
+ * were produced by the backend's own `scriptHashToAddress` encoder. */
+export const L1_VALIDATORS = [
+  {
+    entryName: "depositSpend",
+    family: "deposit",
+    scriptHash: "a202e037d840240718ad200165abb3ad2a4e7a9bb12c9fb1293fcf35",
+    address: "addr_test1wz3q9cphmpqzgpcc45sqzedtkwkj5nn6nwcje8a39ylu7dghn7vqy",
+  },
+  {
+    entryName: "stateQueueSpend",
+    family: "stateQueue",
+    scriptHash: "5712b8d11b58e1fcef4f16067b3b07e40073a64212012099005b21d8",
+    address: "addr_test1wpt39wx3rdvwrl80futqv7emqljqquaxggfqzgyeqpdjrkqhge828",
+  },
+];
+
+const l1Io = (n, kind, position, txHash, quantity = "1") => ({
+  kind,
+  position,
+  sourceTxHash: txHash,
+  sourceIndex: position,
+  address: ADDRESSES[n % ADDRESSES.length],
+  paymentCred: hex(900 + n, 56),
+  stakeAddr: n % 3 === 0 ? `stake_test1fixture${n}` : null,
+  lovelace: String(3_000_000 + n * 17_000),
+  datumHash: n % 2 === 0 ? hex(1000 + n, 64) : null,
+  inlineDatum: n % 2 === 0 ? { constructor: 0, fields: [{ int: String(n) }] } : null,
+  refScriptHash: n % 4 === 0 ? hex(1100 + n, 56) : null,
+  assets: n % 3 === 0 ? [l1Asset(n, quantity)] : [],
+});
+
+/** Cardano-side transactions are deliberately richer than the L2 fixtures.
+ * The first record exercises every detail section; the rest make paging and
+ * list navigation representative without repeating the large payload. */
+export const L1_TXS = Array.from({ length: 31 }, (_, i) => {
+  const n = i + 1;
+  const hash = l1TxHash(n);
+  const inputHash = l1TxHash(n + 100);
+  const rich = i === 0;
+  const events = rich
+    ? [
+        {
+          validator: "deposit",
+          eventType: "deposit",
+          outputIndex: 0,
+          lovelace: "12500000",
+          datum: { constructor: 0, fields: [{ bytes: hex(20, 56) }] },
+          deployment: "fixture-deployment",
+          decoded: {
+            l2PaymentCredential: hex(20, 56),
+            inclusionTime: "1785238320000",
+          },
+        },
+        {
+          validator: "stateQueue",
+          eventType: "blockCommit",
+          outputIndex: 1,
+          lovelace: "4000000",
+          datum: { constructor: 1, fields: [] },
+          deployment: "fixture-deployment",
+          decoded: { blockHeight: 8401, transactionCount: 18 },
+        },
+      ]
+    : n % 3 === 0
+      ? [
+          {
+            validator: "deposit",
+            eventType: "deposit",
+            outputIndex: 0,
+            lovelace: String(4_000_000 + n * 1000),
+            datum: null,
+            deployment: "fixture-deployment",
+            decoded: null,
+          },
+        ]
+      : [];
+  return {
+    txHash: hash,
+    blockHeight: 5_120_000 - i,
+    blockHash: hex(1200 + n, 64),
+    slot: 141_200_000 - i * 20,
+    epoch: 318,
+    txTime: new Date(Date.UTC(2026, 6, 28, 12, 52, 0) - i * 79_000).toISOString(),
+    fee: String(193_000 + n * 1_111),
+    size: 744 + n * 7,
+    totalOutput: String(22_000_000 + n * 91_000),
+    blockIndex: n % 9,
+    certDeposit: rich ? "2000000" : "0",
+    invalidBefore: rich ? "141199000" : null,
+    invalidAfter: rich ? "141205000" : null,
+    metadata: rich ? { 674: { msg: ["Midgard fixture settlement"], source: "e2e" } } : null,
+    actions: rich
+      ? [
+          {
+            kind: "deposit",
+            family: "deposit",
+            outputIndex: 0,
+            lovelace: "12500000",
+            operation: null,
+            // The rich transaction carries a deposit-validator redeemer, so a
+            // verdict exists for it.
+            validContract: true,
+            operator: null,
+            startTime: null,
+            userEvent: {
+              kind: "deposit",
+              l2PaymentCredential: hex(20, 56),
+              l2StakeCredential: hex(21, 56),
+              l2NetworkId: 0,
+              inclusionTime: "1785238320000",
+            },
+            headerHash: null,
+          },
+          {
+            kind: "block_commitment",
+            family: "stateQueue",
+            outputIndex: 1,
+            lovelace: null,
+            operation: null,
+            // Paying to a script address runs no script, so nothing checked
+            // this one and null is the honest answer.
+            validContract: null,
+            operator: null,
+            startTime: null,
+            userEvent: null,
+            headerHash: BLOCKS[0].header_hash,
+          },
+        ]
+      : n % 3 === 0
+        ? [
+            {
+              kind: "deposit",
+              family: "deposit",
+              outputIndex: 0,
+              lovelace: String(4_000_000 + n * 1000),
+              operation: null,
+              // One deposit in the list failed its script, so the verdict has
+              // something to report and the row that reports it is exercised.
+              // The rest ran no script at all, which is null, not success.
+              validContract: n === 3 ? false : null,
+              operator: null,
+              startTime: null,
+              userEvent: {
+                kind: "deposit",
+                l2PaymentCredential: hex(30 + n, 56),
+                l2StakeCredential: null,
+                l2NetworkId: 0,
+                inclusionTime: String(1785238320000 + n * 1000),
+              },
+              headerHash: null,
+            },
+            // A withdrawal proves the other half of the decoder: an owner and
+            // the Midgard UTxO leaving, where a deposit proves a destination.
+            ...(n === 6
+              ? [
+                  {
+                    kind: "withdrawal",
+                    family: "withdrawal",
+                    outputIndex: 1,
+                    lovelace: null,
+                    operation: null,
+                    validContract: null,
+                    operator: null,
+                    startTime: null,
+                    userEvent: {
+                      kind: "withdrawal",
+                      l2Owner: hex(60, 56),
+                      l2OutRef: { txHash: txId(46), index: 1 },
+                      inclusionTime: "1785238326000",
+                    },
+                    headerHash: null,
+                  },
+                ]
+              : []),
+          ]
+        : [],
+    events,
+    inputs: [l1Io(n, "input", 0, inputHash, "8")],
+    outputs: [
+      {
+        ...l1Io(n + 10, "output", 0, hash, "8"),
+        ...(rich
+          ? {
+              address: L1_VALIDATORS[0].address,
+              paymentCred: L1_VALIDATORS[0].scriptHash,
+              // One output has a spender this index holds. The rest have none,
+              // which is the ordinary case: the index covers Midgard-related
+              // transactions, so most spenders are outside it.
+              spentBy: l1TxHash(2),
+            }
+          : {}),
+      },
+      ...(rich
+        ? [
+            {
+              ...l1Io(n + 11, "output", 1, hash),
+              address: L1_VALIDATORS[1].address,
+              paymentCred: L1_VALIDATORS[1].scriptHash,
+            },
+          ]
+        : []),
+    ],
+    referenceInputs: rich ? [l1Io(n + 20, "reference", 0, l1TxHash(222))] : [],
+    collateral: rich ? [l1Io(n + 30, "collateral", 0, l1TxHash(223))] : [],
+    collateralOutput: rich ? l1Io(n + 31, "collateral_output", 0, hash) : null,
+    mints: rich ? [l1Asset(41, "2500000", "mint"), l1Asset(42, "-19", "mint")] : [],
+    redeemers: rich
+      ? [
+          {
+            scriptHash: L1_VALIDATORS[0].scriptHash,
+            address: L1_VALIDATORS[0].address,
+            purpose: "spend",
+            memUnits: "3210456",
+            stepUnits: "899321001",
+            fee: "77421",
+            datumHash: hex(1501, 64),
+            datum: { constructor: 0, fields: [{ bytes: hex(1502, 16) }] },
+            validContract: true,
+            scriptSize: 4128,
+          },
+        ]
+      : [],
+    // Preprod's real values, read from Koios on 2026-08-18. The fixture
+    // redeemer above lands at 18.3% of memory and 9.0% of steps against them,
+    // which is what the budget bars are asserted on.
+    protocolParams: rich
+      ? { epochNo: 318, maxTxExMem: "17500000", maxTxExSteps: "10000000000" }
+      : null,
+  };
+});
+
+export const addressResponse = (address, page = 1) => {
+  const history = TXS.filter((t) => t.transaction).slice(0, 9);
+  const undecodedOutputs = address === ADDRESSES[1] ? 3 : 0;
+  const rows = history.map((t, i) => {
+    const block = BLOCKS.find((b) => b.header_hash === t.header_hash) ?? null;
+    // Received reads this transaction's own outputs, so it is always exact.
+    const received = sumValues(
+      t.transaction.outputs.filter((o) => o.address === address).map((o) => o.value),
+    );
+    // Every third row keeps an unresolved input, the common real case once a
+    // transaction has been applied and its inputs have left the ledger.
+    const spentComplete = i % 3 !== 0 && t.transaction.inputs.every((x) => x.resolved !== null);
+    const spent = spentComplete
+      ? sumValues(
+          t.transaction.inputs
+            .filter((x) => x.resolved?.address === address)
+            .map((x) => x.resolved.value),
+        )
+      : null;
+    return {
+      tx_id: t.tx_id,
+      address,
+      height: block?.height ?? null,
+      header_hash: block?.header_hash ?? null,
+      time_stamp_tz: t.time_stamp_tz,
+      status: t.status === "pending_commit" ? "pending_commit" : "committed",
+      finalization_status: block ? (blockFinalization(block.number)?.status ?? null) : null,
+      received,
+      spent,
+      spentComplete,
+      transaction: t.transaction,
+      decodeError: t.decodeError,
+    };
+  });
+  const times = rows.map((r) => new Date(r.time_stamp_tz).getTime());
+  // The UTxOs behind the balance, including one the codec cannot read: an
+  // address holding six entries of which one is unreadable must show six rows
+  // and a warning, not five rows and a quietly smaller total.
+  const utxos = Array.from({ length: 6 }, (_, i) => {
+    const broken = undecodedOutputs > 0 && i === 4;
+    return {
+      txId: broken ? null : txId(700 + i),
+      index: broken ? null : i % 3,
+      outRefHex: hex(900 + i, 72),
+      value: broken ? null : value(20_000_000 + i * 1_500_000, i === 1 ? MULTI_ASSET : {}),
+      hasDatum: i === 2,
+      hasScriptRef: i === 5,
+      decodeError: broken ? "unsupported output encoding (legacy CML)" : null,
+    };
+  });
+
+  const limit = 25;
+  const start = (Math.max(1, page) - 1) * limit;
+  return {
+    balance: value(184_250_000, MULTI_ASSET),
+    undecodedOutputs,
+    utxoCount: utxos.length,
+    utxos,
+    txCount: rows.length,
+    historyPage: page,
+    hasNextPage: start + limit < rows.length,
+    limit,
+    firstActivity: new Date(Math.min(...times)).toISOString(),
+    latestActivity: new Date(Math.max(...times)).toISOString(),
+    history: rows.slice(start, start + limit),
+  };
+};
+
+/** Operational metrics, shaped exactly like GET /api/metrics.
+ *
+ * Counts are derived from the fixture rows above, so the panel and the list
+ * pages cannot disagree. Two things are deliberately arranged rather than
+ * derived, because they are UI states that need exercising and the fixture's
+ * fourteen minutes of history would never produce them:
+ *
+ *   - the hourly series spans a full day and contains one empty hour, so the
+ *     chart's treatment of an outage is under test rather than assumed;
+ *   - the settlement-latency sample is small, which is the case where a p95
+ *     must be presented as too thin to trust rather than as a measurement.
+ *
+ * `partial` is true and honest: the fixture's blocks cover minutes, not a day.
+ */
+export const metrics = () => {
+  const end = new Date(Date.UTC(2026, 6, 28, 12, 0, 0));
+  const start = new Date(end.getTime() - 24 * 3_600_000);
+  const observedFrom = new Date(end.getTime() - (BLOCKS.length - 1) * 21_000);
+
+  const txTotal = BLOCKS.reduce((n, b) => n + txCountForBlock(b.number), 0);
+  const terminal = TXS.filter((t) => t.admission?.terminalAt);
+  const accepted = terminal.filter((t) => t.admission.status === "accepted").length;
+  const rejected = terminal.filter((t) => t.admission.status === "rejected").length;
+  const queueDepth = TXS.filter((t) =>
+    ["queued", "validating"].includes(t.admission?.status),
+  ).length;
+
+  const finalizations = BLOCKS.map((b) => blockFinalization(b.number)).filter((f) => f !== null);
+  const byStatus = (s) => finalizations.filter((f) => f.status === s).length;
+  const unsettled = finalizations.filter((f) => !["finalized", "abandoned"].includes(f.status));
+  const oldest = unsettled
+    .slice()
+    .sort((a, b) => new Date(a.blockEndTime) - new Date(b.blockEndTime))[0];
+  const oldestBlock = BLOCKS.find(
+    (b) => blockFinalization(b.number)?.blockEndTime === oldest?.blockEndTime,
+  );
+
+  const statusCounts = (list, key) => {
+    const seen = new Map();
+    for (const item of list) seen.set(item[key], (seen.get(item[key]) ?? 0) + 1);
+    return [...seen.entries()]
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => b.count - a.count);
+  };
+
+  const series = Array.from({ length: 25 }, (_, i) => {
+    const hour = new Date(start.getTime() + i * 3_600_000);
+    // Hour 9 is an outage: no blocks produced. A chart that silently bridges
+    // this gap is hiding the one thing an operator opened the page for.
+    const blocks = i === 9 ? 0 : 6 + ((i * 5) % 7);
+    return {
+      hour: hour.toISOString(),
+      blocks,
+      transactions: blocks * 2 + (i % 3),
+    };
+  });
+
+  return {
+    window: {
+      hours: 24,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      observedFrom: observedFrom.toISOString(),
+      partial: true,
+    },
+    tip: {
+      headerHash: BLOCKS[0].header_hash,
+      height: BLOCKS[0].height,
+      at: BLOCKS[0].time_stamp_tz,
+      ageSeconds: 12,
+      source:
+        "pending_block_finalizations.status, pending_block_finalizations.block_end_time, blocks.height",
+    },
+    throughput: {
+      transactions: txTotal,
+      blocks: BLOCKS.length,
+      transactionsPerBlock: txTotal / BLOCKS.length,
+      blockIntervalSeconds: { p50: 21, p95: 21, sampleCount: BLOCKS.length - 1 },
+      source:
+        "pending_block_finalizations.block_end_time, pending_block_finalization_txs.member_id",
+    },
+    admission: {
+      latency: {
+        p50Ms: 5900,
+        p95Ms: 5900,
+        sampleCount: terminal.length,
+        source: "tx_admissions.terminal_at - tx_admissions.first_seen_at",
+      },
+      accepted,
+      rejected,
+      rejectionRate: terminal.length === 0 ? null : rejected / terminal.length,
+      queueDepth,
+      source: "tx_admissions.status, tx_admissions.terminal_at",
+    },
+    finality: {
+      settlementLatency: {
+        p50Ms: 43_400,
+        p95Ms: 61_200,
+        sampleCount: byStatus("finalized"),
+        source:
+          "pending_block_finalizations.updated_at - pending_block_finalizations.block_end_time",
+      },
+      finalized: byStatus("finalized"),
+      pending: unsettled.length,
+      abandoned: byStatus("abandoned"),
+      oldestUnsettled:
+        oldest === undefined
+          ? null
+          : {
+              headerHash: oldestBlock?.header_hash ?? blockHash(1),
+              status: oldest.status,
+              blockEndTime: oldest.blockEndTime,
+              waitingSeconds: Math.round(
+                (end.getTime() - new Date(oldest.blockEndTime).getTime()) / 1000,
+              ),
+            },
+      source: "pending_block_finalizations.status, pending_block_finalizations.block_end_time",
+    },
+    statusBreakdown: {
+      finalization: statusCounts(finalizations, "status"),
+      admission: statusCounts(
+        TXS.filter((t) => t.admission).map((t) => t.admission),
+        "status",
+      ),
+    },
+    series,
+  };
+};
+
+/** The asset roster and per-asset holdings, derived from MULTI_ASSET so the
+ * asset pages and the values shown on transactions cannot disagree. Coverage
+ * is reported complete here: the fixture ledger is small enough to scan whole,
+ * which is the case the UI must handle without warning about a partial answer. */
+const ASSET_ROWS = Object.entries(MULTI_ASSET).flatMap(([policyId, names]) =>
+  Object.entries(names).map(([assetName, quantity], i) => ({
+    policyId,
+    assetName,
+    ledgerQuantity: quantity,
+    holderCount: (i % ADDRESSES.length) + 1,
+    utxoCount: (i % 3) + 1,
+  })),
+);
+
+const COVERAGE = { scanned: 128, total: 128, truncated: false, undecoded: 0 };
+
+export const assets = () => ({
+  rows: ASSET_ROWS.slice().sort((a, b) => b.holderCount - a.holderCount),
+  total: ASSET_ROWS.length,
+  coverage: COVERAGE,
+});
+
+export const asset = (policyId, assetName) => {
+  const row = ASSET_ROWS.find((r) => r.policyId === policyId && r.assetName === (assetName ?? ""));
+  if (!row) return null;
+  return {
+    policyId: row.policyId,
+    assetName: row.assetName,
+    ledgerQuantity: row.ledgerQuantity,
+    holderCount: row.holderCount,
+    holders: ADDRESSES.slice(0, row.holderCount).map((address, i) => ({
+      address,
+      // Split the quantity so the largest-first ordering is exercised rather
+      // than assumed; BigInt because a supply can exceed 2^53.
+      quantity: (
+        BigInt(row.ledgerQuantity) / BigInt(row.holderCount) +
+        BigInt(i === 0 ? 1 : 0)
+      ).toString(),
+      utxoCount: (i % 2) + 1,
+    })),
+    holdersTruncated: false,
+    coverage: COVERAGE,
+  };
+};

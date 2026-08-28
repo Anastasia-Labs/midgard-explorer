@@ -1,17 +1,20 @@
 import { Request, Response } from "express";
 import { getForcedTransactionsPage } from "../../db/forcedTransactions";
 import { toHex } from "../../utils";
+import { parseOptionalHexQuery, parsePageParam } from "../validate";
 
 export async function getForcedTransactionsPageRoute(
   req: Request,
   res: Response,
 ) {
-  const page = Number(req.params.page);
-  if (!Number.isFinite(page) || page < 1) {
-    return res.status(400).json({ error: "Invalid page." });
-  }
+  const parsedPage = parsePageParam(req.params.page);
+  if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
+  const page = parsedPage.value;
+  const parsedId = parseOptionalHexQuery(req.query.id);
+  if (!parsedId.ok) return res.status(400).json({ error: parsedId.error });
+  const id = parsedId.value;
   const { rows, hasNextPage, total, limit } =
-    await getForcedTransactionsPage(page);
+    await getForcedTransactionsPage(page, id);
   const payload = rows.map((row) => ({
     tx_order_id: toHex(row.tx_order_id),
     tx_order_l1_tx_hash: toHex(row.tx_order_l1_tx_hash),

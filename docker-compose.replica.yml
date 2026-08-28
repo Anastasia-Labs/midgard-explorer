@@ -1,0 +1,49 @@
+services:
+  midgard-read-replica:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    container_name: midgard-explorer-midgard-replica
+    restart: unless-stopped
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      PGPASSWORD: ${MIDGARD_REPLICATION_PASSWORD:?set MIDGARD_REPLICATION_PASSWORD}
+      MIDGARD_PRIMARY_HOST: ${MIDGARD_PRIMARY_HOST:?set MIDGARD_PRIMARY_HOST}
+      MIDGARD_PRIMARY_PORT: ${MIDGARD_PRIMARY_PORT:-5432}
+      MIDGARD_REPLICATION_USER: ${MIDGARD_REPLICATION_USER:?set MIDGARD_REPLICATION_USER}
+      MIDGARD_REPLICATION_SLOT: ${MIDGARD_REPLICATION_SLOT:-midgard_explorer_replica}
+      PGSSLMODE: ${MIDGARD_REPLICATION_SSLMODE:-prefer}
+    command:
+      - sh
+      - -euc
+      - |
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          pg_basebackup \
+            --host="$$MIDGARD_PRIMARY_HOST" \
+            --port="$$MIDGARD_PRIMARY_PORT" \
+            --username="$$MIDGARD_REPLICATION_USER" \
+            --pgdata="$$PGDATA" \
+            --wal-method=stream \
+            --write-recovery-conf \
+            --slot="$$MIDGARD_REPLICATION_SLOT" \
+            --progress
+        fi
+        exec postgres \
+          -c hot_standby=on \
+          -c default_transaction_read_only=on \
+          -c listen_addresses='*' \
+          -c max_connections=50
+    ports:
+      - "127.0.0.1:${MIDGARD_REPLICA_PORT:-5436}:5432"
+    volumes:
+      - midgard-replica-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -d midgard"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+volumes:
+  midgard-replica-pgdata:

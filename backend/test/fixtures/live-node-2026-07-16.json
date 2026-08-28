@@ -24,29 +24,40 @@
       "outputs": [
         {
           "address": "addr_test1qpdjresrrk294hy9ndtqly955ldlhy688507shkfxpwtgf39vzk9uwp87k96zkd5yal83h9x0qheeu0lrqp9lldvsqjs5s4ggd",
+          "addressKind": "PubKey",
           "value": {
             "lovelace": "5000000",
             "assets": {}
           },
           "hasDatum": false,
-          "hasScriptRef": false
+          "hasScriptRef": false,
+          "datum": null,
+          "scriptRef": null
         },
         {
           "address": "addr_test1qr3uhfdesx9y2uwc77n6ngsehfq45thtqyfr229g7llqawspaec4cgg268cha44uaf5drt8trds96nwexwpjtx93h3uqlc52rh",
+          "addressKind": "PubKey",
           "value": {
             "lovelace": "14996160",
             "assets": {}
           },
           "hasDatum": false,
-          "hasScriptRef": false
+          "hasScriptRef": false,
+          "datum": null,
+          "scriptRef": null
         }
       ],
       "mint": null,
       "witnesses": {
         "vkeyCount": 1,
         "scriptCount": 0,
-        "redeemerCount": 0
-      }
+        "redeemerCount": 0,
+        "scripts": [],
+        "redeemers": []
+      },
+      "cborHex": null,
+      "cborTruncated": false,
+      "size": 383
     }
   },
   "mempoolLedger": [

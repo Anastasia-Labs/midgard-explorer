@@ -18,7 +18,7 @@ Midgard-native CBOR without a running node.
   `output must be a map` on array-form.
 - `depositsUtxos`: one `projected` and one `consumed` deposit, for the
   spendable predicate (`source_event_id IS NULL OR projected_header_hash IS
-  NOT NULL`). The projected-inclusion branch is live-verified; an
+NOT NULL`). The projected-inclusion branch is live-verified; an
   `awaiting`-status exclusion row does not appear here because none existed at
   capture time.
 - `expectedBalances`: per-address spendable balance and `undecodedOutputs`
