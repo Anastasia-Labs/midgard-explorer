@@ -74,7 +74,7 @@ discarded.
 
 ### The frontend gate is not yet reliably green
 
-Four full runs, two failures:
+Nine full runs, four failures:
 
 | Run | Result | Failure |
 |---|---|---|
@@ -84,6 +84,9 @@ Four full runs, two failures:
 | audit cleanups, uncommitted worktree | 425 passed, 0 failed | none |
 | `4c6a068` | 423 passed, 2 failed | the fixture's relative-time window expired, below |
 | `4c6a068` + clock pin | 425 passed, 0 failed | none |
+| `8e2d4ba` | 421 passed, 4 failed | four different tests, peak load 94.61 |
+| `3eacacf` | 425 passed, 0 failed | none in the suite; the evidence wrapper still exited 1 |
+| `24ff9b0` | 425 passed, 0 failed | none |
 
 Neither failure was an assertion, they were different tests, and both cases pass
 in under six seconds in isolation on an idle machine. That points at capacity on
@@ -111,15 +114,16 @@ are opt-in by design, not quarantined: `LIVE_E2E=1 pnpm vitest run
 test/live-validation.test.mts` runs them, and `backend/scripts/live-evidence.sh`
 is what runs them for the record.
 
-Frontend: **425 passed, 17 skipped, 0 failed** of 442, plus 431 unit tests
-(416 app, 12 contracts, 3 ui), every step exit 0. The 17 skipped are
+Frontend: **425 passed, 17 skipped, 0 failed** of 442, plus 435 unit tests
+(420 app, 12 contracts, 3 ui), every step exit 0. The 17 skipped are
 viewport-conditional cases that a project skips when they do not apply to it.
 
 The sampler recorded peak load 5.00 and a floor of 1.2 GiB available across the
 6.2 minute e2e run, and it passed at that floor with a headless Playwright MCP
 browser also resident. That is one clean run under measured pressure, not proof
-the timeouts are gone. Two of four recorded runs have passed, and hosted
-CI against a pushed SHA remains the thing that would settle it.
+the timeouts are gone. Five of nine recorded runs have passed, the last
+three consecutively, and hosted CI against a pushed SHA remains the thing
+that would settle it.
 
 ### The suite had an expiry date
 
