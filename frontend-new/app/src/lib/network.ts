@@ -79,7 +79,7 @@ export function l1AddressUrl(address: string): string | null {
 /** A URL that a visitor's browser can actually reach.
  *
  * `NEXT_PUBLIC_API_BASE` is inlined at build time and defaulted to
- * `http://localhost:3102`, so a production build that did not set it published
+ * `http://127.0.0.1:3101`, so a production build that did not set it published
  * API documentation and copyable examples pointing at each visitor's own
  * machine. Strict mode is where that has to be caught, because by the time the
  * page renders the value is already baked into the bundle. */

@@ -4,17 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/require-backend.mjs && next dev",
+    "dev:demo": "node scripts/dev-demo.mjs",
+    "dev:server": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint src e2e scripts && node scripts/type-scale-check.mjs",
-    "check:type-scale": "node scripts/type-scale-check.mjs",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src e2e scripts && node scripts/type-scale-check.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "fixtures": "node e2e/fixtures/server.mjs",
-    "test:canvas-reliability": "node scripts/canvas-reliability.mjs",
-    "check:dev-console": "node scripts/dev-console-check.mjs"
+    "check:type-scale": "node scripts/type-scale-check.mjs",
+    "check:dev-console": "node scripts/dev-console-check.mjs",
+    "test:canvas-reliability": "node scripts/canvas-reliability.mjs"
   },
   "dependencies": {
     "@midgard-explorer/contracts": "workspace:*",
@@ -31,6 +34,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.12.1",
+    "@next/env": "16.2.11",
     "@playwright/test": "1.61.1",
     "@tailwindcss/postcss": "4.3.3",
     "@testing-library/dom": "10.4.1",
