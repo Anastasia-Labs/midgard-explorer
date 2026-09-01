@@ -39,10 +39,14 @@ const warn = (detail, hint) => ({ status: "warn", detail, hint });
 const fail = (detail, hint) => ({ status: "fail", detail, hint });
 const skip = (detail) => ({ status: "skip", detail });
 
-/* Memory figures are provisional. ADR 3 records that no mode has a measured
- * budget yet, so these thresholds flag a machine that is visibly short rather
- * than asserting a requirement the project has not established. */
-const PROVISIONAL_FLOOR_MB = { demo: 1024, existing: 2048, full: 8192 };
+/* Measured, not chosen. `demo` is the hard floor at which the development server
+ * still served the overview under an enforced ceiling; `existing` adds the
+ * backend and the two containers. `full` has no measurement, because the mode is
+ * not built and the Cardano services dominate the answer, so its figure stays a
+ * guess and says so where it is reported.
+ * See docs/resource-requirements.md. */
+const FLOOR_MB = { demo: 1024, existing: 3072, full: 8192 };
+const MEASURED = new Set(["demo", "existing"]);
 
 /* Settings backend/src/config.ts declares with no default. A value that is
  * absent or empty stops the process at boot with a list, so doctor reports the
@@ -234,13 +238,16 @@ export const CHECKS = [
     run: async (ctx) => {
       const { available, total } = memoryMb();
       if (available === null) return skip(`could not read available memory (total ${total} MB)`);
-      const floor = PROVISIONAL_FLOOR_MB[ctx.mode];
+      const floor = FLOOR_MB[ctx.mode];
+      const measured = MEASURED.has(ctx.mode);
       const detail = `${available} MB available of ${total} MB`;
       return available >= floor
         ? pass(detail)
         : warn(
-            `${detail}, under the provisional ${floor} MB for ${ctx.mode} mode`,
-            "Provisional: ADR 3 records that no mode has a measured budget yet",
+            `${detail}, under the ${measured ? "measured" : "estimated"} ${floor} MB for ${ctx.mode} mode`,
+            measured
+              ? "Measured under an enforced ceiling: docs/resource-requirements.md"
+              : "Estimated. This mode is not built, so nothing has measured it",
           );
     },
   },

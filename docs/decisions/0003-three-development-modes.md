@@ -137,8 +137,10 @@ a warm pnpm store. That is the gate.
 Cold-install time is measured and published beside it, and is not gated, because
 network speed sets it rather than this repository.
 
-Minimum and recommended memory is published per mode once measured. No mode has a
-measured figure yet.
+Minimum and recommended memory per mode is published in
+[Resource requirements](../resource-requirements.md), measured on 2026-09-01 under
+enforced container ceilings. `full` has no figure, because the mode is not built
+and the Cardano services dominate the answer.
 
 ## Consequences
 
