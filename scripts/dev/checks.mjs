@@ -15,14 +15,22 @@
  *   skip  not applicable here, or could not be determined. Says which.
  */
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, statfsSync } from "node:fs";
+import { existsSync, readFileSync, statSync, statfsSync } from "node:fs";
 import { createConnection } from "node:net";
 import { platform, totalmem } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { devLock, portFree } from "./net.mjs";
-import { expand, isPlaceholder, parseEnvFile, redact, urlTarget } from "./env.mjs";
+import {
+  GENERATED_FILES,
+  RUNTIME_LINKS,
+  expand,
+  isPlaceholder,
+  parseEnvFile,
+  redact,
+  urlTarget,
+} from "./env.mjs";
 
 const run = promisify(execFile);
 
@@ -418,6 +426,70 @@ export const CHECKS = [
         : fail(
             `${left.length} settings still hold an example placeholder: ${left.join(", ")}`,
             "backend/.env was copied from the example and not filled in",
+          );
+    },
+  },
+
+  // --- generated configuration ---------------------------------------------
+  {
+    id: "config.runtime-env",
+    title: "Generated configuration",
+    modes: REAL_DATA,
+    run: async (ctx) => {
+      const runtime = parseEnvFile(join(ctx.repoRoot, ".dev", "runtime.env"));
+      if (runtime === null) {
+        return warn(
+          ".dev/runtime.env does not exist",
+          "Run: ./dev setup existing. Without it, every service is configured by hand",
+        );
+      }
+      return pass(`${runtime.size} settings, the source for every generated file`);
+    },
+  },
+  {
+    id: "config.permissions",
+    title: "Secret file permissions",
+    modes: REAL_DATA,
+    run: async (ctx) => {
+      const wide = [];
+      for (const relative of [".dev/runtime.env", ...GENERATED_FILES]) {
+        const path = join(ctx.repoRoot, relative);
+        if (!existsSync(path)) continue;
+        const mode = statSync(path).mode & 0o777;
+        if (mode & 0o077) wide.push(`${relative} is ${mode.toString(8)}`);
+      }
+      return wide.length === 0
+        ? pass("every file holding a credential is owner-only")
+        : warn(
+            wide.join(", "),
+            "These hold a database password. Run: chmod 600 <file>",
+          );
+    },
+  },
+  {
+    id: "config.drift",
+    title: "Generated files match the source",
+    modes: REAL_DATA,
+    run: async (ctx) => {
+      const parsed = parseEnvFile(join(ctx.repoRoot, ".dev", "runtime.env"));
+      if (parsed === null) return skip(".dev/runtime.env does not exist");
+      const runtime = expand(parsed);
+      const drifted = [];
+      for (const file of GENERATED_FILES) {
+        const target = parseEnvFile(join(ctx.repoRoot, file));
+        if (target === null) continue;
+        const values = expand(target);
+        for (const link of RUNTIME_LINKS.filter((l) => l.file === file)) {
+          const wanted = runtime.get(link.runtime) ?? "";
+          if (wanted === "") continue;
+          if ((values.get(link.key) ?? "") !== wanted) drifted.push(`${file}:${link.key}`);
+        }
+      }
+      return drifted.length === 0
+        ? pass("no drift between .dev/runtime.env and the files generated from it")
+        : warn(
+            `${drifted.length} setting(s) differ: ${drifted.join(", ")}`,
+            "Regenerate them with: ./dev setup existing --force (the current files are copied to .backup first)",
           );
     },
   },
