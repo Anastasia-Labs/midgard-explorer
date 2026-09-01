@@ -18,7 +18,9 @@ import { parseOptionalHexQuery, parsePageParam } from "../validate";
  * attribution rather than a loss of the record. A listing that 500s because a
  * path is wrong is a worse answer than a listing whose addresses say why they
  * are not encoded. */
-export function networkFor(path: string): "preprod" | "mainnet" | null {
+export function networkFor(
+  path: string | undefined,
+): "preprod" | "mainnet" | null {
   try {
     return loadManifest(path).network;
   } catch (error) {

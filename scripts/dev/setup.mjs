@@ -152,6 +152,10 @@ const buildRuntime = () => {
   values.set("API_CACHE_URL", `http://${bind}:${values.get("API_CACHE_PORT")}`);
   values.set("BACKEND_URL", `http://${bind}:${values.get("BACKEND_PORT")}`);
   values.set("FRONTEND_URL", `http://${bind}:${values.get("FRONTEND_PORT")}`);
+  // Compose interpolates these two. Without them the cache would proxy to its
+  // own default port while the frontend was told another, which is the drift
+  // this file exists to remove.
+  values.set("BACKEND_ORIGIN", `host.docker.internal:${values.get("BACKEND_PORT")}`);
   values.set(
     "MIDGARD_MANIFEST_PATH",
     keep("MIDGARD_MANIFEST_PATH", backend?.get("MIDGARD_MANIFEST_PATH") ?? ""),

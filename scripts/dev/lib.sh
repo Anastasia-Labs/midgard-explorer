@@ -118,6 +118,32 @@ start_service() {
   printf '%s\n' "$!" >"$pid_file"
 }
 
+# Next allows one dev server per project directory, whatever port each is given,
+# so a free port does not mean the app can start. Reported before anything is
+# launched, because the failure otherwise arrives three minutes later as a
+# timeout that names the wrong cause.
+#
+# Shared by both modes rather than owned by demo. They compete for the same
+# directory, so `up existing` while demo is running is the same conflict seen
+# from the other side, and each mode stops its own processes before reaching
+# here: a lock still held at this point is somebody else's.
+#
+# The other server is not stopped. It belongs to whoever started it, and it is
+# serving whatever their .env.local points at, so adopting it would fill this
+# mode with data from somewhere else.
+require_no_foreign_dev_server() {
+  local lock
+  lock="$(node_helper dev-lock "$DEV_REPO_ROOT/frontend-new/app" 2>/dev/null)" || return 0
+  local pid="${lock%% *}" url="${lock#* }"
+  local hint="This mode needs that directory. Stop it with: kill $pid"
+  for other in demo existing; do
+    if [[ "$(cat "$DEV_STATE_ROOT/$other/app.pid" 2>/dev/null || true)" == "$pid" ]]; then
+      hint="That is $other mode. Stop it with: ./dev down"
+    fi
+  done
+  die "A Next dev server for frontend-new/app is already running on $url (pid $pid)." "$hint"
+}
+
 # --- state ------------------------------------------------------------------
 
 state_file() { printf '%s\n' "$DEV_MODE_STATE/state.env"; }

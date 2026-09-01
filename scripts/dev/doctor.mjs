@@ -21,7 +21,7 @@ const MODES = ["demo", "existing", "full"];
 /* Modes ADR 3 records but no PR has built. Their checks still run: knowing the
  * environment is ready is useful before the mode exists. The banner says the
  * mode cannot be started, so a page of PASS lines is not read as "it works". */
-const UNBUILT = new Set(["existing", "full"]);
+const UNBUILT = new Set(["full"]);
 
 const args = process.argv.slice(2);
 const repoRoot = args.shift();
@@ -109,8 +109,8 @@ if (json) {
   );
   if (failed) {
     process.stdout.write(`\nFix the failures above, then run: ./dev doctor ${mode}\n`);
-  } else if (mode === "demo") {
-    process.stdout.write("\nReady. Start it with: ./dev up demo\n");
+  } else if (!UNBUILT.has(mode)) {
+    process.stdout.write(`\nReady. Start it with: ./dev up ${mode}\n`);
   }
 }
 

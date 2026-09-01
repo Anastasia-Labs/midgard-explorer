@@ -8,16 +8,19 @@
 #   ./dev doctor [mode]  what is wrong, and the command that fixes it
 #   ./dev setup <mode>   generate .dev/runtime.env and the files services read
 #   ./dev up demo        the fixture API and frontend-new, no Docker
+#   ./dev up existing    the explorer against a Midgard database that has data
+#                        add --with-l1-sync to index Cardano as well
 #   ./dev status         what is running, and whether it is what it claims
 #   ./dev logs [name]    fixture or app output, --follow to tail
 #   ./dev down           stop what ./dev started
 #
-# `existing` and `full` are recorded in ADR 3 and not built yet.
+# `full` is recorded in ADR 3 and not built yet.
 
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/dev/lib.sh"
 source "$DEV_REPO_ROOT/scripts/dev/demo.sh"
+source "$DEV_REPO_ROOT/scripts/dev/existing.sh"
 
 usage() {
   cat <<'TEXT'
@@ -26,7 +29,8 @@ Usage: ./dev <command>
   doctor [mode]    check this machine for one mode; --json for machine output
   setup <target>   demo, existing, or test; writes .dev/runtime.env and env files
   up demo          start the fixture API and frontend-new (no Docker, no secrets)
-  status           report what is running and whether it answers as itself
+  up existing      start the explorer against an existing Midgard database
+  status [--watch] report what is running and whether it answers as itself
   logs [name] [-f] show fixture or app output; name is fixture, app, or omitted
   down             stop what ./dev started
   help             this text
@@ -35,10 +39,16 @@ Modes are recorded in docs/decisions/0003-three-development-modes.md.
 TEXT
 }
 
-# Which mode `status`, `logs` and `down` act on. Demo is the only one built, so
-# the answer is whichever mode left state behind.
+# Which mode `status`, `logs` and `down` act on: whichever one left state behind.
+# Both can be present when one was stopped and the other started, so a live
+# state file wins over a directory holding only old logs.
 resolve_mode() {
-  [[ -d "$DEV_STATE_ROOT/demo" ]] && return 0
+  for candidate in existing demo; do
+    [[ -f "$DEV_STATE_ROOT/$candidate/state.env" ]] && { DEV_ACTIVE_MODE="$candidate"; return 0; }
+  done
+  for candidate in existing demo; do
+    [[ -d "$DEV_STATE_ROOT/$candidate" ]] && { DEV_ACTIVE_MODE="$candidate"; return 0; }
+  done
   return 1
 }
 
@@ -61,22 +71,23 @@ case "${1:-help}" in
   up)
     case "${2:-}" in
       demo)             demo_up ;;
-      existing|full)    unbuilt_mode "$2" ;;
+      existing)         shift 2; existing_up "$@" ;;
+      full)             unbuilt_mode "$2" ;;
       "")               die "\`up\` needs a mode." "Run: ./dev up demo" ;;
       *)                die "Unknown mode: $2" "Run: ./dev up demo" ;;
     esac
     ;;
   status)
     resolve_mode || { say "Nothing is running."; say "Start it: ./dev up demo"; exit 0; }
-    demo_status
+    "${DEV_ACTIVE_MODE}_status" "${2:-}"
     ;;
   logs)
     resolve_mode || die "Nothing is running, so there are no logs." "Run: ./dev up demo"
-    demo_logs "${2:-all}" "${3:-}"
+    "${DEV_ACTIVE_MODE}_logs" "${2:-all}" "${3:-}"
     ;;
   down)
     resolve_mode || { say "Nothing is running."; exit 0; }
-    demo_down
+    "${DEV_ACTIVE_MODE}_down"
     ;;
   help|-h|--help) usage ;;
   *) usage; die "Unknown command: $1" "Run: ./dev help" ;;

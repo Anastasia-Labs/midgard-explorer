@@ -60,7 +60,7 @@ demo_up() {
   # Clearing it is what makes a second `up` after a crash behave like the first.
   demo_down_quiet
 
-  demo_require_no_foreign_dev_server
+  require_no_foreign_dev_server
 
   ensure_frontend_install
 
@@ -103,22 +103,6 @@ STATE
   exhausted, so check \`free -m\` before reading it as a code failure."
 
   demo_print_urls
-}
-
-# Next allows one dev server per project directory, whatever port each is given,
-# so a free port does not mean the app can start. Reported before anything is
-# launched, because the failure otherwise arrives three minutes later as a
-# timeout that names the wrong cause.
-#
-# The other server is not stopped here. It belongs to whoever started it, and it
-# is serving whatever their .env.local points at rather than the fixture, so
-# adopting it would fill demo mode with data from somewhere else.
-demo_require_no_foreign_dev_server() {
-  local lock
-  lock="$(node_helper dev-lock "$DEV_REPO_ROOT/frontend-new/app" 2>/dev/null)" || return 0
-  local pid="${lock%% *}" url="${lock#* }"
-  die "A Next dev server for frontend-new/app is already running on $url (pid $pid)." \
-      "Demo mode needs that directory. Stop it with: kill $pid"
 }
 
 demo_down_quiet() {

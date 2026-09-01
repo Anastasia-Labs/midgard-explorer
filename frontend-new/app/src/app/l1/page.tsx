@@ -10,7 +10,9 @@ import { DataTable, Pagination } from "../../components/ui/table";
 import { Timestamp } from "../../components/ui/timestamp";
 import { ValidatorLabel } from "../../components/ui/validatorlabel";
 import { api, type L1ValidatorIdentity } from "../../lib/api";
+import type { L1Sync } from "@midgard-explorer/contracts";
 import { groupThousands } from "../../lib/format";
+import { l1EmptyState } from "../../lib/l1sync";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
@@ -45,6 +47,7 @@ export default async function L1Page({
 
   let data;
   let validators: readonly L1ValidatorIdentity[] = [];
+  let sync: L1Sync | null = null;
   try {
     const init = await viewerInit();
     const [rows, summary] = await Promise.all([
@@ -53,6 +56,7 @@ export default async function L1Page({
     ]);
     data = rows;
     validators = summary?.source?.validators ?? [];
+    sync = summary?.sync ?? null;
   } catch (e) {
     return (
       <>
@@ -194,8 +198,8 @@ export default async function L1Page({
           }}
           rows={data.rows}
           keyOf={(r) => r.txHash}
-          emptyTitle="No Cardano activity indexed yet"
-          emptyHint="The indexer scans Cardano preprod for transactions at Midgard's validator addresses. If this is empty, the indexer has not completed its first pass."
+          emptyTitle={l1EmptyState(sync).title}
+          emptyHint={l1EmptyState(sync).hint}
         />
         <Pagination
           page={page}

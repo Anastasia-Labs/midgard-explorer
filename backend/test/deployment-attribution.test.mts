@@ -64,8 +64,9 @@ function manifestUnderOtherIdentity(): { path: string; deploymentId: string } {
   return { path, deploymentId: doc.manifestId };
 }
 
-function setManifestPath(path: string): void {
-  (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH = path;
+function setManifestPath(path: string | undefined): void {
+  (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH =
+    path;
 }
 
 let reachable = false;

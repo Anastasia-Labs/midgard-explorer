@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { z } from "zod";
 import { Config } from "./types";
 import * as dotenv from "dotenv";
@@ -26,6 +27,17 @@ const boolean = z
  * here. */
 const blank = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((v) => (v === "" ? undefined : v), schema.optional());
+
+/** Whether a path names a file this process can stat. Enough to separate a
+ * manifest that is absent from one that is merely unparsed; what is inside it
+ * is the indexer's and readiness's question, not configuration's. */
+const isReadableFile = (path: string) => {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+};
 
 const shape = {
   BACKEND_PORT: positive,
@@ -108,7 +120,14 @@ const shape = {
   BLOCKS_PER_PAGE: positive,
   INDEXER_POSTGRES_URL: required,
   KOIOS_BASE_URL: required,
-  MIDGARD_MANIFEST_PATH: required,
+  // Required where it is read, not everywhere.
+  //
+  // The manifest names the L1 deployment: which contracts to follow, and which
+  // network the addresses belong to. An explorer serving L2 blocks and
+  // transactions never opens it, and used to be refused at boot over a file it
+  // would not have read. `/readyz` is unchanged: probeManifest still runs in
+  // the default scope, so an instance without one is never in rotation.
+  MIDGARD_MANIFEST_PATH: blank(required),
   L1_SYNC_INTERVAL_MS: positive,
   // The indexing loop. Default true so a single-process deployment behaves as
   // it always has; a second API instance sets it false and serves reads only,
@@ -149,6 +168,25 @@ export const configSchema = z
         message:
           "must name the edge's address or CIDR when TRUSTED_PROXY_MODE is single-edge",
       });
+    }
+    // The indexer attributes every row it writes to the deployment this file
+    // declares. Starting one without a readable manifest writes rows attributed
+    // to nothing, which no query can reach, so the refusal belongs at boot
+    // rather than at the first pass.
+    if (value.L1_SYNC_ENABLED) {
+      if (value.MIDGARD_MANIFEST_PATH === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["MIDGARD_MANIFEST_PATH"],
+          message: "is required when L1_SYNC_ENABLED is true",
+        });
+      } else if (!isReadableFile(value.MIDGARD_MANIFEST_PATH)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["MIDGARD_MANIFEST_PATH"],
+          message: `names no readable file: ${value.MIDGARD_MANIFEST_PATH}`,
+        });
+      }
     }
   });
 

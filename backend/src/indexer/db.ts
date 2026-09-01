@@ -48,6 +48,36 @@ export const SYNC_SOURCES = [
   SYNC_SOURCE_REWARDS,
 ] as const;
 
+/** How much of the L1 chain this index actually holds.
+ *
+ * "unbuilt" and "indexing" are different answers to a reader, and an empty list
+ * of L1 transactions cannot tell them apart on its own: an index nobody has
+ * built and a chain with no activity both return nothing. The read path
+ * publishes this so a page can say which it is.
+ *
+ * The rule is the one `probeIndexReconciled` enforces, stated once here.
+ * `syncOnce` writes all three cursors in one transaction from one observed tip,
+ * only in a pass where every source completed, so "reconciled" is non-zero AND
+ * equal. Equality alone passes a fresh migration, where zero equals zero.
+ * Non-zero alone passes three cursors written by three different passes, which
+ * is an index whose sources have covered different windows.
+ */
+export type L1SyncState = "unbuilt" | "indexing" | "reconciled";
+
+export function classifySyncCursors(heights: ReadonlyMap<string, number>): L1SyncState {
+  const values = SYNC_SOURCES.map((source) => heights.get(source) ?? 0);
+  if (values.every((height) => height === 0)) return "unbuilt";
+  if (values.some((height) => height === 0)) return "indexing";
+  return new Set(values).size === 1 ? "reconciled" : "indexing";
+}
+
+export async function getSyncCursors(): Promise<Map<string, number>> {
+  const rows = await indexerPrisma.syncCursor.findMany({
+    where: { source: { in: [...SYNC_SOURCES] } },
+  });
+  return new Map(rows.map((row) => [row.source, Number(row.lastBlockHeight)]));
+}
+
 export async function getSyncCursor(source: string) {
   return indexerPrisma.syncCursor.findUnique({ where: { source } });
 }

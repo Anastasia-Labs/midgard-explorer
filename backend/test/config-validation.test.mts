@@ -32,7 +32,7 @@ const valid = {
   BLOCKS_PER_PAGE: "25",
   INDEXER_POSTGRES_URL: "postgres://u:p@localhost:5435/midgard_explorer",
   KOIOS_BASE_URL: "https://preprod.koios.rest/api/v1",
-  MIDGARD_MANIFEST_PATH: "./manifest.json",
+  MIDGARD_MANIFEST_PATH: "./test/fixtures/manifest-sample.json",
   L1_SYNC_INTERVAL_MS: "60000",
   L1_REORG_LOOKBACK_BLOCKS: "20",
 };
@@ -169,5 +169,42 @@ describe("parseConfig", () => {
     expect(() => parseConfig({ ...valid, NODE_DB_POOL_MAX: "0" })).toThrow(
       /NODE_DB_POOL_MAX/,
     );
+  });
+
+  /* The manifest names the L1 deployment, so it is required exactly where it is
+   * read. An L2-only development instance never opens it and used to be refused
+   * at boot; an indexing instance without it writes rows attributed to nothing. */
+  describe("MIDGARD_MANIFEST_PATH", () => {
+    it("is required when the indexer runs", () => {
+      const { MIDGARD_MANIFEST_PATH: _omitted, ...rest } = valid;
+      expect(() => parseConfig({ ...rest, L1_SYNC_ENABLED: "true" })).toThrow(
+        /MIDGARD_MANIFEST_PATH/,
+      );
+    });
+
+    it("must name a readable file when the indexer runs", () => {
+      expect(() =>
+        parseConfig({
+          ...valid,
+          L1_SYNC_ENABLED: "true",
+          MIDGARD_MANIFEST_PATH: "/nonexistent/manifest.json",
+        }),
+      ).toThrow(/MIDGARD_MANIFEST_PATH/);
+    });
+
+    it("is optional when the instance serves reads only", () => {
+      const { MIDGARD_MANIFEST_PATH: _omitted, ...rest } = valid;
+      const parsed = parseConfig({ ...rest, L1_SYNC_ENABLED: "false" });
+      expect(parsed.MIDGARD_MANIFEST_PATH).toBeUndefined();
+    });
+
+    it("reads an empty value as absent rather than as a path", () => {
+      const parsed = parseConfig({
+        ...valid,
+        L1_SYNC_ENABLED: "false",
+        MIDGARD_MANIFEST_PATH: "",
+      });
+      expect(parsed.MIDGARD_MANIFEST_PATH).toBeUndefined();
+    });
   });
 });

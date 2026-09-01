@@ -246,7 +246,16 @@ export function computeDeploymentId(raw: unknown): string {
  * not cached: a manifest that could not be read has to keep saying so. */
 const parsed = new Map<string, { mtimeMs: number; manifest: Manifest }>();
 
-export function loadManifest(path: string): Manifest {
+export function loadManifest(path: string | undefined): Manifest {
+  // MIDGARD_MANIFEST_PATH is required only where the manifest is read, so an
+  // L2-only deployment reaches here with nothing set. Naming that plainly keeps
+  // the message out of `ENOENT ''`, which reads as a corrupt path rather than
+  // as an explorer configured without a deployment identity.
+  if (path === undefined || path === "") {
+    throw new Error(
+      "MIDGARD_MANIFEST_PATH is not set, so this process has no deployment identity",
+    );
+  }
   const mtimeMs = statSync(path).mtimeMs;
   const hit = parsed.get(path);
   if (hit && hit.mtimeMs === mtimeMs) return hit.manifest;

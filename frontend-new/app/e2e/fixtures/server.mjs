@@ -328,6 +328,16 @@ const routes = [
       events: L1_TXS.reduce((sum, tx) => sum + tx.events.length, 0),
       blockHeaders: 18,
       lastSyncedHeight: 5_120_000,
+      // A reconciled index: all three cursors past zero and equal, which is the
+      // state the backend reports after a pass where every source completed.
+      sync: {
+        state: "reconciled",
+        cursors: [
+          { source: "l1", height: 5_120_000 },
+          { source: "l1:mints", height: 5_120_000 },
+          { source: "l1:rewards", height: 5_120_000 },
+        ],
+      },
       byValidator: [
         { validator: "deposit", count: 11 },
         { validator: "stateQueue", count: 1 },

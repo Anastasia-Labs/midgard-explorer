@@ -14,6 +14,10 @@
  *   net.mjs wait-app <base> <ms>           wait until <base> is this explorer
  *   net.mjs check-fixture <base>           one shot, for status
  *   net.mjs check-app <base>               one shot, for status
+ *   net.mjs wait-health <base> <ms>        wait until the backend answers /healthz
+ *   net.mjs check-health <base>            one shot, for status
+ *   net.mjs sync-state <apiBase>           the L1 index state and every cursor
+ *   net.mjs ready-check <backendBase>      strict /readyz, naming what failed
  *   net.mjs dev-lock <appDir>              report a live `next dev` for that app
  */
 import { readFileSync } from "node:fs";
@@ -109,6 +113,38 @@ const devLock = (appDir) => {
   return lock;
 };
 
+/* The backend's liveness probe. It touches no database on purpose, so this says
+ * the process is up and answering, and nothing about whether it can serve. The
+ * readiness scopes answer that. */
+const probeHealth = async (base) => {
+  const res = await get(`${base}/healthz`);
+  if (!res.ok) return `answered ${res.status} on /healthz`;
+  const body = await res.json().catch(() => null);
+  if (body?.status !== "ok") return "did not answer /healthz as the explorer backend";
+  return true;
+};
+
+/* The index's own account of how much of the chain it holds, read from the same
+ * summary the L1 page reads. Reported as every cursor rather than a verdict,
+ * because three heights that disagree name the source that is behind. */
+const syncState = async (base) => {
+  const res = await get(`${base}/api/l1/summary`, 10_000);
+  if (!res.ok) throw new Error(`/api/l1/summary answered ${res.status}`);
+  const body = await res.json();
+  return body?.sync ?? { state: "unknown", cursors: [] };
+};
+
+/* Strict readiness, the question `/readyz` answers and a deployment gates on.
+ * The failing check is named; why it failed goes to the backend log and never
+ * to the response, so the reason comes from `./dev doctor existing`. */
+const readyCheck = async (base) => {
+  const res = await get(`${base}/readyz`, 20_000);
+  const body = await res.json().catch(() => null);
+  if (res.ok && body?.ready === true) return true;
+  const failed = (body?.checks ?? []).filter((c) => !c.ok).map((c) => c.name);
+  return failed.length > 0 ? `not ready: ${failed.join(", ")}` : `answered ${res.status}`;
+};
+
 /** Poll `check` until it returns true. Resolves to null on success, or the last
  * reason on timeout. */
 const poll = async (check, timeoutMs) => {
@@ -135,7 +171,7 @@ const fail = (message) => {
 /* `doctor` imports these rather than shelling out to this file once per check.
  * The command line below runs only when this file is the entry point, so an
  * import does not fall through to the unknown-command branch and exit. */
-export { portFree, freePort, devLock, probeFixture, probeApp, poll };
+export { portFree, freePort, devLock, probeFixture, probeApp, probeHealth, syncState, poll };
 
 const [, , command, ...args] = process.argv;
 const isEntryPoint =
@@ -157,21 +193,43 @@ switch (command) {
     break;
   }
   case "wait-fixture":
-  case "wait-app": {
+  case "wait-app":
+  case "wait-health": {
     const [base, ms] = args;
     if (!base) fail(`${command} needs a base URL`);
-    const probe = command === "wait-fixture" ? probeFixture : probeApp;
+    const probe =
+      command === "wait-fixture" ? probeFixture : command === "wait-app" ? probeApp : probeHealth;
     const reason = await poll(() => probe(base), Number(ms ?? 60_000));
     if (reason !== null) fail(`${base} ${reason}`);
     break;
   }
   case "check-fixture":
-  case "check-app": {
+  case "check-app":
+  case "check-health": {
     const [base] = args;
     if (!base) fail(`${command} needs a base URL`);
-    const probe = command === "check-fixture" ? probeFixture : probeApp;
+    const probe =
+      command === "check-fixture" ? probeFixture : command === "check-app" ? probeApp : probeHealth;
     const result = await probe(base).catch((error) => String(error?.message ?? error));
     if (result !== true) fail(String(result));
+    break;
+  }
+  case "sync-state": {
+    const [base] = args;
+    if (!base) fail("sync-state needs the API base URL");
+    const sync = await syncState(base).catch((error) => {
+      fail(String(error?.message ?? error));
+    });
+    const cursors = sync.cursors.map((c) => `${c.source}=${c.height ?? 0}`).join(" ");
+    process.stdout.write(`${sync.state} ${cursors}\n`);
+    break;
+  }
+  case "ready-check": {
+    const [base] = args;
+    if (!base) fail("ready-check needs the backend base URL");
+    const result = await readyCheck(base).catch((error) => String(error?.message ?? error));
+    if (result !== true) fail(String(result));
+    process.stdout.write("ready\n");
     break;
   }
   case "dev-lock": {

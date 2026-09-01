@@ -1,6 +1,12 @@
 import { config } from "../config";
 import { prisma } from "../db";
-import { indexerPrisma, getSyncCursor } from "../indexer/db";
+import {
+  SYNC_SOURCES,
+  classifySyncCursors,
+  getSyncCursor,
+  getSyncCursors,
+  indexerPrisma,
+} from "../indexer/db";
 import { loadManifest } from "../indexer/manifest";
 import {
   decodeDepositDatum,
@@ -514,12 +520,13 @@ export function resetSourceIdentity(): void {
 }
 
 export async function getL1Summary() {
-  const [transactions, events, blockHeaders, cursor, grouped] =
+  const [transactions, events, blockHeaders, cursor, cursors, grouped] =
     await Promise.all([
       indexerPrisma.l1Tx.count(),
       indexerPrisma.l1Event.count(),
       indexerPrisma.l1BlockHeader.count(),
       getSyncCursor("l1"),
+      getSyncCursors(),
       indexerPrisma.l1Event.groupBy({
         by: ["validator"],
         _count: { validator: true },
@@ -532,6 +539,18 @@ export async function getL1Summary() {
     events,
     blockHeaders,
     lastSyncedHeight: cursor?.lastBlockHeight ?? null,
+    /* Why the read path publishes this: an L1 list route answers 200 with an
+     * empty page whether the index holds no activity or was never built, and
+     * those are different things to tell a reader. Every cursor is reported,
+     * not just the verdict, because three heights that disagree say which
+     * source is behind. */
+    sync: {
+      state: classifySyncCursors(cursors),
+      cursors: SYNC_SOURCES.map((source) => ({
+        source,
+        height: cursors.get(source) ?? null,
+      })),
+    },
     byValidator: grouped
       .map((g) => ({ validator: g.validator, count: g._count.validator }))
       .sort((a, b) => b.count - a.count),

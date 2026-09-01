@@ -231,15 +231,15 @@ describe("source identity", () => {
     const { config } = await import("../src/config.js");
     const original = config.MIDGARD_MANIFEST_PATH;
     resetSourceIdentity();
-    (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+    (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH =
       "/nonexistent/manifest.json";
     try {
       expect(await getSourceIdentity()).toBeNull();
-      (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+      (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH =
         original;
       expect(await getSourceIdentity()).not.toBeNull();
     } finally {
-      (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+      (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH =
         original;
       resetSourceIdentity();
     }
@@ -265,12 +265,12 @@ describe("source identity", () => {
     const { config } = await import("../src/config.js");
     const original = config.MIDGARD_MANIFEST_PATH;
     resetSourceIdentity();
-    (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+    (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH =
       "/nonexistent/manifest.json";
     try {
       expect(await getSourceIdentity()).toBeNull();
     } finally {
-      (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+      (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH =
         original;
       resetSourceIdentity();
     }
