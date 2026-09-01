@@ -245,3 +245,225 @@ jobs:
             frontend-new/gate-evidence
             frontend-new/app/test-results
           retention-days: 30
+
+  dev-command:
+    name: Dev command
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Unit-test the command and every doctor failure case
+        # Node's own runner: ADR 1 records that this repository has no root
+        # workspace, and these tests are not worth creating one for.
+        run: node --test "scripts/dev/*.test.mjs"
+
+      - name: Doctor answers for a mode that is not built without claiming it runs
+        run: |
+          set -euo pipefail
+          ./dev doctor full --json > full.json
+          node -e '
+            const r = JSON.parse(require("fs").readFileSync("full.json", "utf8"));
+            if (r.modeBuilt !== false) { console.error("full mode reported as built"); process.exit(1); }
+            if (r.checks.length === 0) { console.error("no checks ran"); process.exit(1); }
+          '
+
+  demo-mode:
+    name: Demo mode on a clean machine
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend-new/pnpm-lock.yaml
+
+      - name: Doctor, then start from a clean clone
+        # No install step of its own: `up demo` installs what it needs, which is
+        # the claim the quick start makes and therefore the one to test.
+        run: |
+          set -euo pipefail
+          ./dev doctor demo
+          time ./dev up demo
+
+      - name: The explorer serves fixture records, not just a process
+        run: |
+          set -euo pipefail
+          node -e '
+            const { readFileSync } = require("fs");
+            const state = readFileSync(".dev/demo/state.env", "utf8");
+            const app = "http://127.0.0.1:" + /DEMO_APP_PORT=(\d+)/.exec(state)[1];
+            (async () => {
+              const paths = ["/", "/blocks", "/transactions", "/l1", "/deposits", "/assets"];
+              for (const p of paths) {
+                const r = await fetch(app + p, { signal: AbortSignal.timeout(120000) });
+                console.log(r.status, p);
+                if (r.status !== 200) process.exit(1);
+              }
+              const html = await (await fetch(app + "/")).text();
+              const hashes = (html.match(/[0-9a-f]{64}/g) ?? []).length;
+              console.log("hashes rendered on the overview:", hashes);
+              if (hashes === 0) { console.error("the overview rendered no records"); process.exit(1); }
+            })();
+          '
+
+      - name: Every command the documentation names exists
+        run: |
+          set -euo pipefail
+          grep -rhoE '\./dev [a-z]+' README.md docs/*.md | sort -u | while read -r _ sub; do
+            grep -qE "^  ${sub}\)" dev || { echo "documented but missing: ./dev ${sub}"; exit 1; }
+          done
+          echo "every documented ./dev subcommand is implemented"
+
+      - name: Stop, and prove it stopped
+        run: |
+          set -euo pipefail
+          ./dev down
+          ./dev status
+
+  existing-mode-seeded:
+    name: Existing mode against the seeded schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_node_seeded?schema=public
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: midgard_node_seeded
+      INDEXER_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_explorer_ci
+      TEST_INDEXER_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_explorer_test
+      BACKEND_PORT: "3101"
+      LOG_LOCATION: ./logs/ci
+      RECENT_BLOCKS_LIMIT: "10"
+      RECENT_TRANSACTIONS_LIMIT: "10"
+      TRANSACTIONS_PER_PAGE: "25"
+      BLOCKS_PER_PAGE: "25"
+      KOIOS_BASE_URL: https://preprod.koios.rest/api/v1
+      MIDGARD_MANIFEST_PATH: ./test/fixtures/manifest-sample.json
+      L1_SYNC_ENABLED: "false"
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm indexer:generate && pnpm prisma:generate
+
+      - name: Create the databases
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_node_seeded'
+          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_explorer_ci'
+
+      - name: Apply the node schema and the seeded records
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d midgard_node_seeded -v ON_ERROR_STOP=1 \
+            -f test/fixtures/schema/midgard-node.sql
+          psql -h localhost -U postgres -d midgard_node_seeded -v ON_ERROR_STOP=1 \
+            -f test/fixtures/schema/midgard-node-seed.sql
+
+      - name: The seed is what the generator produces
+        # Regenerate and diff. The seed is derived from the schema fixture and
+        # the shape corpus, so a change to either that nobody regenerated is a
+        # seed describing a database this build no longer reads.
+        run: |
+          node scripts/generate-l2-seed.mjs
+          git diff --exit-code -- test/fixtures/schema/midgard-node-seed.sql
+
+      - name: The compatibility pin is what the fixture produces
+        working-directory: .
+        run: |
+          node scripts/dev/compat.mjs "$PWD" write --fixture
+          git diff --exit-code -- config/midgard-compatibility.json
+
+      - name: Migrate the index
+        run: pnpm indexer:deploy
+
+      - name: L2 readiness passes where strict readiness does not
+        # Both halves matter. The scope must be narrow enough to pass against an
+        # index nobody has built, and `/readyz` must still refuse it, or the
+        # development scope has quietly weakened the deployment gate.
+        run: |
+          set -euo pipefail
+          pnpm --silent readiness -- --scope=l2
+          if pnpm --silent readiness; then
+            echo "strict readiness passed against an unreconciled index"
+            exit 1
+          fi
+          echo "strict readiness refused it, as it should"
+
+      - name: The read path renders the seeded records
+        run: |
+          set -euo pipefail
+          pnpm build
+          node dist/index.js &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:3101/healthz >/dev/null && break; sleep 1; done
+          node -e '
+            (async () => {
+              const j = async (p) => (await fetch("http://127.0.0.1:3101" + p)).json();
+              const blocks = (await j("/api/blocks/total")).total;
+              const txs = (await j("/api/transactions/total")).total;
+              console.log("blocks", blocks, "transactions", txs);
+              if (blocks === 0 || txs === 0) {
+                console.error("the seeded database rendered nothing");
+                process.exit(1);
+              }
+              const recent = await j("/api/transactions/recent");
+              const rows = recent.rows ?? recent;
+              const tx = await j("/api/transaction?tx_hash=" + rows[0].tx_id);
+              if (!tx.txId) { console.error("a seeded transaction did not decode"); process.exit(1); }
+              const summary = await j("/api/l1/summary");
+              console.log("l1 sync state:", summary.sync.state);
+              if (summary.sync.state !== "unbuilt") {
+                console.error("an index with no rows did not report itself unbuilt");
+                process.exit(1);
+              }
+            })();
+          '

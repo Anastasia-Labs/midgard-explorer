@@ -101,21 +101,52 @@ if (command === "peak") {
   const build = args.includes("--build");
   const port = 3310;
 
+  /* Two things this must not do, both learned by doing them.
+   *
+   * It must not run pnpm. pnpm checks the dependency state before running
+   * anything, sees a store path that is not the host's, rewrites
+   * node_modules/.modules.yaml to point at the container's, and wants to purge
+   * the directory. That leaves the host unable to run its own tooling.
+   *
+   * It must not use a musl image. The host installs the glibc build of the SWC
+   * binary, so `next` on Alpine fails to load it. That failure is silent enough
+   * to look like a memory result: an Alpine run reports "never served" at every
+   * ceiling, which reads as a floor and is nothing of the kind. It only ever
+   * appeared to work because pnpm was reinstalling the musl binary inside the
+   * container, which is the same problem as the first one.
+   *
+   * The probe uses node rather than wget or curl, neither of which the slim
+   * image carries. */
+  const serve = `
+    ./node_modules/.bin/next dev --hostname 0.0.0.0 --port ${port} > /tmp/dev.log 2>&1 &
+    node -e '
+      const deadline = Date.now() + 170000;
+      const tick = async () => {
+        while (Date.now() < deadline) {
+          try {
+            const r = await fetch("http://127.0.0.1:${port}/", { signal: AbortSignal.timeout(20000) });
+            if (r.status === 200) { console.log("SERVED 200"); process.exit(0); }
+          } catch {}
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+        console.log("NEVER SERVED"); process.exit(1);
+      };
+      tick();
+    ' || { echo "--- dev log ---"; tail -12 /tmp/dev.log; exit 1; }`;
+
   const script = build
-    ? `cd /repo/frontend-new/app && rm -rf .next && pnpm exec next build`
-    : `cd /repo/frontend-new/app && rm -rf .next && pnpm exec next dev --hostname 0.0.0.0 --port ${port} &
-       for i in $(seq 1 90); do
-         code=$(wget -qO /dev/null -S http://127.0.0.1:${port}/ 2>&1 | awk '/HTTP\\//{print $2; exit}')
-         [ "$code" = "200" ] && echo "SERVED 200" && exit 0
-         sleep 2
-       done
-       echo "NEVER SERVED"; exit 1`;
+    ? `cd /repo/frontend-new/app && rm -rf .next && ./node_modules/.bin/next build`
+    : `cd /repo/frontend-new/app && rm -rf .next && ${serve}`;
 
   const started = Date.now();
   const container = spawn(
     "docker",
     [
       "run", "--rm",
+      // As the invoking user, so anything the run writes into the mounted
+      // repository stays owned by whoever is measuring. Running as root leaves
+      // a .next directory the host cannot delete.
+      "--user", `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
       "--cpus", "2",
       "--memory", `${megabytes}m`,
       // No swap beyond the limit. Otherwise the ceiling is advisory and the run
@@ -123,6 +154,7 @@ if (command === "peak") {
       "--memory-swap", `${megabytes}m`,
       "-v", `${repoRoot}:/repo`,
       "-e", "CI=1",
+      "-e", "HOME=/tmp",
       // Keep the container's package manager out of the mounted repository.
       // Without this, corepack writes a store into /repo and leaves it behind
       // in the working tree of the machine being measured.
@@ -137,9 +169,10 @@ if (command === "peak") {
       "-e", "NEXT_PUBLIC_L1_EXPLORER_TX_URL=https://preprod.cexplorer.io/tx/{hash}",
       "-e", "NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL=https://preprod.cexplorer.io/address/{address}",
       "-w", "/repo",
-      "node:24-alpine",
+      // glibc, matching the binaries the host install resolved.
+      "node:24-bookworm-slim",
       "sh", "-c",
-      `corepack enable >/dev/null 2>&1; ${script}`,
+      script,
     ],
     { stdio: ["ignore", "pipe", "pipe"] },
   );
