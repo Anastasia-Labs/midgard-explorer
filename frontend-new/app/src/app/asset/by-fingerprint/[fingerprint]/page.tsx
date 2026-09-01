@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
-import { Breadcrumbs } from "../../../../components/ui/breadcrumbs";
-import { PageError } from "../../../../components/ui/pageerror";
-import { Callout, PageHeader } from "../../../../components/ui/primitives";
+import { Breadcrumbs } from "../../../../components/ui/base/breadcrumbs";
+import { PageError } from "../../../../components/ui/base/pageerror";
+import { Callout, PageHeader } from "../../../../components/ui/base/layout";
 import { api } from "../../../../lib/api";
 import { assetFingerprint, assetUnit } from "../../../../lib/asset";
 import { listErrorMessage } from "../../../../lib/serverErrors";

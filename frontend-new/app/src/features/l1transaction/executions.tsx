@@ -1,7 +1,7 @@
 import type { L1Redeemer, L1TransactionResponse } from "../../lib/api";
-import { Panel } from "../../components/ui/primitives";
-import { InfoTip } from "../../components/ui/infotip";
-import { Identifier } from "../../components/ui/identifier";
+import { Panel } from "../../components/ui/base/layout";
+import { InfoTip } from "../../components/ui/base/infotip";
+import { Identifier } from "../../components/ui/domain/identifier";
 import { formatQuantity } from "../../lib/asset";
 
 type Limits = { epochNo: number; maxTxExMem: string; maxTxExSteps: string };

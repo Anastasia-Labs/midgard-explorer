@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { AddressLink } from "../src/components/ui/address";
-import { IdentityBar } from "../src/components/ui/identitybar";
+import { AddressLink } from "../src/components/ui/domain/address";
+import { IdentityBar } from "../src/components/ui/domain/identitybar";
 
 afterEach(cleanup);
 

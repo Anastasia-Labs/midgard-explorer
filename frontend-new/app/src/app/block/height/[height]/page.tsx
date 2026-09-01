@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { Breadcrumbs } from "../../../../components/ui/breadcrumbs";
-import { PageError } from "../../../../components/ui/pageerror";
-import { PageHeader } from "../../../../components/ui/primitives";
+import { Breadcrumbs } from "../../../../components/ui/base/breadcrumbs";
+import { PageError } from "../../../../components/ui/base/pageerror";
+import { PageHeader } from "../../../../components/ui/base/layout";
 import { api } from "../../../../lib/api";
 import { ApiError } from "../../../../lib/api";
 import { listErrorMessage } from "../../../../lib/serverErrors";

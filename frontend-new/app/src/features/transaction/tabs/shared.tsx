@@ -1,8 +1,8 @@
 import type { AddressIdentityView, OutputView, TransactionView } from "@midgard-explorer/contracts";
-import { Chip } from "../../../components/ui/primitives";
-import { Identifier } from "../../../components/ui/identifier";
-import { Detail } from "../../../components/ui/detail";
-import { SemanticLabel, SemanticValue } from "../../../components/ui/semantic";
+import { Chip } from "../../../components/ui/base/layout";
+import { Identifier } from "../../../components/ui/domain/identifier";
+import { Detail } from "../../../components/ui/base/detail";
+import { SemanticLabel, SemanticValue } from "../../../components/ui/base/semantic";
 import type { SemanticIconKind } from "../../../lib/semantic-icons";
 
 /** Presentational pieces shared by the transaction tabs.

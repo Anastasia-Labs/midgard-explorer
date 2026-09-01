@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { Breadcrumbs } from "../../components/ui/breadcrumbs";
-import { PageHeader } from "../../components/ui/primitives";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { PageHeader } from "../../components/ui/base/layout";
 import { Tools } from "../../features/tools/Tools";
 
 export const metadata: Metadata = {

@@ -1,13 +1,13 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AdaAmount, ValueCell } from "../src/components/ui/amount";
-import { Journey } from "../src/components/ui/journey";
-import { LedgerRow } from "../src/components/ui/mobilerow";
-import { NetworkMetrics } from "../src/components/ui/metrics";
-import { Callout, EmptyState, ErrorState, L1L2Badge } from "../src/components/ui/primitives";
-import { StatusBadge } from "../src/components/ui/status";
-import { SummaryBand } from "../src/components/ui/summary";
-import { DecodeWarn } from "../src/components/ui/table";
+import { AdaAmount, ValueCell } from "../src/components/ui/domain/amount";
+import { Journey } from "../src/components/ui/domain/journey";
+import { LedgerRow } from "../src/components/ui/base/mobilerow";
+import { NetworkMetrics } from "../src/components/ui/domain/metrics";
+import { Callout, EmptyState, ErrorState, L1L2Badge } from "../src/components/ui/base/layout";
+import { StatusBadge } from "../src/components/ui/domain/status";
+import { SummaryBand } from "../src/components/ui/domain/summary";
+import { DecodeWarn } from "../src/components/ui/base/table";
 import { blockJourney, transactionJourney } from "../src/lib/journey";
 import type {
   BlockFinalization,

@@ -1,15 +1,15 @@
 import type { TransactionView } from "@midgard-explorer/contracts";
-import { AssetHierarchy, ValueCell } from "../../../components/ui/amount";
-import { AddressLink } from "../../../components/ui/address";
-import { Icon } from "../../../components/ui/icons";
-import { Identifier } from "../../../components/ui/identifier";
-import { LedgerEquation } from "../../../components/ui/ledger";
-import { Card, Chip } from "../../../components/ui/primitives";
-import { ReferenceScript } from "../../../components/ui/scriptdata";
-import { SemanticLabel, SemanticValue } from "../../../components/ui/semantic";
+import { AssetHierarchy, ValueCell } from "../../../components/ui/domain/amount";
+import { AddressLink } from "../../../components/ui/domain/address";
+import { Icon } from "../../../components/ui/base/icons";
+import { Identifier } from "../../../components/ui/domain/identifier";
+import { LedgerEquation } from "../../../components/ui/domain/ledger";
+import { Card, Chip } from "../../../components/ui/base/layout";
+import { ReferenceScript } from "../../../components/ui/domain/scriptdata";
+import { SemanticLabel, SemanticValue } from "../../../components/ui/base/semantic";
 import { CredentialDetails, OutputState } from "./shared";
-import { UtxoFlow } from "../../../components/ui/utxoflow";
-import { ViewToggle } from "../../../components/ui/viewtoggle";
+import { UtxoFlow } from "../../../components/ui/domain/utxoflow";
+import { ViewToggle } from "../../../components/ui/base/viewtoggle";
 
 /** What the transaction changed: the ledger equation, then the same inputs and
  * outputs as either a complete table or a summarising diagram.

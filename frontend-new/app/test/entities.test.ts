@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ENTITIES, entityOf, type EntityKind } from "../src/lib/entities";
-import { PATHS } from "../src/components/ui/icons";
+import { PATHS } from "../src/components/ui/base/icons";
 
 /**
  * Phase 4.3.2: the record-type registry.

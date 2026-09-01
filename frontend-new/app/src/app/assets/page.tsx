@@ -5,12 +5,12 @@ import {
   AssetName,
   AssetQuantity,
   CoverageNote,
-} from "../../components/ui/asset";
-import { Breadcrumbs } from "../../components/ui/breadcrumbs";
-import { Identifier } from "../../components/ui/identifier";
-import { PageError } from "../../components/ui/pageerror";
-import { PageHeader } from "../../components/ui/primitives";
-import { DataTable } from "../../components/ui/table";
+} from "../../components/ui/domain/asset";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { PageError } from "../../components/ui/base/pageerror";
+import { PageHeader } from "../../components/ui/base/layout";
+import { DataTable } from "../../components/ui/base/table";
 import { api } from "../../lib/api";
 import { assetUnit } from "../../lib/asset";
 import { listErrorMessage } from "../../lib/serverErrors";

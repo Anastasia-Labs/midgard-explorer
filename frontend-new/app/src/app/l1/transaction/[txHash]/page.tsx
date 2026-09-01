@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { L1TransactionResponse } from "../../../../lib/api";
-import { Breadcrumbs } from "../../../../components/ui/breadcrumbs";
-import { IdentityBar } from "../../../../components/ui/identitybar";
-import { PageError } from "../../../../components/ui/pageerror";
-import { Card, PageHeader } from "../../../../components/ui/primitives";
-import { SummaryBand } from "../../../../components/ui/summary";
-import { Timestamp } from "../../../../components/ui/timestamp";
+import { Breadcrumbs } from "../../../../components/ui/base/breadcrumbs";
+import { IdentityBar } from "../../../../components/ui/domain/identitybar";
+import { PageError } from "../../../../components/ui/base/pageerror";
+import { Card, PageHeader } from "../../../../components/ui/base/layout";
+import { SummaryBand } from "../../../../components/ui/domain/summary";
+import { Timestamp } from "../../../../components/ui/base/timestamp";
 import { ApiError, api } from "../../../../lib/api";
 import { truncateId } from "../../../../lib/format";
 import { L1_EXPLORER_NAME, l1TxUrl } from "../../../../lib/network";

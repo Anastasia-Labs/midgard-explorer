@@ -1,6 +1,6 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { Identicon } from "../src/components/ui/identicon";
+import { Identicon } from "../src/components/ui/base/identicon";
 
 afterEach(cleanup);
 

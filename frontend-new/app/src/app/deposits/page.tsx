@@ -1,21 +1,21 @@
 import type { Metadata } from "next";
-import { ValueCell } from "../../components/ui/amount";
-import { Breadcrumbs } from "../../components/ui/breadcrumbs";
-import { Icon } from "../../components/ui/icons";
-import { Identifier } from "../../components/ui/identifier";
-import { L1TxLink } from "../../components/ui/l1link";
-import { InfoTip } from "../../components/ui/infotip";
-import { StatusLegend } from "../../components/ui/legend";
-import { PageError } from "../../components/ui/pageerror";
-import { Callout, L1L2Badge, PageHeader } from "../../components/ui/primitives";
-import { StatusCell } from "../../components/ui/status";
-import { DataTable, Pagination } from "../../components/ui/table";
-import { Timestamp } from "../../components/ui/timestamp";
+import { ValueCell } from "../../components/ui/domain/amount";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { Icon } from "../../components/ui/base/icons";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { L1TxLink } from "../../components/ui/domain/l1link";
+import { InfoTip } from "../../components/ui/base/infotip";
+import { StatusLegend } from "../../components/ui/base/legend";
+import { PageError } from "../../components/ui/base/pageerror";
+import { Callout, L1L2Badge, PageHeader } from "../../components/ui/base/layout";
+import { StatusCell } from "../../components/ui/domain/status";
+import { DataTable, Pagination } from "../../components/ui/base/table";
+import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
-import { AddressLink } from "../../components/ui/address";
+import { AddressLink } from "../../components/ui/domain/address";
 import { viewerInit } from "../../lib/viewerInit";
 
 export const metadata: Metadata = {

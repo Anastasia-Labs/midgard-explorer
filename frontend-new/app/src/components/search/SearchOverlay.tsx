@@ -2,8 +2,8 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { EntityIcon } from "../ui/entity";
-import { Icon } from "../ui/icons";
+import { EntityIcon } from "../ui/domain/entity";
+import { Icon } from "../ui/base/icons";
 import { MIN_PREFIX, searchCandidates } from "../../lib/search";
 import { hitCandidate, type PrefixHit } from "./hits";
 import { clearRecent, readRecent, rememberSearch } from "./recent";

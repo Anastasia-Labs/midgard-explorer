@@ -1,9 +1,9 @@
 import type { L1MidgardAction, L1TransactionResponse } from "../../lib/api";
-import { AdaAmount } from "../../components/ui/amount";
-import { Identifier } from "../../components/ui/identifier";
-import { Card } from "../../components/ui/primitives";
-import { Timestamp } from "../../components/ui/timestamp";
-import { contractName } from "../../components/ui/validatorlabel";
+import { AdaAmount } from "../../components/ui/domain/amount";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { Card } from "../../components/ui/base/layout";
+import { Timestamp } from "../../components/ui/base/timestamp";
+import { contractName } from "../../components/ui/domain/validatorlabel";
 
 /** A skipped operator can leave a user event unprocessed. The decoder proves
  * which kind, and dropping that on the floor would lose the only part of a

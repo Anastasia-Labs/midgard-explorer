@@ -1,4 +1,4 @@
-import { Panel, Skeleton } from "../../components/ui/primitives";
+import { Panel, Skeleton } from "../../components/ui/base/layout";
 
 // The overview awaits five endpoints before it returns anything, so without a
 // boundary here the route streams no HTML at all until the slowest one settles.
