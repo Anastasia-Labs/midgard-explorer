@@ -4,99 +4,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EntityIcon } from "../ui/entity";
 import { Icon } from "../ui/icons";
-import { MIN_PREFIX, searchCandidates, type Candidate } from "../../lib/search";
+import { MIN_PREFIX, searchCandidates } from "../../lib/search";
+import { hitCandidate, type PrefixHit } from "./hits";
+import { clearRecent, readRecent, rememberSearch } from "./recent";
+import { isLookupQuery, usePrefixSearch } from "./usePrefixSearch";
+import { useSearchShortcut } from "./useSearchShortcut";
 import { cn, truncateId } from "../../lib/format";
-
-const RECENT_KEY = "mg_recent_searches";
-const RECENT_MAX = 5;
-
-/** A partial-identifier match from the backend's prefix search. */
-type PrefixHit =
-  | { kind: "transaction"; txId: string; height: number | null; headerHash: string | null }
-  | { kind: "block"; headerHash: string; height: number | null }
-  | { kind: "l1Transaction"; txHash: string; blockHeight: number }
-  | { kind: "validator"; scriptHash: string; family: string }
-  | { kind: "address"; address: string }
-  | { kind: "deposit"; eventId: string; txHash: string }
-  | { kind: "withdrawal"; eventId: string; txHash: string }
-  | { kind: "forcedTransaction"; orderId: string; txHash: string };
-
-/** One array, so "no suggestions" is referentially stable across renders. */
-const EMPTY_HITS: PrefixHit[] = [];
-
-const hitCandidate = (hit: PrefixHit): Candidate => {
-  switch (hit.kind) {
-    case "block":
-      return {
-        kind: "block",
-        label: hit.height === null ? "Midgard header" : `Block #${hit.height}`,
-        detail: truncateId(hit.headerHash, 12, 8),
-        href: `/block/${hit.headerHash}`,
-      };
-    case "transaction":
-      return {
-        kind: "transaction",
-        label: "Transaction",
-        detail:
-          hit.height === null
-            ? truncateId(hit.txId, 12, 8)
-            : `${truncateId(hit.txId, 12, 8)} in block #${hit.height}`,
-        href: `/transaction/${hit.txId}`,
-      };
-    case "l1Transaction":
-      return {
-        kind: "l1Transaction",
-        label: "Cardano transaction",
-        detail: `${truncateId(hit.txHash, 12, 8)} in Cardano block #${hit.blockHeight}`,
-        href: `/l1/transaction/${hit.txHash}`,
-      };
-    case "validator":
-      return {
-        kind: "validator",
-        label: `${hit.family} validator`,
-        detail: truncateId(hit.scriptHash, 12, 8),
-        href: `/l1/validator/${hit.scriptHash}`,
-      };
-    case "address":
-      return {
-        kind: "address",
-        label: "Address",
-        detail: truncateId(hit.address, 16, 10),
-        href: `/address/${hit.address}`,
-      };
-    case "deposit":
-      return {
-        kind: "deposit",
-        label: "Deposit",
-        detail: truncateId(hit.eventId, 12, 8),
-        href: `/deposits?id=${hit.eventId}`,
-      };
-    case "withdrawal":
-      return {
-        kind: "withdrawal",
-        label: "Withdrawal",
-        detail: truncateId(hit.eventId, 12, 8),
-        href: `/withdrawals?id=${hit.eventId}`,
-      };
-    case "forcedTransaction":
-      return {
-        kind: "forcedTransaction",
-        label: "Forced transaction",
-        detail: truncateId(hit.orderId, 12, 8),
-        href: `/forced-transactions?id=${hit.orderId}`,
-      };
-  }
-};
-
-function readRecent(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    const arr: unknown = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
-}
 
 export type SearchVariant = "header" | "hero" | "icon";
 
@@ -129,41 +42,12 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
    * previous query's suggestions under the new query's text. Tagging the
    * result makes both derivable: anything that does not answer the current
    * query is simply not this query's answer yet. */
-  const [answer, setAnswer] = useState<{ query: string; hits: PrefixHit[] } | null>(null);
-
   const raw = value.trim();
-  const lookupQuery =
-    (/^[0-9a-fA-F]{6,}$/.test(raw) || /^(?:addr|stake)(?:_test)?1[0-9a-z]+$/.test(raw)) &&
-    !raw.toLowerCase().startsWith("asset1");
-  const hits = lookupQuery && answer?.query === raw ? answer.hits : EMPTY_HITS;
-  const searching = lookupQuery && answer?.query !== raw;
+  const { hits, searching } = usePrefixSearch(raw);
+  const lookupQuery = isLookupQuery(raw);
 
   const result = value.trim() === "" ? null : searchCandidates(value);
   const candidates = result?.ok ? result.candidates : [];
-
-  // A partial identifier is looked up as a prefix, debounced so typing does not
-  // fire a query per keystroke. Failures are silent: an absent suggestion is
-  // not worth an error message while someone is mid-word, and an empty answer
-  // still resolves the query so the reader stops seeing "searching".
-  useEffect(() => {
-    if (!lookupQuery) return;
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      fetch(`/api/search?q=${encodeURIComponent(raw)}`, { signal: controller.signal })
-        .then((r) => r.json())
-        .then((body: { hits?: PrefixHit[] }) => setAnswer({ query: raw, hits: body.hits ?? [] }))
-        .catch(() => {
-          // An abort is this effect being replaced, not a failed lookup. The
-          // query it was asking about is no longer the one on screen.
-          if (controller.signal.aborted) return;
-          setAnswer({ query: raw, hits: [] });
-        });
-    }, 200);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [lookupQuery, raw]);
 
   const open = useCallback(() => {
     setReason(null);
@@ -175,41 +59,9 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
     inputRef.current?.focus();
   }, []);
 
-  // The shortcut binds to whichever variant is the page's primary search box:
-  // the hero on the overview, the header everywhere else. HeaderSearchBox keeps
-  // those mutually exclusive, so only one listener is ever mounted.
-  useEffect(() => {
-    if (variant === "icon") return;
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      const typing =
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.isContentEditable === true;
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        open();
-        return;
-      }
-      // "/" is the explorer convention; never steal it while typing.
-      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        open();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, variant]);
+  useSearchShortcut(variant !== "icon", open);
 
-  const remember = (raw: string) => {
-    const trimmed = raw.trim();
-    try {
-      const next = [trimmed, ...readRecent().filter((r) => r !== trimmed)].slice(0, RECENT_MAX);
-      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-    } catch {
-      /* storage unavailable: recent searches are best-effort */
-    }
-  };
+  const remember = rememberSearch;
 
   const go = (raw: string, href: string, external?: boolean) => {
     remember(raw);
@@ -448,11 +300,7 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
                 <button
                   type="button"
                   onClick={() => {
-                    try {
-                      localStorage.removeItem(RECENT_KEY);
-                    } catch {
-                      /* storage unavailable: best-effort */
-                    }
+                    clearRecent();
                     setRecent([]);
                   }}
                   className="h-8 rounded px-2 mg-caption text-text-3 hover:text-text"
