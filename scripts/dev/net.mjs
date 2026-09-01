@@ -18,6 +18,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createServer } from "node:net";
 
 /* The fixture's own identity string, from e2e/fixtures/server.mjs. The e2e
@@ -131,8 +132,18 @@ const fail = (message) => {
   process.exit(1);
 };
 
-const [, , command, ...args] = process.argv;
+/* `doctor` imports these rather than shelling out to this file once per check.
+ * The command line below runs only when this file is the entry point, so an
+ * import does not fall through to the unknown-command branch and exit. */
+export { portFree, freePort, devLock, probeFixture, probeApp, poll };
 
+const [, , command, ...args] = process.argv;
+const isEntryPoint =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (!isEntryPoint) {
+  // Imported as a library. Nothing to run.
+} else
 switch (command) {
   case "free-port": {
     const preferred = Number(args[0]);

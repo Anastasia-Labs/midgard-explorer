@@ -5,6 +5,7 @@
 # a stack. Modes and their contract are recorded in
 # docs/decisions/0003-three-development-modes.md.
 #
+#   ./dev doctor [mode]  what is wrong, and the command that fixes it
 #   ./dev up demo        the fixture API and frontend-new, no Docker
 #   ./dev status         what is running, and whether it is what it claims
 #   ./dev logs [name]    fixture or app output, --follow to tail
@@ -21,6 +22,7 @@ usage() {
   cat <<'TEXT'
 Usage: ./dev <command>
 
+  doctor [mode]    check this machine for one mode; --json for machine output
   up demo          start the fixture API and frontend-new (no Docker, no secrets)
   status           report what is running and whether it answers as itself
   logs [name] [-f] show fixture or app output; name is fixture, app, or omitted
@@ -44,6 +46,12 @@ unbuilt_mode() {
 }
 
 case "${1:-help}" in
+  doctor)
+    shift
+    # Read-only by construction: doctor installs nothing, starts nothing and
+    # writes nothing, so it is safe to run against a machine mid-incident.
+    exec node "$DEV_REPO_ROOT/scripts/dev/doctor.mjs" "$DEV_REPO_ROOT" "$@"
+    ;;
   up)
     case "${2:-}" in
       demo)             demo_up ;;
