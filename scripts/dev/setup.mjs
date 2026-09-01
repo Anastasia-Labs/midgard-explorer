@@ -42,6 +42,11 @@ const repoRoot = args.shift();
 const mode = args.find((a) => !a.startsWith("-"));
 const force = args.includes("--force");
 const allowRemote = args.includes("--allow-remote");
+/* `pnpm setup` in the backend package configures the backend and nothing else.
+ * A package that writes into another directory is a package a contributor
+ * cannot reason about, and the frontend no longer needs a generated file: it
+ * defaults to the backend's port and takes an override if one is present. */
+const backendOnly = args.includes("--scope=backend");
 
 const die = (message, hint) => {
   process.stderr.write(`${message}\n`);
@@ -126,7 +131,15 @@ const buildRuntime = () => {
 
   // Settings a person set stay set. Setup fills what is missing rather than
   // asserting its own answer over one that is already working.
-  const keep = (key, fallback) => previous.get(key) ?? fallback;
+  //
+  // An empty value is missing, not set. `??` treats "" as an answer, so a
+  // runtime.env written before the node's database was known kept overwriting
+  // the values a person had just filled into backend/.env: setup reported the
+  // files agreed and asked for the same settings again.
+  const keep = (key, fallback) => {
+    const held = previous.get(key);
+    return held === undefined || held === "" ? fallback : held;
+  };
 
   const values = new Map();
   values.set("DEV_MODE", mode === "test" ? keep("DEV_MODE", "existing") : mode);
@@ -364,13 +377,18 @@ if (mode === "test") {
     ]),
     "# Generated from .dev/runtime.env by `./dev setup`. Change values there.",
   );
-  emit(join(repoRoot, "frontend-new", "app", ".env.local"), frontendBody, "frontend-new/app/.env.local");
-
-  await installFrontend();
+  if (!backendOnly) {
+    emit(
+      join(repoRoot, "frontend-new", "app", ".env.local"),
+      frontendBody,
+      "frontend-new/app/.env.local",
+    );
+    await installFrontend();
+  }
 
   say("");
-  say(`Explorer will serve on  ${values.get("FRONTEND_URL")}`);
-  say(`API through the cache   ${values.get("API_CACHE_URL")}`);
+  if (!backendOnly) say(`Explorer will serve on  ${values.get("FRONTEND_URL")}`);
+  say(`Backend will serve on   ${values.get("BACKEND_URL")}`);
   say(`Explorer index          ${redact(values.get("INDEXER_POSTGRES_URL"))}`);
   // Carrying a URL forward is not the same as owning what it names. `./dev up
   // existing` migrates only the database this repository's Compose file
@@ -386,11 +404,26 @@ if (mode === "test") {
   }
   if ((values.get("POSTGRES_HOST") ?? "") === "") {
     say("");
-    say("The Midgard node's own database is not set. Fill POSTGRES_* in .dev/runtime.env,");
-    say("then run: ./dev setup existing --force");
+    say("Still needed: the Midgard node's own database. Nothing here can invent it.");
+    if (backendOnly) {
+      // backend/.env is what this package reads, so that is the file to edit.
+      // Running setup again carries the values into .dev/runtime.env, which is
+      // internal state rather than somewhere to type.
+      say("  1. Fill POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD");
+      say("     and POSTGRES_DB in backend/.env");
+      say("  2. Run: pnpm setup");
+      say("  3. Run: pnpm dev");
+    } else {
+      say("Fill POSTGRES_* in .dev/runtime.env, then run: ./dev setup existing --force");
+    }
+  } else if (backendOnly) {
+    say("");
+    say("Start it with: pnpm dev");
   }
-  say("");
-  say("Then: ./dev setup test    (creates and migrates the disposable test database)");
+  if (!backendOnly) {
+    say("");
+    say("Then: ./dev setup test    (creates and migrates the disposable test database)");
+  }
 }
 
 const mode0600 = (path) => {

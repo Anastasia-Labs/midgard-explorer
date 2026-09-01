@@ -16,50 +16,19 @@
 
 DEV_MODE_STATE_EXISTING="$DEV_STATE_ROOT/existing"
 
-# Which containers `up` found already running. Separate from state.env: run
-# state describes a startup that completed, and this describes what this command
-# is not allowed to stop, which is decided before the startup can fail.
-#
-# Its absence is meaningful. The record is written before `compose up -d`, so a
-# missing one means this command never started a container, and `down` stops
-# none.
-adopted_file() { printf '%s\n' "$DEV_MODE_STATE_EXISTING/adopted"; }
-
-# Asks Docker what is already running and writes the answer down.
-#
-# On a restart the answer carries forward instead of being taken again: a
-# container is adopted only if the run that first found it said so, and it is
-# still running. Anything else is one `dev` started and still owns.
-#
-# Nothing is written when Docker cannot be asked. A guess recorded as an answer
-# is how a container somebody else started gets stopped by `./dev down`.
-existing_record_adoption() {
-  local had_previous="$1" previous="$2" running_now
-  running_now="$(existing_compose ps --services --filter status=running 2>/dev/null | tr '\n' ' ')" ||
-    return 0
-  EXISTING_ADOPTED="$(existing_adoption "$had_previous" "$previous" "$running_now")"
-  printf '%s' "$EXISTING_ADOPTED" >"$(adopted_file)"
-}
-
-# Reads .dev/runtime.env, and never sources it.
-#
-# That file is a dotenv file whose generator quotes nothing, and whose values
-# include a database password and a path a person typed. Sourcing it made every
-# one of them shell code: a manifest path holding a space would be word-split,
-# and one holding $(...) would run. env.mjs parses it, validates a fixed
-# whitelist, and prints those values quoted, so what reaches this shell is a
-# known set of names carrying data rather than a file carrying instructions.
-#
-# Ports are not selected automatically here. They are coordinated with services
-# this repository does not own, and NEXT_PUBLIC_API_BASE is read at build time,
-# so a silently reassigned port produces a frontend calling an origin nothing is
-# listening on. A conflict is reported and the run stops.
+# Container ownership, adoption and the migration guard live in
+# backend/scripts/lib/compose.mjs. `pnpm dev` in the backend package and this
+# command are two entry points to one implementation, so neither can drift into
+# a second answer about which database may be migrated or which container may
+# be stopped.
+compose_lib() { node "$DEV_REPO_ROOT/backend/scripts/lib/compose.mjs" "$DEV_REPO_ROOT" "$@"; }
+adopted_record() { printf '%s\n' "$DEV_STATE_ROOT/existing/adopted"; }
 existing_load_runtime() {
   local file="$DEV_STATE_ROOT/runtime.env"
   [[ -f "$file" ]] ||
     die "No .dev/runtime.env." "Run: ./dev setup existing"
   local assignments
-  assignments="$(node "$DEV_REPO_ROOT/scripts/dev/env.mjs" shell \
+  assignments="$(node "$DEV_REPO_ROOT/backend/scripts/lib/env.mjs" shell \
     "$file" "$DEV_REPO_ROOT/backend/.env")" ||
     die ".dev/runtime.env does not carry what this mode needs." \
         "The lines above name each one. Fix them there, then: ./dev setup existing --force"
@@ -91,67 +60,10 @@ existing_load_runtime() {
 # again: by then `dev` has started them itself, so asking "what is running?"
 # a second time would call everything adopted and `down` would leave behind
 # exactly what `up` started.
-existing_adoption() {
-  local had_previous="$1" previous="$2" running="$3" adopted="" service
-  for service in $running; do
-    if (( had_previous )); then
-      case " $previous " in
-        *" $service "*) adopted+="$service " ;;
-      esac
-    else
-      adopted+="$service "
-    fi
-  done
-  printf '%s' "${adopted% }"
-}
-
-# Which of this repository's services a stop is allowed to touch.
-#
-# The complement of the adoption record: everything the record does not name is
-# something this command started and therefore owns.
-existing_services_to_stop() {
-  local adopted="$1"; shift
-  local service out=""
-  for service in "$@"; do
-    case " $adopted " in
-      *" $service "*) continue ;;
-    esac
-    out+="$service "
-  done
-  printf '%s' "${out% }"
-}
-
-existing_assert_owned_index() {
-  local published published_port
-  published="$(existing_compose port explorer-postgres 5432 2>/dev/null | tr -d '[:space:]' || true)"
-  published_port="${published##*:}"
-
-  local wrong=()
-  if [[ -z "$published_port" ]]; then
-    wrong+=("explorer-postgres publishes no port, so nothing identifies it as this repository's database")
-  elif [[ "$INDEX_URL_PORT" != "$published_port" ]]; then
-    wrong+=("the index is on port $INDEX_URL_PORT; explorer-postgres publishes $published_port")
-  fi
-  case "$INDEX_URL_HOST" in
-    127.0.0.1|localhost|::1) ;;
-    *) wrong+=("the index is on $INDEX_URL_HOST, which is not this machine") ;;
-  esac
-  [[ "$INDEX_URL_DB" == "${EXPLORER_POSTGRES_DB:-}" ]] ||
-    wrong+=("the index database is \"$INDEX_URL_DB\"; Compose provisions \"${EXPLORER_POSTGRES_DB:-}\"")
-  [[ "$INDEX_URL_USER" == "${EXPLORER_POSTGRES_USER:-}" ]] ||
-    wrong+=("the index user is \"$INDEX_URL_USER\"; Compose provisions \"${EXPLORER_POSTGRES_USER:-}\"")
-
-  (( ${#wrong[@]} == 0 )) && return 0
-
-  warn "INDEXER_POSTGRES_URL, from $INDEX_URL_SOURCE, does not name the database this repository provisions:"
-  local reason
-  for reason in "${wrong[@]}"; do warn "  $reason"; done
-  die "Refusing to migrate an index \`dev\` does not own." \
-      "Migrate it through the rollout instead: cd backend && ./scripts/rollout.sh --apply"
-}
-
 existing_compose() {
-  docker compose --env-file "$DEV_STATE_ROOT/runtime.env" "$@"
+  docker compose --project-directory "$DEV_REPO_ROOT" \
+    -f "$DEV_REPO_ROOT/docker-compose.yml" \
+    --env-file "$DEV_STATE_ROOT/runtime.env" "$@"
 }
 
 existing_port_free_or_ours() {
@@ -183,27 +95,15 @@ existing_up() {
   DEV_MODE_STATE="$DEV_MODE_STATE_EXISTING"
   mkdir -p "$DEV_MODE_STATE"
 
-  # What the previous run concluded about the containers.
-  #
-  # Kept in its own file rather than in state.env, because it outlives a run:
-  # state.env records a startup that finished, and which containers this command
-  # may stop is true from the moment it looks, whether or not the rest of the
-  # startup then succeeds.
-  local previous_adopted="" had_previous_state=0
-  if [[ -f "$(adopted_file)" ]]; then
-    previous_adopted="$(cat "$(adopted_file)")"
-    had_previous_state=1
-  fi
-
   # A second `up` is a restart, not a conflict. Without this, the run before it
   # is still holding the ports and the Next lock, and the command reports its
   # own server as somebody else's.
   existing_stop_processes
 
-  # Written before every check that can stop this run, and before anything is
+  # Recorded before every check that can stop this run, and before anything is
   # started, so a startup that dies at a port conflict or a missing manifest
   # still leaves `down` able to tell a container it found from one it started.
-  existing_record_adoption "$had_previous_state" "$previous_adopted"
+  EXISTING_ADOPTED="$(compose_lib record-adoption 2>/dev/null || true)"
 
   [[ -f "$DEV_REPO_ROOT/backend/.env" ]] ||
     die "backend/.env does not exist." "Run: ./dev setup existing"
@@ -238,16 +138,24 @@ existing_up() {
     say "  adopted, and will be left running: $EXISTING_ADOPTED"
 
   step "Applying the index migrations"
-  existing_assert_owned_index
+  compose_lib assert-owned ||
+    die "Refusing to migrate an index \`dev\` does not own." \
+        "Migrate it through the rollout instead: cd backend && ./scripts/rollout.sh --apply"
   (cd "$DEV_REPO_ROOT/backend" && pnpm --silent indexer:deploy >/dev/null 2>&1) ||
     die "The index migrations did not apply." \
         "Run: cd backend && pnpm indexer:deploy"
   say "  index schema is current"
 
   step "Starting the backend"
+  # `dev:server`, not `dev`. This command has already started the containers,
+  # checked ownership, migrated and probed readiness; `pnpm dev` would do all of
+  # that again, and its own answer about whether to index would overwrite the
+  # one decided here, silently turning --with-l1-sync off.
+  #
   # Exactly one indexer. The index is written by one process and read by all of
   # them, and the writer takes an advisory lock, so a second one started here
   # would simply not index while looking like it was.
+  #
   # When indexing, the manifest this run checked is the one the process reads.
   # Leaving it to backend/.env meant the preflight above validated one path
   # while the backend opened another, and a drifted pair failed at boot rather
@@ -256,11 +164,11 @@ existing_up() {
     BACKEND_PORT="$BACKEND_PORT" L1_SYNC_ENABLED=true \
     MIDGARD_MANIFEST_PATH="$MIDGARD_MANIFEST_PATH" \
       start_service backend "$DEV_REPO_ROOT/backend" \
-        "$DEV_MODE_STATE/backend.log" pnpm --silent dev
+        "$DEV_MODE_STATE/backend.log" pnpm --silent dev:server
   else
     BACKEND_PORT="$BACKEND_PORT" L1_SYNC_ENABLED=false \
       start_service backend "$DEV_REPO_ROOT/backend" \
-        "$DEV_MODE_STATE/backend.log" pnpm --silent dev
+        "$DEV_MODE_STATE/backend.log" pnpm --silent dev:server
   fi
 
   node_helper wait-health "$EXISTING_BACKEND_URL" 90000 ||
@@ -414,14 +322,6 @@ existing_stop_processes() {
 existing_down() {
   DEV_MODE_STATE="$DEV_MODE_STATE_EXISTING"
   mkdir -p "$DEV_MODE_STATE"
-  # Which containers were already running when `up` first looked. Present even
-  # when that `up` failed part-way, which is when stopping the wrong container
-  # would otherwise be easiest.
-  local adopted="" started_anything=0
-  if [[ -f "$(adopted_file)" ]]; then
-    adopted="$(cat "$(adopted_file)")"
-    started_anything=1
-  fi
   step "Stopping existing mode"
   existing_stop_processes
   # `stop`, never `down`. `down` removes containers, and `down -v` removes the
@@ -430,23 +330,28 @@ existing_down() {
   # And only what this command started. A container that was already up belongs
   # to whoever started it, and stopping it is a side effect of `./dev down` that
   # nobody asked for.
-  if (( started_anything == 0 )); then
-    say "  no containers were started by this command, so none are stopped"
-  elif [[ -f "$DEV_STATE_ROOT/runtime.env" ]]; then
-    local stopped
-    stopped="$(existing_services_to_stop "$adopted" explorer-postgres explorer-api-cache)"
-    if [[ -n "$stopped" ]]; then
-      # shellcheck disable=SC2086
-      existing_compose stop $stopped >/dev/null 2>&1 || true
-      say "  stopped: $stopped"
+  if [[ -f "$DEV_STATE_ROOT/runtime.env" ]]; then
+    local stopped adopted adopted_out
+    adopted_out="$DEV_MODE_STATE/.adopted-report"
+    # A helper that cannot run is not a helper that found nothing. Reporting
+    # "none to stop" on a failed call is the same false green this command
+    # exists to avoid, so the two are told apart.
+    if ! stopped="$(compose_lib stop-unowned 2>"$adopted_out")"; then
+      warn "Could not work out which containers this command started."
+      warn "Nothing was stopped. Read: cat $(adopted_record)"
+      rm -f "$adopted_out"
+      return 1
     fi
-    if [[ -n "$adopted" ]]; then
-      say "  left running, because \`up\` found them already started: $adopted"
+    adopted="$(cat "$adopted_out" 2>/dev/null || true)"
+    rm -f "$adopted_out"
+    if [[ "$stopped" == "none" ]]; then
+      say "  no containers were started by this command, so none are stopped"
+    else
+      [[ -n "$stopped" ]] && say "  stopped: $stopped"
+      [[ -n "$adopted" ]] &&
+        say "  left running, because \`up\` found them already started: $adopted"
     fi
   fi
-  # Nothing is ours once everything we started is stopped, so the next `up`
-  # decides again from what it finds.
-  rm -f "$(adopted_file)"
   say "Stopped. No volume, database or Midgard state was removed."
 }
 

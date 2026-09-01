@@ -372,6 +372,18 @@ export function startSync(deps: Partial<StartSyncDeps> = {}): SyncHandle {
     }
     if (stopping) return;
 
+    // The one line that says indexing is actually happening.
+    //
+    // Every other outcome of this block announces itself: an unusable manifest,
+    // a lock somebody else holds, a lost connection. Starting successfully said
+    // nothing, so the only way to check it was to look for the absence of a
+    // message, and a run that never got this far looked the same as one that
+    // did.
+    logger.info(
+      `L1 sync started: indexing Cardano every ${config.L1_SYNC_INTERVAL_MS}ms ` +
+        `for deployment ${loadManifest(config.MIDGARD_MANIFEST_PATH).deploymentId}`,
+    );
+
     try {
       await warnOnActivity();
     } catch (err) {

@@ -15,12 +15,21 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, describe, it } from "node:test";
 
+import {
+  adoption,
+  composeArgs,
+  clearAdoption,
+  ownershipProblems,
+  readAdoption,
+  servicesToStop,
+  writeAdoption,
+} from "../../backend/scripts/lib/compose.mjs";
 import { REQUIRED_BACKEND_ENV, REQUIRED_WHEN_INDEXING } from "./checks.mjs";
 import { runChecks, summarise } from "./doctor.mjs";
 
@@ -160,6 +169,60 @@ describe("what setup generates and what doctor requires", () => {
       assert.notEqual(generated.get(key), "", `setup writes ${key} empty`);
       assert.notEqual(generated.get(key), undefined, `setup writes ${key} as undefined`);
     }
+  });
+});
+
+describe("the setup sequence the README documents", () => {
+  /* Run setup, fill in the node's database, run setup again. That is the whole
+   * instruction in backend/README.md, and it did not work: an empty value in
+   * .dev/runtime.env counted as an answer, so the second run overwrote what had
+   * just been typed and asked for it again. */
+  const setup = (root) =>
+    execFileSync(
+      process.execPath,
+      [join(repoRoot, "scripts", "dev", "setup.mjs"), root, "existing", "--scope=backend"],
+      { encoding: "utf8", timeout: 120_000 },
+    );
+
+  const backendEnv = (root) => expand(parseEnvFile(join(root, "backend", ".env")));
+
+  it("carries the values a person filled in, on the second run", () => {
+    const root = fixtureRoot();
+    mkdirSync(join(root, "backend"), { recursive: true });
+    mkdirSync(join(root, "frontend-new", "app"), { recursive: true });
+
+    const first = setup(root);
+    assert.match(first, /Still needed/);
+    assert.equal(backendEnv(root).get("POSTGRES_HOST"), "");
+
+    // What the README tells the reader to do.
+    const filled = readFileSync(join(root, "backend", ".env"), "utf8")
+      .replace("POSTGRES_HOST=", "POSTGRES_HOST=db.example")
+      .replace("POSTGRES_PORT=", "POSTGRES_PORT=5433")
+      .replace("POSTGRES_USER=", "POSTGRES_USER=midgard")
+      .replace("POSTGRES_PASSWORD=", "POSTGRES_PASSWORD=secret")
+      .replace("POSTGRES_DB=", "POSTGRES_DB=midgard");
+    writeFileSync(join(root, "backend", ".env"), filled);
+
+    const second = setup(root);
+    const env = backendEnv(root);
+    assert.equal(env.get("POSTGRES_HOST"), "db.example");
+    assert.equal(env.get("POSTGRES_DB"), "midgard");
+    assert.match(env.get("POSTGRES_URL"), /db\.example:5433\/midgard/);
+    assert.doesNotMatch(second, /Still needed/, "setup asked again for what was just filled in");
+    assert.match(second, /Start it with: pnpm dev/);
+
+    // And the runtime file it keeps in step now holds them too.
+    const runtime = expand(parseEnvFile(join(root, ".dev", "runtime.env")));
+    assert.equal(runtime.get("POSTGRES_HOST"), "db.example");
+  });
+
+  it("writes nothing outside the backend when scoped to it", () => {
+    const root = fixtureRoot();
+    mkdirSync(join(root, "backend"), { recursive: true });
+    mkdirSync(join(root, "frontend-new", "app"), { recursive: true });
+    setup(root);
+    assert.equal(existsSync(join(root, "frontend-new", "app", ".env.local")), false);
   });
 });
 
@@ -305,95 +368,87 @@ describe("a check that cannot run", () => {
 });
 
 describe("which containers a stop may touch", () => {
-  /* The rule lives in existing.sh, so it is exercised there rather than
-   * restated here. What it must never do is call a container `dev` started
-   * adopted, because `down` then leaves running exactly what `up` started. */
-  const adoption = (had, previous, running) =>
-    execFileSync(
-      "bash",
-      [
-        "-c",
-        `source "${join(repoRoot, "scripts", "dev", "existing.sh")}" 2>/dev/null || true
-         existing_adoption "$1" "$2" "$3"`,
-        "bash",
-        String(had),
-        previous,
-        running,
-      ],
-      { encoding: "utf8" },
-    );
-
-  const stops = (adopted) =>
-    execFileSync(
-      "bash",
-      [
-        "-c",
-        `source "${join(repoRoot, "scripts", "dev", "existing.sh")}" 2>/dev/null || true
-         existing_services_to_stop "$1" explorer-postgres explorer-api-cache`,
-        "bash",
-        adopted,
-      ],
-      { encoding: "utf8" },
-    );
-
-  const both = "explorer-postgres explorer-api-cache";
-
-  /* What `down` does after each way `up` can end, including the ways it can
-   * fail. The record is written before `compose up -d`, so its absence means
-   * nothing was started and nothing may be stopped. */
-  const downStops = (record) =>
-    execFileSync(
-      "bash",
-      [
-        "-c",
-        `set -uo pipefail
-         source "${join(repoRoot, "scripts", "dev", "lib.sh")}"
-         source "${join(repoRoot, "scripts", "dev", "demo.sh")}"
-         source "${join(repoRoot, "scripts", "dev", "existing.sh")}"
-         ROOT="$(mktemp -d)"
-         DEV_STATE_ROOT="$ROOT"
-         DEV_MODE_STATE_EXISTING="$ROOT/existing"
-         mkdir -p "$DEV_MODE_STATE_EXISTING"
-         : >"$ROOT/runtime.env"
-         existing_compose() { :; }
-         existing_stop_processes() { :; }
-         [ "$1" = "none" ] || printf '%s' "$2" >"$DEV_MODE_STATE_EXISTING/adopted"
-         existing_down 2>&1 | grep -E "stopped:|none are stopped" || true
-         rm -rf "$ROOT"`,
-        "bash",
-        record === null ? "none" : "some",
-        record ?? "",
-      ],
-      { encoding: "utf8" },
-    ).trim();
-
-  it("stops nothing when up never got as far as starting a container", () => {
-    assert.match(downStops(null), /none are stopped/);
-  });
-
-  it("stops only what it started when up failed part-way", () => {
-    assert.equal(downStops("explorer-api-cache"), "stopped: explorer-postgres");
-    assert.equal(downStops(""), `stopped: ${both}`);
-  });
-
-  it("stops everything it is not leaving alone, and nothing else", () => {
-    assert.equal(stops(""), both);
-    assert.equal(stops("explorer-api-cache"), "explorer-postgres");
-    assert.equal(stops(both), "");
-  });
+  /* The rule lives in backend/scripts/lib/compose.mjs, which `pnpm dev` and
+   * `./dev up existing` both call. What it must never do is call a container
+   * this command started adopted, because a stop then leaves running exactly
+   * what the start had started. */
+  const both = ["explorer-postgres", "explorer-api-cache"];
 
   it("adopts what was already running the first time", () => {
-    assert.equal(adoption(0, "", both), both);
-    assert.equal(adoption(0, "", "explorer-api-cache"), "explorer-api-cache");
-    assert.equal(adoption(0, "", ""), "");
+    assert.deepEqual(adoption(false, [], both), both);
+    assert.deepEqual(adoption(false, [], ["explorer-api-cache"]), ["explorer-api-cache"]);
+    assert.deepEqual(adoption(false, [], []), []);
   });
 
   it("keeps what dev started after a restart", () => {
-    assert.equal(adoption(1, "", both), "");
+    assert.deepEqual(adoption(true, [], both), []);
   });
 
   it("keeps an adopted container adopted after a restart", () => {
-    assert.equal(adoption(1, "explorer-api-cache", both), "explorer-api-cache");
+    assert.deepEqual(adoption(true, ["explorer-api-cache"], both), ["explorer-api-cache"]);
+  });
+
+  it("stops everything it is not leaving alone, and nothing else", () => {
+    assert.deepEqual(servicesToStop([]), both);
+    assert.deepEqual(servicesToStop(["explorer-api-cache"]), ["explorer-postgres"]);
+    assert.deepEqual(servicesToStop(both), []);
+  });
+
+  /* The project is named by the root that was asked about. Passing only
+   * --env-file let docker resolve the compose file from the working directory,
+   * so a command aimed at one checkout could stop another's containers. */
+  it("names the project by the root it was given", () => {
+    const args = composeArgs("/some/root", ["ps"]);
+    assert.deepEqual(args.slice(0, 6), [
+      "compose",
+      "--project-directory",
+      "/some/root",
+      "-f",
+      "/some/root/docker-compose.yml",
+      "--env-file",
+    ]);
+    assert.equal(args.at(-1), "ps");
+  });
+
+  it("treats a missing record as nothing having been started", () => {
+    const root = fixtureRoot();
+    assert.equal(readAdoption(root), null);
+  });
+
+  it("round-trips the record it writes", () => {
+    const root = fixtureRoot();
+    writeAdoption(root, ["explorer-api-cache"]);
+    assert.deepEqual(readAdoption(root), ["explorer-api-cache"]);
+    clearAdoption(root);
+    assert.equal(readAdoption(root), null);
+  });
+});
+
+describe("which index a migration may be applied to", () => {
+  const provisioned = { database: "midgard_explorer", user: "explorer" };
+  const owned = { host: "127.0.0.1", port: 5435, database: "midgard_explorer", user: "explorer" };
+
+  it("accepts the database this repository publishes", () => {
+    assert.deepEqual(ownershipProblems({ index: owned, provisioned, published: 5435 }), []);
+  });
+
+  it("refuses another host, port, database or user, and says which", () => {
+    const cases = [
+      [{ ...owned, host: "db.internal.example" }, /not this machine/],
+      [{ ...owned, port: 6543 }, /publishes 5435/],
+      [{ ...owned, database: "production_index" }, /production_index/],
+      [{ ...owned, user: "admin" }, /admin/],
+    ];
+    for (const [index, expected] of cases) {
+      const problems = ownershipProblems({ index, provisioned, published: 5435 });
+      assert.equal(problems.length, 1, JSON.stringify(problems));
+      assert.match(problems[0], expected);
+    }
+  });
+
+  it("refuses when nothing publishes the port at all", () => {
+    const problems = ownershipProblems({ index: owned, provisioned, published: null });
+    assert.match(problems[0], /publishes no port/);
   });
 });
 
