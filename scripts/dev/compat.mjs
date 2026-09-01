@@ -22,7 +22,7 @@
  * Usage:
  *   compat.mjs fingerprint --fixture              from the committed schema fixture
  *   compat.mjs fingerprint --database <url>       from a live node database
- *   compat.mjs check --database <url>             against config/midgard-compatibility.json
+ *   compat.mjs check --database <url>             the pin, the fixture and a live node
  *   compat.mjs write --fixture                    regenerate the pinned fingerprint
  */
 import { createHash } from "node:crypto";
@@ -160,8 +160,27 @@ switch (command) {
   case "check": {
     const config = readConfig();
     const expected = config.nodeSchema?.fingerprint;
-    const live = await fromDatabase(tables, urlArg());
     const fixture = fromFixture(tables);
+    const pinned = digest(fixture, tables).fingerprint;
+
+    /* The pin is checked before the node is.
+     *
+     * Everything below compares a live database against the committed fixture,
+     * so the fingerprint in config/midgard-compatibility.json was decorative:
+     * it was read, printed on failure, and never used to decide anything. A pin
+     * that no longer describes the fixture is a pin nobody regenerated, and the
+     * next reader takes it as the schema this build was verified against. */
+    if (expected !== pinned) {
+      process.stderr.write(
+        "stale pin: config/midgard-compatibility.json does not describe the committed fixture\n",
+      );
+      process.stderr.write(`  the fixture is ${pinned}\n`);
+      process.stderr.write(`  the pin says  ${expected ?? "(nothing)"}\n`);
+      process.stderr.write("  regenerate it with: ./dev compat write --fixture\n");
+      process.exit(1);
+    }
+
+    const live = await fromDatabase(tables, urlArg());
     const { fingerprint } = digest(live, tables);
 
     /* Containment, not equality.
@@ -199,11 +218,13 @@ switch (command) {
     }
 
     if (ahead.length > 0) {
-      process.stdout.write(`compatible: this node is ahead of the pinned schema\n`);
+      process.stdout.write(`compatible: this node is ahead of the pinned schema ${expected}\n`);
       for (const line of ahead.slice(0, 12)) process.stdout.write(`  ${line}\n`);
       process.stdout.write(`  nothing the explorer reads is absent\n`);
     } else {
-      process.stdout.write(`compatible: this node matches the pinned schema exactly\n`);
+      process.stdout.write(
+        `compatible: this node matches the pinned schema ${expected} exactly\n`,
+      );
     }
     break;
   }

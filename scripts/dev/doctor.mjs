@@ -8,24 +8,82 @@
  *
  * Exit codes:
  *   0  no check failed
- *   1  at least one check failed
+ *   1  at least one check failed, or one could not be run
  *   2  the command was used wrongly
  *
- * Usage: doctor.mjs <repoRoot> [demo|existing|full] [--json]
+ * Usage: doctor.mjs <repoRoot> [demo|existing|full] [--json] [--with-l1-sync]
  */
+import { pathToFileURL } from "node:url";
+
 import { CHECKS } from "./checks.mjs";
 import { redact } from "./env.mjs";
 
 const MODES = ["demo", "existing", "full"];
 
-/* Modes ADR 3 records but no PR has built. Their checks still run: knowing the
- * environment is ready is useful before the mode exists. The banner says the
- * mode cannot be started, so a page of PASS lines is not read as "it works". */
+/* Modes ADR 3 records as a procedure rather than a command. Their checks still
+ * run: knowing this machine could host the mode is what the report is for. The
+ * banner says there is nothing to start, so a page of PASS lines is not read as
+ * "`./dev up` will work". */
 const UNBUILT = new Set(["full"]);
+
+/** Runs a set of checks and classifies each outcome.
+ *
+ * Exported so the runner can be tested with a check that misbehaves. The one
+ * case that matters is a check that throws: it used to be reported as `skip`,
+ * and skips do not set the exit code, so a doctor run with a broken check
+ * printed "Ready" while the check that would have said otherwise never ran.
+ */
+export const runChecks = async (ctx, checks) => {
+  const results = [];
+  for (const check of checks) {
+    let outcome;
+    try {
+      outcome = await check.run(ctx);
+    } catch (error) {
+      // A defect in the check, not a verdict on the machine, and still an
+      // answer doctor does not have.
+      outcome = {
+        status: "error",
+        detail: `the check itself failed: ${String(error?.message ?? error)}`,
+        hint: "This is a defect in the check, not in the machine. Doctor cannot answer for this mode until it is fixed",
+      };
+    }
+    results.push({
+      id: check.id,
+      title: check.title,
+      status: outcome.status,
+      // Redacted once here as well as at the source. Every path into a detail
+      // string is a path a password could take into a terminal or an issue.
+      detail: redact(outcome.detail ?? ""),
+      hint: outcome.hint === undefined ? null : redact(outcome.hint),
+    });
+  }
+  return results;
+};
+
+/** Counts by status, and whether the run may call itself ready.
+ *
+ * An unanswered check is not a pass: "Ready" claims every check ran, so one
+ * that could not run withholds it. */
+export const summarise = (results) => {
+  const summary = { pass: 0, warn: 0, fail: 0, skip: 0, error: 0 };
+  for (const result of results) summary[result.status] += 1;
+  return { summary, failed: summary.fail > 0 || summary.error > 0 };
+};
+
+const isEntryPoint =
+  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (!isEntryPoint) {
+  // Imported for the runner above. Nothing to run.
+} else {
 
 const args = process.argv.slice(2);
 const repoRoot = args.shift();
 const json = args.includes("--json");
+// The same flag `up existing` takes, so the question asked here is the one the
+// mode was started with rather than the one backend/.env describes.
+const withL1Sync = args.includes("--with-l1-sync");
 const mode = args.find((a) => !a.startsWith("-")) ?? "demo";
 
 if (repoRoot === undefined) {
@@ -37,37 +95,11 @@ if (!MODES.includes(mode)) {
   process.exit(2);
 }
 
-const ctx = { repoRoot, mode };
+const ctx = { repoRoot, mode, withL1Sync };
 const selected = CHECKS.filter((check) => check.modes.includes(mode));
 
-const results = [];
-for (const check of selected) {
-  let outcome;
-  try {
-    outcome = await check.run(ctx);
-  } catch (error) {
-    // A check that throws is a defect in the check, not a verdict on the
-    // machine. Reporting it as `skip` keeps one broken check from failing a
-    // doctor run that is otherwise informative.
-    outcome = {
-      status: "skip",
-      detail: `the check itself failed: ${String(error?.message ?? error)}`,
-    };
-  }
-  results.push({
-    id: check.id,
-    title: check.title,
-    status: outcome.status,
-    // Redacted once here as well as at the source. Every path into a detail
-    // string is a path a password could take into a terminal or an issue.
-    detail: redact(outcome.detail ?? ""),
-    hint: outcome.hint === undefined ? null : redact(outcome.hint),
-  });
-}
-
-const summary = { pass: 0, warn: 0, fail: 0, skip: 0 };
-for (const result of results) summary[result.status] += 1;
-const failed = summary.fail > 0;
+const results = await runChecks(ctx, selected);
+const { summary, failed } = summarise(results);
 
 if (json) {
   process.stdout.write(
@@ -85,14 +117,16 @@ if (json) {
     warn: paint(33, "WARN"),
     fail: paint(31, "FAIL"),
     skip: paint(90, "SKIP"),
+    error: paint(31, "ERROR"),
   };
 
   process.stdout.write(`\n${paint(1, `Doctor: ${mode} mode`)}\n`);
   if (UNBUILT.has(mode)) {
     process.stdout.write(
-      `\`./dev up ${mode}\` does not exist yet. These checks report whether the\n` +
-        `environment that mode will need is ready. Modes are recorded in\n` +
-        `docs/decisions/0003-three-development-modes.md.\n`,
+      `\`${mode}\` is a documented procedure rather than a command: it needs\n` +
+        `services this repository does not provision, and does not check. These\n` +
+        `checks cover the explorer's own requirements only.\n` +
+        `Follow docs/running-full-midgard.md.\n`,
     );
   }
   process.stdout.write("\n");
@@ -105,13 +139,29 @@ if (json) {
 
   process.stdout.write(
     `\n${summary.pass} passed, ${summary.warn} warned, ${summary.fail} failed, ` +
-      `${summary.skip} skipped\n`,
+      `${summary.skip} skipped` +
+      (summary.error > 0 ? `, ${summary.error} could not be run` : "") +
+      "\n",
   );
+  if (summary.error > 0) {
+    process.stdout.write(
+      `\n${summary.error} check(s) could not be run, so this report is incomplete.\n`,
+    );
+  }
   if (failed) {
-    process.stdout.write(`\nFix the failures above, then run: ./dev doctor ${mode}\n`);
+    // The flag is repeated back. Dropping it would send the reader to a run
+    // that asks the narrower question, and answers Ready to the wider one.
+    const again = `./dev doctor ${mode}${withL1Sync ? " --with-l1-sync" : ""}`;
+    process.stdout.write(`\nFix the failures above, then run: ${again}\n`);
   } else if (!UNBUILT.has(mode)) {
     process.stdout.write(`\nReady. Start it with: ./dev up ${mode}\n`);
+  } else {
+    process.stdout.write(
+      `\nThe explorer's own requirements are met. Follow docs/running-full-midgard.md\n`,
+    );
   }
 }
 
 process.exit(failed ? 1 : 0);
+
+}
