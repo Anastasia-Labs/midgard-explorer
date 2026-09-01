@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "The Midgard node this explorer build is known to read.",
+    "nodeSchema.fingerprint covers table and column names for the relations the",
+    "read path queries, taken from NODE_TABLES in backend/src/server/probes.ts.",
+    "Regenerate it from the committed schema fixture with: ./dev compat write",
+    "manifestSchemaVersions mirrors SUPPORTED_SCHEMA_VERSIONS in",
+    "backend/src/indexer/manifest.ts, which remains the value the indexer enforces."
+  ],
+  "midgard": {
+    "repository": "https://github.com/Anastasia-Labs/midgard",
+    "branch": "tx-validation",
+    "commit": null,
+    "commitNote": "Not pinned yet. A branch moves; recording the commit this build was verified against is what makes an upgrade visible. Fill this from the node deployment you verify against."
+  },
+  "nodeSchema": {
+    "fingerprint": "sha256:73c91e5fb936bdb9d823be9d5f058043",
+    "relations": 18
+  },
+  "manifestSchemaVersions": [
+    "midgard-deployment-manifest-v2"
+  ],
+  "explorerIndex": {
+    "minimumMigration": "20260807114358_init_sync_cursor",
+    "shippedMigrations": 6
+  }
+}

@@ -624,6 +624,71 @@ export const CHECKS = [
     },
   },
 
+  // --- compatibility with the node this build reads -------------------------
+  {
+    id: "compat.node-schema",
+    title: "Node schema compatibility",
+    modes: REAL_DATA,
+    run: async (ctx) => {
+      const missing = needsEnv(ctx);
+      if (missing) return missing;
+      const url = backendEnv(ctx).get("POSTGRES_URL") ?? "";
+      if (url === "") return skip("POSTGRES_URL is not set");
+      if (!existsSync(join(ctx.repoRoot, "backend", "node_modules"))) {
+        return skip("backend dependencies are not installed");
+      }
+      try {
+        const { stdout } = await run(
+          "node",
+          [join(ctx.repoRoot, "scripts", "dev", "compat.mjs"), ctx.repoRoot, "check", "--database", url],
+          { timeout: 30_000 },
+        );
+        const lines = stdout.trim().split("\n");
+        return lines.length > 1
+          ? warn(lines[0].replace(/^compatible: /, ""), lines.slice(1).join("; ").trim())
+          : pass(lines[0].replace(/^compatible: /, ""));
+      } catch (error) {
+        const output = redact(String(error?.stderr || error?.stdout || error?.message || error));
+        return fail(
+          output.split("\n")[0] || "the compatibility check did not complete",
+          "This node does not hold something the read path queries. The explorer would answer pages that fail rather than refusing at startup.",
+        );
+      }
+    },
+  },
+  {
+    id: "compat.manifest-version",
+    title: "Manifest schema version",
+    modes: REAL_DATA,
+    run: async (ctx) => {
+      const missing = needsEnv(ctx);
+      if (missing) return missing;
+      const path = backendEnv(ctx).get("MIDGARD_MANIFEST_PATH") ?? "";
+      if (path === "" || !existsSync(path)) return skip("no manifest to read");
+      let config;
+      try {
+        config = JSON.parse(
+          readFileSync(join(ctx.repoRoot, "config", "midgard-compatibility.json"), "utf8"),
+        );
+      } catch {
+        return skip("config/midgard-compatibility.json is not readable");
+      }
+      let version;
+      try {
+        version = JSON.parse(readFileSync(path, "utf8"))?.schemaVersion;
+      } catch {
+        return skip("the manifest is not readable JSON");
+      }
+      const supported = config.manifestSchemaVersions ?? [];
+      return supported.includes(version)
+        ? pass(`${version}, which this build supports`)
+        : fail(
+            `${version ?? "(none declared)"} is outside ${supported.join(", ")}`,
+            "The indexer refuses an unknown layout rather than reading it on a guess",
+          );
+    },
+  },
+
   // --- readiness, read from the backend's own probe -------------------------
   {
     id: "readiness.node-database",

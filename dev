@@ -30,6 +30,7 @@ Usage: ./dev <command>
   setup <target>   demo, existing, or test; writes .dev/runtime.env and env files
   up demo          start the fixture API and frontend-new (no Docker, no secrets)
   up existing      start the explorer against an existing Midgard database
+  compat <cmd>     fingerprint, check or write the node compatibility pin
   status [--watch] report what is running and whether it answers as itself
   logs [name] [-f] show fixture or app output; name is fixture, app, or omitted
   down             stop what ./dev started
@@ -63,6 +64,10 @@ case "${1:-help}" in
     # Read-only by construction: doctor installs nothing, starts nothing and
     # writes nothing, so it is safe to run against a machine mid-incident.
     exec node "$DEV_REPO_ROOT/scripts/dev/doctor.mjs" "$DEV_REPO_ROOT" "$@"
+    ;;
+  compat)
+    shift
+    exec node "$DEV_REPO_ROOT/scripts/dev/compat.mjs" "$DEV_REPO_ROOT" "$@"
     ;;
   setup)
     shift
