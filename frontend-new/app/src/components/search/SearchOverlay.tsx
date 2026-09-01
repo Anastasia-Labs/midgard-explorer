@@ -1,15 +1,15 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { EntityIcon } from "../ui/domain/entity";
 import { Icon } from "../ui/base/icons";
 import { MIN_PREFIX, searchCandidates } from "../../lib/search";
-import { hitCandidate, type PrefixHit } from "./hits";
+import { hitCandidate } from "./hits";
 import { clearRecent, readRecent, rememberSearch } from "./recent";
 import { isLookupQuery, usePrefixSearch } from "./usePrefixSearch";
 import { useSearchShortcut } from "./useSearchShortcut";
-import { cn, truncateId } from "../../lib/format";
+import { cn } from "../../lib/format";
 
 export type SearchVariant = "header" | "hero" | "icon";
 

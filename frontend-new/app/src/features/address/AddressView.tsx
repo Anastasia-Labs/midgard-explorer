@@ -13,9 +13,7 @@ import { SummaryBand } from "../../components/ui/domain/summary";
 import { Tabs } from "../../components/ui/base/tabs";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { DataTable, DecodeWarn, Pagination } from "../../components/ui/base/table";
-import { classify } from "../../lib/classify";
 import { assetCount, truncateId } from "../../lib/format";
-import { parsePage } from "../../lib/parsePage";
 const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Address" }];
 
 import type { AddressResponse } from "@midgard-explorer/contracts";

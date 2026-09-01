@@ -18,10 +18,8 @@ import {
   elkFlowGraph,
   fallbackFlowPositions,
   flowGraph,
-  FLOW_NODE_HEIGHT,
   FLOW_NODE_WIDTH,
   type FlowGraph,
-  type FlowGraphNode,
   type FlowPosition,
   type ElkFlowGraph,
   needsElkLayout,
@@ -117,10 +115,13 @@ export function UtxoFlowCanvas({
     const fallBackToDeterministic = () =>
       setLayout({ graph, positions: fallback, state: "fallback" });
     let cancelled = false;
-    const worker = new Worker(new URL("../../../../workers/elk-layout.worker.ts", import.meta.url), {
-      name: "midgard-elk-layout",
-      type: "module",
-    });
+    const worker = new Worker(
+      new URL("../../../../workers/elk-layout.worker.ts", import.meta.url),
+      {
+        name: "midgard-elk-layout",
+        type: "module",
+      },
+    );
     const timeout = window.setTimeout(() => {
       cancelled = true;
       worker.terminate();

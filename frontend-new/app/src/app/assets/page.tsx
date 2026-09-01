@@ -6,15 +6,15 @@ import {
   AssetQuantity,
   CoverageNote,
 } from "../../components/ui/domain/asset";
-import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
 import { Identifier } from "../../components/ui/domain/identifier";
-import { PageError } from "../../components/ui/base/pageerror";
+import { ListError } from "../../components/ui/base/listerror";
 import { PageHeader } from "../../components/ui/base/layout";
 import { DataTable } from "../../components/ui/base/table";
 import { api } from "../../lib/api";
 import { assetUnit } from "../../lib/asset";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
 
 export const metadata: Metadata = {
   title: "Native assets",
@@ -31,11 +31,12 @@ export default async function AssetsPage() {
     data = await api.assets(await viewerInit());
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="asset" title="Native assets" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError
+        crumbs={CRUMBS}
+        entity="asset"
+        title="Native assets"
+        message={listErrorMessage(e)}
+      />
     );
   }
 

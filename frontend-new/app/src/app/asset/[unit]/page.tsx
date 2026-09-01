@@ -22,6 +22,7 @@ import { assetLabel, parseAssetUnit } from "../../../lib/asset";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
 import { AddressLink } from "../../../components/ui/domain/address";
 import { viewerInit } from "../../../lib/viewerInit";
+import { groupThousands } from "../../../lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -111,7 +112,7 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
             ...(data.coverage.truncated ? { sub: "Lower bound" } : { sub: "Current ledger" }),
           },
           { label: "Holders", value: data.holderCount },
-          { label: "UTxOs scanned", value: data.coverage.scanned.toLocaleString() },
+          { label: "UTxOs scanned", value: groupThousands(String(data.coverage.scanned)) },
         ]}
       />
 

@@ -1,13 +1,9 @@
 import type { MetricsResponse, Percentile } from "@midgard-explorer/contracts";
-import Link from "next/link";
-import { cn, formatDuration, formatTimestamp, groupThousands } from "../../../../lib/format";
+import { cn, formatDuration, groupThousands } from "../../../../lib/format";
 import type { NetworkHealth } from "../../../../lib/health";
 import type { GlossaryTerm } from "../../../../lib/glossary";
-import { Icon } from "../../base/icons";
 import { FieldLabel } from "../../base/infotip";
 import { LiveValue } from "../../base/livevalue";
-import { StatusBadge } from "../../domain/status";
-import { ProductionChart, StatusBar } from "./charts";
 import { THIN_SAMPLE, VERDICT_TONE, tipTone } from "./model";
 
 /**

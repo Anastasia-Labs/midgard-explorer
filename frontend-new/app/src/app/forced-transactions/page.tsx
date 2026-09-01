@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
-import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
 import { Icon } from "../../components/ui/base/icons";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { L1TxLink } from "../../components/ui/domain/l1link";
 import { StatusLegend } from "../../components/ui/base/legend";
-import { PageError } from "../../components/ui/base/pageerror";
 import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
 import { StatusBadge, StatusCell } from "../../components/ui/domain/status";
 import { DataTable, Pagination } from "../../components/ui/base/table";
@@ -14,6 +12,8 @@ import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { ListError } from "../../components/ui/base/listerror";
 
 export const metadata: Metadata = {
   title: "Forced transactions",
@@ -38,11 +38,12 @@ export default async function ForcedTransactionsPage({
     data = await api.forcedTxsPage(page, await viewerInit(), id);
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="forcedTransaction" title="Forced transactions" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError
+        crumbs={CRUMBS}
+        entity="forcedTransaction"
+        title="Forced transactions"
+        message={listErrorMessage(e)}
+      />
     );
   }
 

@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ValueCell } from "../../components/ui/domain/amount";
-import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { ListTools } from "../../components/ui/base/listtools";
-import { PageError } from "../../components/ui/base/pageerror";
 import { StatusCell } from "../../components/ui/domain/status";
+import { ListError } from "../../components/ui/base/listerror";
 import { PageHeader } from "../../components/ui/base/layout";
 import { DataTable, DecodeWarn, Pagination } from "../../components/ui/base/table";
 import { Timestamp } from "../../components/ui/base/timestamp";
@@ -15,6 +14,7 @@ import { parsePage } from "../../lib/parsePage";
 import { legendFor } from "../../lib/status-registry";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
 
 export const metadata: Metadata = {
   title: "Transactions",
@@ -39,11 +39,12 @@ export default async function TransactionsPage({
     data = await api.txsPage(page, status, await viewerInit());
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="transaction" title="Transactions" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError
+        crumbs={CRUMBS}
+        entity="transaction"
+        title="Transactions"
+        message={listErrorMessage(e)}
+      />
     );
   }
 

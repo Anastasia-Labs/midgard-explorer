@@ -6,6 +6,7 @@ import { api } from "../../../../lib/api";
 import { assetFingerprint, assetUnit } from "../../../../lib/asset";
 import { listErrorMessage } from "../../../../lib/serverErrors";
 import { viewerInit } from "../../../../lib/viewerInit";
+import { groupThousands } from "../../../../lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export default async function ByFingerprintPage({
           The fingerprint is well formed, so this is not a typo. Either the asset was fully spent
           and no longer sits in any UTxO, or it belongs to a different network.
           {roster.coverage.truncated
-            ? ` This search covered ${roster.coverage.scanned.toLocaleString()} of ${roster.coverage.total.toLocaleString()} ledger entries, so it may also exist beyond the part that was scanned.`
+            ? ` This search covered ${groupThousands(String(roster.coverage.scanned))} of ${groupThousands(String(roster.coverage.total))} ledger entries, so it may also exist beyond the part that was scanned.`
             : ""}
         </p>
         <p className="mt-1.5 font-mono mg-caption wrap-break-word text-text-2">{wanted}</p>

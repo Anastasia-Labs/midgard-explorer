@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
 import { ValueCell } from "../../components/ui/domain/amount";
-import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
 import { Icon } from "../../components/ui/base/icons";
 import { AddressLink } from "../../components/ui/domain/address";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { L1TxLink } from "../../components/ui/domain/l1link";
 import { InfoTip } from "../../components/ui/base/infotip";
 import { StatusLegend } from "../../components/ui/base/legend";
-import { PageError } from "../../components/ui/base/pageerror";
 import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
 import { StatusBadge, StatusCell } from "../../components/ui/domain/status";
 import { DataTable, Pagination } from "../../components/ui/base/table";
@@ -17,6 +15,8 @@ import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { ListError } from "../../components/ui/base/listerror";
 
 export const metadata: Metadata = {
   title: "Withdrawals",
@@ -41,11 +41,12 @@ export default async function WithdrawalsPage({
     data = await api.withdrawalsPage(page, await viewerInit(), id);
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="withdrawal" title="Withdrawals" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError
+        crumbs={CRUMBS}
+        entity="withdrawal"
+        title="Withdrawals"
+        message={listErrorMessage(e)}
+      />
     );
   }
 

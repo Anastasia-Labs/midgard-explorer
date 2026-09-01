@@ -1,10 +1,7 @@
-import type { MetricsResponse, Percentile } from "@midgard-explorer/contracts";
+import type { MetricsResponse } from "@midgard-explorer/contracts";
 import { cn, formatTimestamp, groupThousands } from "../../../../lib/format";
-import type { GlossaryTerm } from "../../../../lib/glossary";
-import { FieldLabel } from "../../base/infotip";
 import { StatusBadge } from "../../domain/status";
 import { ViewToggle } from "../../base/viewtoggle";
-import { THIN_SAMPLE } from "./model";
 
 /**
  * The panel's drawing primitives.

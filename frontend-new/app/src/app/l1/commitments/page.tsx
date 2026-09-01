@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
-import { Breadcrumbs } from "../../../components/ui/base/breadcrumbs";
 import { Identifier } from "../../../components/ui/domain/identifier";
 import { InfoTip } from "../../../components/ui/base/infotip";
-import { PageError } from "../../../components/ui/base/pageerror";
 import { DeploymentNote } from "../../../components/shell/SourceBanner";
 import { Count, PageHeader } from "../../../components/ui/base/layout";
 import { DataTable } from "../../../components/ui/base/table";
@@ -11,6 +9,8 @@ import { api, type L1BlockHeader } from "../../../lib/api";
 import { groupThousands } from "../../../lib/format";
 import { listErrorMessage } from "../../../lib/serverErrors";
 import { viewerInit } from "../../../lib/viewerInit";
+import { Breadcrumbs } from "../../../components/ui/base/breadcrumbs";
+import { ListError } from "../../../components/ui/base/listerror";
 
 export const metadata: Metadata = {
   title: "State commitments",
@@ -52,11 +52,12 @@ export default async function CommitmentsPage() {
     headers = await api.l1BlockHeaders(LIMIT, await viewerInit());
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="block" title="State commitments" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError
+        crumbs={CRUMBS}
+        entity="block"
+        title="State commitments"
+        message={listErrorMessage(e)}
+      />
     );
   }
 

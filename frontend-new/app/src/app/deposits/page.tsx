@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import { ValueCell } from "../../components/ui/domain/amount";
-import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
 import { Icon } from "../../components/ui/base/icons";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { L1TxLink } from "../../components/ui/domain/l1link";
 import { InfoTip } from "../../components/ui/base/infotip";
 import { StatusLegend } from "../../components/ui/base/legend";
-import { PageError } from "../../components/ui/base/pageerror";
 import { Callout, L1L2Badge, PageHeader } from "../../components/ui/base/layout";
 import { StatusCell } from "../../components/ui/domain/status";
 import { DataTable, Pagination } from "../../components/ui/base/table";
@@ -17,6 +15,8 @@ import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { AddressLink } from "../../components/ui/domain/address";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { ListError } from "../../components/ui/base/listerror";
 
 export const metadata: Metadata = {
   title: "Deposits",
@@ -42,11 +42,7 @@ export default async function DepositsPage({
     data = await api.depositsPage(page, init, id);
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="deposit" title="Deposits" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError crumbs={CRUMBS} entity="deposit" title="Deposits" message={listErrorMessage(e)} />
     );
   }
   const l1Observations = await api.l1Deposits(100, init).catch(() => []);

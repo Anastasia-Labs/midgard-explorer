@@ -13,7 +13,7 @@
  */
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");

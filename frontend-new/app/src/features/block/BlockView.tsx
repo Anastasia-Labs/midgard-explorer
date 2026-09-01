@@ -17,7 +17,6 @@ import { Tabs } from "../../components/ui/base/tabs";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { formatDuration, formatTimestamp, truncateId } from "../../lib/format";
 import { blockJourney } from "../../lib/journey";
-import { viewerInit } from "../../lib/viewerInit";
 import type { BlockResponse, L1BlockHeader } from "@midgard-explorer/contracts";
 
 /**

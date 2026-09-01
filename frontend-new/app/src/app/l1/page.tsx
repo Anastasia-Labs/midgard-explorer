@@ -1,10 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ValueCell } from "../../components/ui/domain/amount";
-import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
 import { Identifier } from "../../components/ui/domain/identifier";
-import { PageError } from "../../components/ui/base/pageerror";
 import { DeploymentNote } from "../../components/shell/SourceBanner";
+import { ListError } from "../../components/ui/base/listerror";
 import { PageHeader } from "../../components/ui/base/layout";
 import { DataTable, Pagination } from "../../components/ui/base/table";
 import { Timestamp } from "../../components/ui/base/timestamp";
@@ -16,6 +15,7 @@ import { l1EmptyState } from "../../lib/l1sync";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
 
 export const metadata: Metadata = {
   title: "Cardano activity",
@@ -59,11 +59,12 @@ export default async function L1Page({
     sync = summary?.sync ?? null;
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="transaction" title="Cardano activity" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError
+        crumbs={CRUMBS}
+        entity="transaction"
+        title="Cardano activity"
+        message={listErrorMessage(e)}
+      />
     );
   }
 
