@@ -25,7 +25,8 @@ started there.
 
 You also need:
 
-- Node.js 24 (see `backend/package.json` engines)
+- Node.js 24, the version `.nvmrc` pins and continuous integration runs.
+  `frontend-new` requires it; the backend's own floor is `>=22.13.0`.
 - pnpm 11
 
 ## Repository layout
