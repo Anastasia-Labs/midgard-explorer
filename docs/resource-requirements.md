@@ -42,7 +42,7 @@ cannot necessarily build the app.
 |---|---:|---:|---|
 | `demo` | 1 GB | 3 GB | Hard floor 896 MB for the dev server, rounded up. Observed peak 1671 MB for the app and fixture together, so the floor is where it works and the peak is where it is comfortable. |
 | `existing` | 3 GB | 6 GB | Observed peak 881 MB for the backend under `ts-node`, plus the frontend's 1671 MB, plus declared limits of 512 MB for PostgreSQL and 128 MB for the API cache. Summed, not measured as one figure. |
-| `full` | not measured | not measured | The mode is not built. Adding Cardano Node, Kupo and Ogmios changes the answer by more than the explorer contributes, and no figure is offered until it is run. |
+| `full` | not measured | not measured | Nothing here runs the mode. Adding Cardano Node, Kupo and Ogmios changes the answer by more than the explorer contributes, and no figure is offered until it is run. |
 
 Two CPU cores are enough for `demo` and `existing`. Every measurement above was
 taken on two cores.

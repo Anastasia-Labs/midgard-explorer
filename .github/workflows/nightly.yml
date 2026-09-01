@@ -6,8 +6,9 @@ name: Nightly
 #
 # What is deliberately NOT here: a full Midgard deployment. It needs Cardano
 # Node, Kupo, Ogmios, funded Preprod wallets and an on-chain deployment, none of
-# which this repository owns or can provision. That validation is manual, and
-# docs/running-full-midgard.md is what it follows.
+# which this repository owns or can provision. ADR 3 records it as a documented
+# procedure rather than a mode any job runs, and docs/running-full-midgard.md is
+# what a person follows by hand.
 
 on:
   schedule:

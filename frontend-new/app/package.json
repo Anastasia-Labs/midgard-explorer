@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/require-backend.mjs && next dev",
+    "dev": "node scripts/require-backend.mjs && next dev --port ${PORT:-3011}",
     "dev:demo": "node scripts/dev-demo.mjs",
     "dev:server": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --port ${PORT:-3011}",
     "check": "pnpm typecheck && pnpm lint && pnpm test",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src e2e scripts && node scripts/type-scale-check.mjs",

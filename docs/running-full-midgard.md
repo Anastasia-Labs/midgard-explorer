@@ -1,20 +1,32 @@
-# Running Midgard Locally as the Explorer's Data Source
+# Running the full Midgard stack
 
-The explorer reads a Midgard node's PostgreSQL database directly. To see real data
-in the UI you need a running node whose database holds blocks and transactions.
-This page takes you from a clean machine to an explorer showing live Midgard data.
+The explorer reads a Midgard node's PostgreSQL database directly. To see live
+data being produced you need a running node, which means Cardano Node, Kupo,
+Ogmios, funded Preprod wallets and a deployment on chain. This page takes you
+from a clean machine to an explorer showing a node you are running yourself.
+
+This is the largest of the three modes. If a Midgard database already exists
+somewhere, [Running against an existing Midgard database](running-existing-midgard.md)
+reaches real records without any of the Cardano services. If you want to see the
+interface, [Running on demo data](running-demo.md) needs nothing at all.
+
+Memory for this mode has not been measured. The explorer's own share is recorded
+in [Resource requirements](resource-requirements.md); the Cardano services
+dominate the total and no figure is offered for them here.
 
 ## What the explorer connects to
 
 | Piece | Where it runs | Port |
 |---|---|---|
 | Midgard node HTTP API | Docker (`midgard-node`) | 3000 |
-| Midgard PostgreSQL | Docker (`postgres`) | host 5433 → container 5432 |
-| Explorer backend (Express) | local `pnpm dev` | 3101 |
-| Explorer web app (Next.js) | local `pnpm dev` | 3001 (see below) |
+| Midgard PostgreSQL | Docker (`postgres`) | host 5433, container 5432 |
+| Explorer PostgreSQL | Docker (`explorer-postgres`) | host 5435, container 5432 |
+| Explorer API cache | Docker (`explorer-api-cache`) | 3102 |
+| Explorer backend | `./dev up existing` | 3101 |
+| Explorer web app | `./dev up existing` | 3011 |
 
-The web app is `frontend-new/`. Next's dev server defaults to 3000, which the
-node's HTTP API already holds in this setup, so start it on another port. The
+The web app is `frontend-new/`. The explorer's ports avoid 3000, which the
+node's HTTP API holds, and 3100, which the node's monitoring stack holds. The
 previous Vite client in `frontend/` is kept and still buildable, but it is not
 the app these steps run.
 
@@ -117,41 +129,74 @@ node README) and populate the `deposits_utxos` and `withdrawal_utxos` tables.
 
 ## Step 5: Point the explorer at the node's database
 
-```sh
-cd backend
-cp .env.example .env
-```
+The explorer needs more than the node's connection details. It also owns a
+PostgreSQL database of its own, holding everything it observed on Cardano, and
+it reads a deployment manifest to know which contracts to follow. All three are
+required settings: the backend refuses to boot without them, and it answers 503
+on `/readyz` until the index has been migrated.
 
-Set the `POSTGRES_*` values to match the node's `.env` (host `localhost`, port
-`5433`), then:
-
-```sh
-pnpm install
-pnpm dev        # backend on http://localhost:3101
-```
-
-In a second terminal:
+`./dev setup existing` writes all of it from one file:
 
 ```sh
-cd frontend-new
-pnpm install
-# The node holds 3000, so pick another port. The backend runs directly here,
-# rather than behind the bundled proxy that .env.example points at.
-PORT=3001 NEXT_PUBLIC_API_BASE=http://localhost:3101 \
-  API_BASE_SERVER=http://localhost:3101 pnpm dev
+./dev setup existing
 ```
+
+Then fill the node's own connection details in `.dev/runtime.env`, matching the
+node's `.env` (host `localhost`, port `5433`), and the manifest the node wrote:
+
+```text
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5433
+POSTGRES_USER=...
+POSTGRES_PASSWORD=...
+POSTGRES_DB=midgard
+MIDGARD_MANIFEST_PATH=/abs/path/to/midgard/demo/midgard-node/deploymentInfo/contract-deployment-info.json
+```
+
+Re-run `./dev setup existing --force` to regenerate `backend/.env` and
+`frontend-new/app/.env.local` from it, then create the disposable test database:
+
+```sh
+./dev setup test
+```
+
+Check the machine before starting anything:
+
+```sh
+./dev doctor existing
+```
+
+Every failure names the command that fixes it. Then start the explorer,
+indexing Cardano as well since the node is live:
+
+```sh
+./dev up existing --with-l1-sync
+```
+
+This starts the explorer's PostgreSQL and API cache, applies the index
+migrations, starts the backend and the web app, and waits for strict readiness
+while printing the cursors as they move.
+
+The node holds port 3000 and its monitoring stack holds 3100, which is why the
+explorer's ports default to 3101, 3102 and 3011. Change them in
+`.dev/runtime.env` and re-run setup with `--force`.
 
 ## Step 6: Verify
 
 ```sh
-# Backend is up and can reach Postgres:
+./dev status
+
+# Liveness, which touches no database:
 curl -s http://localhost:3101/healthz
 
+# Whether it can serve everything, including a completed Cardano reconciliation:
+curl -s http://localhost:3101/readyz
+
 # After a transfer from Step 4:
-curl -s "http://localhost:3101/api/transaction?tx_hash=<tx hash printed by submit-l2-transfer>"
+curl -s "http://localhost:3102/api/transaction?tx_hash=<tx hash printed by submit-l2-transfer>"
 ```
 
-Open http://localhost:3001: the home page lists recent blocks and transactions,
+Open http://localhost:3011: the home page lists recent blocks and transactions,
 and the transaction page shows the transfer with its status.
 
 ## Troubleshooting
@@ -169,9 +214,10 @@ and the transaction page shows the transfer with its status.
   "How to Run" in the node README.
 - **Backend fails to bind its port**: the node's monitoring stack publishes Loki
   on host port 3100, and the node's own API holds 3000. The explorer backend uses
-  3101 for that reason. The web app has no dev proxy: it calls whatever
-  `NEXT_PUBLIC_API_BASE` and `API_BASE_SERVER` name, so if you change
-  `BACKEND_PORT`, change those two to match.
+  3101 for that reason. Change ports in `.dev/runtime.env` and re-run
+  `./dev setup existing --force`, which regenerates every file that has to agree
+  about them; editing one by hand is how the frontend ends up calling an origin
+  nothing is listening on.
 - **Kupo stays `unhealthy` and the node never starts**: Kupo answers `/health`
   with 202 while it indexes and only returns 200 at the chain tip, so Compose can
   declare the dependency failed while Kupo is still working normally. Kupo keeps

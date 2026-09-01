@@ -647,7 +647,7 @@ export const CHECKS = [
         ? pass(`${target.host}:${target.port} accepts connections`)
         : fail(
             `nothing accepts connections on ${target.host}:${target.port}`,
-            "Start the Midgard node's PostgreSQL. See docs/running-midgard-locally.md",
+            "Start the Midgard node's PostgreSQL. See docs/running-full-midgard.md",
           );
     },
   },
