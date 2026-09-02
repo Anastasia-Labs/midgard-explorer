@@ -499,6 +499,140 @@ describe("which question doctor answers about existing mode", () => {
   });
 });
 
+/* Generated inputs for the four decisions that can lose data or leak a
+ * credential. These are properties rather than examples: a table of cases only
+ * ever covers what somebody thought of, and the failures worth finding here are
+ * the strings and orderings nobody would write down. The generator is seeded,
+ * so a failure names the input that produced it and can be replayed. */
+const seeded = (seed) => () => {
+  seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+  return seed / 0x7fffffff;
+};
+
+const AWKWARD = [
+  "", " ", "'", "''", "\\", '"', "$", "`", "$(touch /tmp/pwned)", "${HOME}",
+  "a b", "a\nb", "a;b", "a|b", "a&b", "*", "?", "~", "--flag", "-", "\t",
+  "'; rm -rf /; '", "\u00e9\u00fc\u00f1", "\u0000nul",
+];
+
+const randomString = (random) => {
+  if (random() < 0.6) return AWKWARD[Math.floor(random() * AWKWARD.length)];
+  const alphabet = "abcXYZ019 '\"\\$`;|&*?()[]{}<>\n\t~!#%^-_=+/:,.@";
+  const length = Math.floor(random() * 12);
+  let out = "";
+  for (let i = 0; i < length; i += 1) out += alphabet[Math.floor(random() * alphabet.length)];
+  return out;
+};
+
+describe("properties of the decisions that can lose data", () => {
+  it("a quoted value survives the shell unchanged, whatever is in it", () => {
+    const random = seeded(20260902);
+    for (let run = 0; run < 300; run += 1) {
+      const value = randomString(random);
+      // A NUL cannot survive a process argument, and no configuration holds one.
+      if (value.includes("\u0000")) continue;
+      const values = new Map(
+        Object.entries({
+          BACKEND_PORT: "3101",
+          API_CACHE_PORT: "3102",
+          FRONTEND_PORT: "3011",
+          INDEXER_POSTGRES_URL: "postgresql://explorer:pw@127.0.0.1:5435/midgard_explorer",
+          MIDGARD_MANIFEST_PATH: value,
+        }),
+      );
+      const { lines } = runtimeShellValues(values);
+      const line = lines.find((entry) => entry.startsWith("MIDGARD_MANIFEST_PATH="));
+      if (value === "") {
+        assert.equal(line, undefined, "an empty value is absent, not emitted");
+        continue;
+      }
+      assert.equal(
+        evalled(line, "MIDGARD_MANIFEST_PATH"),
+        value,
+        `the shell changed ${JSON.stringify(value)}`,
+      );
+    }
+  });
+
+  it("never emits a credential, whatever the password looks like", () => {
+    const random = seeded(7);
+    for (let run = 0; run < 200; run += 1) {
+      /* Distinctive by construction. A one-character secret like "=" occurs
+       * in every KEY=value line by coincidence, so the assertion would fail on
+       * the shape of the output rather than on a leak. A real password is long
+       * enough not to appear by accident, and the marker makes that explicit. */
+      const secret = `pw-${randomString(random).replace(/[\u0000\n@/:]/g, "x")}-${run}-marker`;
+      const values = new Map(
+        Object.entries({
+          BACKEND_PORT: "3101",
+          API_CACHE_PORT: "3102",
+          FRONTEND_PORT: "3011",
+          EXPLORER_POSTGRES_PASSWORD: secret,
+          INDEXER_POSTGRES_URL: `postgresql://explorer:${encodeURIComponent(secret)}@127.0.0.1:5435/db`,
+        }),
+      );
+      const { lines } = runtimeShellValues(values);
+      assert.ok(
+        !lines.join("\n").includes(secret),
+        `the password ${JSON.stringify(secret)} reached the shell`,
+      );
+    }
+  });
+
+  it("adopted and stopped never overlap, and together cover what it manages", () => {
+    const random = seeded(99);
+    const universe = ["explorer-postgres", "explorer-api-cache"];
+    for (let run = 0; run < 300; run += 1) {
+      const running = universe.filter(() => random() < 0.5);
+      const previous = universe.filter(() => random() < 0.5);
+      const had = random() < 0.5;
+      const managed = random() < 0.5 ? universe : ["explorer-postgres"];
+
+      const adopted = adoption(had, previous, running.filter((s) => managed.includes(s)));
+      const stopped = servicesToStop(adopted, managed);
+
+      for (const service of adopted) {
+        assert.ok(!stopped.includes(service), `${service} was both adopted and stopped`);
+        assert.ok(managed.includes(service), `${service} is not this caller's to adopt`);
+      }
+      for (const service of stopped) {
+        assert.ok(managed.includes(service), `${service} is not this caller's to stop`);
+      }
+      assert.deepEqual(
+        [...adopted, ...stopped].sort(),
+        [...managed].sort(),
+        "every managed service is either left alone or stopped, never neither",
+      );
+    }
+  });
+
+  it("says a target is owned only when every part matches", () => {
+    const random = seeded(4242);
+    const provisioned = { database: "midgard_explorer", user: "explorer" };
+    const owned = { host: "127.0.0.1", port: 5435, database: "midgard_explorer", user: "explorer" };
+    for (let run = 0; run < 300; run += 1) {
+      const index = { ...owned };
+      const published = random() < 0.8 ? 5435 : Math.floor(random() * 60000) + 1;
+      if (random() < 0.4) index.host = randomString(random).replace(/[^\w.-]/g, "") || "elsewhere";
+      if (random() < 0.4) index.port = Math.floor(random() * 60000) + 1;
+      if (random() < 0.4) index.database = randomString(random) || "other";
+      if (random() < 0.4) index.user = randomString(random) || "other";
+
+      const problems = ownershipProblems({ index, provisioned, published });
+      const identical =
+        ["127.0.0.1", "localhost", "::1"].includes(index.host) &&
+        index.port === published &&
+        index.database === provisioned.database &&
+        index.user === provisioned.user;
+      assert.equal(
+        problems.length === 0,
+        identical,
+        `ownership disagreed with the parts for ${JSON.stringify({ index, published })}`,
+      );
+    }
+  });
+});
+
 describe("doctor", () => {
   it("exits 2 on an unknown mode", () => {
     let status = 0;
