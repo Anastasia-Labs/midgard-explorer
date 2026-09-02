@@ -576,7 +576,12 @@ jobs:
             echo "stopping the API stopped a container"; exit 1; }
           echo "API stopped, container still running"
 
-      - name: Starting again adopts the container it left running
+      - name: Starting again is a restart, not a conflict
+        # The container the first run started is still up, and the second run
+        # must not call it adopted: the record carries forward, so the container
+        # this package started stays this package's to stop. Taking the answer
+        # again would call everything adopted and leave `services:down` with
+        # nothing it was allowed to touch.
         working-directory: backend
         run: |
           set -euo pipefail
@@ -589,9 +594,16 @@ jobs:
             sleep 2
           done
           curl -sf http://127.0.0.1:3101/healthz >/dev/null || { cat ../backend2.log; exit 1; }
-          grep -q "adopted from a session already running" ../backend2.log || {
-            echo "the second run did not recognise the container the first left"
+          grep -q "explorer-postgres is up" ../backend2.log || {
+            echo "the second run did not report the container"
             cat ../backend2.log; exit 1; }
+          if grep -q "adopted from a session already running" ../backend2.log; then
+            echo "the second run adopted a container this package had started"
+            cat ../backend2.log; exit 1
+          fi
+          test "$(cat ../.dev/backend/adopted)" = "" || {
+            echo "the adoption record named a container this package started"
+            cat ../.dev/backend/adopted; exit 1; }
           # Stopped here, so the indexing steps below have the port.
           kill -TERM -"$(cat ../backend.pid)"
           for i in $(seq 1 30); do
