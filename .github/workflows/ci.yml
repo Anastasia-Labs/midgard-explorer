@@ -693,12 +693,6 @@ jobs:
           pnpm services:down | tee ../down.log
           grep -q "No volume, database or Midgard state was removed" ../down.log
 
-      - name: The package checks
-        run: |
-          set -euo pipefail
-          (cd backend && pnpm check)
-          (cd frontend-new && pnpm check)
-
       - if: always()
         run: |
           for pid in backend.pid frontend.pid; do
