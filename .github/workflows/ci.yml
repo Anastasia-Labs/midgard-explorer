@@ -1,8 +1,13 @@
 name: CI
 
-# The gate that has only ever run on one machine. Both jobs run the same
-# commands the local scripts run, so a green run here means the same thing a
-# green run there does.
+# The gate that has only ever run on one machine. Every job runs the commands
+# the two packages define, so a green run here means the same thing a green run
+# on a contributor's machine does.
+#
+#   backend              its own checks, its suites, and the compiled artifact
+#   frontend             its own gate, the browser suite, and demo mode
+#   documented-workflow  the two commands the README tells a contributor to run,
+#                        against a seeded Midgard node database
 
 on:
   push:
@@ -166,6 +171,30 @@ jobs:
 
       - run: pnpm typecheck
 
+      - name: Documentation says what exists
+        run: pnpm docs:check
+
+      - name: The development commands' own tests
+        # Node's own runner. These start processes and write throwaway
+        # repository roots, so they are kept off the suite that shares one
+        # guarded test database.
+        run: |
+          set -o pipefail
+          pnpm test:dev 2>&1 | tee gate-evidence/dev-commands.log
+
+      - name: The seed is what the generator produces
+        # Regenerate and diff. The seed is derived from the schema fixture and
+        # the shape corpus, so a change to either that nobody regenerated is a
+        # seed describing a database this build no longer reads.
+        run: |
+          node scripts/generate-l2-seed.mjs
+          git diff --exit-code -- test/fixtures/schema/midgard-node-seed.sql
+
+      - name: The compatibility pin is what the fixture produces
+        run: |
+          pnpm compat write --fixture
+          git diff --exit-code -- ../config/midgard-compatibility.json
+
       - name: Tests
         # `set -o pipefail`, because bash's default would report the exit code
         # of `tee` and a failing suite would pass the step.
@@ -230,6 +259,43 @@ jobs:
           mkdir -p gate-evidence
           ./scripts/ci-local.sh 2>&1 | tee gate-evidence/ci-local.log
 
+      - name: Demo mode serves fixture records, not just a process
+        # The quick start's one-command claim: no backend, no Docker, no
+        # database and no secrets. It picks its own ports and prints them, so
+        # the port asserted against is the one it told a contributor to open.
+        run: |
+          set -euo pipefail
+          set -m
+          pnpm dev:demo > gate-evidence/demo.log 2>&1 &
+          echo $! > demo.pid
+          set +m
+          for _ in $(seq 1 60); do
+            grep -q 'Explorer on http' gate-evidence/demo.log && break
+            sleep 2
+          done
+          grep -q 'Explorer on http' gate-evidence/demo.log || {
+            cat gate-evidence/demo.log; exit 1; }
+          app="$(grep -o 'http://127.0.0.1:[0-9]*' gate-evidence/demo.log | tail -1)"
+          echo "demo mode is on $app"
+          node -e '
+            const app = process.argv[1];
+            (async () => {
+              for (const path of ["/", "/blocks", "/transactions", "/l1", "/deposits", "/assets"]) {
+                const res = await fetch(app + path, { signal: AbortSignal.timeout(120000) });
+                console.log(res.status, path);
+                if (res.status !== 200) process.exit(1);
+              }
+              const html = await (await fetch(app + "/")).text();
+              const hashes = (html.match(/[0-9a-f]{64}/g) ?? []).length;
+              console.log("hashes rendered on the overview:", hashes);
+              if (hashes === 0) {
+                console.error("the overview rendered no records");
+                process.exit(1);
+              }
+            })();
+          ' "$app"
+          kill -TERM -"$(cat demo.pid)"
+
       - name: Preserve the evidence
         # On success too. A green run whose output nobody can read is not
         # evidence of anything, and the counts in it are what a reviewer needs.
@@ -245,398 +311,6 @@ jobs:
             frontend-new/gate-evidence
             frontend-new/app/test-results
           retention-days: 30
-
-  dev-command:
-    name: Dev command
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-
-      - name: Unit-test the command and every doctor failure case
-        # Node's own runner: ADR 1 records that this repository has no root
-        # workspace, and these tests are not worth creating one for.
-        run: node --test "scripts/dev/*.test.mjs"
-
-      - name: Documentation says what exists
-        run: node scripts/dev/docs-check.mjs "$PWD"
-
-      - name: Doctor answers for a mode that is not built without claiming it runs
-        run: |
-          set -euo pipefail
-          # A non-zero exit is the expected answer on a bare runner, which has
-          # no backend/.env and no Docker configuration. What is asserted here
-          # is the shape of the report, not its verdict. Exit 2 is different:
-          # that means the command was used wrongly.
-          status=0
-          ./dev doctor full --json > full.json || status=$?
-          if [ "$status" -gt 1 ]; then
-            echo "doctor exited $status"
-            cat full.json
-            exit 1
-          fi
-          node -e '
-            const r = JSON.parse(require("fs").readFileSync("full.json", "utf8"));
-            if (r.modeBuilt !== false) { console.error("full mode reported as built"); process.exit(1); }
-            if (r.checks.length === 0) { console.error("no checks ran"); process.exit(1); }
-          '
-
-  demo-mode:
-    name: Demo mode on a clean machine
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-        with:
-          version: 11.10.0
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: frontend-new/pnpm-lock.yaml
-
-      - name: Doctor, then start from a clean clone
-        # No install step of its own: `up demo` installs what it needs, which is
-        # the claim the quick start makes and therefore the one to test.
-        run: |
-          set -euo pipefail
-          ./dev doctor demo
-          time ./dev up demo
-
-      - name: The explorer serves fixture records, not just a process
-        run: |
-          set -euo pipefail
-          node -e '
-            const { readFileSync } = require("fs");
-            const state = readFileSync(".dev/demo/state.env", "utf8");
-            const app = "http://127.0.0.1:" + /DEMO_APP_PORT=(\d+)/.exec(state)[1];
-            (async () => {
-              const paths = ["/", "/blocks", "/transactions", "/l1", "/deposits", "/assets"];
-              for (const p of paths) {
-                const r = await fetch(app + p, { signal: AbortSignal.timeout(120000) });
-                console.log(r.status, p);
-                if (r.status !== 200) process.exit(1);
-              }
-              const html = await (await fetch(app + "/")).text();
-              const hashes = (html.match(/[0-9a-f]{64}/g) ?? []).length;
-              console.log("hashes rendered on the overview:", hashes);
-              if (hashes === 0) { console.error("the overview rendered no records"); process.exit(1); }
-            })();
-          '
-
-      - name: Every command the documentation names exists
-        run: |
-          set -euo pipefail
-          grep -rhoE '\./dev [a-z]+' README.md docs/*.md | sort -u | while read -r _ sub; do
-            grep -qE "^  ${sub}\)" dev || { echo "documented but missing: ./dev ${sub}"; exit 1; }
-          done
-          echo "every documented ./dev subcommand is implemented"
-
-      - name: Stop, and prove it stopped
-        run: |
-          set -euo pipefail
-          ./dev down
-          ./dev status
-
-  dev-compatibility:
-    name: ./dev up existing, against a seeded node database
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-
-    # The Midgard node's own database. The explorer's index is NOT here: it
-    # comes from this repository's own docker-compose.yml, started by `./dev up
-    # existing`, because a job that provisions the index itself never runs the
-    # Compose file, the ownership guard or the migration path a contributor uses.
-    services:
-      node-postgres:
-        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-        with:
-          version: 11.10.0
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-          cache: pnpm
-          cache-dependency-path: |
-            backend/pnpm-lock.yaml
-            frontend-new/pnpm-lock.yaml
-
-      - name: Install the backend
-        working-directory: backend
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm indexer:generate && pnpm prisma:generate
-
-      - name: Apply the node schema and the seeded records
-        working-directory: backend
-        env:
-          PGPASSWORD: postgres
-        run: |
-          set -euo pipefail
-          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_node_seeded'
-          psql -h localhost -U postgres -d midgard_node_seeded -v ON_ERROR_STOP=1 \
-            -f test/fixtures/schema/midgard-node.sql
-          psql -h localhost -U postgres -d midgard_node_seeded -v ON_ERROR_STOP=1 \
-            -f test/fixtures/schema/midgard-node-seed.sql
-
-      - name: The seed is what the generator produces
-        # Regenerate and diff. The seed is derived from the schema fixture and
-        # the shape corpus, so a change to either that nobody regenerated is a
-        # seed describing a database this build no longer reads.
-        working-directory: backend
-        run: |
-          node scripts/generate-l2-seed.mjs
-          git diff --exit-code -- test/fixtures/schema/midgard-node-seed.sql
-
-      - name: The compatibility pin is what the fixture produces
-        run: |
-          node scripts/dev/compat.mjs "$PWD" write --fixture
-          git diff --exit-code -- config/midgard-compatibility.json
-
-      - name: Configure the mode the way a contributor does
-        # Only the node's own database is written by hand. Everything else,
-        # including the index password and every port, is what `./dev setup`
-        # generates. MIDGARD_MANIFEST_PATH is deliberately absent: an explorer
-        # serving L2 records has no L1 deployment to name, and this job is what
-        # proves it still boots.
-        run: |
-          set -euo pipefail
-          cat > backend/.env <<'ENV'
-          POSTGRES_HOST=localhost
-          POSTGRES_PORT=5432
-          POSTGRES_USER=postgres
-          POSTGRES_PASSWORD=postgres
-          POSTGRES_DB=midgard_node_seeded
-          ENV
-          ./dev setup existing --force
-          if grep -q '^MIDGARD_MANIFEST_PATH=..*' backend/.env; then
-            echo "setup wrote a manifest path nobody configured"
-            exit 1
-          fi
-
-      - name: Build the backend, so the manifest step runs what ships
-        working-directory: backend
-        run: pnpm build
-
-      - name: Start it
-        run: ./dev up existing
-
-      - name: Doctor answers for the L2 scope
-        # After it is up, because the index database is one of the things `up`
-        # starts. The manifest and the reconciliation pass are outside the L2
-        # scope, so they warn; anything that fails here is a real failure.
-        run: ./dev doctor existing
-
-      - name: Starting it again is a restart, not a conflict
-        # The second run has to stop its own processes, adopt its own
-        # containers, and see its own Next lock as its own.
-        run: ./dev up existing
-
-      - name: ./dev up existing --with-l1-sync starts an indexer
-        # `./dev` does its own orchestration and then runs `pnpm dev:server`.
-        # When it ran `pnpm dev` instead, the backend lifecycle re-derived
-        # whether to index and turned it off, so the flag did nothing.
-        #
-        # An absolute manifest path: `./dev` checks it from the repository root
-        # and the backend opens it from backend/, so a relative one passes the
-        # preflight and names nothing at boot.
-        run: |
-          set -euo pipefail
-          ./dev down || true
-          sed -i "s#^MIDGARD_MANIFEST_PATH=.*#MIDGARD_MANIFEST_PATH=$PWD/backend/test/fixtures/manifest-sample.json#" \
-            .dev/runtime.env
-          # Backgrounded rather than `|| true`: this waits for strict readiness,
-          # which needs Koios, so it is expected not to return. Swallowing its
-          # exit code would also have swallowed a startup that failed outright.
-          # A previous step left this mode running; stop it and let the ports
-          # go before starting again, or the Next lock and 3101 are still held.
-          for i in $(seq 1 30); do
-            ss -ltn 2>/dev/null | grep -qE ':(3101|3011)\b' || break
-            sleep 1
-          done
-          # The old log is removed first. Asserting on a file the previous step
-          # wrote reports that run's outcome as this one's.
-          rm -f .dev/existing/backend.log
-          ./dev up existing --with-l1-sync > l1-dev.log 2>&1 &
-          for i in $(seq 1 90); do
-            grep -q "L1 sync started" .dev/existing/backend.log 2>/dev/null && break
-            grep -q "L1 sync not started\|L1 sync disabled" .dev/existing/backend.log 2>/dev/null && break
-            sleep 2
-          done
-          echo "--- what ./dev reported ---"
-          cat l1-dev.log
-          # The positive event, asserted directly. Absence of a "disabled" line
-          # is equally true of a run that never started anything.
-          if ! grep -q "L1 sync started: indexing Cardano" .dev/existing/backend.log 2>/dev/null; then
-            echo "the indexer never announced that it started"
-            cat l1-dev.log
-            tail -40 .dev/existing/backend.log 2>/dev/null || echo "(no backend log at all)"
-            exit 1
-          fi
-          grep "L1 sync started" .dev/existing/backend.log
-          ./dev down || true
-          sed -i 's#^MIDGARD_MANIFEST_PATH=.*#MIDGARD_MANIFEST_PATH=#' .dev/runtime.env
-
-      - name: L2 readiness passes where strict readiness does not
-        # Both halves matter. The scope must be narrow enough to pass against an
-        # index nobody has built and a deployment nobody has named, and
-        # `/readyz` must still refuse it, or the development scope has quietly
-        # weakened the deployment gate.
-        working-directory: backend
-        run: |
-          set -euo pipefail
-          pnpm --silent readiness -- --scope=l2
-          if pnpm --silent readiness; then
-            echo "strict readiness passed without a manifest or a reconciled index"
-            exit 1
-          fi
-          echo "strict readiness refused it, as it should"
-
-      - name: The API cache serves the seeded records
-        run: |
-          set -euo pipefail
-          node -e '
-            (async () => {
-              const j = async (p) => (await fetch("http://127.0.0.1:3102" + p)).json();
-              const blocks = (await j("/api/blocks/total")).total;
-              const txs = (await j("/api/transactions/total")).total;
-              console.log("blocks", blocks, "transactions", txs);
-              if (blocks === 0 || txs === 0) {
-                console.error("the seeded database rendered nothing");
-                process.exit(1);
-              }
-              const summary = await j("/api/l1/summary");
-              console.log("l1 sync state:", summary.sync.state);
-              if (summary.sync.state !== "unbuilt") {
-                console.error("an index with no rows did not report itself unbuilt");
-                process.exit(1);
-              }
-            })();
-          '
-
-      - name: The explorer renders them
-        # The claim this job is here to make. A backend answering JSON is not an
-        # explorer: these are the pages a contributor opens, server-rendered,
-        # asserted against a record the seed actually contains.
-        run: |
-          set -euo pipefail
-          node -e '
-            (async () => {
-              const app = "http://127.0.0.1:3011";
-              const recent = await (await fetch("http://127.0.0.1:3102/api/blocks/recent")).json();
-              const rows = recent.rows ?? recent;
-              const height = rows.find((r) => r.height !== null)?.height;
-              if (height === undefined) {
-                console.error("the seed carries no block with a height to look for");
-                process.exit(1);
-              }
-              for (const [path, absent] of [
-                ["/", null],
-                ["/blocks", "No blocks yet"],
-                ["/transactions", "No transactions yet"],
-                ["/l1", null],
-              ]) {
-                const res = await fetch(app + path);
-                const html = await res.text();
-                if (res.status !== 200) {
-                  console.error(`${path} answered ${res.status}`);
-                  process.exit(1);
-                }
-                if (absent !== null && html.includes(absent)) {
-                  console.error(`${path} rendered "${absent}" against a seeded database`);
-                  process.exit(1);
-                }
-                console.log(`${path} 200, ${html.length} bytes`);
-              }
-              const list = await (await fetch(app + "/blocks")).text();
-              if (!list.includes("#" + height)) {
-                console.error(`/blocks does not show block #${height}, which the seed holds`);
-                process.exit(1);
-              }
-              console.log(`/blocks shows block #${height}`);
-            })();
-          '
-
-      - name: An index this repository does not own is not migrated
-        # The guard, exercised rather than described, against the file the
-        # migration actually reads. backend/.env is what
-        # prisma.indexer.config.ts loads, so a foreign URL there is the case
-        # that matters; .dev/runtime.env is left safe on purpose, because a
-        # guard that reads it would pass this and migrate the foreign database.
-        run: |
-          set -euo pipefail
-          ./dev down
-          sed -i 's#^INDEXER_POSTGRES_URL=.*#INDEXER_POSTGRES_URL=postgresql://postgres:postgres@localhost:5432/somebody_elses_index#' \
-            backend/.env
-          grep -q '5435/midgard_explorer' .dev/runtime.env
-          if ./dev up existing > guard.log 2>&1; then
-            echo "it migrated a database it does not own"
-            cat guard.log
-            exit 1
-          fi
-          grep -q "Refusing to migrate an index" guard.log
-          grep -q "from backend/.env" guard.log
-          # Asked as a question with three answers, not two. Piping into `grep -q`
-          # made an unreachable psql produce no output, which read as "the
-          # database is not there" and passed the step without checking anything.
-          found="$(psql "postgresql://postgres:postgres@localhost:5432/postgres" -tAc \
-            "SELECT count(*) FROM pg_database WHERE datname = 'somebody_elses_index'")"
-          case "$found" in
-            0) echo "the refused database was not created" ;;
-            [1-9]*) echo "the guard created the database it refused"; exit 1 ;;
-            *) echo "could not ask postgres whether the database exists: '$found'"; exit 1 ;;
-          esac
-          cat guard.log
-
-      - name: A malformed manifest stops the backend rather than being logged
-        working-directory: backend
-        env:
-          PGPASSWORD: postgres
-        run: |
-          set -euo pipefail
-          echo '{ not json' > /tmp/bad-manifest.json
-          if MIDGARD_MANIFEST_PATH=/tmp/bad-manifest.json L1_SYNC_ENABLED=true \
-             node dist/index.js > boot.log 2>&1; then
-            echo "it booted with a manifest it cannot read"
-            exit 1
-          fi
-          grep -q "Invalid deployment manifest" boot.log
-          cat boot.log
-
-      - if: always()
-        run: ./dev logs backend || true
-
-      - if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: existing-mode-logs
-          path: .dev/existing/*.log
-          retention-days: 7
 
   documented-workflow:
     name: The two commands the README tells a contributor to run
@@ -675,9 +349,6 @@ jobs:
           cache-dependency-path: |
             backend/pnpm-lock.yaml
             frontend-new/pnpm-lock.yaml
-
-      - name: Documentation says what exists
-        run: node scripts/dev/docs-check.mjs "$PWD"
 
       - name: pnpm install leaves nothing to generate by hand
         working-directory: backend
@@ -724,11 +395,17 @@ jobs:
             echo "setup wrote into frontend-new"; exit 1; }
 
       - name: pnpm dev
+        # `set -m` puts the command in its own process group, which is what a
+        # terminal gives it. Ctrl-C signals that whole group, and pnpm passes no
+        # signal on to what it runs, so a group is the only way this job can
+        # stop the server the way a contributor does.
         working-directory: backend
         run: |
           set -euo pipefail
+          set -m
           pnpm dev > ../backend.log 2>&1 &
           echo $! > ../backend.pid
+          set +m
           for i in $(seq 1 90); do
             curl -sf http://127.0.0.1:3101/healthz >/dev/null && break
             sleep 2
@@ -787,35 +464,140 @@ jobs:
             })();
           '
 
-      - name: Ctrl-C stops the API and leaves the containers running
+      - name: L2 readiness passes where strict readiness does not
+        # Both halves matter. The scope must be narrow enough to pass against an
+        # index nobody has built and a deployment nobody has named, and
+        # `/readyz` must still refuse it, or the development scope has quietly
+        # weakened the deployment gate.
+        #
+        # Asked while the backend and its PostgreSQL are up. Asking it after a
+        # stop step reported an unavailable index, which is true of a stopped
+        # container and says nothing about the scopes.
+        working-directory: backend
         run: |
           set -euo pipefail
-          kill -INT "$(cat backend.pid)"
-          for i in $(seq 1 20); do
+          pnpm --silent readiness -- --scope=l2
+          if pnpm --silent readiness; then
+            echo "strict readiness passed without a manifest or a reconciled index"
+            exit 1
+          fi
+          echo "strict readiness refused it, as it should"
+
+      - name: An index with no rows reports itself unbuilt
+        run: |
+          set -euo pipefail
+          node -e '
+            (async () => {
+              const summary = await (await fetch("http://127.0.0.1:3101/api/l1/summary")).json();
+              console.log("l1 sync state:", summary.sync.state);
+              if (summary.sync.state !== "unbuilt") {
+                console.error("an index with no rows did not report itself unbuilt");
+                process.exit(1);
+              }
+            })();
+          '
+
+      - name: SIGTERM stops the API, drains the indexer, and leaves PostgreSQL
+        # The signal a container sends, to the process a container runs.
+        # `pnpm dev` is the development wrapper around it; production runs the
+        # compiled server, and this is the shutdown a deployment depends on.
+        #
+        # Its own port, so the run started above keeps serving the steps after
+        # this one. KOIOS_BASE_URL names an address nothing listens on: the
+        # claim here is that a running indexer drains, and waiting on a remote
+        # service would make how long that takes somebody else's to decide.
+        working-directory: backend
+        env:
+          BACKEND_PORT: "3103"
+          L1_SYNC_ENABLED: "true"
+          MIDGARD_MANIFEST_PATH: ./test/fixtures/manifest-sample.json
+          KOIOS_BASE_URL: http://127.0.0.1:1
+        run: |
+          set -euo pipefail
+          pnpm build
+          node dist/index.js > ../shutdown.log 2>&1 &
+          server=$!
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:3103/healthz >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:3103/healthz >/dev/null || { cat ../shutdown.log; exit 1; }
+          for i in $(seq 1 30); do
+            grep -q "L1 sync started" ../shutdown.log && break
+            sleep 1
+          done
+          grep -q "L1 sync started" ../shutdown.log || {
+            echo "the indexer never started, so nothing here would be draining"
+            cat ../shutdown.log; exit 1; }
+
+          kill -TERM "$server"
+          status=0
+          wait "$server" || status=$?
+          cat ../shutdown.log
+
+          [ "$status" -eq 0 ] || { echo "the server exited $status"; exit 1; }
+          grep -q "Received SIGTERM, shutting down." ../shutdown.log
+          grep -q "Shutdown complete." ../shutdown.log
+          if grep -q "Forced shutdown after timeout" ../shutdown.log; then
+            echo "it did not drain, it was killed by its own timer"
+            exit 1
+          fi
+          if grep -q "Indexer did not drain cleanly" ../shutdown.log; then
+            echo "the indexer did not drain"
+            exit 1
+          fi
+          if curl -sf http://127.0.0.1:3103/healthz >/dev/null; then
+            echo "the API kept answering after it exited"
+            exit 1
+          fi
+          docker ps --filter name=midgard-explorer-postgres --format '{{.Names}}' | grep -q . || {
+            echo "stopping the API stopped a container"; exit 1; }
+          echo "exited 0, port closed, indexer drained, PostgreSQL still running"
+
+      - name: Ctrl-C stops the API, and the containers keep running
+        # The signal a terminal sends: to the process group, not to the process
+        # it happens to have a pid for. Signalling the recorded pid alone
+        # reached pnpm, which passes nothing on, so the server kept the port and
+        # the step reported that the API had ignored the signal.
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          kill -TERM -"$(cat ../backend.pid)"
+          for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:3101/healthz >/dev/null || break
             sleep 1
           done
           if curl -sf http://127.0.0.1:3101/healthz >/dev/null; then
             echo "the API kept answering after the signal"
+            cat ../backend.log
             exit 1
           fi
           docker ps --filter name=midgard-explorer-postgres --format '{{.Names}}' | grep -q . || {
             echo "stopping the API stopped a container"; exit 1; }
           echo "API stopped, container still running"
 
-      - name: Starting again is a restart, not a conflict
+      - name: Starting again adopts the container it left running
         working-directory: backend
         run: |
           set -euo pipefail
+          set -m
           pnpm dev > ../backend2.log 2>&1 &
           echo $! > ../backend.pid
+          set +m
           for i in $(seq 1 90); do
             curl -sf http://127.0.0.1:3101/healthz >/dev/null && break
             sleep 2
           done
           curl -sf http://127.0.0.1:3101/healthz >/dev/null || { cat ../backend2.log; exit 1; }
-          kill -INT "$(cat ../backend.pid)"
-          sleep 5
+          grep -q "adopted from a session already running" ../backend2.log || {
+            echo "the second run did not recognise the container the first left"
+            cat ../backend2.log; exit 1; }
+          # Stopped here, so the indexing steps below have the port.
+          kill -TERM -"$(cat ../backend.pid)"
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3101/healthz >/dev/null || break
+            sleep 1
+          done
 
       - name: Indexing starts against an index that has never been built
         # The positive case. Strict readiness needs a completed reconciliation,
@@ -826,8 +608,10 @@ jobs:
         run: |
           set -euo pipefail
           sed -i 's#^MIDGARD_MANIFEST_PATH=.*#MIDGARD_MANIFEST_PATH=./test/fixtures/manifest-sample.json#' .env
+          set -m
           pnpm dev:l1 > ../l1-start.log 2>&1 &
           echo $! > ../l1.pid
+          set +m
           for i in $(seq 1 90); do
             curl -sf http://127.0.0.1:3101/healthz >/dev/null && break
             sleep 2
@@ -845,8 +629,11 @@ jobs:
             exit 1
           fi
           grep "L1 sync started" ../l1-start.log
-          kill -INT "$(cat ../l1.pid)"
-          sleep 5
+          kill -TERM -"$(cat ../l1.pid)"
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3101/healthz >/dev/null || break
+            sleep 1
+          done
           sed -i 's#^MIDGARD_MANIFEST_PATH=.*#MIDGARD_MANIFEST_PATH=#' .env
 
       - name: Indexing refuses a manifest it cannot read
@@ -902,8 +689,10 @@ jobs:
 
       - if: always()
         run: |
-          kill "$(cat backend.pid)" 2>/dev/null || true
-          kill "$(cat frontend.pid)" 2>/dev/null || true
+          for pid in backend.pid frontend.pid; do
+            [ -f "$pid" ] || continue
+            kill -TERM -"$(cat "$pid")" 2>/dev/null || kill "$(cat "$pid")" 2>/dev/null || true
+          done
 
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -1,20 +1,22 @@
 /**
- * Tests for the `dev` command's own logic.
+ * Tests for the development commands' own logic.
  *
- * Run with Node's built-in runner, from the repository root:
+ * Run with Node's built-in runner, from this package:
  *
- *   node --test scripts/dev/
+ *   pnpm test:dev
  *
- * No test framework and no package.json, because ADR 1 records that this
- * repository has no root workspace and this directory is not worth creating one
- * for. The runner ships with the Node version the repository already requires.
+ * Node's runner rather than Vitest, which this package uses for everything
+ * else. These start processes, write throwaway repository roots and read
+ * `/proc`, and they cover the scripts rather than the server, so they are kept
+ * off the suite that shares one guarded test database. The Vitest config
+ * collects `.test.mts` only, so this file is not picked up twice.
  *
- * These cover the parts that decide what a contributor is told: whether a
+ * They cover the parts that decide what a contributor is told: whether a
  * credential can reach the terminal, and whether each failure produces its own
  * diagnosis rather than a generic one.
  */
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -29,9 +31,10 @@ import {
   readAdoption,
   servicesToStop,
   writeAdoption,
-} from "../../backend/scripts/lib/compose.mjs";
-import { REQUIRED_BACKEND_ENV, REQUIRED_WHEN_INDEXING } from "./checks.mjs";
-import { runChecks, summarise } from "./doctor.mjs";
+} from "../scripts/lib/compose.mjs";
+import { REQUIRED_BACKEND_ENV, REQUIRED_WHEN_INDEXING } from "../scripts/lib/checks.mjs";
+import { runChecks, summarise } from "../scripts/doctor.mjs";
+import { descendants } from "../scripts/lib/proc.mjs";
 
 import {
   backendSettings,
@@ -42,7 +45,7 @@ import {
   redactValue,
   runtimeShellValues,
   urlTarget,
-} from "./env.mjs";
+} from "../scripts/lib/env.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const roots = [];
@@ -64,7 +67,7 @@ const doctor = (root, mode, ...flags) => {
   try {
     const stdout = execFileSync(
       process.execPath,
-      [join(repoRoot, "scripts", "dev", "doctor.mjs"), root, mode, "--json", ...flags],
+      [join(repoRoot, "backend", "scripts", "doctor.mjs"), root, mode, "--json", ...flags],
       { encoding: "utf8", timeout: 120_000 },
     );
     return { code: 0, report: JSON.parse(stdout) };
@@ -180,7 +183,7 @@ describe("the setup sequence the README documents", () => {
   const setup = (root) =>
     execFileSync(
       process.execPath,
-      [join(repoRoot, "scripts", "dev", "setup.mjs"), root, "existing", "--scope=backend"],
+      [join(repoRoot, "backend", "scripts", "setup.mjs"), root, "existing"],
       { encoding: "utf8", timeout: 120_000 },
     );
 
@@ -368,10 +371,9 @@ describe("a check that cannot run", () => {
 });
 
 describe("which containers a stop may touch", () => {
-  /* The rule lives in backend/scripts/lib/compose.mjs, which `pnpm dev` and
-   * `./dev up existing` both call. What it must never do is call a container
-   * this command started adopted, because a stop then leaves running exactly
-   * what the start had started. */
+  /* The rule lives in backend/scripts/lib/compose.mjs. What it must never do
+   * is call a container this command started adopted, because a stop then
+   * leaves running exactly what the start had started. */
   const both = ["explorer-postgres", "explorer-api-cache"];
 
   it("adopts what was already running the first time", () => {
@@ -633,13 +635,54 @@ describe("properties of the decisions that can lose data", () => {
   });
 });
 
+describe("stopping the API stops what it started", () => {
+  /* `pnpm dev` runs the server through pnpm, which runs it through a shell and
+   * does not pass a signal on to it. The command therefore signals by descent,
+   * and this is the walk it signals by: a tree it cannot see is a server that
+   * keeps the port after the command has returned. */
+  it("finds a process under two intermediate shells", async () => {
+    const tree = spawn("sh", ["-c", 'sh -c "sleep 30" & wait'], { stdio: "ignore" });
+    try {
+      let found = [];
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && found.length < 3) {
+        found = descendants(tree.pid);
+        if (found.length < 3) await new Promise((wait) => setTimeout(wait, 50));
+      }
+      assert.equal(found[0], tree.pid, "the root is listed first");
+      assert.ok(found.length >= 3, `expected the root and two below it, got ${found.length}`);
+      assert.equal(new Set(found).size, found.length, "no pid is listed twice");
+
+      for (const pid of found.reverse()) {
+        try {
+          process.kill(pid, "SIGTERM");
+        } catch {
+          // Already gone.
+        }
+      }
+      await new Promise((closed) => tree.on("close", closed));
+      assert.deepEqual(descendants(tree.pid), [tree.pid], "nothing survived the walk");
+    } finally {
+      try {
+        process.kill(tree.pid, "SIGKILL");
+      } catch {
+        // Already stopped.
+      }
+    }
+  });
+
+  it("answers for a pid that is not there", () => {
+    assert.deepEqual(descendants(2 ** 30), [2 ** 30]);
+  });
+});
+
 describe("doctor", () => {
   it("exits 2 on an unknown mode", () => {
     let status = 0;
     try {
       execFileSync(
         process.execPath,
-        [join(repoRoot, "scripts", "dev", "doctor.mjs"), repoRoot, "nonsense"],
+        [join(repoRoot, "backend", "scripts", "doctor.mjs"), repoRoot, "nonsense"],
         { stdio: "pipe" },
       );
     } catch (error) {

@@ -70,6 +70,8 @@ wide. `pnpm status` reports where the cursors are.
 ```sh
 pnpm doctor                    # can this serve L2 records?
 pnpm doctor --with-l1-sync     # and could it take traffic?
+pnpm doctor full               # could this machine host a full Midgard stack?
+pnpm doctor --json             # the same report, for a script
 ```
 
 Without the flag it asks the narrower question, which is the right one while
@@ -89,19 +91,21 @@ database or Midgard state is removed by any command in this package.
 ## Run the checks
 
 ```sh
-pnpm check          # typecheck and the unit suite
+pnpm check          # typecheck, the documentation gate, and both suites
 pnpm test           # the unit suite alone
+pnpm test:dev       # the development commands' own tests
+pnpm docs:check     # every documented command exists, every link resolves
 pnpm audit:gate     # the dependency policy
 ```
 
 The database-backed tests need `REQUIRE_DB=1` and a prepared test database:
 
 ```sh
-cd .. && ./dev setup test && cd backend
+pnpm setup:test
 REQUIRE_DB=1 pnpm test
 ```
 
-That database is truncated by the suite. `./dev setup test` refuses any target
+That database is truncated by the suite. `pnpm setup:test` refuses any target
 whose name does not end in `_test` or whose host is not this machine.
 
 ## Build for production
@@ -118,12 +122,15 @@ Production runs compiled JavaScript, not `ts-node`.
 | Command | What it does |
 |---|---|
 | `pnpm setup` | Writes `backend/.env` and the local index credentials. Starts nothing. |
+| `pnpm setup:test` | Creates and migrates the disposable test database. Refuses any target not named `_test`. |
 | `pnpm doctor` | Reports what is wrong and the command that fixes it. |
 | `pnpm dev` | The API, in the foreground, against an existing Midgard database. |
 | `pnpm dev:l1` | The same, and indexes Cardano. |
 | `pnpm status` | Whether the API answers, what the containers are, and where the index points. |
 | `pnpm services:down` | Stops the containers this package started. |
-| `pnpm check` | Typecheck and the unit suite. |
+| `pnpm check` | Typecheck, the documentation gate, and both suites. |
+| `pnpm compat` | Reads, checks or rewrites the node schema pin in `config/midgard-compatibility.json`. |
+| `pnpm docs:check` | Every documented command exists and every repository link resolves. |
 | `pnpm build` / `pnpm start` | Compile, then run the compiled server. |
 | `pnpm dev:server` | The server alone, with no lifecycle around it. |
 | `pnpm readiness` | The readiness probes, without starting a server. |

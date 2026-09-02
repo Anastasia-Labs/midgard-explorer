@@ -81,6 +81,18 @@ pnpm check:dev-console        # fails on console noise in development
 pnpm test:canvas-reliability  # repeats the transaction canvas to catch flake
 ```
 
+## Measure what it costs to run
+
+```sh
+pnpm measure limit 1024          # serve the app under a 1024 MB ceiling
+pnpm measure limit 1024 --build  # build it under one
+```
+
+Each run mounts this workspace into a container with `--memory` enforced, so a
+ceiling is a ceiling rather than a request. The published floors in
+[Resource requirements](../docs/resource-requirements.md) are what these runs
+reported.
+
 ## Build for production
 
 ```sh
@@ -105,6 +117,7 @@ answer by accident.
 | `pnpm test:e2e`             | The Playwright suite, on its own ports.                            |
 | `pnpm build` / `pnpm start` | The production build, then serve it.                               |
 | `pnpm fixtures`             | The fixture API alone.                                             |
+| `pnpm measure`              | The memory floor, measured under an enforced ceiling.              |
 | `pnpm format`               | Rewrites formatting; `format:check` only reports.                  |
 
 ## Layout

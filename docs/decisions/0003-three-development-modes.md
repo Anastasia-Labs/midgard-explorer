@@ -2,9 +2,10 @@
 
 Accepted 2026-09-01.
 
-This records the contract the `dev` command is built to. `demo` and `existing`
-are built; `full` is a documented procedure rather than a command, for the
-reason given below.
+This records the contract the development commands are built to. `demo` and
+`existing` are built; `full` is a documented procedure rather than a command,
+for the reason given below. [ADR 5](0005-pnpm-is-the-development-interface.md)
+records which command starts each mode.
 
 ## Decision
 
@@ -14,21 +15,20 @@ starts, what it needs, and what it can show.
 | Mode | Starts | Needs | Shows |
 |---|---|---|---|
 | `demo` | the fixture API and `frontend-new/app` | Node 24 and pnpm 11 | fixture data, labeled as fixture data |
-| `existing` | explorer PostgreSQL, its migrations, the backend, the API cache and `frontend-new/app` | the above, Docker, and a reachable Midgard PostgreSQL | real L2 blocks, transactions, addresses and UTxOs |
-| `existing --with-l1-sync` | the same, plus the L1 indexer | the above, a deployment manifest and a Koios URL | the same, plus L1 transactions, deposits and validator activity |
+| `existing` | explorer PostgreSQL, its migrations, the backend, and `frontend-new/app` | the above, Docker, and a reachable Midgard PostgreSQL | real L2 blocks, transactions, addresses and UTxOs |
+| `existing` with L1 sync | the same, plus the L1 indexer | the above, a deployment manifest and a Koios URL | the same, plus L1 transactions, deposits and validator activity |
 | `full` (by hand) | the Midgard node stack as well | the above, Cardano Node, Kupo, Ogmios, and funded Preprod wallets | live L2 activity as it is produced |
 
 `demo` runs no database and no Docker. It is the mode a first-time contributor
 uses.
 
-`full` is a documented procedure, not a `./dev up` command. It needs Cardano
+`full` is a documented procedure, not a command. It needs Cardano
 Node, Kupo, Ogmios, funded Preprod wallets and an on-chain deployment, none of
 which this repository owns or can provision, so there is nothing for a command
 to start and nothing an automated job can prove. It is followed by hand through
-[Running a full Midgard node](../running-full-midgard.md). `./dev up full`
-refuses and names that guide.
+[Running a full Midgard node](../running-full-midgard.md).
 
-`./dev doctor full` reports on the explorer's own requirements under the strict
+`pnpm doctor full` reports on the explorer's own requirements under the strict
 readiness scope, and says plainly that it does not check Cardano Node, Kupo,
 Ogmios, the node checkout or wallet funding. Those are configured outside this
 repository, which has no address to reach them at, so a check claiming to have
@@ -124,9 +124,12 @@ nothing is listening on. An override is explicit.
 
 ## Configuration has one source
 
-`dev setup` writes `.dev/runtime.env` and generates the backend and frontend
-environment files from it. Ports, origins, database URLs and the local database
-password are written once and read from there. `.dev/` is not tracked.
+`pnpm setup` writes `.dev/runtime.env` and generates `backend/.env` from it.
+Ports, origins, database URLs and the local database password are written once
+and read from there. `.dev/` is not tracked.
+
+The frontend has no generated file: it calls the port the backend serves on
+unless `NEXT_PUBLIC_API_BASE` says otherwise.
 
 ## What the gates claim
 
@@ -134,7 +137,7 @@ A gate claims what it measured.
 
 | Runs | Claim |
 |---|---|
-| every pull request | `demo` starts from a clean clone and serves the fixture; `./dev up existing` reaches an explorer rendering seeded L2 records, and L2 readiness passes where strict readiness refuses |
+| every pull request | `demo` starts from a clean clone and serves the fixture; the two documented commands reach an explorer rendering seeded L2 records, an indexer that starts, and L2 readiness passing where strict readiness refuses |
 | nightly or on request | the frontend still works at its published memory floors; an L1 reconciliation pass against Koios completes and writes the three cursors |
 | by hand | `existing` renders records from a real Midgard node database; the full deployment |
 

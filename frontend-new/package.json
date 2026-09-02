@@ -17,6 +17,7 @@
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @midgard-explorer/app test:e2e",
     "fixtures": "pnpm --filter @midgard-explorer/app fixtures",
+    "measure": "pnpm --filter @midgard-explorer/app measure",
     "check:type-scale": "pnpm --filter @midgard-explorer/app check:type-scale",
     "check:dev-console": "pnpm --filter @midgard-explorer/app check:dev-console",
     "test:canvas-reliability": "pnpm --filter @midgard-explorer/app test:canvas-reliability",

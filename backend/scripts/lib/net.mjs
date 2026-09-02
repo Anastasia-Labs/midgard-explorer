@@ -137,7 +137,7 @@ const syncState = async (base) => {
 /* Strict readiness, the question `/readyz` answers and a deployment gates on.
  * The failing check is named; why it failed goes to the backend log and never
  * to the response, so the reason comes from
- * `./dev doctor existing --with-l1-sync`, which is the scope that covers it. */
+ * `pnpm doctor --with-l1-sync`, which is the scope that covers it. */
 const readyCheck = async (base) => {
   const res = await get(`${base}/readyz`, 20_000);
   const body = await res.json().catch(() => null);

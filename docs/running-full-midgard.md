@@ -21,9 +21,8 @@ dominate the total and no figure is offered for them here.
 | Midgard node HTTP API | Docker (`midgard-node`) | 3000 |
 | Midgard PostgreSQL | Docker (`postgres`) | host 5433, container 5432 |
 | Explorer PostgreSQL | Docker (`explorer-postgres`) | host 5435, container 5432 |
-| Explorer API cache | Docker (`explorer-api-cache`) | 3102 |
-| Explorer backend | `./dev up existing` | 3101 |
-| Explorer web app | `./dev up existing` | 3011 |
+| Explorer backend | `cd backend && pnpm dev:l1` | 3101 |
+| Explorer web app | `cd frontend-new && pnpm dev` | 3011 |
 
 The web app is `frontend-new/`. The explorer's ports avoid 3000, which the
 node's HTTP API holds, and 3100, which the node's monitoring stack holds. The
@@ -135,13 +134,15 @@ it reads a deployment manifest to know which contracts to follow. All three are
 required settings: the backend refuses to boot without them, and it answers 503
 on `/readyz` until the index has been migrated.
 
-`./dev setup existing` writes all of it from one file:
+`pnpm setup` writes all of it from one file:
 
 ```sh
-./dev setup existing
+cd backend
+pnpm install
+pnpm setup
 ```
 
-Then fill the node's own connection details in `.dev/runtime.env`, matching the
+Then fill the node's own connection details in `backend/.env`, matching the
 node's `.env` (host `localhost`, port `5433`), and the manifest the node wrote:
 
 ```text
@@ -153,38 +154,44 @@ POSTGRES_DB=midgard
 MIDGARD_MANIFEST_PATH=/abs/path/to/midgard/demo/midgard-node/deploymentInfo/contract-deployment-info.json
 ```
 
-Re-run `./dev setup existing --force` to regenerate `backend/.env` and
-`frontend-new/app/.env.local` from it, then create the disposable test database:
+Run `pnpm setup` again to carry those values into `.dev/runtime.env`, then
+create the disposable test database:
 
 ```sh
-./dev setup test
+pnpm setup:test
 ```
 
 Check the machine before starting anything:
 
 ```sh
-./dev doctor existing
+pnpm doctor --with-l1-sync
 ```
 
 Every failure names the command that fixes it. Then start the explorer,
 indexing Cardano as well since the node is live:
 
 ```sh
-./dev up existing --with-l1-sync
+pnpm dev:l1
 ```
 
-This starts the explorer's PostgreSQL and API cache, applies the index
-migrations, starts the backend and the web app, and waits for strict readiness
-while printing the cursors as they move.
+This starts the explorer's PostgreSQL, applies the index migrations, starts the
+API in the foreground, and prints the cursors as they move until strict
+readiness is met. In a second terminal:
+
+```sh
+cd frontend-new
+pnpm install
+pnpm dev
+```
 
 The node holds port 3000 and its monitoring stack holds 3100, which is why the
-explorer's ports default to 3101, 3102 and 3011. Change them in
-`.dev/runtime.env` and re-run setup with `--force`.
+explorer's ports default to 3101 and 3011. Change them in `.dev/runtime.env`
+and re-run `pnpm setup --force`.
 
 ## Step 6: Verify
 
 ```sh
-./dev status
+cd backend && pnpm status
 
 # Liveness, which touches no database:
 curl -s http://localhost:3101/healthz
@@ -193,7 +200,7 @@ curl -s http://localhost:3101/healthz
 curl -s http://localhost:3101/readyz
 
 # After a transfer from Step 4:
-curl -s "http://localhost:3102/api/transaction?tx_hash=<tx hash printed by submit-l2-transfer>"
+curl -s "http://localhost:3101/api/transaction?tx_hash=<tx hash printed by submit-l2-transfer>"
 ```
 
 Open http://localhost:3011: the home page lists recent blocks and transactions,
@@ -215,8 +222,8 @@ and the transaction page shows the transfer with its status.
 - **Backend fails to bind its port**: the node's monitoring stack publishes Loki
   on host port 3100, and the node's own API holds 3000. The explorer backend uses
   3101 for that reason. Change ports in `.dev/runtime.env` and re-run
-  `./dev setup existing --force`, which regenerates every file that has to agree
-  about them; editing one by hand is how the frontend ends up calling an origin
+  `pnpm setup --force`, which regenerates every file that has to agree about
+  them; editing one by hand is how the frontend ends up calling an origin
   nothing is listening on.
 - **Kupo stays `unhealthy` and the node never starts**: Kupo answers `/health`
   with 202 while it indexes and only returns 200 at the chain tip, so Compose can

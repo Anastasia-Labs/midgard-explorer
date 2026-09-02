@@ -103,8 +103,6 @@ export const RUNTIME_LINKS = [
   { file: "backend/.env", key: "TEST_INDEXER_POSTGRES_URL", runtime: "TEST_INDEXER_POSTGRES_URL" },
   { file: "backend/.env", key: "MIDGARD_MANIFEST_PATH", runtime: "MIDGARD_MANIFEST_PATH" },
   { file: "backend/.env", key: "BACKEND_PORT", runtime: "BACKEND_PORT" },
-  { file: "frontend-new/app/.env.local", key: "NEXT_PUBLIC_API_BASE", runtime: "API_CACHE_URL" },
-  { file: "frontend-new/app/.env.local", key: "API_BASE_SERVER", runtime: "API_CACHE_URL" },
 ];
 
 /** The generated files, in the order a reader meets them. */

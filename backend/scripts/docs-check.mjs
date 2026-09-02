@@ -115,6 +115,17 @@ for (const page of PAGES) {
         );
       }
 
+      // The repository root once carried a `./dev` command that started every
+      // service. It was removed in favour of the two package commands, so a
+      // page naming it sends a reader to a file that is not there.
+      //
+      // A decision record is exempt, because recording what a decision replaced
+      // is what a decision record is for. Every other page tells a reader what
+      // to run.
+      if (!page.startsWith("docs/decisions/") && /(^|\s)\.\/dev(\s|$)/.test(line)) {
+        problems.push(`${page}: "${line}" names ./dev, which no longer exists`);
+      }
+
       for (const segment of line.split("&&")) {
         const step = segment.trim();
         const cd = step.match(/^cd\s+(?:\.\.\/)*([a-z0-9-]+)\/?$/);

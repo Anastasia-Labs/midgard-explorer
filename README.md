@@ -70,10 +70,9 @@ It names the check that failed and the command that fixes it.
 | [Troubleshooting](docs/troubleshooting.md) | Keyed by the names `pnpm doctor` prints |
 | [Resource requirements](docs/resource-requirements.md) | Measured memory floors per mode |
 
-`./dev up demo` and `./dev up existing` remain, for running the whole stack from
-one terminal and for the API cache that production puts in front of the backend.
-[ADR 4](docs/decisions/0004-two-package-development.md) records what each entry
-point is for.
+[ADR 5](docs/decisions/0005-pnpm-is-the-development-interface.md) records why
+these are the only commands: every service belongs to the package that runs it,
+so there is one way to start the explorer rather than two that must agree.
 
 ## Repository layout
 
@@ -88,14 +87,16 @@ point is for.
 
 ## Configuration
 
-`./dev setup existing` writes `.dev/runtime.env`, the one place ports, origins,
-database URLs and the local database password live, then generates
-`backend/.env` and `frontend-new/app/.env.local` from it. Nothing is copied
-between files by hand, and `./dev doctor` reports it when they drift apart.
+`pnpm setup` in `backend/` writes `.dev/runtime.env`, the one place ports,
+origins, database URLs and the local database password live, then generates
+`backend/.env` from it. Nothing is copied between files by hand, and
+`pnpm doctor` reports it when the two drift apart.
 
-The settings each file holds, and what they mean, are in the mode guides above.
-`backend/.env.example` documents the backend's own at length, including which
-database an L2 figure came from and why that matters.
+It writes nothing outside `backend/`. The frontend needs no generated file: it
+calls <http://127.0.0.1:3101> unless `NEXT_PUBLIC_API_BASE` says otherwise.
+
+`backend/.env.example` documents the backend's settings at length, including
+which database an L2 figure came from and why that matters.
 
 ## Run it in production
 
@@ -201,11 +202,14 @@ because it cannot know what supervises them.
 ## Checks
 
 ```bash
-cd backend       && pnpm typecheck && pnpm run audit:gate && pnpm test && pnpm build
+cd backend       && pnpm check && pnpm run audit:gate && pnpm build
 cd frontend-new  && ./scripts/ci-local.sh          # add --fast to skip the e2e suite
 ```
 
-`./dev setup test` creates the disposable database those tests need and applies
+`pnpm check` in `backend/` is the type check, the documentation gate, the Vitest
+suite and the development-command tests.
+
+`pnpm setup:test` creates the disposable database those tests need and applies
 the index migrations to it. It refuses any target not named `_test` or not on
 this machine.
 
@@ -227,7 +231,7 @@ request, against a PostgreSQL service carrying both the explorer's own
 migrations and a versioned fixture of the node's schema
 (`backend/test/fixtures/schema/midgard-node.sql`, generated from
 `prisma/schema.prisma`), and boots the compiled backend to prove the artifact
-starts. Both jobs upload what they printed as an artifact, on success as well
+starts. Every job uploads what it printed as an artifact, on success as well
 as failure, so a green run's counts can be read by anyone with access to it.
 Container images are pinned by digest and actions by commit SHA, and the
 workflow token is `contents: read`.

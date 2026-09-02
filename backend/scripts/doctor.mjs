@@ -15,15 +15,15 @@
  */
 import { pathToFileURL } from "node:url";
 
-import { CHECKS } from "./checks.mjs";
-import { redact } from "./env.mjs";
+import { CHECKS } from "./lib/checks.mjs";
+import { redact } from "./lib/env.mjs";
 
 const MODES = ["demo", "existing", "full"];
 
 /* Modes ADR 3 records as a procedure rather than a command. Their checks still
  * run: knowing this machine could host the mode is what the report is for. The
  * banner says there is nothing to start, so a page of PASS lines is not read as
- * "`./dev up` will work". */
+ * "starting it will work". */
 const UNBUILT = new Set(["full"]);
 
 /** Runs a set of checks and classifies each outcome.
@@ -151,10 +151,14 @@ if (json) {
   if (failed) {
     // The flag is repeated back. Dropping it would send the reader to a run
     // that asks the narrower question, and answers Ready to the wider one.
-    const again = `./dev doctor ${mode}${withL1Sync ? " --with-l1-sync" : ""}`;
+    const again = `pnpm doctor${mode === "existing" ? "" : ` ${mode}`}${
+      withL1Sync ? " --with-l1-sync" : ""
+    }`;
     process.stdout.write(`\nFix the failures above, then run: ${again}\n`);
   } else if (!UNBUILT.has(mode)) {
-    process.stdout.write(`\nReady. Start it with: ./dev up ${mode}\n`);
+    process.stdout.write(
+      `\nReady. Start it with: ${mode === "demo" ? "cd frontend-new && pnpm dev:demo" : "pnpm dev"}\n`,
+    );
   } else {
     process.stdout.write(
       `\nThe explorer's own requirements are met. Follow docs/running-full-midgard.md\n`,

@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "fixtures": "node e2e/fixtures/server.mjs",
+    "measure": "node scripts/measure.mjs ..",
     "check:type-scale": "node scripts/type-scale-check.mjs",
     "check:dev-console": "node scripts/dev-console-check.mjs",
     "test:canvas-reliability": "node scripts/canvas-reliability.mjs"

@@ -1,18 +1,16 @@
 # Running the explorer against an existing Midgard database
 
-For everyday work, the two package commands are shorter and put each log in
-its own terminal: see the [backend guide](../backend/README.md) and the
-[frontend guide](../frontend-new/README.md). This page covers `./dev up
-existing`, which runs the whole stack from one terminal and puts the
-production API cache in front of the backend.
-
 This mode shows real Midgard records from a node database that already holds
-them. It starts the explorer's own PostgreSQL, the API cache, the backend and
-the web app. It does not start `midgard-node`, Cardano Node, Kupo or Ogmios, and
-it does not need them: L2 blocks, transactions, addresses and UTxOs are read
-from the node's own tables.
+them. It starts the explorer's own PostgreSQL, the backend and the web app. It
+does not start `midgard-node`, Cardano Node, Kupo or Ogmios, and it does not
+need them: L2 blocks, transactions, addresses and UTxOs are read from the node's
+own tables.
 
 Use it when a Midgard node has run somewhere and its PostgreSQL is reachable.
+
+Two terminals. The [backend guide](../backend/README.md) and the
+[frontend guide](../frontend-new/README.md) cover each package's commands in
+full; this page covers the mode.
 
 ## What you need
 
@@ -26,26 +24,27 @@ is the second half of this page.
 ## Set it up
 
 ```sh
-./dev setup existing
+cd backend
+pnpm install
+pnpm setup
 ```
 
 This writes `.dev/runtime.env` at mode 0600, the one place ports, origins,
 database URLs and the local database password live. It then generates
-`backend/.env` and `frontend-new/app/.env.local` from it, so no password or URL
-is copied between files by hand.
+`backend/.env` from it, so no password or URL is copied between files by hand.
+It writes nothing outside this package.
 
 A file that already exists is not replaced. Setup reports any setting that
-disagrees with `.dev/runtime.env` and leaves the file alone;
-`./dev setup existing --force` regenerates it, copying the current one to
-`.backup` first.
+disagrees with `.dev/runtime.env` and leaves the file alone; `pnpm setup --force`
+regenerates it, copying the current one to `.backup` first.
 
 An index that already works is described rather than redefined: an existing
 password and host are carried into `.dev/runtime.env` rather than regenerated,
 because a new password locks an initialised PostgreSQL volume out of every
 client.
 
-Fill the node's own connection details in `.dev/runtime.env` if setup could not
-find them, then re-run with `--force`:
+Fill the node's own connection details in `backend/.env`, then run `pnpm setup`
+again to carry them across:
 
 ```text
 POSTGRES_HOST=localhost
@@ -58,7 +57,7 @@ POSTGRES_DB=midgard
 Then create the disposable database the test suite uses:
 
 ```sh
-./dev setup test
+pnpm setup:test
 ```
 
 This creates the database and applies the index migrations to it. It refuses any
@@ -68,20 +67,30 @@ because the suite truncates whatever it names.
 ## Start it
 
 ```sh
-./dev doctor existing
-./dev up existing
+cd backend
+pnpm doctor
+pnpm dev
 ```
 
 ```text
-Explorer:  http://127.0.0.1:3011
-API:       http://127.0.0.1:3102
-Status:    serving L2 reads
-Mode:      existing Midgard database
+API:       http://127.0.0.1:3101
+Mode:      serving L2 reads
+Frontend:  cd ../frontend-new && pnpm dev
 ```
 
-`up` starts the two containers, applies the index migrations, starts the
-backend with the Cardano indexer off, checks that it can serve L2 reads, then
-starts the web app and waits for the overview page.
+`pnpm dev` starts the explorer's own PostgreSQL, applies the index migrations,
+checks that it can serve L2 reads, and then runs the API in the foreground with
+the Cardano indexer off. In the second terminal:
+
+```sh
+cd frontend-new
+pnpm install
+pnpm dev
+```
+
+The web app serves <http://127.0.0.1:3011> and calls the backend directly. It
+refuses to start when the API is not answering, so a missing first terminal is
+reported rather than rendered as an error on every page.
 
 ## Ports
 
@@ -91,13 +100,17 @@ silently reassigned port produces a frontend calling an origin nothing is
 listening on.
 
 A conflict is reported and the run stops. Change the port in `.dev/runtime.env`
-and re-run `./dev setup existing --force`:
+and re-run `pnpm setup --force`:
 
 ```text
 BACKEND_PORT=3101
 API_CACHE_PORT=3102
 FRONTEND_PORT=3011
 ```
+
+The API cache on 3102 belongs to the deployed shape, not to development. Nothing
+here starts it: the frontend calls the backend on 3101, and the API answers the
+same records either way.
 
 ## Two readiness questions
 
@@ -115,7 +128,7 @@ cd backend && pnpm readiness -- --scope=l2
 It asks whether L2 blocks, transactions, addresses and UTxOs can be served. It
 skips the Cardano reconciliation, which is a network-dependent pass against
 Koios, and it skips the manifest, which describes the L1 contracts. This is what
-`./dev up existing` waits for, and it is not a deployment gate.
+`pnpm dev` waits for, and it is not a deployment gate.
 
 ## What the Cardano pages show
 
@@ -133,7 +146,7 @@ already holds. The pages say which case they are in rather than guessing:
 ## Indexing Cardano as well
 
 ```sh
-./dev up existing --with-l1-sync
+cd backend && pnpm dev:l1
 ```
 
 This needs two more settings, checked before anything starts:
@@ -141,9 +154,9 @@ This needs two more settings, checked before anything starts:
 - `MIDGARD_MANIFEST_PATH` must name a file that exists. A Midgard deployment has
   no on-chain identifier, so the manifest is the only thing that says which
   contracts to follow. Indexing without it produces rows attributed to nothing,
-  which no query reaches. This is also the only mode that needs it: without
-  `--with-l1-sync` the explorer reads L2 records and never opens the manifest,
-  so the setting may be left blank.
+  which no query reaches. This is also the only command that needs it: `pnpm dev`
+  reads L2 records and never opens the manifest, so the setting may be left
+  blank.
 - `KOIOS_BASE_URL` must be set.
 
 The path this run checked is the one the backend reads, so a `.dev/runtime.env`
@@ -154,11 +167,8 @@ Exactly one indexer runs. The index is written by one process and read by all of
 them, and the writer takes an advisory lock, so a second would not index while
 appearing to.
 
-The command then waits for strict readiness, printing the cursors as they move:
-
-```sh
-./dev status --watch
-```
+The command then prints the cursors as they move, and says when strict readiness
+is met. `pnpm status` answers the same question for a run in another terminal.
 
 No cursor value is ever written by these commands. A cursor is written only
 inside a pass where every source completed, which is what makes the three
@@ -167,7 +177,7 @@ heights a record of a finished reconciliation rather than a progress bar.
 If reconciliation doesn't finish, diagnose it with the same flag:
 
 ```sh
-./dev doctor existing --with-l1-sync
+cd backend && pnpm doctor --with-l1-sync
 ```
 
 Without the flag, doctor asks whether the explorer can serve L2 records, which
@@ -179,9 +189,12 @@ on the network. It is not bounded by anything in this repository.
 
 ## Stopping
 
+Ctrl-C in each terminal stops that process. The containers keep running, because
+they hold the index and the next `pnpm dev` adopts them:
+
 ```sh
-./dev down
+cd backend && pnpm services:down
 ```
 
-This stops the backend, the web app, and the two containers. It removes no
-volume, no database and no Midgard state. The index survives every run.
+That stops only what `pnpm dev` started. It removes no volume, no database and
+no Midgard state. The index survives every run.

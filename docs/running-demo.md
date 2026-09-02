@@ -1,13 +1,12 @@
 # Running the explorer on demo data
 
-The frontend package runs this mode in one terminal, in the foreground:
+One terminal, in the foreground:
 
 ```sh
-cd frontend-new && pnpm dev:demo
+cd frontend-new
+pnpm install
+pnpm dev:demo
 ```
-
-`./dev up demo` below runs the same thing in the background, and adds
-`status`, `logs` and `down`.
 
 Demo mode runs the web app against a fixture backend that serves the same routes
 as the real API from committed data. It needs no Docker, no database, no
@@ -23,42 +22,24 @@ Node 24 and pnpm 11. `corepack enable` provides pnpm at the pinned version.
 1 GB of free memory is the measured floor, and 3 GB is comfortable. See
 [Resource requirements](resource-requirements.md).
 
-## Start it
-
-```sh
-./dev doctor demo
-./dev up demo
-```
-
-`doctor` reports anything that would stop the mode and names the command that
-fixes it. `up` installs the frontend dependencies if they are missing, chooses
-free ports, starts the fixture API and the web app, and prints where they are:
+## What it prints
 
 ```text
-Explorer:  http://127.0.0.1:3010
-API:       http://127.0.0.1:3110
-Status:    healthy
-Mode:      demo data
+Fixture API on http://127.0.0.1:3110
+Explorer on http://127.0.0.1:3010
+The records shown are fixture data, not a Midgard deployment.
 ```
 
 From a clean clone with a warm pnpm store this takes about 25 seconds. A cold
 install adds however long the download takes, which is set by your connection
 rather than by this repository.
 
-`Status: healthy` means the overview page was requested and returned 200, not
-only that a process is listening.
+The command waits for the fixture to identify itself before starting the app, so
+a process listening on that port that is not the fixture stops the run rather
+than filling the explorer with records that describe nothing.
 
-## While it runs
-
-```sh
-./dev status              # what is running, and whether it answers as itself
-./dev logs                # both services
-./dev logs app --follow   # one, tailed
-./dev down                # stop
-```
-
-`up` is safe to run again. A second run reports the running instance rather than
-starting a second one.
+Ctrl-C stops both. The fixture holds a port and Next holds the project's
+development lock, so one is never left behind by the other.
 
 ## What the data is
 
@@ -76,18 +57,16 @@ Demo mode picks free ports and prints them. It is the only mode that does: its
 addresses are passed to the app at startup, so nothing else has to agree with
 the number it picked.
 
-It avoids 3210 and 3211, which the end-to-end suite owns, so you can run the
-suite while demo mode is up.
+It avoids 3101, which the backend uses, and 3210 and 3211, which the end-to-end
+suite owns, so you can run the suite while demo mode is up.
 
 ## When it does not start
 
-`./dev up demo` names the cause. The two that come up most:
-
 **A Next dev server is already running.** Next allows one development server per
 project directory whatever port each is given, so this stops the mode even when
-the port is free. The message carries the process id to stop.
+the port is free. Stop the other one first.
 
-**The app never serves the overview page.** Read `./dev logs app`. On a machine
-with exhausted swap the bundler can report a panic while compiling the
-stylesheet; check `free -m` before reading that as a code failure.
+**The app never serves the overview page.** On a machine with exhausted swap the
+bundler can report a panic while compiling the stylesheet; check `free -m`
+before reading that as a code failure.
 [Resource requirements](resource-requirements.md) records what was measured.

@@ -176,7 +176,7 @@ switch (command) {
       );
       process.stderr.write(`  the fixture is ${pinned}\n`);
       process.stderr.write(`  the pin says  ${expected ?? "(nothing)"}\n`);
-      process.stderr.write("  regenerate it with: ./dev compat write --fixture\n");
+      process.stderr.write("  regenerate it with: pnpm compat write --fixture\n");
       process.exit(1);
     }
 

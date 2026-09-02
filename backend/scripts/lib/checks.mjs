@@ -147,15 +147,15 @@ const memoryMb = () => {
  *
  * Read from backend/.env rather than assumed, because it decides which of two
  * questions doctor is answering: whether the explorer can serve L2 records, or
- * whether it could be put into rotation. `./dev up existing --with-l1-sync`
- * asks the second one for a single run and checks the manifest itself. */
+ * whether it could be put into rotation. `pnpm dev:l1` asks the second one for
+ * a single run and checks the manifest itself. */
 const indexingConfigured = (ctx) => {
-  // Asked for on the command line. `./dev doctor existing --with-l1-sync` is
-  // the question "would this serve L1 too?", and it is the question the timeout
-  // message from `up existing --with-l1-sync` sends the reader here to ask.
+  // Asked for on the command line. `pnpm doctor --with-l1-sync` is the
+  // question "would this serve L1 too?", and it is the question a failed
+  // `pnpm dev:l1` sends the reader here to ask.
   if (ctx.withL1Sync) return true;
 
-  // Or already true of a run that is up. `up existing --with-l1-sync` sets
+  // Or already true of a run that is up. `pnpm dev:l1` sets
   // L1_SYNC_ENABLED for that process only, so backend/.env still says false
   // while an indexer is running, and doctor would have answered the narrower
   // question about the wider system.
@@ -377,7 +377,7 @@ export const CHECKS = [
         existsSync(join(ctx.repoRoot, "frontend-new", "app", "node_modules"));
       return installed
         ? pass("installed")
-        : warn("not installed", "`./dev up demo` installs them; or: cd frontend-new && pnpm install");
+        : warn("not installed", "Run: cd frontend-new && pnpm install");
     },
   },
 
@@ -419,7 +419,7 @@ export const CHECKS = [
             ? pass(`${mode} mode is running on ${where} (pid ${lock.pid})`)
             : fail(
                 `${mode} mode holds frontend-new/app on ${where} (pid ${lock.pid})`,
-                "One dev server per project directory. Stop it with: ./dev down",
+                "One dev server per project directory. Stop the one that holds it.",
               );
         }
       }
@@ -545,7 +545,7 @@ export const CHECKS = [
       if (runtime === null) {
         return warn(
           ".dev/runtime.env does not exist",
-          "Run: ./dev setup existing. Without it, every service is configured by hand",
+          "Run: cd backend && pnpm setup. Without it, every service is configured by hand",
         );
       }
       return pass(`${runtime.size} settings, the source for every generated file`);
@@ -594,7 +594,7 @@ export const CHECKS = [
         ? pass("no drift between .dev/runtime.env and the files generated from it")
         : warn(
             `${drifted.length} setting(s) differ: ${drifted.join(", ")}`,
-            "Regenerate them with: ./dev setup existing --force (the current files are copied to .backup first)",
+            "Regenerate them with: pnpm setup --force (the current files are copied to .backup first)",
           );
     },
   },
@@ -718,7 +718,7 @@ export const CHECKS = [
           ? fail(detail, "The indexer refuses to start without it, and /readyz refuses the process")
           : warn(
               detail,
-              "Not needed to serve L2 records. Set it before `./dev up existing --with-l1-sync`, and before this instance takes traffic",
+              "Not needed to serve L2 records. Set it before `pnpm dev:l1`, and before this instance takes traffic",
             );
       if (path === "") return absent("MIDGARD_MANIFEST_PATH is not set");
       if (!existsSync(path)) {
@@ -768,7 +768,7 @@ export const CHECKS = [
       try {
         const { stdout } = await run(
           "node",
-          [join(ctx.repoRoot, "scripts", "dev", "compat.mjs"), ctx.repoRoot, "check", "--database", url],
+          [join(ctx.repoRoot, "backend", "scripts", "compat.mjs"), ctx.repoRoot, "check", "--database", url],
           { timeout: 30_000 },
         );
         const lines = stdout.trim().split("\n");

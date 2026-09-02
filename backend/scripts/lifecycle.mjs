@@ -10,13 +10,13 @@
  *   cd backend      && pnpm dev
  *   cd frontend-new && pnpm dev
  *
- * Commands:
- *   setup           write backend/.env and the local index credentials
- *   doctor          what is wrong, and the command that fixes it
- *   dev             the API, against an existing Midgard database
+ * Commands, each behind a pnpm script of the same name:
+ *   setup [--force]      write backend/.env and the local index credentials
+ *   doctor [mode]        what is wrong, and the command that fixes it
+ *   dev                  the API, against an existing Midgard database
  *   dev --with-l1-sync   the same, and index Cardano as well
- *   status          what is running
- *   services:down   stop the containers this package started
+ *   status               what is running
+ *   services:down        stop the containers this package started
  *
  * Nothing here deletes a volume, a database or any Midgard state.
  */
@@ -34,6 +34,7 @@ import {
   servicesToStop,
 } from "./lib/compose.mjs";
 import { effectiveIndexUrl, expand, parseEnvFile, redact, urlTarget } from "./lib/env.mjs";
+import { descendants } from "./lib/proc.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(packageRoot, "..");
@@ -42,13 +43,12 @@ const repoRoot = resolve(packageRoot, "..");
  *
  * The API cache is not started. It is an Nginx in front of this process, and
  * nothing about the API's meaning changes when it is absent: the frontend talks
- * to this server directly. `./dev up existing` still starts it, because parity
- * with the deployed shape is what that command is for. */
+ * to this server directly. Deployment runs it, and verifying the cached shape
+ * belongs there rather than in a development command. */
 const DEV_SERVICES = ["explorer-postgres"];
 
-/** This package's own adoption record, kept apart from `./dev up existing`'s.
- * That command starts two containers and this one starts one, so a shared
- * record would let either stop what the other started. */
+/** This package's own adoption record, so a stop can tell a container it
+ * started from one it found already running. */
 const SCOPE = "backend";
 
 const bold = (text) => (process.stdout.isTTY ? `[1m${text}[0m` : text);
@@ -188,28 +188,6 @@ const probeReadiness = async (scope) => {
 
 // --- the server, in the foreground -------------------------------------------
 
-/** A process and everything below it, parents first.
- *
- * `pnpm` runs the command through a shell, so the server is a grandchild. A
- * stop that signals only the recorded pid leaves it holding the port. */
-const descendants = (root) => {
-  const found = [root];
-  for (let i = 0; i < found.length; i += 1) {
-    let children = [];
-    try {
-      children = readFileSync(`/proc/${found[i]}/task/${found[i]}/children`, "utf8")
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean)
-        .map(Number);
-    } catch {
-      children = [];
-    }
-    for (const child of children) if (!found.includes(child)) found.push(child);
-  }
-  return found;
-};
-
 /**
  * Runs the API and stays attached to it.
  *
@@ -312,20 +290,26 @@ const watchReconciliation = (port) => {
 
 // --- commands ----------------------------------------------------------------
 
-const commandSetup = async () => {
+const commandSetup = async (extra) => {
   const result = await run(
     process.execPath,
-    [join(repoRoot, "scripts", "dev", "setup.mjs"), repoRoot, "existing", "--scope=backend"],
+    [join(packageRoot, "scripts", "setup.mjs"), repoRoot, "existing", ...extra],
     { cwd: repoRoot },
   );
   process.stdout.write(result.output);
   if (result.code !== 0) process.exit(result.code);
 };
 
+/** The mode a report is about. `existing` unless one is named, because that is
+ * the mode `pnpm dev` starts and the only one this package can be asked about
+ * without a flag. `full` reports on the explorer's own requirements under the
+ * strict scope; ADR 3 records what it does not check. */
 const commandDoctor = async (extra) => {
+  const mode = extra.find((argument) => !argument.startsWith("-")) ?? "existing";
+  const flags = extra.filter((argument) => argument.startsWith("-"));
   const child = spawn(
     process.execPath,
-    [join(repoRoot, "scripts", "dev", "doctor.mjs"), repoRoot, "existing", ...extra],
+    [join(packageRoot, "scripts", "doctor.mjs"), repoRoot, mode, ...flags],
     { stdio: "inherit" },
   );
   const code = await new Promise((resolveDoctor) => child.on("close", resolveDoctor));
@@ -435,7 +419,7 @@ const withL1Sync = args.includes("--with-l1-sync");
 
 switch (command) {
   case "setup":
-    await commandSetup();
+    await commandSetup(args);
     break;
   case "doctor":
     await commandDoctor(args);

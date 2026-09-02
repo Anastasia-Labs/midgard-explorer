@@ -3,26 +3,19 @@
  *
  * Two of them: the PostgreSQL holding the explorer's own L1 index, and the
  * Nginx cache in front of the API. Both are declared in the repository's
- * docker-compose.yml and configured from .dev/runtime.env.
+ * docker-compose.yml and configured from .dev/runtime.env. Development starts
+ * only the first: the cache is part of the deployed shape, and nothing about
+ * the API's meaning changes when it is absent.
  *
- * This module is the only implementation of three rules. `pnpm dev` in this
- * package and `./dev up existing` at the repository root both reach it, so
- * neither can drift into a second answer:
+ * This module is the only implementation of three rules:
  *
  *   ownership   which database a migration may be applied to
  *   adoption    which containers a stop command may touch
  *   lifecycle   how they are started and stopped
- *
- * Usage, for the shell that still drives some of this:
- *   compose.mjs <repoRoot> running
- *   compose.mjs <repoRoot> assert-owned
- *   compose.mjs <repoRoot> up [service...]
- *   compose.mjs <repoRoot> stop <service...>
  */
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { effectiveIndexUrl, expand, parseEnvFile, urlTarget } from "./env.mjs";
@@ -43,9 +36,8 @@ export const runtimePath = (repoRoot) => join(repoRoot, ".dev", "runtime.env");
 
 /** The adoption record, per caller.
  *
- * `pnpm dev` starts one container and `./dev up existing` starts two, so one
- * shared record would let either stop what the other started. Each keeps its
- * own answer about what it found and what it owns. */
+ * Each caller keeps its own answer about what it found and what it owns, so a
+ * command can never stop a container another one started. */
 export const adoptedPath = (repoRoot, scope = "existing") =>
   join(repoRoot, ".dev", scope, "adopted");
 
@@ -224,73 +216,3 @@ export const checkOwnership = async (repoRoot) => {
   });
   return { problems, source, url };
 };
-
-// --- command line ------------------------------------------------------------
-
-const isEntryPoint =
-  process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
-
-if (isEntryPoint) {
-  const [, , repoRoot, command, ...rest] = process.argv;
-  if (!repoRoot || !command) {
-    process.stderr.write(
-      "Usage: compose.mjs <repoRoot> <running|assert-owned|record-adoption|stop-unowned|up|stop>\n",
-    );
-    process.exit(2);
-  }
-  switch (command) {
-    case "running": {
-      const running = await runningServices(repoRoot);
-      if (running === null) process.exit(1);
-      process.stdout.write(`${running.join(" ")}\n`);
-      break;
-    }
-    case "assert-owned": {
-      const { problems, source } = await checkOwnership(repoRoot);
-      if (problems.length === 0) break;
-      process.stderr.write(
-        `INDEXER_POSTGRES_URL, from ${source}, does not name the database this repository provisions:\n`,
-      );
-      for (const problem of problems) process.stderr.write(`  ${problem}\n`);
-      process.exit(1);
-      break;
-    }
-    case "record-adoption": {
-      const adopted = await recordAdoption(repoRoot);
-      if (adopted === null) {
-        process.stderr.write("docker could not be asked what is running; nothing recorded\n");
-        process.exit(1);
-      }
-      process.stdout.write(`${adopted.join(" ")}\n`);
-      break;
-    }
-    case "stop-unowned": {
-      // Stops what this command started and nothing else, then forgets, so the
-      // next start decides again from what it finds.
-      const adopted = readAdoption(repoRoot, "existing");
-      if (adopted === null) {
-        process.stdout.write("none\n");
-        break;
-      }
-      const stopping = servicesToStop(adopted);
-      if (stopping.length > 0) await compose(repoRoot, ["stop", ...stopping]).catch(() => {});
-      clearAdoption(repoRoot);
-      process.stdout.write(`${stopping.join(" ")}\n`);
-      process.stderr.write(`${adopted.join(" ")}\n`);
-      break;
-    }
-    case "up": {
-      const services = rest.length > 0 ? rest : COMPOSE_SERVICES;
-      await compose(repoRoot, ["up", "-d", ...services]);
-      break;
-    }
-    case "stop": {
-      if (rest.length === 0) break;
-      await compose(repoRoot, ["stop", ...rest]);
-      break;
-    }
-    default:
-      process.stderr.write(`Unknown command: ${command}\n`);
-      process.exit(2);
-  }
-}

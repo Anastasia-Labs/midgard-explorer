@@ -48,17 +48,11 @@ directory is a package a contributor cannot reason about.
 uses it. `pnpm dev` does not start it: nothing about the API's meaning changes
 when it is absent, and the frontend calls the backend directly.
 
-`./dev up existing` still starts it, because parity with the deployed shape is
-what that command is for.
+Deployment runs it, and verifying the cached shape belongs there.
 
-## `./dev` remains, and implements nothing twice
+## Every rule lives in one place
 
-`./dev up demo` and `./dev up existing` run the whole stack from one terminal,
-in the background, with `status`, `logs` and `down`. That is a different shape
-from a foreground package command, and it is worth keeping.
-
-What it must not be is a second implementation. The rules that decide whether a
-command is safe live in one place each, and both entry points call them:
+The rules that decide whether a command is safe are each implemented once:
 
 | Rule | Where it lives |
 |---|---|
@@ -68,8 +62,10 @@ command is safe live in one place each, and both entry points call them:
 | Whether this instance can serve | `backend/scripts/probe-readiness.ts` |
 | How demo mode starts | `frontend-new/app/scripts/dev-demo.mjs` |
 
-`./dev up demo` runs that last file in the background and records its process
-id, which is the only thing it adds.
+This record originally kept a `./dev` command at the repository root as a second
+entry point onto those rules.
+[ADR 5](0005-pnpm-is-the-development-interface.md) removes it: two entry points
+are two things that must agree, and they stopped agreeing.
 
 ## Consequences
 
@@ -77,8 +73,8 @@ A contributor learns two commands, and the guide for each lives in that
 package's own README.
 
 Adding a step to starting the backend means adding it to
-`backend/scripts/lifecycle.mjs`, where `./dev` will pick it up too.
+`backend/scripts/lifecycle.mjs`.
 
-[ADR 3](0003-three-development-modes.md) records the modes `./dev` offers and
-what each continuous-integration tier may claim. This record narrows its role:
-the modes remain, and they are no longer the first thing a contributor meets.
+[ADR 3](0003-three-development-modes.md) records the modes and what each
+continuous-integration tier may claim. This record narrows its role: the modes
+remain, and they are no longer the first thing a contributor meets.

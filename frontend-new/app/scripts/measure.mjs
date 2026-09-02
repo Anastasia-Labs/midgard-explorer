@@ -20,21 +20,19 @@
  * container's own copy-on-write layer.
  *
  * Usage:
- *   measure.mjs <repoRoot> peak <url> <pid...>
- *   measure.mjs <repoRoot> limit <megabytes> [--build]
+ *   pnpm measure peak <url> <pid...>
+ *   pnpm measure limit <megabytes> [--build]
  */
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { promisify } from "node:util";
 
-const run = promisify(execFile);
-const [, , repoRoot, command, ...args] = process.argv;
+const [, , frontendRoot, command, ...args] = process.argv;
 
 const fail = (message) => {
   process.stderr.write(`${message}\n`);
   process.exit(1);
 };
-if (!repoRoot) fail("measure.mjs needs the repository root");
+if (!frontendRoot) fail("measure.mjs needs the frontend-new directory");
 
 /** Resident memory of a process and every descendant, in megabytes.
  *
@@ -135,43 +133,63 @@ if (command === "peak") {
     ' || { echo "--- dev log ---"; tail -12 /tmp/dev.log; exit 1; }`;
 
   const script = build
-    ? `cd /repo/frontend-new/app && rm -rf .next && ./node_modules/.bin/next build`
-    : `cd /repo/frontend-new/app && rm -rf .next && ${serve}`;
+    ? `cd /frontend/app && rm -rf .next && ./node_modules/.bin/next build`
+    : `cd /frontend/app && rm -rf .next && ${serve}`;
 
   const started = Date.now();
   const container = spawn(
     "docker",
     [
-      "run", "--rm",
+      "run",
+      "--rm",
       // As the invoking user, so anything the run writes into the mounted
       // repository stays owned by whoever is measuring. Running as root leaves
       // a .next directory the host cannot delete.
-      "--user", `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
-      "--cpus", "2",
-      "--memory", `${megabytes}m`,
+      "--user",
+      `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
+      "--cpus",
+      "2",
+      "--memory",
+      `${megabytes}m`,
       // No swap beyond the limit. Otherwise the ceiling is advisory and the run
       // reports success at a size the machine could not actually hold.
-      "--memory-swap", `${megabytes}m`,
-      "-v", `${repoRoot}:/repo`,
-      "-e", "CI=1",
-      "-e", "HOME=/tmp",
-      // Keep the container's package manager out of the mounted repository.
-      // Without this, corepack writes a store into /repo and leaves it behind
-      // in the working tree of the machine being measured.
-      "-e", "PNPM_HOME=/tmp/pnpm",
-      "-e", "COREPACK_HOME=/tmp/corepack",
-      "-e", "npm_config_store_dir=/tmp/pnpm-store",
-      "-e", "NEXT_PUBLIC_API_BASE=http://127.0.0.1:3110",
-      "-e", "API_BASE_SERVER=http://127.0.0.1:3110",
-      "-e", "NEXT_PUBLIC_NETWORK_LABEL=Measure",
-      "-e", "NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3310",
-      "-e", "NEXT_PUBLIC_L1_EXPLORER_NAME=CExplorer",
-      "-e", "NEXT_PUBLIC_L1_EXPLORER_TX_URL=https://preprod.cexplorer.io/tx/{hash}",
-      "-e", "NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL=https://preprod.cexplorer.io/address/{address}",
-      "-w", "/repo",
+      "--memory-swap",
+      `${megabytes}m`,
+      "-v",
+      `${frontendRoot}:/frontend`,
+      "-e",
+      "CI=1",
+      "-e",
+      "HOME=/tmp",
+      // Keep the container's package manager out of the mounted workspace.
+      // Without this, corepack writes a store into it and leaves it behind in
+      // the working tree of the machine being measured.
+      "-e",
+      "PNPM_HOME=/tmp/pnpm",
+      "-e",
+      "COREPACK_HOME=/tmp/corepack",
+      "-e",
+      "npm_config_store_dir=/tmp/pnpm-store",
+      "-e",
+      "NEXT_PUBLIC_API_BASE=http://127.0.0.1:3110",
+      "-e",
+      "API_BASE_SERVER=http://127.0.0.1:3110",
+      "-e",
+      "NEXT_PUBLIC_NETWORK_LABEL=Measure",
+      "-e",
+      "NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3310",
+      "-e",
+      "NEXT_PUBLIC_L1_EXPLORER_NAME=CExplorer",
+      "-e",
+      "NEXT_PUBLIC_L1_EXPLORER_TX_URL=https://preprod.cexplorer.io/tx/{hash}",
+      "-e",
+      "NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL=https://preprod.cexplorer.io/address/{address}",
+      "-w",
+      "/frontend",
       // glibc, matching the binaries the host install resolved.
       "node:24-bookworm-slim",
-      "sh", "-c",
+      "sh",
+      "-c",
       script,
     ],
     { stdio: ["ignore", "pipe", "pipe"] },
@@ -186,7 +204,9 @@ if (command === "peak") {
   const oom = /killed|out of memory|OOM|Killed/i.test(output) || code === 137;
   const verdict = code === 0 ? "ok" : oom ? "out of memory" : `failed (exit ${code})`;
   const panic = /Turbopack error|panic/i.test(output) ? " turbopack-panic" : "";
-  process.stdout.write(`${megabytes}MB ${build ? "build" : "dev"} ${verdict}${panic} ${seconds}s\n`);
+  process.stdout.write(
+    `${megabytes}MB ${build ? "build" : "dev"} ${verdict}${panic} ${seconds}s\n`,
+  );
   if (code !== 0) {
     process.stderr.write(`${output.split("\n").slice(-12).join("\n")}\n`);
   }
