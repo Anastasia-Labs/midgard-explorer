@@ -12,8 +12,11 @@ import {
   getLastBlocks,
   getTotalBlocks,
 } from "../../db/block";
+import { getDeploymentContext, getIndexSettlement } from "../../db/deployment";
+import { blockSettlement } from "../../db/association";
+import { readConsistently } from "../../db/consistent";
 import { decodeTransactionSafe } from "../../decode/transaction";
-import { isHexOfLength, toHex } from "../../utils";
+import { canonicalHash, isHash28, toHex } from "../../utils";
 import { parsePageParam } from "../validate";
 
 export async function getBlockByHeightRoute(req: Request, res: Response) {
@@ -29,26 +32,72 @@ export async function getBlockByHeightRoute(req: Request, res: Response) {
 }
 
 export async function getBlockRoute(req: Request, res: Response) {
-  const headerHash = req.query.header_hash;
-  if (typeof headerHash !== "string" || headerHash.length === 0) {
+  const raw = req.query.header_hash;
+  if (typeof raw !== "string" || raw.length === 0) {
     return res.status(400).json({ error: "Missing header_hash query param." });
   }
-  if (!isHexOfLength(headerHash, 56)) {
+  if (!isHash28(raw)) {
     return res.status(400).json({ error: "Invalid header_hash." });
   }
+  // Normalised before either database sees it. The node stores bytea and reads
+  // an uppercase hash happily; the explorer's index stores text and does not,
+  // so an unnormalised identifier found the block and then reported its
+  // Cardano evidence missing.
+  const headerHash = canonicalHash(raw);
 
-  const [header, rows, da, finalization, neighbours, events] =
+  // The six node reads share one snapshot, so a header cannot be read at one
+  // point in time and its finalization at another. On a streaming standby that
+  // is not hypothetical: replay advances between statements.
+  //
+  // The index read and the deployment context stay OUTSIDE it. They are a
+  // different database, which can never share this snapshot, and holding a
+  // standby transaction open across another database's round trip is how a
+  // short read becomes a replay conflict.
+  const nodeReads = readConsistently(async (db) =>
+    Promise.all([
+      getBlockHeader(headerHash, db),
+      getBlock(headerHash, db),
+      getBlockDaMetadata(headerHash, db),
+      getBlockFinalization(headerHash, db),
+      getBlockNeighbours(headerHash, db),
+      getBlockEvents(headerHash, db),
+    ]),
+  );
+
+  const [[header, rows, da, finalization, neighbours, events], context, indexed] =
     await Promise.all([
-      getBlockHeader(headerHash),
-      getBlock(headerHash),
-      getBlockDaMetadata(headerHash),
-      getBlockFinalization(headerHash),
-      getBlockNeighbours(headerHash),
-      getBlockEvents(headerHash),
+      nodeReads,
+      getDeploymentContext(),
+      // The Cardano side, fetched here rather than by the page. The frontend
+      // used to request it separately and swallow every failure into "not
+      // observed in the Cardano index yet", which turned a broken join into a
+      // sentence about index lag and hid the defect for as long as it existed.
+      getIndexSettlement(headerHash),
     ]);
   if (header === null) {
     return res.status(404).json({ error: "Block not found." });
   }
+
+  const association = blockSettlement(
+    {
+      deploymentId: context.deploymentId,
+      network: context.network,
+      l2ObservedAsOf: context.freshness.observedAsOf,
+    },
+    headerHash,
+    {
+      nodeHash: finalization?.submitted_tx_hash ?? null,
+      nodeStatus: finalization?.status ?? null,
+      nodeObservedAt: finalization?.updatedAt?.toISOString() ?? null,
+      ...indexed,
+      // A difference only means something when both sources are known to
+      // describe the same deployment.
+      identityVerified: context.identityState === "verified",
+      // What the node's silence is worth. A snapshot cannot settle whether the
+      // live node holds a finalization record it does not.
+      nodeFreshness: context.freshness.state,
+    },
+  );
 
   const payload = await Promise.all(
     rows.map(async (row) => {
@@ -66,6 +115,8 @@ export async function getBlockRoute(req: Request, res: Response) {
     }),
   );
   return res.json({
+    midgard: context,
+    cardano: association,
     header: {
       header_hash: toHex(header.header_hash),
       height: header.height,

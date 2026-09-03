@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { readConsistently, type NodeReader } from "./consistent";
 import { config } from "../config";
 import { toBytes } from "../utils";
 
@@ -8,16 +9,16 @@ import { toBytes } from "../utils";
 // Checks tiers in priority order: immutable (committed), processed_mempool
 // (pending_commit), mempool (accepted). A tx may exist in multiple tiers
 // transiently. `pending` flags unconfirmed txs; `source` records the tier found.
-export async function getTransaction(txId: string) {
+export async function getTransaction(txId: string, db: NodeReader = prisma) {
   const txBytes = toBytes(txId);
-  const immutableRow = await prisma.immutableTx.findUnique({
+  const immutableRow = await db.immutableTx.findUnique({
     where: { tx_id: txBytes },
   });
   if (immutableRow) {
     return { ...immutableRow, pending: false, source: "immutable" as const };
   }
 
-  const processedRow = await prisma.processedMempoolTx.findUnique({
+  const processedRow = await db.processedMempoolTx.findUnique({
     where: { tx_id: txBytes },
   });
   if (processedRow) {
@@ -28,7 +29,7 @@ export async function getTransaction(txId: string) {
     };
   }
 
-  const mempoolRow = await prisma.mempoolTx.findUnique({
+  const mempoolRow = await db.mempoolTx.findUnique({
     where: { tx_id: txBytes },
   });
   if (mempoolRow) {
@@ -36,7 +37,7 @@ export async function getTransaction(txId: string) {
   }
 
   // The journal payload survives merge even when `blocks` no longer does.
-  const journalRows = await prisma.$queryRaw<
+  const journalRows = await db.$queryRaw<
     Array<{ tx_id: Uint8Array; tx: Uint8Array; time_stamp_tz: Date }>
   >`SELECT member_id AS tx_id, payload_cbor AS tx,
            source_time_stamp_tz AS time_stamp_tz
@@ -75,9 +76,10 @@ export type TxAdmission = {
 /** Admission timing and retry metadata remains available after ledger inclusion. */
 export async function getTxAdmission(
   txId: string,
+  db: NodeReader = prisma,
 ): Promise<TxAdmission | null> {
   const txBytes = toBytes(txId);
-  const admissions = await prisma.$queryRaw<
+  const admissions = await db.$queryRaw<
     Array<{
       status: string;
       first_seen_at: Date;
@@ -113,9 +115,10 @@ export async function getTxAdmission(
 export async function getTxLifecycle(
   txId: string,
   knownAdmission?: TxAdmission | null,
+  db: NodeReader = prisma,
 ): Promise<TxLifecycle> {
   const txBytes = toBytes(txId);
-  const rejections = await prisma.$queryRaw<
+  const rejections = await db.$queryRaw<
     Array<{
       reject_code: string;
       reject_detail: string | null;
@@ -133,7 +136,7 @@ export async function getTxLifecycle(
   }
 
   const admission =
-    knownAdmission === undefined ? await getTxAdmission(txId) : knownAdmission;
+    knownAdmission === undefined ? await getTxAdmission(txId, db) : knownAdmission;
   const admissionStatus = admission?.status;
   if (admission?.status === "rejected") {
     return {
@@ -164,8 +167,9 @@ export type TxInclusion = {
  * retained only while it still exists. */
 export async function getTxInclusion(
   txId: string,
+  db: NodeReader = prisma,
 ): Promise<TxInclusion | null> {
-  const rows = await prisma.$queryRaw<
+  const rows = await db.$queryRaw<
     Array<{
       height: number | null;
       header_hash: Uint8Array;
@@ -199,43 +203,46 @@ export async function getTransactionsPage(page: number, status?: string) {
   const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
   const offset = (safePage - 1) * limit;
   const filter = status && status.length > 0 ? status : null;
-  const [rows, total] = await Promise.all([
-    prisma.$queryRaw<
-      Array<{
-        height: number | null;
-        header_hash: Uint8Array;
-        tx_id: Uint8Array;
-        time_stamp_tz: Date;
-        tx: Uint8Array | null;
-        committed: boolean;
-        finalization_status: string | null;
-      }>
-    >`WITH legacy AS (
-        SELECT header_hash, MIN(height)::int AS height FROM blocks GROUP BY header_hash
-      )
-      SELECT l.height,
-        j.header_hash,
-        j.member_id AS tx_id,
-        j.source_time_stamp_tz AS time_stamp_tz,
-        j.payload_cbor AS tx,
-        true AS committed,
-        f.status AS finalization_status
-      FROM pending_block_finalization_txs AS j
-      JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
-      LEFT JOIN legacy AS l ON l.header_hash = j.header_hash
-      WHERE ${filter}::text IS NULL OR f.status = ${filter}
-      ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC,
-               j.ordinal ASC
-      OFFSET ${offset}
-      LIMIT ${limit};`,
-    prisma.$queryRaw<Array<{ n: bigint }>>`
-      SELECT COUNT(*)::bigint AS n
+  // Rows and total in one snapshot: see `readConsistently`.
+  const [rows, total] = await readConsistently(async (db) =>
+    Promise.all(  [
+      db.$queryRaw<
+        Array<{
+          height: number | null;
+          header_hash: Uint8Array;
+          tx_id: Uint8Array;
+          time_stamp_tz: Date;
+          tx: Uint8Array | null;
+          committed: boolean;
+          finalization_status: string | null;
+        }>
+      >`WITH legacy AS (
+          SELECT header_hash, MIN(height)::int AS height FROM blocks GROUP BY header_hash
+        )
+        SELECT l.height,
+          j.header_hash,
+          j.member_id AS tx_id,
+          j.source_time_stamp_tz AS time_stamp_tz,
+          j.payload_cbor AS tx,
+          true AS committed,
+          f.status AS finalization_status
         FROM pending_block_finalization_txs AS j
         JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
-       WHERE ${filter}::text IS NULL OR f.status = ${filter};`.then((r) =>
-      Number(r[0]?.n ?? 0n),
-    ),
-  ]);
+        LEFT JOIN legacy AS l ON l.header_hash = j.header_hash
+        WHERE ${filter}::text IS NULL OR f.status = ${filter}
+        ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC,
+                 j.ordinal ASC
+        OFFSET ${offset}
+        LIMIT ${limit};`,
+      db.$queryRaw<Array<{ n: bigint }>>`
+        SELECT COUNT(*)::bigint AS n
+          FROM pending_block_finalization_txs AS j
+          JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
+         WHERE ${filter}::text IS NULL OR f.status = ${filter};`.then((r) =>
+        Number(r[0]?.n ?? 0n),
+      ),
+    ]),
+  );
   const hasNextPage = safePage * limit < total;
   return { rows, hasNextPage, total, limit };
 }

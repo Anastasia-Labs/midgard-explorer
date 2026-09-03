@@ -1,4 +1,4 @@
-import { isHexOfLength } from "../utils";
+import { canonicalHash, isHexOfLength } from "../utils";
 
 /**
  * Request-parameter checks, defined once.
@@ -65,7 +65,7 @@ export const parseHexOfLength = (
   length: number,
   field: string,
 ): Parsed<string> => {
-  const value = String(raw ?? "").toLowerCase();
+  const value = canonicalHash(String(raw ?? ""));
   if (!isHexOfLength(value, length)) {
     return bad(`${field} must be ${length} hex characters.`);
   }

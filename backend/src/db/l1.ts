@@ -15,6 +15,9 @@ import {
 } from "../indexer/userEventDatum";
 import { decodeSchedulerRedeemer } from "../decode/schedulerRedeemer";
 import { logger } from "../logger";
+import { getSourceIdentity } from "./deployment";
+import { readL2Source, type L2FreshnessState, type L2SourceKind } from "./source";
+import type { DeploymentContext } from "./association";
 
 const PAGE_SIZE = 25;
 
@@ -443,82 +446,6 @@ export async function getL1Validator(scriptHash: string) {
   };
 }
 
-/**
- * Anything that is not the live node database is a fixture, and the page must
- * say so. Named by exclusion rather than by an allowlist of known fixtures: a
- * new fixture must not be able to present itself as live simply by not being
- * on a list. The explorer spent weeks reporting a phase-4 test database as the
- * live chain, and no diff could show it, because the name lived in a .env.
- */
-export function isFixtureDatabase(name: string): boolean {
-  return name !== "midgard";
-}
-
-export type SourceIdentity = {
-  deployment: string | null;
-  network: string;
-  deployedAt: string;
-  l2Database: string;
-  isFixture: boolean;
-  validators: Array<{
-    entryName: string;
-    family: string;
-    scriptHash: string;
-    address: string;
-  }>;
-};
-
-/** Read once. The manifest is a file written at deployment time and does not
- * change while the process runs, so reading and parsing it per request was
- * blocking the event loop to re-learn the same answer.
- *
- * Only a resolved identity is kept. A failure is transient by nature, and
- * memoising it would pin "unconfirmed" on every page until the next restart. */
-let identity: SourceIdentity | null = null;
-
-/** Which deployment these figures describe and which database they came from.
- * The boot log already names the database, which protects an operator. This is
- * the same fact where a viewer can see it.
- *
- * The database name comes from the server, not from `config`. The configured
- * name says which database was asked for, and the incident this banner exists
- * to prevent was a .env whose name did not match the connection, so echoing it
- * back would confirm nothing. `db/identity.ts` asks the same question at boot.
- *
- * Returns null rather than throwing when the manifest or the connection cannot
- * be read. The summary route is documented to answer whether or not anything
- * else is up, and a consumer that receives no source must treat it as
- * unconfirmed rather than as live, which is what the null case in the contract
- * is for. */
-export async function getSourceIdentity(): Promise<SourceIdentity | null> {
-  if (identity) return identity;
-  try {
-    const { deploymentId, network, createdAt, validators } = loadManifest(
-      config.MIDGARD_MANIFEST_PATH,
-    );
-    const [row] = await prisma.$queryRaw<Array<{ db: string }>>`
-      SELECT current_database() AS db;`;
-    if (!row?.db) throw new Error("the connection did not name its database");
-    identity = {
-      deployment: deploymentId,
-      network,
-      deployedAt: createdAt,
-      l2Database: row.db,
-      isFixture: isFixtureDatabase(row.db),
-      validators,
-    };
-  } catch (err) {
-    logger.error(`Could not identify the data source: ${String(err)}`);
-    return null;
-  }
-  return identity;
-}
-
-/** Tests only: the memo would otherwise outlive a changed configuration. */
-export function resetSourceIdentity(): void {
-  identity = null;
-}
-
 export async function getL1Summary() {
   const [transactions, events, blockHeaders, cursor, cursors, grouped] =
     await Promise.all([
@@ -556,3 +483,12 @@ export async function getL1Summary() {
       .sort((a, b) => b.count - a.count),
   };
 }
+
+/**
+ * The deployment context every detail response carries.
+ *
+ * Built from the memoised source identity, so a page does not pay for a
+ * manifest parse. `degraded` when the identity could not be resolved at all: a
+ * consumer must treat that the way it treats a missing context, as unverified
+ * rather than as live.
+ */
