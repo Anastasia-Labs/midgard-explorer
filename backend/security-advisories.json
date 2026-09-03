@@ -50,6 +50,31 @@
       "recordedOn": "2026-09-02",
       "owner": "explorer-maintainers",
       "expiresOn": "2026-12-02"
+    },
+    {
+      "id": "GHSA-rgwj-5xj2-c3m3",
+      "module": "mysql2",
+      "version": "3.15.3",
+      "severity": "moderate",
+      "title": "Unbounded zlib inflate in the compressed protocol handler allows a decompression-bomb DoS",
+      "path": "@prisma/client -> prisma -> mysql2",
+      "disposition": "not-exploitable",
+      "reason": [
+        "The advisory needs this process to open a MySQL connection with protocol",
+        "compression enabled and then read from a hostile or compromised server,",
+        "which inflates a small payload into an unbounded one.",
+        "This backend speaks only PostgreSQL. Both clients connect through",
+        "@prisma/adapter-pg (src/db.ts and src/indexer/db.ts), no source file",
+        "imports mysql2, and no configuration names a MySQL URL. The driver is",
+        "present because the Prisma CLI ships every driver it can target.",
+        "Not pinned forward the way qs and fast-uri were in the same pass: those",
+        "sit on a path this process executes, and a driver it never loads gains",
+        "nothing from a version Prisma has not tested against."
+      ],
+      "recheckWhen": "prisma is upgraded, or any MySQL connection is added",
+      "recordedOn": "2026-09-03",
+      "owner": "explorer-maintainers",
+      "expiresOn": "2026-12-03"
     }
   ]
 }

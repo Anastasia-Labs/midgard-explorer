@@ -11,9 +11,22 @@ allowBuilds:
 # vendored Cardano stack, so their parent ranges cannot advance them yet.
 overrides:
   '@hono/node-server': 2.0.10
+  # Four advisories cover 3.1.5: two server-side request forgeries and two host
+  # confusions, all in URI normalization. ajv asks for ^3.0.1, so 3.1.6 is
+  # inside the range its parent already accepts. Pinned to 3.1.6 rather than to
+  # the newest 3.1.x on purpose: it clears all four and has been published long
+  # enough to have been looked at, which a release from yesterday has not.
+  fast-uri: 3.1.6
   ip-address: 10.3.1
   nanoid: 3.3.18
   postcss: 8.5.26
+  # express 5.2.1 asks for ^6.14.0 and resolved 6.15.2, which two advisories
+  # cover: an array-limit bypass through bracket-key comma parsing, and a
+  # denial of service through an attacker-controlled isBuffer. Unlike every
+  # other advisory this package carries, qs sits on the REQUEST path: it is the
+  # query parser express hands every URL to. 6.16.0 satisfies express's own
+  # range, so this is a pin forward and not a fork.
+  qs: ^6.16.0
   valibot: 1.4.2
 minimumReleaseAgeExclude:
   - '@hono/node-server@1.19.13 || 2.0.5 || 2.0.10'
