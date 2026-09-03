@@ -169,6 +169,34 @@ test.describe("populated lists", () => {
 
     const projected = rowRegion(page).getByText("Projected", { exact: true }).first();
     await expect(projected).toBeVisible();
+
+    // Measured after hydration, not before it.
+    //
+    // `Timestamp` renders the absolute instant on the server, because a
+    // relative one cannot be computed there, and swaps to the short form when
+    // it hydrates. The "Included" column is 184px wide for the first moment of
+    // this page's life and 92px afterwards, so a single measurement taken in
+    // between reported a table needing 1465px inside a 1390px scroller that is
+    // exactly 1390px a second later. It failed about one run in six, locally
+    // and hosted, against a page with nothing wrong with it.
+    //
+    // Polling the invariant rather than waiting for the layout to go quiet: a
+    // table that is genuinely too wide never comes back under its container, so
+    // this still fails for the reason it was written to catch.
+    await expect
+      .poll(
+        () =>
+          projected.evaluate((element) => {
+            const scroller = element.closest("table")?.parentElement;
+            return scroller ? scroller.scrollWidth - scroller.clientWidth : Number.NaN;
+          }),
+        {
+          message: "deposits table still needs internal scrolling at desktop width",
+          timeout: 15_000,
+        },
+      )
+      .toBeLessThanOrEqual(1);
+
     const layout = await projected.evaluate((element) => {
       const tableScroller = element.closest("table")?.parentElement;
       const label = Array.from(element.childNodes).find(
