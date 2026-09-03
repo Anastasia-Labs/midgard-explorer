@@ -2,17 +2,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ queryRaw: vi.fn() }));
 
+/**
+ * The double models the client's contract, including `$transaction`.
+ *
+ * The aggregate now reads inside one `READ ONLY REPEATABLE READ` transaction,
+ * and a stub carrying only `$queryRaw` stopped being a stand-in for the client
+ * the moment that changed: the failure was `prisma.$transaction is not a
+ * function`, which is the double falling behind rather than the query changing.
+ * Running the callback inline keeps these cases about the SQL, which is what
+ * they assert, while still exercising the path through the transaction.
+ */
 vi.mock("../src/db.js", () => ({
   prisma: {
     $queryRaw: mocks.queryRaw,
+    $transaction: (work: (reader: unknown) => unknown) => work({ $queryRaw: mocks.queryRaw }),
     addressHistory: { findMany: vi.fn() },
   },
 }));
 
 import { getAddressHistory } from "../src/db/address.js";
 
-const sqlText = (call: unknown[]) =>
-  Array.from(call[0] as TemplateStringsArray).join(" ");
+const sqlText = (call: unknown[]) => Array.from(call[0] as TemplateStringsArray).join(" ");
 
 describe("address history query", () => {
   beforeEach(() => mocks.queryRaw.mockReset());

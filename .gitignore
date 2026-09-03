@@ -17,6 +17,10 @@ dist-ssr
 .env.*
 !.env.example
 
+# `dev setup` generates runtime.env here: the resolved ports, origins and
+# the local database password every service reads.
+.dev/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

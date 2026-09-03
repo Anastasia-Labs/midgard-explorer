@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
+import { isHash28 } from "@midgard-explorer/contracts";
 import { notFound } from "next/navigation";
-import { AdaAmount } from "../../../../components/ui/amount";
-import { ApiExample } from "../../../../components/ui/apiexample";
-import { Breadcrumbs } from "../../../../components/ui/breadcrumbs";
-import { Identifier } from "../../../../components/ui/identifier";
-import { IdentityBar } from "../../../../components/ui/identitybar";
-import { PageError } from "../../../../components/ui/pageerror";
-import { Callout, Card, PageHeader } from "../../../../components/ui/primitives";
-import { RawData } from "../../../../components/ui/rawdata";
-import { SummaryBand } from "../../../../components/ui/summary";
-import { DataTable } from "../../../../components/ui/table";
-import { Tabs } from "../../../../components/ui/tabs";
-import { Timestamp } from "../../../../components/ui/timestamp";
-import { ManifestBadge, contractName } from "../../../../components/ui/validatorlabel";
+import { AdaAmount } from "../../../../components/ui/domain/amount";
+import { ApiExample } from "../../../../components/ui/domain/apiexample";
+import { Breadcrumbs } from "../../../../components/ui/base/breadcrumbs";
+import { Identifier } from "../../../../components/ui/domain/identifier";
+import { IdentityBar } from "../../../../components/ui/domain/identitybar";
+import { PageError } from "../../../../components/ui/base/pageerror";
+import { Callout, Card, PageHeader } from "../../../../components/ui/base/layout";
+import { RawData } from "../../../../components/ui/base/rawdata";
+import { SummaryBand } from "../../../../components/ui/domain/summary";
+import { DataTable } from "../../../../components/ui/base/table";
+import { Tabs } from "../../../../components/ui/base/tabs";
+import { Timestamp } from "../../../../components/ui/base/timestamp";
+import { ManifestBadge, contractName } from "../../../../components/ui/domain/validatorlabel";
 import { api } from "../../../../lib/api";
 import { formatQuantity } from "../../../../lib/asset";
 import { truncateId } from "../../../../lib/format";
@@ -20,8 +21,6 @@ import { listErrorMessage, orNotFound } from "../../../../lib/serverErrors";
 import { viewerInit } from "../../../../lib/viewerInit";
 
 export const dynamic = "force-dynamic";
-
-const isScriptHash = (value: string) => /^[0-9a-fA-F]{56}$/.test(value);
 
 export async function generateMetadata({
   params,
@@ -38,7 +37,7 @@ export default async function ValidatorPage({
   params: Promise<{ scriptHash: string }>;
 }) {
   const { scriptHash } = await params;
-  if (!isScriptHash(scriptHash)) notFound();
+  if (!isHash28(scriptHash)) notFound();
   const hash = scriptHash.toLowerCase();
 
   let data;

@@ -8,11 +8,9 @@ import { truncateL1 } from "./helpers/truncate.mjs";
 /** The mint-policy scan also enumerates assets, once per Mint entry, so a spy
  * that counts every `fetchPolicyAssets` call counts both scans. Only calls for
  * the reference-script auth policy belong to the sweep under test. */
-const REFERENCE_POLICY = loadManifest(config.MIDGARD_MANIFEST_PATH)
-  .referenceScriptAuthPolicy;
+const REFERENCE_POLICY = loadManifest(config.MIDGARD_MANIFEST_PATH).referenceScriptAuthPolicy;
 
-const sweepsOf = (calls: string[]) =>
-  calls.filter((policy) => policy === REFERENCE_POLICY);
+const sweepsOf = (calls: string[]) => calls.filter((policy) => policy === REFERENCE_POLICY);
 
 /** Reference scripts are published to the DEPLOYER'S OWN WALLET address, so
  * none of their outputs sit at a Midgard validator address and no amount of
@@ -45,13 +43,24 @@ function spyDeps(sweepCalls: string[], requested: string[][]) {
       return ["4465706f7369745370656e64"];
     },
     fetchAssetTxs: async () => [
-      { tx_hash: DEPLOY_TX, block_height: 4939807, block_time: 1_752_600_043, epoch_no: 303 },
+      {
+        tx_hash: DEPLOY_TX,
+        block_height: 4939807,
+        block_time: 1_752_600_043,
+        epoch_no: 303,
+      },
     ],
     // Stubbed rather than omitted. An omitted dep falls through to the real
     // implementation, so a test meant to be offline reaches live Koios and
     // fails for a reason that has nothing to do with what it asserts.
     fetchAccountUpdates: async () => [],
     fetchEpochParams: async () => null,
+    // Injected so no test reaches the network. Matches this fixture chain's newest
+    // block, so the reorg window covers the same range it always did.
+    fetchTip: async () => ({
+      blockHeight: 4_980_661,
+      blockTime: 1_700_000_000,
+    }),
   } as never;
 }
 
@@ -142,7 +151,12 @@ describe("reference script deployment sweep", () => {
 
     await syncOnce({
       fetchAddressTxs: async () => [
-        { tx_hash: "a".repeat(64), block_height: 4980661, block_time: 1_753_500_000, epoch_no: 303 },
+        {
+          tx_hash: "a".repeat(64),
+          block_height: 4980661,
+          block_time: 1_753_500_000,
+          epoch_no: 303,
+        },
       ],
       fetchTxInfo: async (hashes: string[]) => {
         requested.push(hashes);
@@ -156,6 +170,12 @@ describe("reference script deployment sweep", () => {
       fetchAssetTxs: async () => [],
       fetchAccountUpdates: async () => [],
       fetchEpochParams: async () => null,
+      // Injected so no test reaches the network. Matches this fixture chain's newest
+      // block, so the reorg window covers the same range it always did.
+      fetchTip: async () => ({
+        blockHeight: 4_980_661,
+        blockTime: 1_700_000_000,
+      }),
     } as never);
 
     expect(requested.flat()).toContain("a".repeat(64));

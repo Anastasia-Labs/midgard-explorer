@@ -1,19 +1,19 @@
 import type { Metadata } from "next";
-import { Breadcrumbs } from "../../components/ui/breadcrumbs";
-import { Icon } from "../../components/ui/icons";
-import { Identifier } from "../../components/ui/identifier";
-import { L1TxLink } from "../../components/ui/l1link";
-import { StatusLegend } from "../../components/ui/legend";
-import { PageError } from "../../components/ui/pageerror";
-import { L1L2Badge, PageHeader } from "../../components/ui/primitives";
-import { StatusBadge, StatusCell } from "../../components/ui/status";
-import { DataTable, Pagination } from "../../components/ui/table";
-import { Timestamp } from "../../components/ui/timestamp";
+import { Icon } from "../../components/ui/base/icons";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { L1TxLink } from "../../components/ui/domain/l1link";
+import { StatusLegend } from "../../components/ui/base/legend";
+import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
+import { StatusBadge, StatusCell } from "../../components/ui/domain/status";
+import { DataTable, Pagination } from "../../components/ui/base/table";
+import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { ListError } from "../../components/ui/base/listerror";
 
 export const metadata: Metadata = {
   title: "Forced transactions",
@@ -38,11 +38,12 @@ export default async function ForcedTransactionsPage({
     data = await api.forcedTxsPage(page, await viewerInit(), id);
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="forcedTransaction" title="Forced transactions" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError
+        crumbs={CRUMBS}
+        entity="forcedTransaction"
+        title="Forced transactions"
+        message={listErrorMessage(e)}
+      />
     );
   }
 
@@ -78,7 +79,7 @@ export default async function ForcedTransactionsPage({
               cell: (r) => <Identifier value={r.tx_order_id} />,
             },
             {
-              header: "L1 tx",
+              header: "Forced tx order",
               headerNote: "on Cardano",
               cell: (r) => (
                 <span className="inline-flex items-center gap-1.5">

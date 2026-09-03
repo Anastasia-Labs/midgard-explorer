@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { reachable as isReachable } from "./helpers/reachable.mjs";
 import { indexerPrisma } from "../src/indexer/db.js";
 import { syncOnce } from "../src/indexer/sync.js";
 import { truncateL1 } from "./helpers/truncate.mjs";
@@ -16,28 +17,10 @@ import { truncateL1 } from "./helpers/truncate.mjs";
 
 const EXISTING = "1".repeat(64);
 
-/** Bounded probe. A stopped container on WSL2 black-holes TCP rather than
- * refusing it, so an unguarded query hangs past Vitest's hook timeout and the
- * suite reports FAIL instead of skipping. */
-async function probe(): Promise<void> {
-  await Promise.race([
-    indexerPrisma.$queryRaw`SELECT 1;`,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("probe timed out after 3000ms")), 3000),
-    ),
-  ]);
-}
-
 let reachable = false;
 
 beforeEach(async () => {
-  try {
-    await probe();
-    reachable = true;
-  } catch (err) {
-    console.warn(`Skipping: indexer Postgres unreachable. ${String(err)}`);
-    return;
-  }
+  reachable = await isReachable("index", "sync atomicity");
   await truncateL1();
   await indexerPrisma.syncCursor.deleteMany({ where: { source: "l1" } });
   await indexerPrisma.l1Tx.create({
@@ -71,12 +54,23 @@ describe("sync atomicity", () => {
     await syncOnce({
       // A hit is required, or the loop short-circuits and never fetches.
       fetchAddressTxs: async () => [
-        { tx_hash: "2".repeat(64), epoch_no: 1, block_height: 20, block_time: 1 },
+        {
+          tx_hash: "2".repeat(64),
+          epoch_no: 1,
+          block_height: 20,
+          block_time: 1,
+        },
       ],
       fetchPolicyAssets: async () => [],
       fetchAssetTxs: async () => [],
       fetchAccountUpdates: async () => [],
       fetchEpochParams: async () => null,
+      // Injected so no test reaches the network. Matches this fixture chain's newest
+      // block, so the reorg window covers the same range it always did.
+      fetchTip: async () => ({
+        blockHeight: 4_980_661,
+        blockTime: 1_700_000_000,
+      }),
       fetchTxInfo: async () => {
         rowsDuringFetch = await indexerPrisma.l1Tx.count();
         return [];
@@ -90,12 +84,23 @@ describe("sync atomicity", () => {
     await expect(
       syncOnce({
         fetchAddressTxs: async () => [
-          { tx_hash: "2".repeat(64), epoch_no: 1, block_height: 20, block_time: 1 },
+          {
+            tx_hash: "2".repeat(64),
+            epoch_no: 1,
+            block_height: 20,
+            block_time: 1,
+          },
         ],
         fetchPolicyAssets: async () => [],
         fetchAssetTxs: async () => [],
         fetchAccountUpdates: async () => [],
         fetchEpochParams: async () => null,
+        // Injected so no test reaches the network. Matches this fixture chain's newest
+        // block, so the reorg window covers the same range it always did.
+        fetchTip: async () => ({
+          blockHeight: 4_980_661,
+          blockTime: 1_700_000_000,
+        }),
         fetchTxInfo: async () => {
           throw new Error("Koios rate limited");
         },

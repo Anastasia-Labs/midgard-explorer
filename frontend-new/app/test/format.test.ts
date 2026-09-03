@@ -82,37 +82,55 @@ describe("relativeTime", () => {
     expect(relativeTime(iso, now)).toBe(expected);
   });
 
-  it("falls back to an absolute timestamp beyond 30 days", () => {
-    expect(relativeTime("2026-01-01T00:00:00.000Z", now)).toBe("2026-01-01 00:00:00 UTC");
-  });
-
   /**
-   * The 30-day switch, at the boundary rather than well past it.
+   * The reading gets coarser past a month; it does not stop being relative.
    *
-   * The case above uses a date 208 days old, so it proved the branch existed
-   * and never located it. That mattered: the absolute form is roughly three
-   * times the width of the relative one, so a table sized for `30d ago`
-   * overflows the day a row reaches 31 days. The e2e fixture is built from one
-   * fixed instant, and when that instant aged past this line the deposits
-   * layout assertion began failing on every machine, reporting
-   * `1465px > 1390px` as though a stylesheet had changed.
+   * It used to fall back to the absolute timestamp, which made one column hold
+   * two different kinds of value: rows inside the window read "20d ago" and
+   * older ones read "2026-07-26 09:40:43 UTC".
+   *
+   * The fallback existed for width. The absolute form is about three times the
+   * relative one, and when the e2e fixture's fixed instant aged past this line
+   * the deposits layout assertion began failing on every machine, reporting
+   * `1465px > 1390px` as though a stylesheet had changed. A coarser unit answers
+   * that permanently, because "2mo ago" is narrower than "30d ago".
    */
   it.each([
-    ["2026-06-29T12:00:00.000Z", "29d ago", "inside"],
-    ["2026-06-28T12:00:00.000Z", "30d ago", "at the boundary"],
+    ["2026-06-29T12:00:00.000Z", "29d ago", "inside the day range"],
+    ["2026-06-28T12:00:00.000Z", "1mo ago", "at a month"],
+    ["2026-04-28T12:00:00.000Z", "3mo ago", "months"],
+    ["2025-07-28T12:00:00.000Z", "1y ago", "a year"],
+    ["2023-07-28T12:00:00.000Z", "3y ago", "years"],
   ])("renders %s as %s (%s)", (iso, expected) => {
     expect(relativeTime(iso, now)).toBe(expected);
   });
 
-  it("switches to the wider absolute form at 31 days, not 30", () => {
-    expect(relativeTime("2026-06-28T12:00:00.000Z", now)).toBe("30d ago");
-    expect(relativeTime("2026-06-27T12:00:00.000Z", now)).toBe("2026-06-27 12:00:00 UTC");
+  /** Never an absolute instant, at any age. That is the inconsistency this
+   * replaces, and a regression would reintroduce it silently for old rows
+   * only, which is exactly where nobody looks. */
+  it("never returns an absolute timestamp, however old the record", () => {
+    for (const iso of [
+      "2026-06-27T12:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
+      "2019-01-01T00:00:00.000Z",
+    ]) {
+      expect(relativeTime(iso, now)).toMatch(/ ago$/);
+      expect(relativeTime(iso, now)).not.toContain("UTC");
+    }
   });
 
-  it("renders the absolute form far wider than the relative one", () => {
-    const relative = relativeTime("2026-06-28T12:00:00.000Z", now);
-    const absolute = relativeTime("2026-06-27T12:00:00.000Z", now);
-    expect(absolute.length).toBeGreaterThan(relative.length * 2);
+  /** The width the fallback was protecting, now bounded at every age rather
+   * than only inside the window. */
+  it("never renders wider than the longest day reading", () => {
+    const widest = "30d ago".length;
+    for (const iso of [
+      "2026-06-29T12:00:00.000Z",
+      "2026-06-27T12:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
+      "2019-01-01T00:00:00.000Z",
+    ]) {
+      expect(relativeTime(iso, now).length).toBeLessThanOrEqual(widest);
+    }
   });
 
   it("never reports a negative age for clock skew", () => {
@@ -128,6 +146,11 @@ describe("formatDuration", () => {
     [21_000, "21s"],
     [95_000, "1m 35s"],
     [3_930_000, "1h 5m"],
+    [86_340_000, "23h 59m"],
+    [86_400_000, "1d 0h"],
+    // The figure that prompted this: a chain quiet for twenty days, which read
+    // as "485h 45m" before.
+    [1_748_752_000, "20d 5h"],
   ])("renders %sms as %s", (ms, expected) => {
     expect(formatDuration(ms)).toBe(expected);
   });

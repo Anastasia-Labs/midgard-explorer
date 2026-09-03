@@ -1,0 +1,72 @@
+/* The document itself: elements, not components.
+ *
+ * Everything here applies to a page that has loaded no interface at all. */
+
+@layer base {
+  body {
+    background-color: var(--mg-bg);
+    background-image: var(--mg-canvas-texture);
+    background-position: var(--mg-canvas-texture-position);
+    background-size: var(--mg-canvas-texture-size);
+    color: var(--mg-text);
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-size: var(--text-body);
+    line-height: 1.5;
+    /* Slashed zero and fixed digit widths, everywhere, for free: both features
+       already ship inside the files being downloaded. `zero` stops a nought
+       reading as a capital O in an identifier, and `tnum` holds every digit to
+       one width so a column of ada amounts aligns on the decimal point rather
+       than drifting. */
+    font-feature-settings:
+      "zero" 1,
+      "tnum" 1;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--mg-accent) 32%, transparent);
+    color: var(--mg-text);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--mg-focus);
+    outline-offset: 2px;
+    border-radius: 5px;
+  }
+
+  /* Pressed feedback (5.2a). Hover said "this is a control", focus said "the
+     keyboard is here", and nothing said "your press landed". One rule rather
+     than a variant per component, so no control can be left without it.
+     Deliberately small: a control that lurches under the finger is worse than
+     one that does nothing. Collapsed with the rest of the motion vocabulary
+     when reduced motion is asked for. */
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active,
+  a:active,
+  summary:active {
+    transform: scale(0.985);
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--mg-border-strong);
+    border: 3px solid var(--mg-bg);
+    border-radius: 7px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

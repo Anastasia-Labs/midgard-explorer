@@ -7,14 +7,14 @@ import type { MetricsResponse, RecentBlockRow, RecentTxRow } from "@midgard-expl
 import type { L1Summary } from "../../lib/api";
 import { SearchBox } from "../../components/search/SearchOverlay";
 import { BRIDGE } from "../../lib/nav";
-import { Icon } from "../../components/ui/icons";
-import { Identifier } from "../../components/ui/identifier";
-import { NewRowsBanner, useHeldList } from "../../components/ui/livelist";
-import { NetworkMetrics } from "../../components/ui/metrics";
-import { StatusCell } from "../../components/ui/status";
-import { EmptyState, ErrorState, L1L2Badge, Panel } from "../../components/ui/primitives";
-import { Timestamp } from "../../components/ui/timestamp";
-import { contractName } from "../../components/ui/validatorlabel";
+import { Icon } from "../../components/ui/base/icons";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { NewRowsBanner, useHeldList } from "../../components/ui/base/livelist";
+import { NetworkMetrics } from "../../components/ui/domain/metrics";
+import { StatusCell } from "../../components/ui/domain/status";
+import { EmptyState, ErrorState, L1L2Badge, Panel } from "../../components/ui/base/layout";
+import { Timestamp } from "../../components/ui/base/timestamp";
+import { contractName } from "../../components/ui/domain/validatorlabel";
 import { cn, groupThousands } from "../../lib/format";
 
 /** A stable empty array: a fresh `[]` each render would make the held list

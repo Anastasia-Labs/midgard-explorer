@@ -4,14 +4,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 /** The component reads the configured explorer through `network.ts`, which
  * snapshots `process.env` at module load, so it has to be imported after the
  * environment is set. */
-let L1TxLink: typeof import("../src/components/ui/l1link").L1TxLink;
+let L1TxLink: typeof import("../src/components/ui/domain/l1link").L1TxLink;
 const HASH = "a".repeat(64);
 
 beforeAll(async () => {
   process.env.NEXT_PUBLIC_L1_EXPLORER_TX_URL = "https://preprod.cexplorer.io/tx/{hash}";
   process.env.NEXT_PUBLIC_L1_EXPLORER_NAME = "CExplorer";
   vi.resetModules();
-  ({ L1TxLink } = await import("../src/components/ui/l1link"));
+  ({ L1TxLink } = await import("../src/components/ui/domain/l1link"));
 });
 
 afterAll(() => {
@@ -63,7 +63,7 @@ describe("L1TxLink", () => {
     const previous = process.env.NEXT_PUBLIC_L1_EXPLORER_TX_URL;
     delete process.env.NEXT_PUBLIC_L1_EXPLORER_TX_URL;
     vi.resetModules();
-    const unconfigured = await import("../src/components/ui/l1link");
+    const unconfigured = await import("../src/components/ui/domain/l1link");
 
     const { container } = render(<unconfigured.L1TxLink hash={HASH} destination="cardano" />);
     expect(screen.queryByRole("link")).toBeNull();
@@ -79,7 +79,7 @@ describe("L1TxLink", () => {
     const previous = process.env.NEXT_PUBLIC_L1_EXPLORER_TX_URL;
     delete process.env.NEXT_PUBLIC_L1_EXPLORER_TX_URL;
     vi.resetModules();
-    const unconfigured = await import("../src/components/ui/l1link");
+    const unconfigured = await import("../src/components/ui/domain/l1link");
 
     render(<unconfigured.L1TxLink hash={HASH} destination="midgard" />);
     expect(screen.getByRole("link").getAttribute("href")).toBe(`/l1/transaction/${HASH}`);

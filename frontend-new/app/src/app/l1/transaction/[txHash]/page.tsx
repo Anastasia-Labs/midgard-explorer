@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
+import { isHash32 } from "@midgard-explorer/contracts";
 import { notFound } from "next/navigation";
 import type { L1TransactionResponse } from "../../../../lib/api";
-import { Breadcrumbs } from "../../../../components/ui/breadcrumbs";
-import { IdentityBar } from "../../../../components/ui/identitybar";
-import { PageError } from "../../../../components/ui/pageerror";
-import { Card, PageHeader } from "../../../../components/ui/primitives";
-import { SummaryBand } from "../../../../components/ui/summary";
-import { Timestamp } from "../../../../components/ui/timestamp";
+import { Breadcrumbs } from "../../../../components/ui/base/breadcrumbs";
+import { IdentityBar } from "../../../../components/ui/domain/identitybar";
+import { PageError } from "../../../../components/ui/base/pageerror";
+import { Card, PageHeader } from "../../../../components/ui/base/layout";
+import { SummaryBand } from "../../../../components/ui/domain/summary";
+import { Timestamp } from "../../../../components/ui/base/timestamp";
 import { ApiError, api } from "../../../../lib/api";
 import { truncateId } from "../../../../lib/format";
 import { L1_EXPLORER_NAME, l1TxUrl } from "../../../../lib/network";
@@ -17,8 +18,6 @@ import { L1Utxos } from "../../../../features/l1transaction/utxos";
 import { ScriptExecutions } from "../../../../features/l1transaction/executions";
 
 export const dynamic = "force-dynamic";
-
-const isTxHash = (value: string) => /^[0-9a-fA-F]{64}$/.test(value);
 
 export async function generateMetadata({
   params,
@@ -63,7 +62,7 @@ export default async function L1TransactionPage({
   params: Promise<{ txHash: string }>;
 }) {
   const { txHash } = await params;
-  if (!isTxHash(txHash)) notFound();
+  if (!isHash32(txHash)) notFound();
   const hash = txHash.toLowerCase();
 
   const init = await viewerInit();

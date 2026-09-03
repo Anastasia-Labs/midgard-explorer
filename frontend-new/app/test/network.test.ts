@@ -16,6 +16,7 @@ const KEYS = [
   "NEXT_PUBLIC_L1_EXPLORER_TX_URL",
   "NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL",
   "NEXT_PUBLIC_L1_EXPLORER_NAME",
+  "NEXT_PUBLIC_L1_EXPLORER_SUPPRESS",
   "NEXT_PUBLIC_API_BASE",
   "API_BASE_SERVER",
   "NEXT_PUBLIC_SITE_URL",
@@ -83,13 +84,15 @@ describe("NETWORK_LABEL", () => {
   });
 });
 
+const HASH = "a".repeat(64);
+
 describe("l1TxUrl", () => {
   it("returns null when no L1 explorer is configured", async () => {
     const { l1TxUrl } = await loadNetwork({
       NEXT_PUBLIC_L1_EXPLORER_TX_URL: undefined,
       MG_STRICT_CONFIG: undefined,
     });
-    expect(l1TxUrl("abc")).toBeNull();
+    expect(l1TxUrl(HASH)).toBeNull();
   });
 
   /* The whole point of a template. A configurable base with a fixed
@@ -101,23 +104,52 @@ describe("l1TxUrl", () => {
       NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
       MG_STRICT_CONFIG: undefined,
     });
-    expect(cexplorer.l1TxUrl("deadbeef")).toBe("https://preprod.cexplorer.io/tx/deadbeef");
+    expect(cexplorer.l1TxUrl(HASH)).toBe(`https://preprod.cexplorer.io/tx/${HASH}`);
 
     const cardanoscan = await loadNetwork({
       NEXT_PUBLIC_L1_EXPLORER_TX_URL: CARDANOSCAN,
       MG_STRICT_CONFIG: undefined,
     });
-    expect(cardanoscan.l1TxUrl("deadbeef")).toBe(
-      "https://preprod.cardanoscan.io/transaction/deadbeef",
-    );
+    expect(cardanoscan.l1TxUrl(HASH)).toBe(`https://preprod.cardanoscan.io/transaction/${HASH}`);
   });
 
-  it("escapes the hash rather than trusting it into a URL", async () => {
+  /* Width first, escaping second. A value that is not a 32-byte hash is not a
+   * Cardano transaction and is refused outright rather than escaped into a link
+   * to a page that cannot exist; the escaping remains for anything that passes
+   * the width check. The previous version asserted on "a/b?c=d", which proved
+   * the escaping and left the door open for every other non-hash. */
+  it("refuses a value that is not a transaction hash", async () => {
     const { l1TxUrl } = await loadNetwork({
       NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
       MG_STRICT_CONFIG: undefined,
     });
-    expect(l1TxUrl("a/b?c=d")).toBe("https://preprod.cexplorer.io/tx/a%2Fb%3Fc%3Dd");
+    expect(l1TxUrl("a/b?c=d")).toBeNull();
+    expect(l1TxUrl("deadbeef")).toBeNull();
+    expect(l1TxUrl("z".repeat(64))).toBeNull();
+  });
+
+  /* The rule the explorer cannot break. An L2 transaction id is 32 bytes like a
+   * Cardano hash, so width alone cannot separate them: this asserts the shape
+   * check exists, and search offers the internal page rather than this URL. */
+  it("accepts a well-formed 32-byte hash", async () => {
+    const { l1TxUrl } = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(l1TxUrl(HASH)).toContain(HASH);
+  });
+
+  /* Demo mode serves synthetic records and used to configure a live preprod
+   * explorer, so every link resolved to a transaction that never existed. */
+  it("suppresses every external link when the source is synthetic", async () => {
+    const { l1TxUrl, l1AddressUrl } = await loadNetwork({
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
+      NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL: "https://preprod.cexplorer.io/address/{address}",
+      NEXT_PUBLIC_L1_EXPLORER_SUPPRESS: "1",
+      MG_STRICT_CONFIG: undefined,
+    });
+    expect(l1TxUrl(HASH)).toBeNull();
+    expect(l1AddressUrl("addr_test1abc")).toBeNull();
   });
 
   /* A template without the placeholder would send every transaction to the
@@ -128,7 +160,7 @@ describe("l1TxUrl", () => {
       NEXT_PUBLIC_L1_EXPLORER_TX_URL: "https://preprod.cexplorer.io/tx/",
       MG_STRICT_CONFIG: undefined,
     });
-    expect(l1TxUrl("deadbeef")).toBeNull();
+    expect(l1TxUrl(HASH)).toBeNull();
   });
 
   it("refuses a template that is not http", async () => {
@@ -136,7 +168,7 @@ describe("l1TxUrl", () => {
       NEXT_PUBLIC_L1_EXPLORER_TX_URL: "javascript:alert({hash})",
       MG_STRICT_CONFIG: undefined,
     });
-    expect(l1TxUrl("deadbeef")).toBeNull();
+    expect(l1TxUrl(HASH)).toBeNull();
   });
 });
 

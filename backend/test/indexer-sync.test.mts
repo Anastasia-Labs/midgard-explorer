@@ -4,11 +4,7 @@ import { indexerPrisma } from "../src/indexer/db.js";
 import { deleteFromBlockHeight } from "../src/indexer/ingest.js";
 import { getSyncCursor } from "../src/indexer/db.js";
 import { parseTxInfo } from "../src/indexer/koios.js";
-import {
-  syncOnce,
-  warnOnPreDeploymentActivity,
-  type SyncDeps,
-} from "../src/indexer/sync.js";
+import { syncOnce, warnOnPreDeploymentActivity, type SyncDeps } from "../src/indexer/sync.js";
 import { truncateL1 } from "./helpers/truncate.mjs";
 
 /**
@@ -19,9 +15,7 @@ import { truncateL1 } from "./helpers/truncate.mjs";
  */
 
 const load = (n: string) =>
-  JSON.parse(
-    readFileSync(new URL(`./fixtures/koios/${n}`, import.meta.url), "utf8"),
-  );
+  JSON.parse(readFileSync(new URL(`./fixtures/koios/${n}`, import.meta.url), "utf8"));
 
 const addressTxs = load("address-txs.json");
 // Parsed exactly as the real fetchTxInfo parses it. Injecting the raw file
@@ -48,6 +42,9 @@ const hermetic = (over: Partial<SyncDeps> = {}): SyncDeps => ({
   fetchAssetTxs: async () => [],
   fetchAccountUpdates: async () => [],
   fetchEpochParams: async () => null,
+  // Injected so no test reaches the network. Matches this fixture chain's newest
+  // block, so the reorg window covers the same range it always did.
+  fetchTip: async () => ({ blockHeight: 4_980_661, blockTime: 1_700_000_000 }),
   ...over,
 });
 

@@ -42,7 +42,15 @@ export async function SourceBanner() {
     );
   }
 
-  if (source.isFixture) {
+  // `sourceKind` when the backend sends it, `isFixture` only as the fallback.
+  //
+  // The boolean is computed from the database NAME, so it calls everything that
+  // is not the live node a fixture. A restored snapshot holds real Midgard data
+  // and would be announced as synthetic, which understates it in the one
+  // direction that matters: a reader who is told "test fixture" stops reading.
+  const kind = source.sourceKind ?? (source.isFixture ? "fixture" : "primary");
+
+  if (kind === "fixture") {
     return (
       <div
         role="status"
@@ -51,6 +59,22 @@ export async function SourceBanner() {
         <strong className="font-semibold">Test fixture, not live data.</strong> Midgard figures on
         this site come from the database <code className="font-mono">{source.l2Database}</code>,
         which is not the live node.
+      </div>
+    );
+  }
+
+  // Real data that is allowed to be stale. Said plainly, with the capture time,
+  // because "how old" is the only question a snapshot raises.
+  if (kind === "snapshot") {
+    const capturedAt = source.freshness?.observedAsOf ?? null;
+    return (
+      <div
+        role="status"
+        className="border-b border-border bg-surface-2 px-4 py-2 text-center text-sm text-text-2"
+      >
+        <strong className="font-semibold text-text">Snapshot, not the live node.</strong> Real
+        Midgard data from <code className="font-mono">{source.l2Database}</code>
+        {capturedAt === null ? "" : `, captured ${capturedAt}`}. Nothing here advances.
       </div>
     );
   }

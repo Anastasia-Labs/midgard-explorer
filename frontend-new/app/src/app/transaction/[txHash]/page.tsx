@@ -1,23 +1,25 @@
 import type { Metadata } from "next";
+import { isHash32 } from "@midgard-explorer/contracts";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LifecyclePoller } from "../../../features/transaction/LifecyclePoller";
-import { ApiExample } from "../../../components/ui/apiexample";
-import { AdaAmount, ValueCell } from "../../../components/ui/amount";
-import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
-import { IdentityBar } from "../../../components/ui/identitybar";
-import { PageError } from "../../../components/ui/pageerror";
-import { Callout, PageHeader } from "../../../components/ui/primitives";
-import { RawData } from "../../../components/ui/rawdata";
-import { DatumPanel, RawCbor, WitnessPanel } from "../../../components/ui/scriptdata";
-import { Journey } from "../../../components/ui/journey";
-import { StatusBadge, ToneBadge } from "../../../components/ui/status";
-import { Tabs } from "../../../components/ui/tabs";
-import { Timestamp } from "../../../components/ui/timestamp";
-import { TransactionEvents } from "../../../components/ui/transactionevents";
+import { ApiExample } from "../../../components/ui/domain/apiexample";
+import { AdaAmount, ValueCell } from "../../../components/ui/domain/amount";
+import { Breadcrumbs } from "../../../components/ui/base/breadcrumbs";
+import { IdentityBar } from "../../../components/ui/domain/identitybar";
+import { PageError } from "../../../components/ui/base/pageerror";
+import { Callout, PageHeader } from "../../../components/ui/base/layout";
+import { RawData } from "../../../components/ui/base/rawdata";
+import { DatumPanel, RawCbor, WitnessPanel } from "../../../components/ui/domain/scriptdata";
+import { Journey } from "../../../components/ui/domain/journey";
+import { CardanoAssociation } from "../../../components/ui/domain/association";
+import { StatusBadge, ToneBadge } from "../../../components/ui/domain/status";
+import { Tabs } from "../../../components/ui/base/tabs";
+import { Timestamp } from "../../../components/ui/base/timestamp";
+import { TransactionEvents } from "../../../components/ui/domain/transactionevents";
 import { api } from "../../../lib/api";
 import { OUTCOME_TONE, transactionJourney } from "../../../lib/journey";
-import { formatTimestamp, truncateId } from "../../../lib/format";
+import { truncateId } from "../../../lib/format";
 import { TERMINAL_TX_STATUSES } from "../../../lib/txStatus";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
 import { statusOf } from "../../../lib/status-registry";
@@ -27,8 +29,6 @@ import { StateTab } from "../../../features/transaction/tabs/StateTab";
 import { ActionSummary, totalOutputValue } from "../../../features/transaction/ActionSummary";
 
 export const dynamic = "force-dynamic";
-
-const isTxHash = (s: string) => /^[0-9a-fA-F]{64}$/.test(s);
 
 export async function generateMetadata({
   params,
@@ -50,7 +50,7 @@ const CRUMBS = [
 
 export default async function TransactionPage({ params }: { params: Promise<{ txHash: string }> }) {
   const { txHash } = await params;
-  if (!isTxHash(txHash)) notFound();
+  if (!isHash32(txHash)) notFound();
   const hash = txHash.toLowerCase();
 
   let data;
@@ -92,15 +92,18 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
     />
   );
   const journey = (
-    <Journey model={journeyModel} showHeadline={false}>
-      {data.admission ? (
-        <p className="font-mono mg-micro text-text-3">
-          Node admission record · {data.admission.attemptCount} validation attempt
-          {data.admission.attemptCount === 1 ? "" : "s"} · {data.admission.requestCount} request
-          {data.admission.requestCount === 1 ? "" : "s"} · source: {data.admission.submitSource}
-        </p>
-      ) : null}
-    </Journey>
+    <>
+      <Journey model={journeyModel} showHeadline={false}>
+        {data.admission ? (
+          <p className="font-mono mg-micro text-text-3">
+            Node admission record · {data.admission.attemptCount} validation attempt
+            {data.admission.attemptCount === 1 ? "" : "s"} · {data.admission.requestCount} request
+            {data.admission.requestCount === 1 ? "" : "s"} · source: {data.admission.submitSource}
+          </p>
+        ) : null}
+      </Journey>
+      <CardanoAssociation association={data.cardano} context={data.midgard} />
+    </>
   );
 
   if (data.transaction === null) {
@@ -143,7 +146,9 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
                 row's own timestamp when there is no timeline to carry it, so
                 the page never shows two different rejection times. */}
             {data.rejection.rejectedAt && !data.admission ? (
-              <p className="mt-1.5">At: {formatTimestamp(data.rejection.rejectedAt)}</p>
+              <p className="mt-1.5">
+                At: <Timestamp exact iso={data.rejection.rejectedAt} />
+              </p>
             ) : null}
           </Callout>
         ) : data.decodeError ? null : (

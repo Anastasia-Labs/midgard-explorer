@@ -11,19 +11,14 @@ import {
   getL1BlockHeader,
   getL1Deposits,
   getL1Summary,
-  getSourceIdentity,
   getL1Validator,
-  isFixtureDatabase,
-  resetSourceIdentity,
 } from "../src/db/l1.js";
+import { getSourceIdentity, isFixtureDatabase, resetSourceIdentity } from "../src/db/deployment.js";
 import { truncateL1 } from "./helpers/truncate.mjs";
 
 const infos = parseTxInfo(
   JSON.parse(
-    readFileSync(
-      new URL("./fixtures/koios/tx-info-state-queue.json", import.meta.url),
-      "utf8",
-    ),
+    readFileSync(new URL("./fixtures/koios/tx-info-state-queue.json", import.meta.url), "utf8"),
   ),
 );
 const { validators, deploymentId } = loadManifest(
@@ -86,6 +81,13 @@ describe("L1 read queries", () => {
   // It was captured before the detail flags were added, so its input,
   // reference and collateral arrays are genuinely empty, and asserting
   // otherwise would be asserting against a fixture rather than against Koios.
+  //
+  // Its mint is not in that category. The capture stripped `assets_minted` and
+  // every output's `asset_list`, and this assertion read that omission back as
+  // a fact about the chain. The transaction really does mint one state-queue
+  // block token, which is the identity the block header is now keyed on, so the
+  // arrays have been restored from the rows the indexer stored for this same
+  // transaction and the assertion states what the chain holds.
   it("returns every stored section of a transaction, not just its events", async (ctx) => {
     ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
     const tx = (await getL1Transaction(
@@ -96,7 +98,39 @@ describe("L1 read queries", () => {
     expect(tx.inputs).toEqual([]);
     expect(tx.referenceInputs).toEqual([]);
     expect(tx.collateral).toEqual([]);
-    expect(tx.mints).toEqual([]);
+    expect(tx.mints).toHaveLength(1);
+    expect(tx.mints[0]).toMatchObject({
+      kind: "mint",
+      policyId: "1e5769e8fd8e777c5995e9cbec5ef30b81abc3b36f78a8606332d19a",
+      assetName: "4d424c43003ab288f3168c80eb09f5843844dc19a506e0177947d2ca22d9ca68",
+      quantity: 1n,
+    });
+  });
+
+  /** The block this commit transaction committed, keyed the way every consumer
+   * asks for it. The indexer used to store a 32-byte `utxosRoot` here, which no
+   * route could request and no page could resolve. */
+  it("keys the committed header by its 28-byte hash, taken from the minted token", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const header = await getL1BlockHeader(
+      "003ab288f3168c80eb09f5843844dc19a506e0177947d2ca22d9ca68",
+    );
+    expect(header?.headerHash).toMatch(/^[0-9a-f]{56}$/);
+    expect(header?.l1TxHash).toBe(
+      "9152dc88611dc2a23c723689e5cca8efc34719c6567cc1f95d40eadb534ddf92",
+    );
+  });
+
+  /** The previous queue node the same transaction re-outputs. It gets a header
+   * row because the block exists, and no attribution because this transaction
+   * did not commit it: its token was minted by an earlier transaction. */
+  it("records the carried-forward node without attributing it to this transaction", async (ctx) => {
+    ctx.skip(!reachable, "indexer Postgres unreachable on 5435");
+    const carried = await getL1BlockHeader(
+      "5b87ddae8cf9667353282347cb55f3bbefd77325114f6a125b4c100d",
+    );
+    expect(carried?.headerHash).toMatch(/^[0-9a-f]{56}$/);
+    expect(carried?.l1TxHash).toBeNull();
   });
 
   it("returns the collateral output as one UTxO rather than a list", async (ctx) => {
@@ -190,10 +224,7 @@ describe("source identity", () => {
       await Promise.race([
         prisma.$queryRaw`SELECT 1;`,
         new Promise((_, reject) =>
-          setTimeout(
-            () => reject(new Error("probe timed out after 3000ms")),
-            3000,
-          ),
+          setTimeout(() => reject(new Error("probe timed out after 3000ms")), 3000),
         ),
       ]);
       nodeReachable = true;
@@ -213,8 +244,7 @@ describe("source identity", () => {
     // spent weeks reporting figures from a database nobody thought it was
     // reading, and an echo of the configured name would have agreed with the
     // mistake.
-    (config as { POSTGRES_DB?: string }).POSTGRES_DB =
-      "midgard_phase4_process_txcoverage";
+    (config as { POSTGRES_DB?: string }).POSTGRES_DB = "midgard_phase4_process_txcoverage";
     try {
       const s = await getSourceIdentity();
       expect(s!.l2Database).toBe(db);
@@ -231,16 +261,14 @@ describe("source identity", () => {
     const { config } = await import("../src/config.js");
     const original = config.MIDGARD_MANIFEST_PATH;
     resetSourceIdentity();
-    (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+    (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH =
       "/nonexistent/manifest.json";
     try {
       expect(await getSourceIdentity()).toBeNull();
-      (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
-        original;
+      (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH = original;
       expect(await getSourceIdentity()).not.toBeNull();
     } finally {
-      (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
-        original;
+      (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH = original;
       resetSourceIdentity();
     }
   });
@@ -253,9 +281,7 @@ describe("source identity", () => {
     expect(s!.l2Database.length).toBeGreaterThan(0);
     expect(typeof s!.isFixture).toBe("boolean");
     expect(s!.validators.length).toBeGreaterThan(0);
-    expect(
-      s!.validators.every((validator) => validator.address.startsWith("addr")),
-    ).toBe(true);
+    expect(s!.validators.every((validator) => validator.address.startsWith("addr"))).toBe(true);
   });
 
   // The summary route is documented to answer whether or not anything else is
@@ -265,13 +291,12 @@ describe("source identity", () => {
     const { config } = await import("../src/config.js");
     const original = config.MIDGARD_MANIFEST_PATH;
     resetSourceIdentity();
-    (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
+    (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH =
       "/nonexistent/manifest.json";
     try {
       expect(await getSourceIdentity()).toBeNull();
     } finally {
-      (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH =
-        original;
+      (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH = original;
       resetSourceIdentity();
     }
   });
@@ -381,10 +406,7 @@ describe("L1 transaction paging across a same-block tie", () => {
   // only way a page-boundary bug (dropped/duplicated rows, wrong hasNextPage)
   // would actually surface instead of hiding behind incidental row order.
   const tiedTxTime = new Date("2026-01-01T00:00:00.000Z");
-  const syntheticHashes = Array.from(
-    { length: 5 },
-    (_, i) => `${"a".repeat(63)}${i}`,
-  );
+  const syntheticHashes = Array.from({ length: 5 }, (_, i) => `${"a".repeat(63)}${i}`);
 
   beforeAll(async () => {
     if (!reachable) return;
@@ -466,9 +488,7 @@ describe("L1 transaction paging across a same-block tie", () => {
     });
 
     const page = await getL1TransactionsPage(1, 5);
-    expect(page.rows.map((r: { txHash: string }) => r.txHash)).toEqual(
-      [...hashes].reverse(),
-    );
+    expect(page.rows.map((r: { txHash: string }) => r.txHash)).toEqual([...hashes].reverse());
   });
 });
 

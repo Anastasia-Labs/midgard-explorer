@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useState } from "react";
-import { NewRowsBanner, useHeldList } from "../src/components/ui/livelist";
+import { NewRowsBanner, useHeldList } from "../src/components/ui/base/livelist";
 
 afterEach(cleanup);
 

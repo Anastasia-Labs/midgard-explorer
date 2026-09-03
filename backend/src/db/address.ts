@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { readConsistently, type NodeReader } from "./consistent";
 
 const HISTORY_LIMIT = 25;
 
@@ -8,8 +9,8 @@ const HISTORY_LIMIT = 25;
  * `mempool_ledger`; deposit-sourced rows only become spendable once their
  * deposit is projected (mirrors the node's spendable predicate).
  */
-export async function getAddressUtxos(address: string) {
-  return prisma.$queryRaw<Array<{ output: Uint8Array; outref: Uint8Array }>>`
+export async function getAddressUtxos(address: string, db: NodeReader = prisma) {
+  return db.$queryRaw<Array<{ output: Uint8Array; outref: Uint8Array }>>`
     SELECT ml.output, ml.outref
       FROM mempool_ledger AS ml
       LEFT JOIN deposits_utxos AS d ON d.event_id = ml.source_event_id
@@ -38,12 +39,27 @@ export type AddressHistoryRecord = {
  * The page is bounded before decoding. The total and activity range describe
  * the complete address history, not just the returned page.
  */
-export async function getAddressHistory(address: string, page: number = 1) {
+export async function getAddressHistory(
+  address: string,
+  page: number = 1,
+  reader?: NodeReader,
+) {
   const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
   const offset = (safePage - 1) * HISTORY_LIMIT;
 
-  const [rows, summaryRows] = await Promise.all([
-    prisma.$queryRaw<AddressHistoryRecord[]>`
+  // One snapshot: a page of history and the summary counted beside it must
+  // describe the same ledger, or a row appears on the page and not in the total.
+  //
+  // A caller that already holds a transaction passes its reader, and the whole
+  // RESPONSE then shares one snapshot rather than this function having its own.
+  // The address page reads history and UTxOs, and a balance computed from one
+  // snapshot beside a history from another describes no moment that existed.
+  const inOwnTransaction = <T,>(work: (db: NodeReader) => Promise<T>): Promise<T> =>
+    reader ? work(reader) : readConsistently(work);
+
+  const [rows, summaryRows] = await inOwnTransaction(async (db) =>
+    Promise.all([
+    db.$queryRaw<AddressHistoryRecord[]>`
       WITH tx_candidates AS (
         SELECT tx_id, tx, time_stamp_tz, 'immutable'::text AS source, 1 AS priority
           FROM immutable
@@ -98,7 +114,7 @@ export async function getAddressHistory(address: string, page: number = 1) {
         FROM activity
        ORDER BY time_stamp_tz DESC NULLS LAST, encode(tx_id, 'hex') DESC
        OFFSET ${offset} LIMIT ${HISTORY_LIMIT};`,
-    prisma.$queryRaw<
+    db.$queryRaw<
       Array<{
         total: bigint;
         first_activity: Date | null;
@@ -128,7 +144,8 @@ export async function getAddressHistory(address: string, page: number = 1) {
         LEFT JOIN legacy_times AS l ON l.tx_id = ah.tx_id AND j.tx_id IS NULL
         LEFT JOIN body_times AS b ON b.tx_id = ah.tx_id
        WHERE ah.address = ${address};`,
-  ]);
+  ]),
+  );
 
   const summary = summaryRows[0] ?? {
     total: 0n,

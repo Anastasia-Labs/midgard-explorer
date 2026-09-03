@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FieldLabel, InfoTip } from "../src/components/ui/infotip";
+import { FieldLabel, InfoTip } from "../src/components/ui/base/infotip";
 
 afterEach(() => {
   cleanup();

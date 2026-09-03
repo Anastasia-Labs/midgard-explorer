@@ -1,7 +1,7 @@
 import type { DecimalString, TransactionView, ValueView } from "@midgard-explorer/contracts";
-import { AddressLink } from "../../components/ui/address";
-import { ValueCell } from "../../components/ui/amount";
-import { Card } from "../../components/ui/primitives";
+import { AddressLink } from "../../components/ui/domain/address";
+import { ValueCell } from "../../components/ui/domain/amount";
+import { Card } from "../../components/ui/base/layout";
 import { addressDeltas } from "../../lib/ledger";
 
 function addAsset(

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { reachable as isReachable } from "./helpers/reachable.mjs";
 import { readFileSync } from "node:fs";
 import { config } from "../src/indexer/../config.js";
 import { getSyncCursor, indexerPrisma, setSyncCursor } from "../src/indexer/db.js";
@@ -25,10 +26,7 @@ const SOURCES = ["l1", "l1:mints", "l1:rewards"];
 
 const template = parseTxInfo(
   JSON.parse(
-    readFileSync(
-      new URL("./fixtures/koios/tx-info-state-queue.json", import.meta.url),
-      "utf8",
-    ),
+    readFileSync(new URL("./fixtures/koios/tx-info-state-queue.json", import.meta.url), "utf8"),
   ),
 )[0];
 
@@ -61,32 +59,24 @@ const koiosLike = (over: Partial<SyncDeps> = {}): SyncDeps => ({
     [ADDRESS_TX, MINT_ONLY_TX].filter((t) => hashes.includes(t.tx_hash)),
   fetchAccountUpdates: async () => [],
   fetchEpochParams: async () => null,
+  // Injected so no test reaches the network. This fixture chain's own newest
+  // block, so the reorg window still covers it: the floor now tracks the
+  // chain tip rather than the newest Midgard row.
+  fetchTip: async () => ({ blockHeight: 100, blockTime: 1_700_000_000 }),
   ...over,
 });
 
 let reachable = false;
 
-async function probe(): Promise<void> {
-  await Promise.race([
-    indexerPrisma.$queryRaw`SELECT 1;`,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("probe timed out after 3000ms")), 3000),
-    ),
-  ]);
-}
-
 const clear = async () => {
   await truncateL1();
-  await indexerPrisma.syncCursor.deleteMany({ where: { source: { in: SOURCES } } });
+  await indexerPrisma.syncCursor.deleteMany({
+    where: { source: { in: SOURCES } },
+  });
 };
 
 beforeAll(async () => {
-  try {
-    await probe();
-    reachable = true;
-  } catch (err) {
-    console.warn(`Skipping: indexer Postgres unreachable. ${String(err)}`);
-  }
+  reachable = await isReachable("index", "reconciliation");
 });
 
 beforeEach(async () => {

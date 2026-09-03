@@ -14,7 +14,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:${API_CACHE_PORT:-3102}:8080"
+      - "${BIND_HOST:-127.0.0.1}:${API_CACHE_PORT:-3102}:8080"
     volumes:
       - ./infra/nginx/explorer-api.conf.template:/etc/nginx/templates/default.conf.template:ro
       - explorer-api-cache:/var/cache/nginx
@@ -42,13 +42,20 @@ services:
       # documentation describes this path as production-capable. Compose fails
       # with "variable is not set" rather than starting with a guessable one.
       POSTGRES_PASSWORD: ${EXPLORER_POSTGRES_PASSWORD:?set EXPLORER_POSTGRES_PASSWORD before starting}
-      POSTGRES_DB: midgard_explorer
+      POSTGRES_DB: ${EXPLORER_POSTGRES_DB:-midgard_explorer}
     ports:
-      - "127.0.0.1:5435:5432"
+      # Interpolated, not literal. `dev setup` treats the port, user and
+      # database as configurable and writes them into .dev/runtime.env, so
+      # hardcoding them here meant changing one of them moved the URL every
+      # client used and left the container on the old one.
+      - "${BIND_HOST:-127.0.0.1}:${EXPLORER_POSTGRES_PORT:-5435}:5432"
     volumes:
       - explorer-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U explorer -d midgard_explorer"]
+      # `$$` escapes Compose's own interpolation, so the shell inside the
+      # container expands these from the variables the container was given.
+      # The check then follows the credentials rather than repeating them.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5

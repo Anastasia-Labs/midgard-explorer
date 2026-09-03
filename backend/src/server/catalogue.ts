@@ -26,6 +26,7 @@ import { readinessRoute } from "./readiness";
 import {
   probeIndexDatabase,
   probeIndexReconciled,
+  probeDeploymentBinding,
   probeManifest,
   probeNodeDatabase,
 } from "./probes";
@@ -41,6 +42,7 @@ import {
 import { buildOpenApiDocument, type OpenApiDocument } from "./openapi";
 import { cachePublicJson } from "./cache";
 import { config } from "../config";
+import { HASH28_HEX, HASH32_HEX } from "../utils";
 
 /**
  * The one place a public route exists.
@@ -89,8 +91,8 @@ export type Endpoint = {
 // client that followed the schema got a 400 the schema said was valid. Cardano
 // hashes are canonically lowercase and stored that way, so widening the routes
 // instead would turn a clear rejection into a silent miss.
-const hex64 = { type: "string", pattern: "^[0-9a-f]{64}$" };
-const hex56 = { type: "string", pattern: "^[0-9a-f]{56}$" };
+const hex64 = { type: "string", pattern: `^[0-9a-f]{${HASH32_HEX}}$` };
+const hex56 = { type: "string", pattern: `^[0-9a-f]{${HASH28_HEX}}$` };
 const pageSchema = { type: "integer", minimum: 1 };
 const limitSchema = { type: "integer", minimum: 1, maximum: 100, default: 25 };
 
@@ -140,25 +142,62 @@ const healthRoute: RequestHandler = (_req, res) => {
   res.json({ status: "ok", now: new Date().toISOString() });
 };
 
-/* Both databases and the manifest, because the explorer serves nothing useful
- * without any of them. These probes check the relations each query path needs
- * and that the index's migrations finished. `SELECT 1` proved only that the
- * pool could hand out a connection, so an empty generic PostgreSQL with none of
- * the tables reported ready, which is what CI provisioned. */
+const onFailure = (name: string, error: unknown) =>
+  logger.error(`Readiness probe failed for ${name}: ${String(error)}`);
+
+/**
+ * L2 readiness: can this process serve the Midgard explorer?
+ *
+ * The node database and nothing else. Every L2 page reads it, and none of them
+ * touch the Cardano index.
+ *
+ * This used to include the index, its reconciliation and the manifest, and
+ * `/readyz` answers `checks.every(ok)`, so an index that had never reconciled
+ * removed the whole instance from rotation, L2 routes included. That
+ * contradicted the rule the explorer is built on: an L1 index behind the tip
+ * degrades the Cardano surface and must never make an L2 page unavailable.
+ *
+ * `probeIndexDatabase` moved out with the rest. The L2 query surface does not
+ * read the explorer index, so keeping it here would have moved the outage one
+ * probe to the left rather than removing it.
+ */
 const readyRoute = readinessRoute(
+  { "midgard-node": probeNodeDatabase },
+  { onFailure },
+);
+
+/**
+ * L1 readiness: can this process serve the Cardano surface?
+ *
+ * The index's shape, its migrations, a completed reconciliation, and the
+ * manifest every indexed row is attributed to. Separate probes because they
+ * fail for different reasons and an operator needs to read which: an index can
+ * be shaped correctly and hold nothing any query can reach.
+ *
+ * A failure here takes the L1 pages out of rotation and leaves the L2 pages
+ * serving, which is the whole point of the split.
+ */
+const readyL1Route = readinessRoute(
   {
     "midgard-node": probeNodeDatabase,
     "explorer-index": probeIndexDatabase,
-    // Separate from the check above, because the two fail for different
-    // reasons and an operator needs to read which. The index can be shaped
-    // correctly and hold nothing reachable.
     "index-reconciled": probeIndexReconciled,
     manifest: probeManifest,
+    "deployment-binding": probeDeploymentBinding,
   },
+  { onFailure },
+);
+
+/** Both capabilities, for a deployment gate that wants one call. */
+const readyFullRoute = readinessRoute(
   {
-    onFailure: (name, error) =>
-      logger.error(`Readiness probe failed for ${name}: ${String(error)}`),
+    "midgard-node": probeNodeDatabase,
+    "explorer-index": probeIndexDatabase,
+    "index-reconciled": probeIndexReconciled,
+    manifest: probeManifest,
+    "deployment-binding": probeDeploymentBinding,
   },
+  { onFailure },
 );
 
 /* Lazy on purpose: the document is generated from this array, so it cannot be
@@ -174,8 +213,20 @@ export const ENDPOINTS: readonly Endpoint[] = [
   endpoint(
     "/readyz",
     "System",
-    "Report whether both databases can serve a request",
+    "Report whether the Midgard node database can serve a request",
     readyRoute,
+  ),
+  endpoint(
+    "/readyz/l1",
+    "System",
+    "Report whether the Cardano index can serve a request",
+    readyL1Route,
+  ),
+  endpoint(
+    "/readyz/full",
+    "System",
+    "Report whether both capabilities can serve a request",
+    readyFullRoute,
   ),
   endpoint(
     "/api/openapi.json",

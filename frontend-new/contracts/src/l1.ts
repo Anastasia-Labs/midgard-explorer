@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { Freshness, SourceKind } from "./association";
 import {
   DecimalString,
   Hash28,
@@ -34,7 +35,15 @@ export const L1SourceIdentity = Schema.Struct({
   network: Schema.String,
   deployedAt: IsoTimestamp,
   l2Database: Schema.String,
+  /** Retained for one release. `sourceKind` is the field to read: a boolean
+   * cannot tell a restored snapshot of real Midgard data from synthetic fixture
+   * data, and calling the first one a fixture understates it. */
   isFixture: Schema.Boolean,
+  /** What the backend is actually reading, asked of PostgreSQL rather than
+   * derived from a configured URL. Optional so a frontend built against this
+   * still parses a backend that predates it. */
+  sourceKind: Schema.optional(SourceKind),
+  freshness: Schema.optional(Freshness),
   /** Validators accepted from the active deployment manifest after shared
    * placeholder hashes have been excluded. These are trust anchors, not
    * frontend guesses based on an address prefix. */
@@ -80,6 +89,30 @@ export const L1ValidatorCount = Schema.Struct({
 });
 export type L1ValidatorCount = Schema.Schema.Type<typeof L1ValidatorCount>;
 
+/** How much of the L1 chain the index holds.
+ *
+ * An empty list of L1 transactions cannot say on its own whether the chain had
+ * no activity or the index was never built, and those are different things to
+ * show a reader. The list routes still answer with an empty page; this is what
+ * lets a page label it correctly.
+ */
+export const L1SyncState = Schema.Literal("unbuilt", "indexing", "reconciled");
+export type L1SyncState = Schema.Schema.Type<typeof L1SyncState>;
+
+export const L1SyncCursor = Schema.Struct({
+  source: Schema.String,
+  height: Schema.NullOr(Schema.Number),
+});
+export type L1SyncCursor = Schema.Schema.Type<typeof L1SyncCursor>;
+
+/** Every cursor, not only the verdict: three heights that disagree say which
+ * source is behind, which one boolean cannot. */
+export const L1Sync = Schema.Struct({
+  state: L1SyncState,
+  cursors: Schema.Array(L1SyncCursor),
+});
+export type L1Sync = Schema.Schema.Type<typeof L1Sync>;
+
 export const L1SummaryResponse = Schema.Struct({
   /** Nullable rather than defaulted: a missing source must never be read as
    * "this is live data". */
@@ -88,6 +121,7 @@ export const L1SummaryResponse = Schema.Struct({
   events: Schema.Number,
   blockHeaders: Schema.Number,
   lastSyncedHeight: Schema.NullOr(Schema.Number),
+  sync: L1Sync,
   byValidator: Schema.Array(L1ValidatorCount),
 });
 export type L1SummaryResponse = Schema.Schema.Type<typeof L1SummaryResponse>;
@@ -257,8 +291,11 @@ export type L1TransactionResponse = Schema.Schema.Type<typeof L1TransactionRespo
 /** A Midgard header decoded from the state-queue datum observed on Cardano.
  * This is L1 evidence and must not be described as node-local DA retention. */
 export const L1BlockHeader = Schema.Struct({
-  headerHash: HexString,
-  l1TxHash: Schema.NullOr(HexString),
+  /** The Midgard block header hash, 28 bytes. Was `HexString` while the indexer
+   * stored a 32-byte `utxosRoot` here, so the contract could not have rejected
+   * the wrong value. `Hash28` is what makes ADR 6 enforceable at the boundary. */
+  headerHash: Hash28,
+  l1TxHash: Schema.NullOr(Hash32),
   blockHeight: Schema.NullOr(Schema.Number),
   prevUtxosRoot: HexString,
   utxosRoot: HexString,

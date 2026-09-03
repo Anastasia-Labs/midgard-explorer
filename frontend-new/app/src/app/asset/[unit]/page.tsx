@@ -6,22 +6,23 @@ import {
   AssetName,
   AssetQuantity,
   CoverageNote,
-} from "../../../components/ui/asset";
-import { ApiExample } from "../../../components/ui/apiexample";
-import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
-import { Identifier } from "../../../components/ui/identifier";
-import { IdentityBar } from "../../../components/ui/identitybar";
-import { PageError } from "../../../components/ui/pageerror";
-import { Callout, Card, EmptyState, PageHeader } from "../../../components/ui/primitives";
-import { RawData } from "../../../components/ui/rawdata";
-import { SummaryBand } from "../../../components/ui/summary";
-import { DataTable } from "../../../components/ui/table";
-import { Tabs } from "../../../components/ui/tabs";
+} from "../../../components/ui/domain/asset";
+import { ApiExample } from "../../../components/ui/domain/apiexample";
+import { Breadcrumbs } from "../../../components/ui/base/breadcrumbs";
+import { Identifier } from "../../../components/ui/domain/identifier";
+import { IdentityBar } from "../../../components/ui/domain/identitybar";
+import { PageError } from "../../../components/ui/base/pageerror";
+import { Callout, Card, EmptyState, PageHeader } from "../../../components/ui/base/layout";
+import { RawData } from "../../../components/ui/base/rawdata";
+import { SummaryBand } from "../../../components/ui/domain/summary";
+import { DataTable } from "../../../components/ui/base/table";
+import { Tabs } from "../../../components/ui/base/tabs";
 import { api } from "../../../lib/api";
 import { assetLabel, parseAssetUnit } from "../../../lib/asset";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
-import { AddressLink } from "../../../components/ui/address";
+import { AddressLink } from "../../../components/ui/domain/address";
 import { viewerInit } from "../../../lib/viewerInit";
+import { groupThousands } from "../../../lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -111,7 +112,7 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
             ...(data.coverage.truncated ? { sub: "Lower bound" } : { sub: "Current ledger" }),
           },
           { label: "Holders", value: data.holderCount },
-          { label: "UTxOs scanned", value: data.coverage.scanned.toLocaleString() },
+          { label: "UTxOs scanned", value: groupThousands(String(data.coverage.scanned)) },
         ]}
       />
 

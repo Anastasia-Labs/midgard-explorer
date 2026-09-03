@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "The Midgard node this explorer build is known to read.",
+    "nodeSchema.fingerprint covers table and column names for the relations the",
+    "read path queries, taken from NODE_TABLES in backend/src/server/probes.ts.",
+    "Regenerate it from the committed schema fixture with: ./dev compat write",
+    "manifestSchemaVersions mirrors SUPPORTED_SCHEMA_VERSIONS in",
+    "backend/src/indexer/manifest.ts, which remains the value the indexer enforces.",
+    "verifiedAgainst names the deployment this build was actually run against."
+  ],
+  "midgard": {
+    "repository": "https://github.com/Anastasia-Labs/midgard",
+    "branch": "tx-validation",
+    "commit": null,
+    "commitNote": "Not pinned. A branch moves, so this records which line of development the build reads and nothing about which revision anybody verified. It cannot be filled from here: the manifest carries no commit, and a local checkout is not evidence of what produced a deployment. It comes from the build record of the node being run, and `./dev doctor` warns until it does.",
+    "verifiedAgainst": {
+      "manifestId": "a56045c3133c4bfa52714c3371b46afedff7de450df53e213866aa79b5c5f7fd",
+      "network": "Preprod",
+      "deploymentCreatedAt": "2026-07-15T17:25:29.605Z",
+      "verifiedOn": "2026-09-01",
+      "note": "The deployment the read path and the L1 index were exercised against."
+    }
+  },
+  "nodeSchema": {
+    "fingerprint": "sha256:73c91e5fb936bdb9d823be9d5f058043",
+    "relations": 18
+  },
+  "manifestSchemaVersions": [
+    "midgard-deployment-manifest-v2"
+  ],
+  "explorerIndex": {
+    "minimumMigration": "20260807114358_init_sync_cursor",
+    "shippedMigrations": 6
+  }
+}

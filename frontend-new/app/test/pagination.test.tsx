@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DataTable, Pagination } from "../src/components/ui/table";
+import { DataTable, Pagination } from "../src/components/ui/base/table";
 import { parsePage } from "../src/lib/parsePage";
 
 const notFound = vi.hoisted(() =>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Icon } from "../../components/ui/icons";
+import { Icon } from "../../components/ui/base/icons";
 import { GLOSSARY, type GlossaryEntry, type GlossaryTerm } from "../../lib/glossary";
 
 const CATEGORIES: readonly GlossaryEntry["category"][] = [

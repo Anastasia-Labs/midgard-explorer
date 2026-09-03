@@ -1,5 +1,6 @@
 import { config } from "../config";
 import { prisma } from "../db";
+import { readConsistently, type NodeReader } from "./consistent";
 import { toHex } from "../utils";
 
 export type BlockTxRecord = {
@@ -15,9 +16,9 @@ export type BlockTxRecord = {
  * legacy `blocks` table is only a source of its nullable row identifier; the
  * node clears those rows after merge. The second arm preserves old block-only
  * records without duplicating a transaction that already has journal evidence. */
-export async function getBlock(headerHash: string) {
+export async function getBlock(headerHash: string, db: NodeReader = prisma) {
   const key = Buffer.from(headerHash, "hex");
-  return prisma.$queryRaw<BlockTxRecord[]>`
+  return db.$queryRaw<BlockTxRecord[]>`
     WITH legacy AS (
       SELECT header_hash, MIN(height)::int AS height
         FROM blocks
@@ -71,9 +72,9 @@ export type BlockHeaderRecord = {
 /** One header summary. The journal is authoritative when present; DA and
  * `blocks` are detail-only compatibility fallbacks so an orphaned legacy row
  * remains inspectable without becoming part of the canonical header list. */
-export async function getBlockHeader(headerHash: string) {
+export async function getBlockHeader(headerHash: string, db: NodeReader = prisma) {
   const key = Buffer.from(headerHash, "hex");
-  const rows = await prisma.$queryRaw<BlockHeaderRecord[]>`
+  const rows = await db.$queryRaw<BlockHeaderRecord[]>`
     WITH materialized AS (
       SELECT header_hash, MIN(height)::int AS height, COUNT(*)::bigint AS count,
              MAX(time_stamp_tz) AS block_end_time
@@ -184,9 +185,9 @@ export async function getTotalBlocks() {
   return Number(rows[0]?.n ?? 0n);
 }
 
-export async function getBlockDaMetadata(headerHash: string) {
+export async function getBlockDaMetadata(headerHash: string, db: NodeReader = prisma) {
   const key = Buffer.from(headerHash, "hex");
-  const rows = await prisma.$queryRaw<
+  const rows = await db.$queryRaw<
     Array<{
       utxos_root: string;
       transactions_root: string;
@@ -223,9 +224,9 @@ export async function getBlockDaMetadata(headerHash: string) {
   };
 }
 
-export async function getBlockFinalization(headerHash: string) {
+export async function getBlockFinalization(headerHash: string, db: NodeReader = prisma) {
   const key = Buffer.from(headerHash, "hex");
-  const rows = await prisma.$queryRaw<
+  const rows = await db.$queryRaw<
     Array<{
       status: string;
       submitted_tx_hash: Uint8Array | null;
@@ -262,18 +263,18 @@ export type BlockEventMember = {
 
 /** IDs and order are enough to connect a header to the existing bridge pages;
  * payload bytes remain in the raw node journal and are not duplicated in JSON. */
-export async function getBlockEvents(headerHash: string) {
+export async function getBlockEvents(headerHash: string, db: NodeReader = prisma) {
   const key = Buffer.from(headerHash, "hex");
   const [deposits, withdrawals, forcedTransactions] = await Promise.all([
-    prisma.$queryRaw<BlockEventMember[]>`
+    db.$queryRaw<BlockEventMember[]>`
       SELECT member_id, ordinal, source_time_stamp_tz
         FROM pending_block_finalization_deposits
        WHERE header_hash = ${key} ORDER BY ordinal ASC;`,
-    prisma.$queryRaw<BlockEventMember[]>`
+    db.$queryRaw<BlockEventMember[]>`
       SELECT member_id, ordinal, source_time_stamp_tz
         FROM pending_block_finalization_withdrawals
        WHERE header_hash = ${key} ORDER BY ordinal ASC;`,
-    prisma.$queryRaw<BlockEventMember[]>`
+    db.$queryRaw<BlockEventMember[]>`
       SELECT member_id, ordinal, source_time_stamp_tz
         FROM pending_block_finalization_forced_transactions
        WHERE header_hash = ${key} ORDER BY ordinal ASC;`,
@@ -286,38 +287,41 @@ export async function getBlocksPage(page: number, status?: string) {
   const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
   const offset = (safePage - 1) * limit;
   const filter = status && status.length > 0 ? status : null;
-  const [rows, total] = await Promise.all([
-    prisma.$queryRaw<BlockListRecord[]>`
-      WITH legacy AS (
-        SELECT header_hash, MIN(height)::int AS height, COUNT(*)::bigint AS count
-          FROM blocks GROUP BY header_hash
-      ), first_tx AS (
-        SELECT DISTINCT ON (header_hash) header_hash, member_id
-          FROM pending_block_finalization_txs
-         ORDER BY header_hash, ordinal ASC
-      )
-      SELECT f.header_hash, l.height, t.member_id AS tx_id,
-             f.block_start_time, f.block_end_time,
-             f.expected_l2_transaction_count AS header_l2_transaction_count,
-             f.expected_deposit_count AS header_deposit_count,
-             f.expected_withdrawal_count AS header_withdrawal_count,
-             f.expected_forced_transaction_count AS header_forced_transaction_count,
-             COALESCE(l.count, 0)::bigint AS materialized_l2_transaction_count,
-             (d.header_hash IS NOT NULL) AS payload_retained_locally,
-             f.status AS finalization_status
-        FROM pending_block_finalizations AS f
-        LEFT JOIN legacy AS l ON l.header_hash = f.header_hash
-        LEFT JOIN first_tx AS t ON t.header_hash = f.header_hash
-        LEFT JOIN da_payloads AS d ON d.header_hash = f.header_hash
-       WHERE ${filter}::text IS NULL OR f.status = ${filter}
-       ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC
-       OFFSET ${offset} LIMIT ${limit};`,
-    prisma.$queryRaw<Array<{ n: bigint }>>`
-      SELECT COUNT(*)::bigint AS n FROM pending_block_finalizations
-       WHERE ${filter}::text IS NULL OR status = ${filter};`.then((r) =>
-      Number(r[0]?.n ?? 0n),
-    ),
-  ]);
+  // Rows and total in one snapshot: see `readConsistently`.
+  const [rows, total] = await readConsistently(async (db) =>
+    Promise.all(  [
+      db.$queryRaw<BlockListRecord[]>`
+        WITH legacy AS (
+          SELECT header_hash, MIN(height)::int AS height, COUNT(*)::bigint AS count
+            FROM blocks GROUP BY header_hash
+        ), first_tx AS (
+          SELECT DISTINCT ON (header_hash) header_hash, member_id
+            FROM pending_block_finalization_txs
+           ORDER BY header_hash, ordinal ASC
+        )
+        SELECT f.header_hash, l.height, t.member_id AS tx_id,
+               f.block_start_time, f.block_end_time,
+               f.expected_l2_transaction_count AS header_l2_transaction_count,
+               f.expected_deposit_count AS header_deposit_count,
+               f.expected_withdrawal_count AS header_withdrawal_count,
+               f.expected_forced_transaction_count AS header_forced_transaction_count,
+               COALESCE(l.count, 0)::bigint AS materialized_l2_transaction_count,
+               (d.header_hash IS NOT NULL) AS payload_retained_locally,
+               f.status AS finalization_status
+          FROM pending_block_finalizations AS f
+          LEFT JOIN legacy AS l ON l.header_hash = f.header_hash
+          LEFT JOIN first_tx AS t ON t.header_hash = f.header_hash
+          LEFT JOIN da_payloads AS d ON d.header_hash = f.header_hash
+         WHERE ${filter}::text IS NULL OR f.status = ${filter}
+         ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC
+         OFFSET ${offset} LIMIT ${limit};`,
+      db.$queryRaw<Array<{ n: bigint }>>`
+        SELECT COUNT(*)::bigint AS n FROM pending_block_finalizations
+         WHERE ${filter}::text IS NULL OR status = ${filter};`.then((r) =>
+        Number(r[0]?.n ?? 0n),
+      ),
+    ]),
+  );
   return {
     rows,
     hasNextPage: safePage * limit < total,
@@ -336,9 +340,10 @@ export type BlockNeighbours = {
  * header need never have a row in `blocks`. */
 export async function getBlockNeighbours(
   headerHash: string,
+  db: NodeReader = prisma,
 ): Promise<BlockNeighbours> {
   const key = Buffer.from(headerHash, "hex");
-  const rows = await prisma.$queryRaw<
+  const rows = await db.$queryRaw<
     Array<{
       prev_hash: Uint8Array | null;
       prev_height: number | null;

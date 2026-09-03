@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { reachable as isReachable } from "./helpers/reachable.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,8 +27,7 @@ import { truncateL1 } from "./helpers/truncate.mjs";
  * without the second, a filter that was accidentally dropped would still pass.
  */
 
-const FIXTURE = new URL("./fixtures/manifest-sample.json", import.meta.url)
-  .pathname;
+const FIXTURE = new URL("./fixtures/manifest-sample.json", import.meta.url).pathname;
 
 /** Through the Koios parser, not straight from the file. The raw document
  * carries `asset_list` as the string "[]" on `collateral_output`, which is what
@@ -35,10 +35,7 @@ const FIXTURE = new URL("./fixtures/manifest-sample.json", import.meta.url)
  * the file directly to the ingester is testing a shape that never arrives. */
 const infos = parseTxInfo(
   JSON.parse(
-    readFileSync(
-      new URL("./fixtures/koios/tx-info-state-queue.json", import.meta.url),
-      "utf8",
-    ),
+    readFileSync(new URL("./fixtures/koios/tx-info-state-queue.json", import.meta.url), "utf8"),
   ),
 );
 
@@ -64,8 +61,8 @@ function manifestUnderOtherIdentity(): { path: string; deploymentId: string } {
   return { path, deploymentId: doc.manifestId };
 }
 
-function setManifestPath(path: string): void {
-  (config as { MIDGARD_MANIFEST_PATH: string }).MIDGARD_MANIFEST_PATH = path;
+function setManifestPath(path: string | undefined): void {
+  (config as { MIDGARD_MANIFEST_PATH: string | undefined }).MIDGARD_MANIFEST_PATH = path;
 }
 
 let reachable = false;
@@ -73,24 +70,8 @@ let ingestedFamily: string | null = null;
 let ingestedScriptHash: string | null = null;
 const originalManifestPath = config.MIDGARD_MANIFEST_PATH;
 
-async function probe(): Promise<void> {
-  await Promise.race([
-    indexerPrisma.$queryRaw`SELECT 1;`,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("probe timed out after 3000ms")), 3000),
-    ),
-  ]);
-}
-
 beforeAll(async () => {
-  try {
-    await probe();
-    reachable = true;
-  } catch (err) {
-    if (process.env.REQUIRE_DB === "1") throw err;
-    console.warn(`Skipping: indexer Postgres unreachable. ${String(err)}`);
-    return;
-  }
+  reachable = await isReachable("index", "deployment attribution");
 
   setManifestPath(FIXTURE);
   await truncateL1();
@@ -99,8 +80,7 @@ beforeAll(async () => {
   const event = await indexerPrisma.l1Event.findFirst();
   ingestedFamily = event?.validator ?? null;
   ingestedScriptHash =
-    manifest.validators.find((v) => v.family === ingestedFamily)?.scriptHash ??
-    null;
+    manifest.validators.find((v) => v.family === ingestedFamily)?.scriptHash ?? null;
 });
 
 afterAll(async () => {

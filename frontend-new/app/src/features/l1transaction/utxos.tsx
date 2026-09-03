@@ -1,12 +1,12 @@
 import type { L1TransactionResponse, L1TxIo } from "../../lib/api";
-import { AddressLink } from "../../components/ui/address";
-import { AdaAmount } from "../../components/ui/amount";
-import { AssetMark, AssetName, AssetQuantity } from "../../components/ui/asset";
-import { Detail } from "../../components/ui/detail";
-import { Icon } from "../../components/ui/icons";
-import { Identifier } from "../../components/ui/identifier";
-import { Card, Chip } from "../../components/ui/primitives";
-import { SemanticLabel, SemanticValue } from "../../components/ui/semantic";
+import { AddressLink } from "../../components/ui/domain/address";
+import { AdaAmount } from "../../components/ui/domain/amount";
+import { AssetMark, AssetName, AssetQuantity } from "../../components/ui/domain/asset";
+import { Detail } from "../../components/ui/base/detail";
+import { Icon } from "../../components/ui/base/icons";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { Card, Chip } from "../../components/ui/base/layout";
+import { SemanticLabel, SemanticValue } from "../../components/ui/base/semantic";
 import type { SemanticIconKind } from "../../lib/semantic-icons";
 import { L1_EXPLORER_NAME, l1AddressUrl } from "../../lib/network";
 

@@ -1,7 +1,5 @@
 # Midgard Explorer
 
-This repository contains the backend and frontend for the Midgard explorer.
-
 The explorer reads a Midgard node's PostgreSQL database and shows L2 blocks and
 transactions, each transaction's lifecycle status (committed, pending commit,
 accepted, rejected, validating, or queued), address balances and UTxOs, and per
@@ -9,24 +7,72 @@ block its data-availability payload metadata (Merkle roots and event counts) and
 finalization status. It also lists deposits (L1 to L2), withdrawals (L2 to L1),
 and forced transactions.
 
-## Prerequisites
+## Before you start
 
-Before starting the explorer, you need the following services from the
-[Midgard repository](https://github.com/Anastasia-Labs/midgard) running locally:
+- Node.js 24, the version `.nvmrc` pins and continuous integration runs.
+- pnpm 11, from `corepack enable`.
+- Docker with the Compose v2 plugin. The explorer's own PostgreSQL runs in it.
+- A reachable Midgard node PostgreSQL. That is the only thing this repository
+  cannot provide for you.
 
-- `midgard-node`
-- PostgreSQL
+## Start it
 
-[Running Midgard locally](docs/running-midgard-locally.md) walks through the full
-setup from a clean machine. A node database created before 2026-07-07 cannot be
-reused: the schema changed and the migration refuses to run in place, so a fresh
-deployment is required. The explorer expects to connect to the Postgres instance
-started there.
+Two terminals. The backend serves the API, the frontend serves the pages, and
+each one's log is its own terminal's output.
 
-You also need:
+```sh
+cd backend
+pnpm install
+pnpm setup      # writes backend/.env, then lists what you must fill in
+pnpm dev
+```
 
-- Node.js 24 (see `backend/package.json` engines)
-- pnpm 11
+```sh
+cd frontend-new
+pnpm install
+pnpm dev
+```
+
+Open <http://127.0.0.1:3011>.
+
+`pnpm dev` in `backend/` starts the explorer's own PostgreSQL, applies the index
+migrations, checks both databases, and then runs the API on
+<http://127.0.0.1:3101>. Ctrl-C stops the API and leaves the containers running;
+`pnpm services:down` stops those.
+
+## Start it without a Midgard node
+
+One terminal, no backend, no Docker, no database and no secrets. The records are
+committed fixtures, and the interface says so.
+
+```sh
+cd frontend-new
+pnpm install
+pnpm dev:demo
+```
+
+## When something is wrong
+
+```sh
+cd backend && pnpm doctor
+```
+
+It names the check that failed and the command that fixes it.
+[Troubleshooting](docs/troubleshooting.md) is organised by those same names.
+
+## Guides
+
+| Guide | What it covers |
+|---|---|
+| [Backend](backend/README.md) | Every backend command, its configuration, and the database-safety rules |
+| [Frontend](frontend-new/README.md) | Every frontend command, the demo mode, and the end-to-end suite |
+| [Running the full Midgard stack](docs/running-full-midgard.md) | Producing live L2 activity, by hand: Cardano Node, Kupo, Ogmios and funded wallets |
+| [Troubleshooting](docs/troubleshooting.md) | Keyed by the names `pnpm doctor` prints |
+| [Resource requirements](docs/resource-requirements.md) | Measured memory floors per mode |
+
+[ADR 5](docs/decisions/0005-pnpm-is-the-development-interface.md) records why
+these are the only commands: every service belongs to the package that runs it,
+so there is one way to start the explorer rather than two that must agree.
 
 ## Repository layout
 
@@ -39,96 +85,18 @@ You also need:
 | `docs/decisions/` | Numbered records of structural decisions, including why each root is its own pnpm workspace. |
 | `infra/` | The Nginx API cache template used by `docker-compose.yml`. |
 
-## Environment files
+## Configuration
 
-Create local environment files from the examples:
+`pnpm setup` in `backend/` writes `.dev/runtime.env`, the one place ports,
+origins, database URLs and the local database password live, then generates
+`backend/.env` from it. Nothing is copied between files by hand, and
+`pnpm doctor` reports it when the two drift apart.
 
-```bash
-cp backend/.env.example backend/.env
-cp frontend-new/app/.env.example frontend-new/app/.env.local
-```
+It writes nothing outside `backend/`. The frontend needs no generated file: it
+calls <http://127.0.0.1:3101> unless `NEXT_PUBLIC_API_BASE` says otherwise.
 
-### `backend/.env`
-
-The backend reads its configuration from `backend/.env`, and validates every
-value at boot. A missing or empty setting stops the process with the names of
-everything that is wrong, rather than becoming `undefined` or `NaN` inside a
-query.
-
-Important values:
-
-- `BACKEND_PORT`: port the API listens on. The default is `3101`.
-- `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`,
-  `POSTGRES_DB`, `POSTGRES_URL`: the Midgard node's Postgres. Read only. Check
-  which database this is before believing any L2 figure; `.env.example`
-  explains why at length.
-- `MIDGARD_READ_REPLICA_URL`, `REQUIRE_MIDGARD_READ_REPLICA`: the production
-  read path. Set the replica and require it so a production boot fails rather
-  than quietly sending explorer traffic to the node's primary.
-- `INDEXER_POSTGRES_URL`: the Postgres the explorer owns, holding everything it
-  observed on Cardano. `TEST_INDEXER_POSTGRES_URL` is the database the test
-  suite truncates; it must be a different database whose name ends in `_test`.
-- `MIDGARD_MANIFEST_PATH`: the deployment manifest the L1 indexer reads. A
-  Midgard deployment has no on-chain identifier, so the manifest is the only way
-  to know which contracts to follow.
-- `L1_SYNC_ENABLED`: whether this process runs the indexing loop. Leave it true
-  for a single-process deployment. A second API instance sets it false and
-  serves reads only, because two loops against one index duplicate every Koios
-  request and race each other's writes.
-- `LOG_LOCATION`: prefix for the rotated log files.
-
-### `frontend-new/app/.env.local`
-
-- `NEXT_PUBLIC_API_BASE`: the API origin the browser calls. The default is the
-  bundled reverse proxy on `http://localhost:3102`, not the backend itself, so
-  public traffic gets shared caching.
-- `API_BASE_SERVER`: the origin server components call. Falls back to the public
-  base.
-- `NEXT_PUBLIC_NETWORK_LABEL`, `NEXT_PUBLIC_L1_EXPLORER_TX_URL`,
-  `NEXT_PUBLIC_L1_EXPLORER_NAME`: the network name shown in the shell, and the
-  external Cardano explorer that L1 hashes link out to. The URL is a template
-  containing `{hash}`, because explorers differ in more than their host.
-
-## Install dependencies
-
-```bash
-cd backend && pnpm install
-cd ../frontend-new && pnpm install
-```
-
-## Databases
-
-The node's Postgres comes from the Midgard setup. The explorer's own database
-and the API cache come from this repository:
-
-```bash
-docker compose up -d explorer-postgres explorer-api-cache
-cd backend
-pnpm indexer:deploy    # apply the L1 index migrations
-```
-
-The test database needs the same migrations applied separately, because
-`indexer:deploy` targets `INDEXER_POSTGRES_URL` only:
-
-```bash
-INDEXER_POSTGRES_URL="$TEST_INDEXER_POSTGRES_URL" pnpm indexer:deploy
-```
-
-## Run the explorer
-
-Once `midgard-node` and Postgres are running, start the backend:
-
-```bash
-cd backend
-pnpm dev
-```
-
-Then, in a second terminal, start the frontend:
-
-```bash
-cd frontend-new
-pnpm dev
-```
+`backend/.env.example` documents the backend's settings at length, including
+which database an L2 figure came from and why that matters.
 
 ## Run it in production
 
@@ -148,15 +116,29 @@ pnpm build
 pnpm start
 ```
 
-Two probes answer separate questions, and a deployment should use both:
+Four probes answer separate questions, and a deployment should use them
+according to what it is routing:
 
 - `GET /healthz` reports that the process is alive. It touches no database, so
   it is safe to restart on.
-- `GET /readyz` reports whether the explorer can actually serve. It checks that
-  each database holds the relations its query path uses, that the index's
-  migrations finished, and that the deployment manifest parses, then answers
-  `503` naming the check that failed. Use it to take an instance out of
-  rotation. The failing driver message goes to the log, never to the response.
+- `GET /readyz` reports whether the Midgard explorer can serve: the node
+  database, and nothing else. Every L2 page reads it and none of them touch the
+  Cardano index.
+- `GET /readyz/l1` reports whether the Cardano surface can serve: the index's
+  relations, its migrations, a completed reconciliation, and the deployment
+  manifest every indexed row is attributed to.
+- `GET /readyz/full` reports both, for a deployment gate that wants one call.
+
+  Each answers `503` naming the check that failed, and the failing driver
+  message goes to the log, never to the response.
+
+  `/readyz` used to include the index, its reconciliation and the manifest, and
+  its verdict is `checks.every(ok)`. So an index that had never reconciled took
+  the whole instance out of rotation, every L2 route with it, which contradicts
+  the rule the explorer is built on: an index behind the tip degrades the
+  Cardano surface and never makes a Midgard page unavailable. The index probe
+  moved out with the rest, because the L2 query surface does not read the index
+  and keeping it would have moved the outage rather than removed it.
 
   It used to be `SELECT 1` against each database, which reports ready for an
   empty PostgreSQL that holds none of the tables. That is what CI provisioned,
@@ -169,7 +151,7 @@ Two probes answer separate questions, and a deployment should use both:
 server, which is what to use before sending traffic:
 
 ```bash
-cd backend && npx ts-node scripts/probe-readiness.ts
+cd backend && pnpm readiness
 ```
 
 ### Rolling out an indexer change
@@ -234,9 +216,16 @@ because it cannot know what supervises them.
 ## Checks
 
 ```bash
-cd backend       && pnpm typecheck && pnpm run audit:gate && pnpm test && pnpm build
+cd backend       && pnpm check && pnpm run audit:gate && pnpm build
 cd frontend-new  && ./scripts/ci-local.sh          # add --fast to skip the e2e suite
 ```
+
+`pnpm check` in `backend/` is the type check, the documentation gate, the Vitest
+suite and the development-command tests.
+
+`pnpm setup:test` creates the disposable database those tests need and applies
+the index migrations to it. It refuses any target not named `_test` or not on
+this machine.
 
 `REQUIRE_DB=1` makes the database-backed backend tests fail rather than skip.
 Set it anywhere the result is being used as a gate; without it a run with no
@@ -256,7 +245,7 @@ request, against a PostgreSQL service carrying both the explorer's own
 migrations and a versioned fixture of the node's schema
 (`backend/test/fixtures/schema/midgard-node.sql`, generated from
 `prisma/schema.prisma`), and boots the compiled backend to prove the artifact
-starts. Both jobs upload what they printed as an artifact, on success as well
+starts. Every job uploads what it printed as an artifact, on success as well
 as failure, so a green run's counts can be read by anyone with access to it.
 Container images are pinned by digest and actions by commit SHA, and the
 workflow token is `contents: read`.

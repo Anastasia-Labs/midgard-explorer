@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-import { Icon } from "../ui/icons";
+import { Icon } from "../ui/base/icons";
 
 /** Theme choice persisted in localStorage("mg_theme"); "system" clears it and
  * follows the OS. The root layout's inline script applies the stored value

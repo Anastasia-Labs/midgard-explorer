@@ -1,5 +1,4 @@
 import { bech32ChecksumValid } from "./classify";
-import { l1TxUrl } from "./network";
 
 /** Universal search, as candidates rather than a guess.
  *
@@ -144,18 +143,24 @@ export function searchCandidates(raw: string): SearchResult {
       detail: "Midgard transaction hash",
       href: `/transaction/${hex}`,
     });
-    // Only offered when an L1 explorer is configured; a dead link is worse
-    // than an absent option.
-    const l1 = l1TxUrl(hex);
-    if (l1 !== null) {
-      candidates.push({
-        kind: "l1Transaction",
-        label: "Cardano transaction",
-        detail: "Opens the configured Cardano explorer",
-        href: l1,
-        external: true,
-      });
-    }
+    /* The Midgard context page for this hash, if the index holds one.
+     *
+     * This used to offer the configured Cardano explorer directly, for ANY
+     * 64-hex input. L2 transaction ids and Cardano transaction hashes are both
+     * 32 bytes and indistinguishable by shape, so pasting an L2 id produced a
+     * live link to a transaction that does not exist on Cardano. That is the
+     * one rule this explorer cannot break: an L2 identifier is never
+     * substituted into an L1 URL.
+     *
+     * The internal page is safe for either, because it holds the answer: it
+     * shows the Midgard record when there is one, and says plainly when there
+     * is not, with the external action attached where it has been earned. */
+    candidates.push({
+      kind: "l1Transaction",
+      label: "Cardano transaction",
+      detail: "Looks this hash up in Midgard's Cardano index",
+      href: `/l1/transaction/${hex}`,
+    });
     // A 64-hex string is also a policy plus an 8-character asset name.
     candidates.push({
       kind: "asset",

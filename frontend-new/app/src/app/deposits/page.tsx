@@ -1,22 +1,22 @@
 import type { Metadata } from "next";
-import { ValueCell } from "../../components/ui/amount";
-import { Breadcrumbs } from "../../components/ui/breadcrumbs";
-import { Icon } from "../../components/ui/icons";
-import { Identifier } from "../../components/ui/identifier";
-import { L1TxLink } from "../../components/ui/l1link";
-import { InfoTip } from "../../components/ui/infotip";
-import { StatusLegend } from "../../components/ui/legend";
-import { PageError } from "../../components/ui/pageerror";
-import { Callout, L1L2Badge, PageHeader } from "../../components/ui/primitives";
-import { StatusCell } from "../../components/ui/status";
-import { DataTable, Pagination } from "../../components/ui/table";
-import { Timestamp } from "../../components/ui/timestamp";
+import { ValueCell } from "../../components/ui/domain/amount";
+import { Icon } from "../../components/ui/base/icons";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { L1TxLink } from "../../components/ui/domain/l1link";
+import { InfoTip } from "../../components/ui/base/infotip";
+import { StatusLegend } from "../../components/ui/base/legend";
+import { Callout, L1L2Badge, PageHeader } from "../../components/ui/base/layout";
+import { StatusCell } from "../../components/ui/domain/status";
+import { DataTable, Pagination } from "../../components/ui/base/table";
+import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
-import { AddressLink } from "../../components/ui/address";
+import { AddressLink } from "../../components/ui/domain/address";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { ListError } from "../../components/ui/base/listerror";
 
 export const metadata: Metadata = {
   title: "Deposits",
@@ -42,11 +42,7 @@ export default async function DepositsPage({
     data = await api.depositsPage(page, init, id);
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="deposit" title="Deposits" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError crumbs={CRUMBS} entity="deposit" title="Deposits" message={listErrorMessage(e)} />
     );
   }
   const l1Observations = await api.l1Deposits(100, init).catch(() => []);
@@ -82,7 +78,7 @@ export default async function DepositsPage({
           caption="Deposits from Cardano into Midgard"
           columns={[
             {
-              header: "L1 tx",
+              header: "Deposit origin",
               cell: (r) => <L1TxLink hash={r.deposit_l1_tx_hash} destination="cardano" />,
             },
             {

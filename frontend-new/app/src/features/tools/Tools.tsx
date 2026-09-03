@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { Card } from "../../components/ui/primitives";
-import { CopyButton } from "../../components/ui/identifier";
-import { InfoTip } from "../../components/ui/infotip";
+import { Card } from "../../components/ui/base/layout";
+import { CopyButton } from "../../components/ui/domain/identifier";
+import { InfoTip } from "../../components/ui/base/infotip";
 import { adaToLovelace, decodeCborHex, lovelaceToAda, splitAssetUnit } from "../../lib/tools";
 
 /** A tool is a labelled input, a result, and nothing else.

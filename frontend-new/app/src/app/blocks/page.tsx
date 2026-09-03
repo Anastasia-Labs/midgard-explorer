@@ -1,18 +1,18 @@
 import type { Metadata } from "next";
-import { Breadcrumbs } from "../../components/ui/breadcrumbs";
-import { Identifier } from "../../components/ui/identifier";
-import { StatusCell } from "../../components/ui/status";
-import { ListTools } from "../../components/ui/listtools";
-import { PageError } from "../../components/ui/pageerror";
-import { Count, PageHeader } from "../../components/ui/primitives";
-import { DataTable, Pagination } from "../../components/ui/table";
-import { Timestamp } from "../../components/ui/timestamp";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { StatusCell } from "../../components/ui/domain/status";
+import { ListTools } from "../../components/ui/base/listtools";
+import { Count, PageHeader } from "../../components/ui/base/layout";
+import { DataTable, Pagination } from "../../components/ui/base/table";
+import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { legendFor } from "../../lib/status-registry";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { ListError } from "../../components/ui/base/listerror";
 
 export const metadata: Metadata = {
   title: "Blocks",
@@ -37,11 +37,7 @@ export default async function BlocksPage({
     data = await api.blocksPage(page, status, await viewerInit());
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="block" title="Blocks" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError crumbs={CRUMBS} entity="block" title="Blocks" message={listErrorMessage(e)} />
     );
   }
 

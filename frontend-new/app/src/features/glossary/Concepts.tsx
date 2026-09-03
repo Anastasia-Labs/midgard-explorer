@@ -1,4 +1,4 @@
-import { Icon, type IconName } from "../../components/ui/icons";
+import { Icon, type IconName } from "../../components/ui/base/icons";
 import { cn } from "../../lib/format";
 
 /** The three Midgard-specific concepts, as an orientation before the index.

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { CANONICAL_HASH28, CANONICAL_HASH32 } from "../utils";
 import { readFileSync, statSync } from "node:fs";
 import { z } from "zod";
 import { logger } from "../logger";
@@ -99,8 +100,8 @@ export type ValidatorEntry = {
   placeholder: boolean;
 };
 
-const SCRIPT_HASH = /^[0-9a-f]{56}$/;
-const DEPLOYMENT_ID = /^[0-9a-f]{64}$/;
+const SCRIPT_HASH = CANONICAL_HASH28;
+const DEPLOYMENT_ID = CANONICAL_HASH32;
 
 /** The document as it sits on disk. Every field the indexer reads is declared
  * here and nowhere else, so there is one decode boundary rather than a mix of
@@ -246,7 +247,16 @@ export function computeDeploymentId(raw: unknown): string {
  * not cached: a manifest that could not be read has to keep saying so. */
 const parsed = new Map<string, { mtimeMs: number; manifest: Manifest }>();
 
-export function loadManifest(path: string): Manifest {
+export function loadManifest(path: string | undefined): Manifest {
+  // MIDGARD_MANIFEST_PATH is required only where the manifest is read, so an
+  // L2-only deployment reaches here with nothing set. Naming that plainly keeps
+  // the message out of `ENOENT ''`, which reads as a corrupt path rather than
+  // as an explorer configured without a deployment identity.
+  if (path === undefined || path === "") {
+    throw new Error(
+      "MIDGARD_MANIFEST_PATH is not set, so this process has no deployment identity",
+    );
+  }
   const mtimeMs = statSync(path).mtimeMs;
   const hit = parsed.get(path);
   if (hit && hit.mtimeMs === mtimeMs) return hit.manifest;

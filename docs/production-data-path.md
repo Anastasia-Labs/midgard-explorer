@@ -73,6 +73,40 @@ For Cloudflare, Fastly, CloudFront, or another CDN:
 - apply a global client/origin request budget at the CDN when running multiple
   backend processes.
 
+## Readiness, and what each answer gates
+
+| Route | Answers | Gates |
+|---|---|---|
+| `/healthz` | the process is alive | restarts |
+| `/readyz` | the Midgard explorer can serve | L2 routing |
+| `/readyz/l1` | the Cardano surface can serve | L1 routing |
+| `/readyz/full` | both | a deployment |
+
+Route L2 traffic on `/readyz` and L1 traffic on `/readyz/l1`. A failure on either
+side leaves the other side's routes in service, which is the point: an index
+behind the tip degrades the Cardano surface and must never make a Midgard page
+unavailable.
+
+`backend/scripts/probe-readiness.ts` answers the same three without starting a
+server, as `--scope=l2`, `--scope=l1` and `--scope=full`. The scope names mirror
+the routes exactly so the same word cannot mean two things.
+
+## Deployment binding
+
+The index records which deployment it belongs to on first sight, and refuses a
+manifest that disagrees about the deployment, the network or the L2 database.
+Only `l1_event` carries a deployment column, so the other five L1 tables cannot
+be filtered even in principle, and a second manifest pointed at one database
+merges two deployments where nothing can separate them again.
+
+Recovering from a refusal is deliberate, and there are two ways: point the
+process at that deployment's own index, or rebuild this one by clearing the
+derived L1 tables and its binding and re-indexing from the intended manifest.
+
+The L2 database persists no protocol deployment identity of its own, only a
+migration-bundle hash, so the binding records an operator's assertion rather than
+something the explorer can derive.
+
 ## PostgreSQL streaming replica
 
 `docker-compose.replica.yml` provisions the standby, but replication must first
