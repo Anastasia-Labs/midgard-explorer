@@ -1,9 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import {
-  indexerPrisma,
-  getSyncCursor,
-  setSyncCursor,
-} from "../src/indexer/db.js";
+import { reachable as isReachable } from "./helpers/reachable.mjs";
+import { indexerPrisma, getSyncCursor, setSyncCursor } from "../src/indexer/db.js";
 
 /**
  * The explorer's own database. Unlike the node's Postgres, this one is ours:
@@ -13,28 +10,8 @@ import {
 
 let reachable = false;
 
-/** Bounded probe. A stopped container on WSL2 black-holes TCP rather than
- * refusing it, so an unguarded query hangs past Vitest's hook timeout and the
- * suite reports FAIL instead of skipping. The race turns that into a clean
- * negative. */
-async function probe(): Promise<void> {
-  await Promise.race([
-    indexerPrisma.$queryRaw`SELECT 1;`,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("probe timed out after 3000ms")), 3000),
-    ),
-  ]);
-}
-
 beforeAll(async () => {
-  try {
-    await probe();
-    reachable = true;
-  } catch (err) {
-    console.warn(
-      `Skipping: indexer Postgres unreachable on 5435. Run "docker compose up -d explorer-postgres". ${String(err)}`,
-    );
-  }
+  reachable = await isReachable("index", "indexer db");
 });
 
 afterAll(async () => {
