@@ -30,6 +30,8 @@ import {
   ownershipProblems,
   readAdoption,
   servicesToStop,
+  START_WAIT_SECONDS,
+  waitArgs,
   writeAdoption,
 } from "../scripts/lib/compose.mjs";
 import { REQUIRED_BACKEND_ENV, REQUIRED_WHEN_INDEXING } from "../scripts/lib/checks.mjs";
@@ -367,6 +369,36 @@ describe("a check that cannot run", () => {
       results.map((r) => r.status),
       ["error", "pass"],
     );
+  });
+});
+
+describe("what starting a service waits for", () => {
+  /* The hosted run failed one line after "explorer-postgres is up": `up -d`
+   * returns once the container has been CREATED, and the next step connected to
+   * a Postgres that was still starting. P1001, can't reach the database server.
+   * Locally the race is won nearly every time, which is what kept it invisible
+   * through every green run before it. */
+  it("waits for the healthcheck, not for docker to accept the request", () => {
+    assert.ok(waitArgs().includes("--wait"), "dev starts the database without waiting for health");
+  });
+
+  /* Compose waits forever without one, so the process timeout would kill it
+   * with no word about which service never came up. */
+  it("bounds the wait, so a container that never comes up is named", () => {
+    const args = waitArgs();
+    const at = args.indexOf("--wait-timeout");
+    assert.notEqual(at, -1, "the wait has no timeout");
+    assert.equal(args[at + 1], String(START_WAIT_SECONDS));
+  });
+
+  /* `--wait` waits for every service named in the command. The response cache
+   * has a healthcheck of its own and nothing after the start reads it, so
+   * including it would turn an unhealthy cache into a refusal to start at all.
+   * One is running unhealthy on the machine this was written on. */
+  it("waits for the database alone, not for everything a start brings up", () => {
+    const args = waitArgs();
+    assert.equal(args.at(-1), "explorer-postgres");
+    assert.ok(!args.includes("explorer-api-cache"), "the start is gated on the response cache");
   });
 });
 

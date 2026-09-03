@@ -70,6 +70,39 @@ export const composeArgs = (repoRoot, args) => [
 export const compose = (repoRoot, args, options = {}) =>
   run("docker", composeArgs(repoRoot, args), { timeout: 120_000, ...options });
 
+/** How long a start may wait for the database to report itself healthy. */
+export const START_WAIT_SECONDS = 90;
+
+/** The one service the rest of a start depends on. */
+export const DATABASE_SERVICE = "explorer-postgres";
+
+/* Starting a service means waiting for it to be READY, not for docker to accept
+ * the request.
+ *
+ * `up -d` returns once the container has been created, and the next thing dev
+ * does is connect to Postgres, which is still starting. It is a race, and the
+ * hosted run lost it: "explorer-postgres is up" was followed one line later by
+ * P1001, can't reach the database server. Locally it wins nearly every time,
+ * which is what kept it invisible through every green run before it.
+ *
+ * `--wait` blocks on the healthcheck the compose file already defines, so the
+ * readiness rule lives in one place instead of being restated as a poll here.
+ * The timeout is explicit: without one compose waits forever, and the process
+ * timeout would kill it with no word about which service never came up.
+ *
+ * Named for ONE service, not for everything a start brings up. `--wait` waits
+ * for every service in the command, so listing the response cache too would
+ * turn an unhealthy cache into a refusal to start at all, and the cache is not
+ * on the path anything after this uses. */
+export const waitArgs = (service = DATABASE_SERVICE) => [
+  "up",
+  "-d",
+  "--wait",
+  "--wait-timeout",
+  String(START_WAIT_SECONDS),
+  service,
+];
+
 /** Which of this repository's services are running right now.
  *
  * Returns null rather than an empty list when Docker cannot be asked. The two

@@ -32,6 +32,8 @@ import {
   readAdoption,
   recordAdoption,
   servicesToStop,
+  START_WAIT_SECONDS,
+  waitArgs,
 } from "./lib/compose.mjs";
 import { effectiveIndexUrl, expand, parseEnvFile, redact, urlTarget } from "./lib/env.mjs";
 import { descendants } from "./lib/proc.mjs";
@@ -139,6 +141,20 @@ const startServices = async () => {
     die(
       "docker compose could not start explorer-postgres.",
       `Run it directly to see why: docker compose --env-file ${join(repoRoot, ".dev", "runtime.env")} up explorer-postgres`,
+    );
+  }
+  // And then wait for it to be READY. `up -d` returns when the container has
+  // been created; the very next step connects to this database.
+  const healthy = await compose(repoRoot, waitArgs(), {
+    timeout: (START_WAIT_SECONDS + 30) * 1000,
+  }).then(
+    () => ({ code: 0 }),
+    (error) => ({ code: 1, error }),
+  );
+  if (healthy.code !== 0) {
+    die(
+      `explorer-postgres did not become healthy within ${START_WAIT_SECONDS}s.`,
+      `See what it is doing: docker compose --env-file ${join(repoRoot, ".dev", "runtime.env")} logs explorer-postgres`,
     );
   }
   say(`  explorer-postgres is up${adopted.length > 0 ? `, adopted from a session already running` : ""}`);
