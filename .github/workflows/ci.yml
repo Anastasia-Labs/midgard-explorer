@@ -195,6 +195,12 @@ jobs:
         # the built backend and decodes its live responses with the shipped
         # contracts. REQUIRE_BACKEND=1 makes an unreachable server a failure
         # rather than a skip, so the step cannot report a pass it never measured.
+        env:
+          # psql reads the password from the environment or it prompts for one,
+          # and a prompt on a runner is an immediate "no password supplied".
+          # Every other psql step in this job sets it; this one did not, so it
+          # failed on its first line the first time CI ever reached it.
+          PGPASSWORD: postgres
         run: |
           set -o pipefail
           # The index needs the anchor block, or the contract test refuses to
@@ -211,6 +217,13 @@ jobs:
             curl -sf http://127.0.0.1:3101/healthz >/dev/null && break
             sleep 2
           done
+          # A server that never came up is reported as that, with its log. The
+          # contract run would fail either way under REQUIRE_BACKEND=1, but as a
+          # decode error against nothing, which says nothing about the cause.
+          curl -sf http://127.0.0.1:3101/healthz >/dev/null || {
+            cat gate-evidence/backend-for-contracts.log
+            exit 1
+          }
           cd ../frontend-new
           pnpm install --frozen-lockfile
           BACKEND_URL=http://127.0.0.1:3101 REQUIRE_BACKEND=1 \
