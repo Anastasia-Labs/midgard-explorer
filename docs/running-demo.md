@@ -70,3 +70,55 @@ the port is free. Stop the other one first.
 bundler can report a panic while compiling the stylesheet; check `free -m`
 before reading that as a code failure.
 [Resource requirements](resource-requirements.md) records what was measured.
+
+## Running against a real snapshot
+
+Fixtures describe nothing, and a live node is not always available. A snapshot is
+real Midgard data that is allowed to be stale, and the explorer says so rather
+than calling it a fixture.
+
+```bash
+cd backend
+pnpm snapshot:export                        # capture from a node database
+pnpm snapshot:verify snapshots/<archive>    # check it against its own manifest
+SNAPSHOT_TARGET_URL=... pnpm snapshot:restore snapshots/<archive>
+```
+
+The capture takes the whole `public` schema in one transaction, so the tables
+agree with each other and the archive carries the enum types its columns are
+declared with. `pg_dump` gives cross-table consistency on its own;
+`--serializable-deferrable` adds a wait for a snapshot no concurrent ordering
+could contradict, and is skipped against a standby, which cannot run
+serializable transactions. Alongside the archive it writes a manifest: the
+capture time, the source database, the deployment id, the network, a schema
+fingerprint, per-table row counts for the eighteen relations the explorer reads,
+and a SHA-256.
+
+Four refusals, each of which has a reason rather than a preference:
+
+- Capturing from a **standby** is refused unless `--allow-replica` is passed.
+  `pg_dump` would still take one consistent snapshot across tables, but
+  PostgreSQL does not permit serializable transactions on a hot standby, so the
+  capture cannot also wait for a snapshot no concurrent ordering could
+  contradict.
+- A **client of a different major version** than the server is refused. A newer
+  `pg_dump` writes a preamble an older server rejects, so the capture succeeds
+  and only the restore fails, which is the worst moment to find out.
+- Restoring over a database **this tool does not own** is refused, and takes
+  `--force=<name>` to override. The tool does not create the target: the
+  database on the other end of `SNAPSHOT_TARGET_URL` was made by someone, for
+  something, and `pg_restore --clean` would drop its objects. A target qualifies
+  only when its `public` schema is empty of every object, or when it carries a
+  real `explorer_snapshot_meta` marker: the exact columns the restore writes,
+  holding exactly one row.
+- A **checksum or row-count mismatch** aborts the restore rather than leaving a
+  database that answers queries with a subset of the chain.
+
+The restore runs in a single transaction, sets the database read-only, and writes
+an `explorer_snapshot_meta` row. Restoring again over the same database is
+supported: the read-only setting is cleared for the duration and set again at the
+end. The whole manifest is validated first, including a row count for every
+relation the explorer reads, so an archive that is incomplete is refused before
+anything in the target is dropped. That row is what the explorer reads to report
+the source as a snapshot with its capture time, instead of as live or as a
+fixture. Archives are build artefacts and are not committed.
