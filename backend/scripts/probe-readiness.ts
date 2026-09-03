@@ -12,25 +12,25 @@ import {
   probeManifest,
   probeNodeDatabase,
   shippedMigrations,
+  probeDeploymentBinding,
 } from "../src/server/probes";
 
 /** Every probe, and the scopes each one belongs to.
  *
- * `full` is what `/readyz` answers and what a deployment gates on. Nothing
- * about it changes here.
+ * These mirror the HTTP routes exactly, so the same name cannot answer two
+ * different questions. `full` is `/readyz/full`, `l2` is `/readyz`, and `l1` is
+ * `/readyz/l1`.
  *
- * `l2` is a development scope: whether this process can serve L2 blocks,
- * transactions, addresses and UTxOs from the node's database. Those come from
- * the node's own tables, so they do not wait on a reconciliation pass against
- * Koios, and they do not read the deployment manifest, which describes the L1
- * contracts. A contributor pointing the explorer at an existing Midgard
- * database is asking that narrower question, and answering it with the full
- * check reports "not ready" for a page that would render correctly.
+ * `l2` is whether this process can serve Midgard blocks, transactions,
+ * addresses and UTxOs. Those come from the node's own tables, so they wait on
+ * no reconciliation pass against Koios and do not read the deployment manifest,
+ * which describes the L1 contracts. It no longer includes the explorer index:
+ * no L2 page reads it, and including it meant an index outage still reported
+ * the L2 surface as unready.
  *
- * It exists on the command line only. `/readyz` gaining a second answer would
- * give a load balancer two verdicts for one question.
+ * `full` remains what a deployment gates on, and is the union of the two.
  */
-const SCOPES = ["full", "l2"] as const;
+const SCOPES = ["full", "l2", "l1"] as const;
 type Scope = (typeof SCOPES)[number];
 
 const PROBES: ReadonlyArray<{
@@ -38,10 +38,11 @@ const PROBES: ReadonlyArray<{
   probe: () => Promise<void>;
   scopes: readonly Scope[];
 }> = [
-  { name: "node database", probe: probeNodeDatabase, scopes: ["full", "l2"] },
-  { name: "explorer index", probe: probeIndexDatabase, scopes: ["full", "l2"] },
-  { name: "index reconciled", probe: probeIndexReconciled, scopes: ["full"] },
-  { name: "manifest", probe: probeManifest, scopes: ["full"] },
+  { name: "node database", probe: probeNodeDatabase, scopes: ["full", "l2", "l1"] },
+  { name: "explorer index", probe: probeIndexDatabase, scopes: ["full", "l1"] },
+  { name: "index reconciled", probe: probeIndexReconciled, scopes: ["full", "l1"] },
+  { name: "manifest", probe: probeManifest, scopes: ["full", "l1"] },
+  { name: "deployment binding", probe: probeDeploymentBinding, scopes: ["full", "l1"] },
 ];
 
 function requestedScope(argv: readonly string[]): Scope {
@@ -60,7 +61,8 @@ async function main(): Promise<void> {
   console.log(`migrations shipped by this build: ${shippedMigrations().length}`);
   if (scope !== "full") {
     console.log(
-      `scope: ${scope}. This is not what /readyz answers, and not a deployment gate.`,
+      `scope: ${scope}. This answers /readyz${scope === "l1" ? "/l1" : ""}, ` +
+        `not the deployment gate, which is --scope=full and /readyz/full.`,
     );
   }
   let failed = 0;

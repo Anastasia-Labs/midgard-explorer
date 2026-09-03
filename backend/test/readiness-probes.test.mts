@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { indexerPrisma } from "../src/indexer/db.js";
+import { reachable as isReachable } from "./helpers/reachable.mjs";
+import { indexerPrisma, SYNC_SOURCES } from "../src/indexer/db.js";
 import {
   INDEX_TABLES,
   missingRelations,
@@ -22,18 +23,7 @@ import {
 let reachable = false;
 
 beforeAll(async () => {
-  try {
-    await Promise.race([
-      indexerPrisma.$queryRaw`SELECT 1;`,
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("probe timed out")), 3000),
-      ),
-    ]);
-    reachable = true;
-  } catch (err) {
-    if (process.env.REQUIRE_DB === "1") throw err;
-    console.warn(`Skipping: indexer Postgres unreachable. ${String(err)}`);
-  }
+  reachable = await isReachable("index", "readiness probes");
 });
 
 afterAll(async () => {
@@ -56,10 +46,7 @@ describe("readiness probes", () => {
     ]);
     // The discriminating case. A probe that returned an empty list whatever it
     // was asked would satisfy the test above and prove nothing.
-    expect(missing).toEqual([
-      "a_table_that_does_not_exist",
-      "another_missing_table",
-    ]);
+    expect(missing).toEqual(["a_table_that_does_not_exist", "another_missing_table"]);
   });
 
   it("reports every required index relation as present", async () => {
@@ -88,10 +75,7 @@ describe("readiness probes", () => {
 describe("the reconciliation probe", () => {
   type Call = { sql: string; values: unknown[] };
 
-  const stub = (
-    stale: number,
-    cursors: Array<{ source: string; last_block_height: number }>,
-  ) => {
+  const stub = (stale: number, cursors: Array<{ source: string; last_block_height: number }>) => {
     const calls: Call[] = [];
     const client: Queryable = {
       $queryRawUnsafe: (async (sql: string, ...values: unknown[]) => {
@@ -148,9 +132,7 @@ describe("the reconciliation probe", () => {
       { source: "l1", last_block_height: 5106392 },
       { source: "l1:mints", last_block_height: 5106392 },
     ]);
-    await expect(probeIndexReconciled(client)).rejects.toThrow(
-      /1 of 3 sources: l1:rewards/,
-    );
+    await expect(probeIndexReconciled(client)).rejects.toThrow(/1 of 3 sources: l1:rewards/);
   });
 
   /** Non-zero is not the invariant. One reconciled pass writes all three
@@ -196,7 +178,10 @@ describe("the reconciliation probe", () => {
    * passed the whole file. */
   it("runs its real queries against the real index schema", async () => {
     if (!reachable) return;
-    const tx = "probe_reconciled_fixture";
+    // A 32-byte hash, because `l1_tx_tx_hash_width` now holds the table to
+    // what a Cardano transaction hash actually is. The old placeholder was a
+    // readable string, which the schema had no way to refuse.
+    const tx = "b0".repeat(32);
     await indexerPrisma.$executeRawUnsafe(
       `INSERT INTO l1_tx (tx_hash, block_height, block_hash, slot, epoch, tx_time,
          fee, size, total_output, block_index, cert_deposit)
@@ -217,14 +202,43 @@ describe("the reconciliation probe", () => {
     }
   });
 
-  it("runs the cursor query against the real index schema", async () => {
+  /**
+   * Its own state, asserted both ways.
+   *
+   * This used to run the probe and put its assertion inside `.catch(...)`, so a
+   * probe that RESOLVED skipped the assertion entirely and the test passed
+   * having checked nothing. What the cursors held was "whatever else the suite
+   * has written", which also made the gate depend on file order: another file
+   * left a cursor at 999000 and this one read its verdict from it.
+   */
+  it("reads the real cursor rows, and says so both ways", async () => {
     if (!reachable) return;
-    // No sentinel rows remain, so the first statement passes and execution
-    // reaches the second. What the cursors hold depends on whatever else the
-    // suite has written, so the assertion is on the KIND of failure: the
-    // probe's own verdict, never a database error.
-    await probeIndexReconciled().catch((err: Error) => {
-      expect(err.message).toMatch(/no completed reconciliation/);
-    });
+    const before = await indexerPrisma.syncCursor.findMany();
+
+    try {
+      // Nothing reconciled: every source at zero.
+      for (const source of SYNC_SOURCES) {
+        await indexerPrisma.syncCursor.upsert({
+          where: { source },
+          create: { source, lastBlockHeight: 0 },
+          update: { lastBlockHeight: 0 },
+        });
+      }
+      await expect(probeIndexReconciled()).rejects.toThrow(/no completed reconciliation/);
+
+      // A completed pass: every source past zero and agreeing.
+      for (const source of SYNC_SOURCES) {
+        await indexerPrisma.syncCursor.update({
+          where: { source },
+          data: { lastBlockHeight: 4_242_000 },
+        });
+      }
+      await expect(probeIndexReconciled()).resolves.toBeUndefined();
+    } finally {
+      await indexerPrisma.syncCursor.deleteMany({});
+      for (const row of before) {
+        await indexerPrisma.syncCursor.create({ data: row });
+      }
+    }
   });
 });

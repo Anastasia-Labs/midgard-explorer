@@ -7,6 +7,7 @@ import {
   UNATTRIBUTED_DEPLOYMENT,
 } from "../indexer/db";
 import { loadManifest } from "../indexer/manifest";
+import { checkBinding, mismatchMessage } from "../indexer/binding";
 import { config } from "../config";
 
 /**
@@ -249,4 +250,37 @@ export async function probeIndexReconciled(
  */
 export async function probeManifest(): Promise<void> {
   loadManifest(config.MIDGARD_MANIFEST_PATH);
+}
+
+/**
+ * That this index belongs to the deployment this process is configured for.
+ *
+ * READ ONLY. It used to bind an unbound index on first sight, which made a
+ * health check state-changing: whatever process was probed first claimed the
+ * database for the manifest it happened to carry, so an operator pointed at the
+ * wrong deployment bound a populated index to a manifest that does not describe
+ * its rows. Binding now happens once, in the writer, and only for an empty
+ * index.
+ *
+ * An unbound index that already holds rows fails, because nothing here can
+ * establish which deployment wrote them. An unbound EMPTY index passes: it is a
+ * new database waiting for its first pass, and refusing it would mean no index
+ * could ever be built.
+ */
+export async function probeDeploymentBinding(): Promise<void> {
+  const manifest = loadManifest(config.MIDGARD_MANIFEST_PATH);
+  const [row] = await prisma.$queryRaw<Array<{ db: string }>>`
+    SELECT current_database() AS db;`;
+  if (!row?.db) throw new Error("the node connection did not name its database");
+
+  const result = await checkBinding(manifest, row.db);
+  if (result.state === "mismatch") throw new Error(mismatchMessage(result.reason));
+  if (result.state === "unbound" && !result.indexIsEmpty) {
+    throw new Error(
+      "the explorer index holds rows but carries no deployment binding, so " +
+        "which deployment wrote them cannot be established. Rebuild the index " +
+        "under the intended manifest, or adopt it deliberately after checking " +
+        "its existing l1_event.deployment values against that manifest.",
+    );
+  }
 }
