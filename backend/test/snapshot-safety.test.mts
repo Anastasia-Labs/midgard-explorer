@@ -217,6 +217,29 @@ afterAll(() => {
   execFileSync("docker", ["rm", "-f", container], { stdio: "pipe" });
 });
 
+describe("the seed the gates load", () => {
+  /* A fixture is only worth what it agrees with.
+   *
+   * `pending_block_finalizations.expected_l2_transaction_count` is what every
+   * block list in the explorer reads, and `pending_block_finalization_txs` is
+   * the transactions themselves. The generator left the first to a placeholder
+   * of zero while writing six of the second, so the seed described blocks that
+   * carry nothing and then listed their contents. The schema's own check
+   * constraints did not catch it: all zeros satisfy a sum trivially.
+   *
+   * It survived because the case that compares the two returns early against a
+   * database holding fifty blocks, which is every developer machine, and CI had
+   * no node data at all until the seed was applied there. This asserts it where
+   * the seed is already loaded. */
+  it("claims exactly the transactions it lists", () => {
+    if (!reachable) return;
+    expect(
+      psql(urlFor(SRC), "SELECT COALESCE(sum(expected_l2_transaction_count), 0) FROM pending_block_finalizations;"),
+      "the blocks claim a different number of transactions than the seed lists",
+    ).toBe(psql(urlFor(SRC), "SELECT count(*) FROM pending_block_finalization_txs;"));
+  });
+});
+
 describe("verifying an archive", () => {
   it("accepts the archive the tool just wrote", () => {
     if (!reachable) return;

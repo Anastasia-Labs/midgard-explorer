@@ -262,7 +262,7 @@ lines.push(
   "-- da_payloads, not by the blocks table, so seeding blocks alone renders an",
   "-- empty explorer against a database that plainly holds rows.",
 );
-for (const block of blocks) {
+for (const [i, block] of blocks.entries()) {
   lines.push(
     insert("pending_block_finalizations", {
       header_hash: bytea(block.headerHash),
@@ -271,6 +271,24 @@ for (const block of blocks) {
       // state a committed block reaches, which is what these rows describe.
       status: `'finalized'`,
       submitted_tx_hash: bytea(block.txId),
+      // What the header claims the block carries. Every block list in the
+      // explorer reads this column, and the member rows written below are the
+      // transactions themselves, so the two have to agree.
+      //
+      // It was left to the placeholder, which is 0, while six member rows
+      // existed: a fixture describing seven blocks that carry nothing and then
+      // listing their transactions. `block-queries` compares exactly those two
+      // numbers and had never met this data, because until the seed was applied
+      // in CI there were no blocks there to compare and the case returned early.
+      //
+      // The three move together because the node's own schema says so:
+      // expected_total_event_count is checked to be the sum of the four event
+      // counts, and expected_transition_step_count to equal that total. All
+      // zeros satisfied both trivially, which is how a wrong fixture stayed
+      // insertable.
+      expected_l2_transaction_count: transactions[i] === undefined ? "0" : "1",
+      expected_total_event_count: transactions[i] === undefined ? "0" : "1",
+      expected_transition_step_count: transactions[i] === undefined ? "0" : "1",
     }),
   );
 }
