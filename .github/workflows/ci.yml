@@ -270,6 +270,8 @@ jobs:
         # `pnpm test` never runs `dist`. This is the only step that proves the
         # artifact a deployment would run can start at all: a missing runtime
         # dependency resolves under ts-node and fails under node.
+        env:
+          PGPASSWORD: postgres
         run: |
           node dist/index.js &
           SERVER_PID=$!
@@ -280,17 +282,28 @@ jobs:
           curl -fsS http://127.0.0.1:3101/healthz | tee -a gate-evidence/probes.log | grep -q '"status":"ok"'
           curl -fsS http://127.0.0.1:3101/readyz | tee -a gate-evidence/probes.log | grep -q '"ready":true'
 
-          # The SPLIT, not just that the routes answer.
+          # The SPLIT, constructed rather than assumed.
           #
-          # This job builds an index schema and never reconciles it, so L1
-          # readiness must say not-ready while L2 readiness says ready. That
-          # combination is the whole point of separating them: an unbuilt index
-          # used to take every L2 route out of rotation with it. Asserting only
-          # that /readyz returns true would pass just as well before the split
-          # as after, which is what made this step prove nothing about it.
+          # This asserted that L1 readiness was 503 on the stated grounds that
+          # the job never reconciles the index. It does: a step above seeds a
+          # completed reconciliation so the rest of the gate has an index worth
+          # reading, and against that state the probe answers 200. The
+          # assertion was written against a job that no longer existed and
+          # would have failed the first time anything reached this step.
+          #
+          # So the failure is made and then unmade. Taking one source's cursor
+          # back to zero puts the index out of coverage; L2 readiness has to
+          # keep serving while it is, which IS the split; and restoring the
+          # cursor has to bring L1 back, because a check that can only go red
+          # proves half of what this claims.
+          psql -h localhost -U postgres -d midgard_explorer_ci -v ON_ERROR_STOP=1 -c \
+            "UPDATE sync_cursor SET last_block_height = 0 WHERE source = 'l1';"
+          # Readiness answers are cached for a second, so a probe taken
+          # immediately would report the state before this change.
+          sleep 2
           l1_status="$(curl -s -o gate-evidence/readyz-l1.json -w '%{http_code}' \
             http://127.0.0.1:3101/readyz/l1)"
-          echo "readyz/l1 -> $l1_status" | tee -a gate-evidence/probes.log
+          echo "readyz/l1 with a source uncovered -> $l1_status" | tee -a gate-evidence/probes.log
           test "$l1_status" = "503"
           grep -q '"ready":false' gate-evidence/readyz-l1.json
           # And it reports WHICH dependency failed, so an operator is not left
@@ -311,6 +324,19 @@ jobs:
             http://127.0.0.1:3101/readyz/full)"
           echo "readyz/full -> $full_status" | tee -a gate-evidence/probes.log
           test "$full_status" = "503"
+
+          # The other half of the split: L2 still serves while L1 does not. An
+          # unbuilt index used to take every L2 route out of rotation with it.
+          curl -fsS http://127.0.0.1:3101/readyz | tee -a gate-evidence/probes.log | grep -q '"ready":true'
+
+          # And back, so the refusal is shown to track the state.
+          psql -h localhost -U postgres -d midgard_explorer_ci -v ON_ERROR_STOP=1 -c \
+            "UPDATE sync_cursor SET last_block_height = 1 WHERE source = 'l1';"
+          sleep 2
+          recovered="$(curl -s -o gate-evidence/readyz-l1-recovered.json -w '%{http_code}' \
+            http://127.0.0.1:3101/readyz/l1)"
+          echo "readyz/l1 with coverage restored -> $recovered" | tee -a gate-evidence/probes.log
+          test "$recovered" = "200"
           kill $SERVER_PID
 
       - name: Preserve the evidence
