@@ -10,6 +10,9 @@
     "doctor": "node scripts/lifecycle.mjs doctor",
     "dev": "node scripts/lifecycle.mjs dev",
     "dev:l1": "node scripts/lifecycle.mjs dev --with-l1-sync",
+    "snapshot:export": "node scripts/snapshot.mjs export",
+    "snapshot:restore": "node scripts/snapshot.mjs restore",
+    "snapshot:verify": "node scripts/snapshot.mjs verify",
     "status": "node scripts/lifecycle.mjs status",
     "services:down": "node scripts/lifecycle.mjs services:down",
     "compat": "node scripts/compat.mjs ..",
@@ -29,7 +32,8 @@
     "indexer:generate": "prisma generate --config prisma.indexer.config.ts",
     "indexer:deploy": "prisma migrate deploy --config prisma.indexer.config.ts",
     "verify:vendor": "vitest run test/vendor-provenance.test.mts",
-    "audit:gate": "node scripts/audit-gate.mjs"
+    "audit:gate": "node scripts/audit-gate.mjs",
+    "adopt-index": "ts-node scripts/adopt-index.ts"
   },
   "author": "",
   "license": "ISC",

@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { prisma } from "../db";
 import { logger } from "../logger";
 import {
   getSyncCursor,
@@ -15,6 +16,7 @@ import {
   fetchEpochParams as realFetchEpochParams,
   fetchAccountUpdates as realFetchAccountUpdates,
   fetchPolicyAssets as realFetchPolicyAssets,
+  fetchTip as realFetchTip,
   fetchTxInfo as realFetchTxInfo,
 } from "./koios";
 import {
@@ -22,6 +24,7 @@ import {
   type Leadership,
 } from "./leadership";
 import { loadManifest } from "./manifest";
+import { bindEmptyIndex, mismatchMessage } from "./binding";
 
 // Defined in ./db, which readiness also reads, so the two cannot name
 // different cursors.
@@ -39,6 +42,7 @@ export type SyncDeps = {
   fetchAssetTxs: typeof realFetchAssetTxs;
   fetchAccountUpdates: typeof realFetchAccountUpdates;
   fetchEpochParams: typeof realFetchEpochParams;
+  fetchTip: typeof realFetchTip;
 };
 
 export type SyncResult = {
@@ -82,9 +86,18 @@ export async function syncOnce(
   const fetchAssetTxs = deps.fetchAssetTxs ?? realFetchAssetTxs;
   const fetchAccountUpdates = deps.fetchAccountUpdates ?? realFetchAccountUpdates;
   const fetchEpochParams = deps.fetchEpochParams ?? realFetchEpochParams;
+  const fetchTip = deps.fetchTip ?? realFetchTip;
 
-  const { scanTargets, validators, referenceScriptAuthPolicy, deploymentId } =
-    loadManifest(config.MIDGARD_MANIFEST_PATH);
+  const manifest = loadManifest(config.MIDGARD_MANIFEST_PATH);
+  const { scanTargets, validators, referenceScriptAuthPolicy, deploymentId } = manifest;
+
+  // The writer claims the index, not a health check. An empty index is claimed
+  // here on the first pass; a populated unbound one is refused, because nothing
+  // in this process can prove its existing rows belong to this manifest.
+  const [nodeDb] = await prisma.$queryRaw<Array<{ db: string }>>`
+    SELECT current_database() AS db;`;
+  const binding = await bindEmptyIndex(manifest, nodeDb?.db ?? "unknown");
+  if (binding.state === "mismatch") throw new Error(mismatchMessage(binding.reason));
 
   // Address history is asked for spend targets only.
   //
@@ -110,6 +123,22 @@ export async function syncOnce(
     0,
     Math.min(primaryCursor, mintCursor) - config.L1_REORG_LOOKBACK_BLOCKS,
   );
+
+  // Sampled before anything is scanned. Every source below then reads from the
+  // shared floor through at least this height, so advancing the cursors here
+  // states what the index COVERS rather than where its newest Midgard row
+  // happened to be. Anything that arrives while this pass runs is below the
+  // next pass's lookback and is picked up then, which is why sampling early is
+  // the conservative choice rather than a lossy one.
+  //
+  // A failure to read the tip is not fatal: the pass still ingests what it
+  // finds, and simply does not claim coverage it cannot evidence.
+  let coverageTip: number | null = null;
+  try {
+    coverageTip = (await fetchTip()).blockHeight;
+  } catch (error) {
+    logger.warn(`Could not sample the chain tip, so this pass claims no new coverage: ${String(error)}`);
+  }
 
   const rows = await fetchAddressTxs(addresses, scanFloor);
   const hashes = new Set(rows.map((r) => r.tx_hash));
@@ -201,12 +230,17 @@ export async function syncOnce(
       const written = await ingestTxInfos(infos, validators, deploymentId, tx);
       if (reconciled) {
         // One height for all three, because all three covered the same window.
-        // Seeded from the previous cursors above, so an empty window leaves
-        // them where they were rather than walking backward one lookback per
-        // poll and re-scanning an ever-wider range.
-        await setSyncCursor(SOURCE, observedTip, tx);
-        await setSyncCursor(SOURCE_MINTS, observedTip, tx);
-        await setSyncCursor(SOURCE_REWARDS, observedTip, tx);
+        //
+        // The sampled tip when there is one, because that is the height this
+        // pass actually covered. `observedTip` is only a floor now: it is the
+        // newest Midgard row seen, which on a quiet chain does not move at all
+        // and used to leave the cursors pinned thousands of blocks below the
+        // tip while the index was perfectly current. A reader could not tell
+        // that from a stopped writer, and neither could a freshness check.
+        const covered = Math.max(observedTip, coverageTip ?? 0);
+        await setSyncCursor(SOURCE, covered, tx);
+        await setSyncCursor(SOURCE_MINTS, covered, tx);
+        await setSyncCursor(SOURCE_REWARDS, covered, tx);
       }
       return written;
     },
