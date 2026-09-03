@@ -1,3 +1,4 @@
+import { CANONICAL_HASH28, CANONICAL_HASH32 } from "../utils";
 // Deposit and withdrawal datums, decoded positionally against the Aiken types
 // in midgard/onchain/aiken/lib/midgard/user-events/. Positional, not
 // shape-searching: an earlier decoder in this codebase searched for a list of
@@ -11,8 +12,8 @@ type Node = {
   int?: number | string;
 };
 
-const HASH32 = /^[0-9a-f]{64}$/;
-const HASH28 = /^[0-9a-f]{56}$/;
+const HASH32 = CANONICAL_HASH32;
+const HASH28 = CANONICAL_HASH28;
 
 const asNode = (v: unknown): Node | null =>
   v !== null && typeof v === "object" ? (v as Node) : null;

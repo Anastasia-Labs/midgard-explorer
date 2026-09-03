@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { CANONICAL_HASH28, CANONICAL_HASH32 } from "../utils";
 import { readFileSync, statSync } from "node:fs";
 import { z } from "zod";
 import { logger } from "../logger";
@@ -99,8 +100,8 @@ export type ValidatorEntry = {
   placeholder: boolean;
 };
 
-const SCRIPT_HASH = /^[0-9a-f]{56}$/;
-const DEPLOYMENT_ID = /^[0-9a-f]{64}$/;
+const SCRIPT_HASH = CANONICAL_HASH28;
+const DEPLOYMENT_ID = CANONICAL_HASH32;
 
 /** The document as it sits on disk. Every field the indexer reads is declared
  * here and nowhere else, so there is one decode boundary rather than a mix of

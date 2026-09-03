@@ -18,3 +18,15 @@ export async function truncateL1(): Promise<void> {
   await indexerPrisma.l1Tx.deleteMany({});
   await indexerPrisma.l1ProtocolParams.deleteMany({});
 }
+
+/** The cursors, which `truncateL1` deliberately leaves alone.
+ *
+ * Emptying the tables and resetting coverage are different questions: a reorg
+ * test wants the rows gone and the cursor kept, and a coverage test wants both
+ * gone. Kept separate so neither has to work around the other, and exported
+ * rather than written inline because a second copy of it in one more test file
+ * is how the two drift apart.
+ */
+export async function resetSyncCursors(): Promise<void> {
+  await indexerPrisma.syncCursor.deleteMany({});
+}

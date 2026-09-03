@@ -1,3 +1,4 @@
+import { CANONICAL_HASH28, CANONICAL_HASH32 } from "../utils";
 // The state queue datum is the block header Midgard commits to L1. Koios hands
 // it back as decoded Plutus JSON: { fields: [...] } for constructors, and
 // { bytes } or { int } for leaves. The header is positional: exactly 19 leaves
@@ -27,8 +28,8 @@ export type BlockHeaderFields = {
 
 type PlutusNode = { fields?: unknown[]; bytes?: string; int?: number | string };
 
-const ROOT_HEX = /^[0-9a-f]{64}$/;
-const KEY_HASH_HEX = /^[0-9a-f]{56}$/;
+const ROOT_HEX = CANONICAL_HASH32;
+const KEY_HASH_HEX = CANONICAL_HASH28;
 
 /** Depth-first walk to the first node holding a flat list of leaves. The header
  * sits several constructors deep and the nesting has changed between versions,
