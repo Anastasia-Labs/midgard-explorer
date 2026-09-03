@@ -4,6 +4,7 @@ import { computeBalance, decodeTransactionSafe, decodeUtxos } from "../../decode
 import type { ValueView } from "../../decode/types";
 import { toHex } from "../../utils";
 import { parsePageQuery } from "../validate";
+import { readConsistently } from "../../db/consistent";
 
 function sumValues(values: ValueView[]): ValueView {
   let lovelace = 0n;
@@ -30,10 +31,11 @@ export async function getAddressRoute(req: Request, res: Response) {
   if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
   const page = parsedPage.value;
 
-  const [history, utxos] = await Promise.all([
-    getAddressHistory(address, page),
-    getAddressUtxos(address),
-  ]);
+  // One snapshot for the whole response. History and UTxOs were two, so a
+  // balance could be computed from a ledger the history beside it never saw.
+  const [history, utxos] = await readConsistently(async (db) =>
+    Promise.all([getAddressHistory(address, page, db), getAddressUtxos(address, db)]),
+  );
   const [{ balance, undecodedOutputs }, utxoViews] = await Promise.all([
     computeBalance(utxos.map((row) => row.output)),
     decodeUtxos(utxos),

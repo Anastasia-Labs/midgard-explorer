@@ -25,7 +25,7 @@ server {
   # `/readyz` is what the page's own status indicator reads. A proxy that
   # published only `/healthz` answered 404 for it, so every page reported an
   # unreachable API while the backend and both databases were serving.
-  location ~ ^/(healthz|readyz)$ {
+  location ~ ^/(healthz|readyz(/l1|/full)?)$ {
     proxy_pass http://${BACKEND_ORIGIN};
     proxy_cache off;
     proxy_set_header Host $host;
