@@ -78,7 +78,7 @@ export default async function WithdrawalsPage({
           caption="Withdrawals from Midgard to Cardano"
           columns={[
             {
-              header: "L1 tx",
+              header: "Withdrawal request",
               headerNote: "on Cardano",
               cell: (r) => (
                 <span className="inline-flex items-center gap-1.5">

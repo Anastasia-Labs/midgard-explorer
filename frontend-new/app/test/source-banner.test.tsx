@@ -31,6 +31,17 @@ const live = {
 
 const fixture = { ...live, l2Database: "midgard_phase4_process_txcoverage", isFixture: true };
 
+/** A restored snapshot: real Midgard data in a database that is not named
+ * `midgard`, so the name-derived boolean calls it a fixture and the source
+ * model does not. */
+const snapshot = {
+  ...live,
+  l2Database: "midgard_snapshot",
+  isFixture: true,
+  sourceKind: "snapshot",
+  freshness: { state: "fixed", observedAsOf: "2026-09-02T09:15:00.000Z", lagSeconds: null },
+};
+
 describe("SourceBanner", () => {
   it("warns, and names the database, when the source is a fixture", async () => {
     const { SourceBanner } = await withSummary(fixture);
@@ -38,6 +49,31 @@ describe("SourceBanner", () => {
     const banner = screen.getByRole("status");
     expect(banner.textContent).toMatch(/not live data/i);
     expect(banner.textContent).toContain("midgard_phase4_process_txcoverage");
+  });
+
+  /**
+   * The understatement this prevents.
+   *
+   * `isFixture` is computed from the database NAME, so every database that is
+   * not the live node reads as synthetic. A restored snapshot holds real
+   * Midgard data, and announcing it as a test fixture tells a reader to
+   * disregard figures that are true.
+   */
+  it("calls a restored snapshot real data, not a fixture", async () => {
+    const { SourceBanner } = await withSummary(snapshot);
+    render(await SourceBanner());
+    const banner = screen.getByRole("status");
+    expect(banner.textContent).toMatch(/snapshot, not the live node/i);
+    expect(banner.textContent).not.toMatch(/test fixture/i);
+    expect(banner.textContent).toContain("2026-09-02T09:15:00.000Z");
+  });
+
+  /** A backend that predates `sourceKind` still gets the old behaviour rather
+   * than silently losing the warning. */
+  it("falls back to the boolean when the backend sends no source kind", async () => {
+    const { SourceBanner } = await withSummary(fixture);
+    render(await SourceBanner());
+    expect(screen.getByRole("status").textContent).toMatch(/not live data/i);
   });
 
   it("says nothing when the source is the live node", async () => {

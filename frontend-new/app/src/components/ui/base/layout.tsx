@@ -324,12 +324,19 @@ export function Chip({
 export function Card({
   children,
   className,
+  region,
 }: {
   children?: ReactNode | undefined;
   className?: string | undefined;
+  /** Name for the layout harness, which locates regions by `data-region`
+   * rather than by class or nesting so a measurement survives a component
+   * being replaced. Other regions set this on their own root; a card IS the
+   * root for the components built on it, so it has to be settable here. */
+  region?: string | undefined;
 }) {
   return (
     <section
+      {...(region ? { "data-region": region } : {})}
       className={cn(
         "overflow-hidden rounded-xl border border-border bg-surface shadow-(--mg-shadow)",
         // A one-pixel lit top edge. Cheap, static, and the difference between

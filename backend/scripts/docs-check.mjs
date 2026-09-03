@@ -29,6 +29,13 @@ const PAGES = [
   "docs/running-full-midgard.md",
   "docs/troubleshooting.md",
   "docs/resource-requirements.md",
+  // Release records carry operational commands an operator runs during a
+  // rollout, which is the worst possible place for a command that no longer
+  // exists. Scanned as a directory so a new record is gated the day it lands
+  // rather than the day someone remembers to list it.
+  ...readdirSync(join(repoRoot, "docs", "release"))
+    .filter((name) => name.endsWith(".md"))
+    .map((name) => `docs/release/${name}`),
   ...readdirSync(join(repoRoot, "docs", "decisions"))
     .filter((name) => name.endsWith(".md"))
     .map((name) => `docs/decisions/${name}`),

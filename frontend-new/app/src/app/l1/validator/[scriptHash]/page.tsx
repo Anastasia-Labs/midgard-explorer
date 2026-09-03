@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { isHash28 } from "@midgard-explorer/contracts";
 import { notFound } from "next/navigation";
 import { AdaAmount } from "../../../../components/ui/domain/amount";
 import { ApiExample } from "../../../../components/ui/domain/apiexample";
@@ -21,8 +22,6 @@ import { viewerInit } from "../../../../lib/viewerInit";
 
 export const dynamic = "force-dynamic";
 
-const isScriptHash = (value: string) => /^[0-9a-fA-F]{56}$/.test(value);
-
 export async function generateMetadata({
   params,
 }: {
@@ -38,7 +37,7 @@ export default async function ValidatorPage({
   params: Promise<{ scriptHash: string }>;
 }) {
   const { scriptHash } = await params;
-  if (!isScriptHash(scriptHash)) notFound();
+  if (!isHash28(scriptHash)) notFound();
   const hash = scriptHash.toLowerCase();
 
   let data;

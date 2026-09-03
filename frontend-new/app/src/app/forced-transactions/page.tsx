@@ -79,7 +79,7 @@ export default async function ForcedTransactionsPage({
               cell: (r) => <Identifier value={r.tx_order_id} />,
             },
             {
-              header: "L1 tx",
+              header: "Forced tx order",
               headerNote: "on Cardano",
               cell: (r) => (
                 <span className="inline-flex items-center gap-1.5">

@@ -116,15 +116,29 @@ pnpm build
 pnpm start
 ```
 
-Two probes answer separate questions, and a deployment should use both:
+Four probes answer separate questions, and a deployment should use them
+according to what it is routing:
 
 - `GET /healthz` reports that the process is alive. It touches no database, so
   it is safe to restart on.
-- `GET /readyz` reports whether the explorer can actually serve. It checks that
-  each database holds the relations its query path uses, that the index's
-  migrations finished, and that the deployment manifest parses, then answers
-  `503` naming the check that failed. Use it to take an instance out of
-  rotation. The failing driver message goes to the log, never to the response.
+- `GET /readyz` reports whether the Midgard explorer can serve: the node
+  database, and nothing else. Every L2 page reads it and none of them touch the
+  Cardano index.
+- `GET /readyz/l1` reports whether the Cardano surface can serve: the index's
+  relations, its migrations, a completed reconciliation, and the deployment
+  manifest every indexed row is attributed to.
+- `GET /readyz/full` reports both, for a deployment gate that wants one call.
+
+  Each answers `503` naming the check that failed, and the failing driver
+  message goes to the log, never to the response.
+
+  `/readyz` used to include the index, its reconciliation and the manifest, and
+  its verdict is `checks.every(ok)`. So an index that had never reconciled took
+  the whole instance out of rotation, every L2 route with it, which contradicts
+  the rule the explorer is built on: an index behind the tip degrades the
+  Cardano surface and never makes a Midgard page unavailable. The index probe
+  moved out with the rest, because the L2 query surface does not read the index
+  and keeping it would have moved the outage rather than removed it.
 
   It used to be `SELECT 1` against each database, which reports ready for an
   empty PostgreSQL that holds none of the tables. That is what CI provisioned,

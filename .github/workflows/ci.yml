@@ -119,6 +119,12 @@ jobs:
         run: |
           psql -h localhost -U postgres -d midgard_node_ci -v ON_ERROR_STOP=1 \
             -f test/fixtures/schema/midgard-node.sql
+          # The seed too, not just the schema. The cross-source suite compares
+          # the node against the index, and an empty node made it compare
+          # nothing and pass. The seed carries an anchor block the L1 ingest
+          # fixture also describes, so the two have a block in common.
+          psql -h localhost -U postgres -d midgard_node_ci -v ON_ERROR_STOP=1 \
+            -f test/fixtures/schema/midgard-node-seed.sql
 
       - name: Migrate the test database
         # `indexer:deploy` targets INDEXER_POSTGRES_URL only, so the database
@@ -182,6 +188,49 @@ jobs:
           set -o pipefail
           pnpm test:dev 2>&1 | tee gate-evidence/dev-commands.log
 
+      - name: The frontend's contracts, against the REAL backend
+        # Every other parity test decodes the fixture, which proves the fixture
+        # agrees with the schema and says nothing about the server. That gap is
+        # how the fixture served a shape production never produced. This starts
+        # the built backend and decodes its live responses with the shipped
+        # contracts. REQUIRE_BACKEND=1 makes an unreachable server a failure
+        # rather than a skip, so the step cannot report a pass it never measured.
+        run: |
+          set -o pipefail
+          # The index needs the anchor block, or the contract test refuses to
+          # report a pass it never measured and this step is red for want of
+          # data. It is the SAME block the node seed carries, so the association
+          # on that block resolves to `matched` rather than to one side's
+          # silence, which is what makes decoding the envelope meaningful.
+          psql -h localhost -U postgres -d midgard_explorer_ci -v ON_ERROR_STOP=1 \
+            -f test/fixtures/schema/l1-index-seed.sql
+          pnpm build
+          node dist/index.js > gate-evidence/backend-for-contracts.log 2>&1 &
+          echo $! > backend.pid
+          for _ in $(seq 1 60); do
+            curl -sf http://127.0.0.1:3101/healthz >/dev/null && break
+            sleep 2
+          done
+          cd ../frontend-new
+          pnpm install --frozen-lockfile
+          BACKEND_URL=http://127.0.0.1:3101 REQUIRE_BACKEND=1 \
+            pnpm --filter @midgard-explorer/app exec vitest run test/backend-contract.test.ts \
+            2>&1 | tee ../backend/gate-evidence/backend-contract.log
+          kill "$(cat ../backend/backend.pid)" || true
+
+      - name: The canonical block key, against both sources
+        # The class of gate that was missing when it mattered. Every other check
+        # reads ONE source, which is how a 32-byte root sat in the column every
+        # route queries as a 28-byte hash while nine local gates and this
+        # workflow stayed green. These read the node and the index together, and
+        # run the backfill exactly as the migration ships it.
+        run: |
+          set -o pipefail
+          REQUIRE_DB=1 pnpm exec vitest run \
+            test/cross-source-identity.test.mts \
+            test/migration-backfill.test.mts \
+            test/state-queue-asset.test.mts 2>&1 | tee gate-evidence/cross-source.log
+
       - name: The seed is what the generator produces
         # Regenerate and diff. The seed is derived from the schema fixture and
         # the shape corpus, so a change to either that nobody regenerated is a
@@ -217,6 +266,38 @@ jobs:
           done
           curl -fsS http://127.0.0.1:3101/healthz | tee -a gate-evidence/probes.log | grep -q '"status":"ok"'
           curl -fsS http://127.0.0.1:3101/readyz | tee -a gate-evidence/probes.log | grep -q '"ready":true'
+
+          # The SPLIT, not just that the routes answer.
+          #
+          # This job builds an index schema and never reconciles it, so L1
+          # readiness must say not-ready while L2 readiness says ready. That
+          # combination is the whole point of separating them: an unbuilt index
+          # used to take every L2 route out of rotation with it. Asserting only
+          # that /readyz returns true would pass just as well before the split
+          # as after, which is what made this step prove nothing about it.
+          l1_status="$(curl -s -o gate-evidence/readyz-l1.json -w '%{http_code}' \
+            http://127.0.0.1:3101/readyz/l1)"
+          echo "readyz/l1 -> $l1_status" | tee -a gate-evidence/probes.log
+          test "$l1_status" = "503"
+          grep -q '"ready":false' gate-evidence/readyz-l1.json
+          # And it reports WHICH dependency failed, so an operator is not left
+          # guessing. Asserted as a failed check rather than by name: a name
+          # appears in the response whether that check passed or failed, so
+          # grepping for one proves only that the route answered.
+          node -e '
+            const r = require("./gate-evidence/readyz-l1.json");
+            const failed = r.checks.filter((c) => !c.ok).map((c) => c.name);
+            if (failed.length === 0) {
+              console.error("readyz/l1 reported not-ready with no failing check");
+              process.exit(1);
+            }
+            console.log("readyz/l1 failing checks:", failed.join(", "));
+          '
+
+          full_status="$(curl -s -o gate-evidence/readyz-full.json -w '%{http_code}' \
+            http://127.0.0.1:3101/readyz/full)"
+          echo "readyz/full -> $full_status" | tee -a gate-evidence/probes.log
+          test "$full_status" = "503"
           kill $SERVER_PID
 
       - name: Preserve the evidence

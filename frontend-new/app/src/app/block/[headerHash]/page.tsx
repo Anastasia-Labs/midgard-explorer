@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { isHash28 } from "@midgard-explorer/contracts";
 import { notFound } from "next/navigation";
 import { Breadcrumbs } from "../../../components/ui/base/breadcrumbs";
 import { IdentityBar } from "../../../components/ui/domain/identitybar";
@@ -11,8 +12,6 @@ import { truncateId } from "../../../lib/format";
 import { viewerInit } from "../../../lib/viewerInit";
 
 export const dynamic = "force-dynamic";
-
-const isBlockHash = (s: string) => /^[0-9a-fA-F]{56}$/.test(s);
 
 export async function generateMetadata({
   params,
@@ -28,7 +27,7 @@ export async function generateMetadata({
 
 export default async function BlockPage({ params }: { params: Promise<{ headerHash: string }> }) {
   const { headerHash } = await params;
-  if (!isBlockHash(headerHash)) notFound();
+  if (!isHash28(headerHash)) notFound();
   const hash = headerHash.toLowerCase();
 
   let data;

@@ -78,7 +78,7 @@ export default async function DepositsPage({
           caption="Deposits from Cardano into Midgard"
           columns={[
             {
-              header: "L1 tx",
+              header: "Deposit origin",
               cell: (r) => <L1TxLink hash={r.deposit_l1_tx_hash} destination="cardano" />,
             },
             {

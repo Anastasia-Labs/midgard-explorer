@@ -8,3 +8,4 @@ export * from "./health";
 export * from "./metrics";
 export * from "./asset";
 export * from "./l1";
+export * from "./association";

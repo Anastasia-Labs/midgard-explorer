@@ -91,6 +91,11 @@ start("./node_modules/.bin/next", ["dev", "--hostname", "127.0.0.1", "--port", S
   NEXT_PUBLIC_L1_EXPLORER_NAME: "CExplorer",
   NEXT_PUBLIC_L1_EXPLORER_TX_URL: "https://preprod.cexplorer.io/tx/{hash}",
   NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL: "https://preprod.cexplorer.io/address/{address}",
+  // The provider stays configured so the interface renders the same shape it
+  // does in production, and the links themselves are suppressed. Fixture hashes
+  // come from a linear congruential generator, so every one of them pointed at a
+  // preprod page that does not exist.
+  NEXT_PUBLIC_L1_EXPLORER_SUPPRESS: "1",
 });
 
 /* Both children stop together. The fixture holds a port and Next holds the

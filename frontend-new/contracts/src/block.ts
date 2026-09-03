@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { BlockSettlement, DeploymentContext } from "./association";
 import { HexString, IsoTimestamp, paged } from "./primitives";
 import { TransactionView } from "./transaction-view";
 
@@ -87,6 +88,16 @@ export const BlockNeighbours = Schema.Struct({
 export type BlockNeighbours = Schema.Schema.Type<typeof BlockNeighbours>;
 
 export const BlockResponse = Schema.Struct({
+  /** Which deployment answered, and how current its L2 source is. */
+  midgard: Schema.optional(DeploymentContext),
+  /** The block's Cardano settlement, reconciled across both sources. Replaces
+   * the page's own separate index fetch, which swallowed every failure into a
+   * sentence about index lag. */
+  /** A block settles, so this is the block-settlement relationship and not the
+   * whole union. Accepting every kind here meant a deposit-origin association
+   * would decode on a block response, which is a shape the backend never sends
+   * and a consumer would have to defend against for no reason. */
+  cardano: Schema.optional(BlockSettlement),
   header: BlockHeader,
   rows: Schema.Array(BlockTxRow),
   da: Schema.NullOr(BlockDa),

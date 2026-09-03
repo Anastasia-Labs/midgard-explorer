@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import { DeploymentContext, L2TransactionSettlement } from "./association";
 import { BlockFinalization } from "./block";
 import { HexString, IsoTimestamp, StatusString, paged } from "./primitives";
 import { TransactionView, TransactionWithMeta } from "./transaction-view";
@@ -36,6 +37,15 @@ export type TxDecodeError = Schema.Schema.Type<typeof TxDecodeError>;
 /** Execution, inclusion and settlement are three separate questions; the
  * response answers each on its own rather than overloading `status`. */
 const TransactionEnvelope = {
+  /** Which deployment answered, and how current its L2 source is. Optional so a
+   * frontend built against this still parses a backend that predates it. */
+  midgard: Schema.optional(DeploymentContext),
+  /** Settlement, which travels through the block that carries this transaction.
+   * The hash inside is the block's commitment transaction, shared by every
+   * transaction in that block; there is no L1 transaction for this one. */
+  /** A transaction settles THROUGH its block, so this is that one relationship
+   * rather than the whole union. */
+  cardano: Schema.optional(L2TransactionSettlement),
   txId: HexString,
   status: StatusString,
   admission: Schema.NullOr(TxAdmission),

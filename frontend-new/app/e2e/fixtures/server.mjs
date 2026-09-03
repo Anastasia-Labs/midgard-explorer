@@ -35,6 +35,128 @@ import {
   assets,
 } from "./data.mjs";
 
+/* The deployment context and association every detail response now carries.
+ *
+ * Declared once here for the same reason it is declared once in the contracts:
+ * a fixture that spells the shape differently per route is how the fixture and
+ * the backend drift apart, which is exactly what let a broken block key ship
+ * behind a green end-to-end suite.
+ *
+ * The source kind is `fixture`, which is the honest answer and is what the
+ * frontend reads to suppress links to a live Cardano explorer. */
+const midgardContext = () => ({
+  deploymentId: "fixture0000000000000000000000000000000000000000000000000000000000",
+  network: "preprod",
+  networkMagic: null,
+  database: "midgard_fixture",
+  sourceKind: "fixture",
+  identityState: "verified",
+  freshness: { state: "synthetic", observedAsOf: null, lagSeconds: null },
+});
+
+/* Which reconciliation a fixture block shows.
+ *
+ * Spread across blocks rather than pinned to one, so the end-to-end suite meets
+ * every state the panel can render instead of only the happy one. The fixture
+ * was previously incapable of producing a disagreement at all, which is the same
+ * shape of gap that let a broken block key ship behind a green suite: a harness
+ * that cannot express a failure cannot catch one. */
+const reconciliationFor = (blockNumber, l1TxHash) => {
+  if (l1TxHash === null) return "none";
+  if (blockNumber % 11 === 0) return "mismatch";
+  if (blockNumber % 13 === 0) return "stale";
+  if (blockNumber % 17 === 0) return "unavailable";
+  if (blockNumber % 7 === 0) return "node_only";
+  return "matched";
+};
+
+/* The second observation, present only where the two sources actually differ. */
+const indexEvidence = (reconciliation, l1TxHash) =>
+  reconciliation === "mismatch"
+    ? [
+        {
+          source: "cardano_l1_index",
+          transactionHash: l1TxHash.replace(/^../, "ff"),
+          outputIndex: null,
+          blockHeight: 5_120_000,
+          observedAt: null,
+          rawState: null,
+        },
+      ]
+    : reconciliation === "matched"
+      ? [
+          {
+            source: "cardano_l1_index",
+            transactionHash: l1TxHash,
+            outputIndex: null,
+            blockHeight: 5_120_000,
+            observedAt: null,
+            rawState: null,
+          },
+        ]
+      : [];
+
+/**
+ * The states this build recognises, and the mapping the backend applies.
+ *
+ * `settlementState` in the backend turns a status it does not know into
+ * `unknown` while `rawState` keeps the node's own word. The fixture passed the
+ * raw status straight through as `state`, so its deliberate
+ * `some_future_finalization_stage` case produced a payload the real API cannot
+ * emit, and once the contract narrowed to the node's vocabulary the block page
+ * failed to decode. A fixture that can express what the API cannot is not
+ * testing the API.
+ */
+const SETTLEMENT_STATES = new Set([
+  "pending_submission",
+  "submitted_local_finalization_pending",
+  "submitted_unconfirmed",
+  "observed_waiting_stability",
+  "finalized",
+  "abandoned",
+  "orphaned",
+  "unknown",
+]);
+
+const settlementState = (raw) => (SETTLEMENT_STATES.has(raw) ? raw : "unknown");
+
+/* Why two sources could not be compared, which the API carries on EVERY
+ * association and this fixture carried on none. A field the real payload always
+ * sets and the fixture never sets leaves its decode and its rendering untested
+ * end to end, which is how the panel's four `stale` sentences were reachable in
+ * a component test and unreachable in a browser. */
+const comparabilityFor = (reconciliation) =>
+  reconciliation === "stale" ? "index_lagging" : "comparable";
+
+const blockAssociation = (headerHash, l1TxHash, status, blockNumber = 1) => ({
+  kind: "block_settlement",
+  deploymentId: midgardContext().deploymentId,
+  network: "preprod",
+  reconciliation: reconciliationFor(blockNumber, l1TxHash),
+  comparability: comparabilityFor(reconciliationFor(blockNumber, l1TxHash)),
+  l2ObservedAsOf: null,
+  l1ObservedAsOf: null,
+  evidence:
+    l1TxHash === null
+      ? []
+      : [
+          {
+            source: "midgard_finalization_journal",
+            transactionHash: l1TxHash,
+            outputIndex: null,
+            blockHeight: null,
+            observedAt: null,
+            rawState: status,
+          },
+          ...indexEvidence(reconciliationFor(blockNumber, l1TxHash), l1TxHash),
+        ],
+  l2BlockHeaderHash: headerHash,
+  // Null on a disagreement, matching the backend: two sources naming different
+  // transactions is not a question the API settles by preferring one.
+  l1TxHash: reconciliationFor(blockNumber, l1TxHash) === "mismatch" ? null : l1TxHash,
+  state: settlementState(status),
+});
+
 const PORT = Number(process.env.FIXTURE_PORT ?? 3101);
 const LIMIT = 25;
 
@@ -379,11 +501,19 @@ const handleBlock = (url, res) => {
     const b = BLOCKS[n];
     return b ? { height: b.height, header_hash: b.header_hash } : null;
   };
+  const fin = blockFinalization(found.number);
   return json(res, {
+    midgard: midgardContext(),
+    cardano: blockAssociation(
+      found.header_hash,
+      fin?.submitted_tx_hash ?? null,
+      fin?.status ?? "unknown",
+      found.number,
+    ),
     header: blockHeader(found.number),
     rows: blockRows(found.number).map((row) => ({ ...row, height: found.height })),
     da: blockDa(found.number),
-    finalization: blockFinalization(found.number),
+    finalization: fin,
     events: blockEvents(found.number),
     neighbours: { prev: at(i + 1), next: at(i - 1) },
   });
@@ -409,11 +539,26 @@ const handleTransaction = (url, res) => {
           time_stamp_tz: found.time_stamp_tz,
         }
       : null;
+  const txFin = inclusion ? blockFinalization(inclusionBlock.number) : null;
   const envelope = {
     txId: found.tx_id,
     admission: found.admission,
     inclusion,
-    finalization: inclusion ? blockFinalization(inclusionBlock.number) : null,
+    finalization: txFin,
+    midgard: midgardContext(),
+    // Settlement travels through the block. Every transaction in one block
+    // reports the same hash here, which is the relationship the contract exists
+    // to state and the fixture has to be able to exercise.
+    cardano: {
+      ...blockAssociation(
+        inclusion?.header_hash ?? null,
+        txFin?.submitted_tx_hash ?? null,
+        txFin?.status ?? "unknown",
+      ),
+      kind: "l2_transaction_settlement",
+      l2TxId: found.tx_id,
+      l2BlockHeaderHash: inclusion?.header_hash ?? null,
+    },
   };
 
   // Lifecycle-only outcomes come first, matching the backend: a transaction

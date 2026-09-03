@@ -7,6 +7,7 @@ import { Identifier } from "../../components/ui/domain/identifier";
 import { BlockNav } from "../../components/ui/domain/blocknav";
 import { IdentityBar } from "../../components/ui/domain/identitybar";
 import { L1TxLink } from "../../components/ui/domain/l1link";
+import { CardanoAssociation } from "../../components/ui/domain/association";
 import { Journey } from "../../components/ui/domain/journey";
 import { Callout, Card, PageHeader } from "../../components/ui/base/layout";
 import { RawData } from "../../components/ui/base/rawdata";
@@ -160,6 +161,53 @@ export function BlockView({
     </div>
   );
 
+  /* Why there is no Cardano evidence, taken from the reconciliation the backend
+   * performed rather than assumed.
+   *
+   * This said "the explorer-owned Cardano index has not attributed its Cardano
+   * commitment transaction" for every case, including the one where the index
+   * had attributed it perfectly and the lookup could not match because the two
+   * sides were keyed differently. A defect read as index lag for as long as it
+   * existed, which is the inversion of the rule that missing index data must be
+   * described as lag rather than as absence. */
+  const cardanoAbsence = ((): { tone: "neutral" | "warning"; title: string; detail: string } => {
+    switch (data.cardano?.reconciliation) {
+      case "unavailable":
+        return {
+          tone: "warning",
+          title: "The Cardano index could not be read.",
+          detail:
+            "This says nothing about whether the block settled. The node's own record is shown above.",
+        };
+      case "stale":
+        return {
+          tone: "warning",
+          title: "The Cardano index is behind.",
+          detail:
+            "It has not yet covered the range this block settled in, so its silence is lag rather than absence.",
+        };
+      case "node_only":
+        return {
+          tone: "neutral",
+          title: "Not observed on Cardano yet.",
+          detail:
+            "The node has recorded this block, and the explorer's own chain index has not yet seen the transaction that committed it.",
+        };
+      case "none":
+        return {
+          tone: "neutral",
+          title: "No settlement has been attempted.",
+          detail: "The node has not yet queued this block for Cardano.",
+        };
+      default:
+        return {
+          tone: "neutral",
+          title: "No Cardano evidence for this block.",
+          detail: "The explorer's chain index holds no header for it.",
+        };
+    }
+  })();
+
   const l1EvidenceTab = l1Header ? (
     <Card>
       <div className="p-4">
@@ -229,10 +277,11 @@ export function BlockView({
       </div>
     </Card>
   ) : (
-    <Callout tone="neutral" title="Not observed in the Cardano index yet.">
-      The node has this header, but the explorer-owned Cardano index has not attributed its Cardano
-      commitment transaction.
-    </Callout>
+    <div className="p-4">
+      <Callout tone={cardanoAbsence.tone} title={cardanoAbsence.title}>
+        {cardanoAbsence.detail}
+      </Callout>
+    </div>
   );
 
   return (
@@ -276,6 +325,8 @@ export function BlockView({
           </p>
         ) : null}
       </Journey>
+
+      <CardanoAssociation association={data.cardano} context={data.midgard} />
 
       {/* Height is in the title and the closing time is in the journey, so
           neither is repeated here. */}
