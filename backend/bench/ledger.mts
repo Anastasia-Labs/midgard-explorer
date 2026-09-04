@@ -112,6 +112,8 @@ export type Ledger = {
   seenOutrefs: () => ReadonlySet<string>;
   addressTouches: () => readonly number[];
   genesis: () => readonly Utxo[];
+  /** The unspent set: what the live ledger tables hold at the end of a run. */
+  remaining: () => readonly Utxo[];
 };
 
 /** A Zipf sampler over `n` ranks, built once and inverted per draw. */
@@ -309,5 +311,6 @@ export function createLedger(parts: CorpusParts, options: LedgerOptions): Ledger
     seenOutrefs: () => seen,
     addressTouches: () => touches,
     genesis: () => genesisUtxos,
+    remaining: () => unspent,
   };
 }
