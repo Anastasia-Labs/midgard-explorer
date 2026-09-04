@@ -13,7 +13,9 @@ Governs `backend/bench/profiles.mts` and `backend/bench/seed-shaped.mts`. Consum
 
 The node averages **309,843 seconds (3.6 days) between blocks** and has produced nothing in 22 days. Five thousand real blocks is roughly fifty years. Page 100 of the blocks list needs 2,500 rows to exist.
 
-**Benchmark databases are isolated and frozen.** The live explorer index is cloned into a checksummed benchmark snapshot; benchmarks never read from or write to the live index. The snapshot's checksum is recorded with every baseline, so a number can be traced to the exact data that produced it.
+**Benchmark databases are isolated and frozen.** The live explorer index is cloned into a checksummed benchmark snapshot by `backend/bench/cloneIndex.mts`; benchmarks never read from or write to the live index. Two reasons, both load-bearing: a moving source makes two runs incomparable, and a write would corrupt the only real data the explorer holds. The snapshot's checksum is recorded with every baseline, so a number can be traced to the exact data that produced it.
+
+Verified 2026-09-04 against the live index: **5,392 rows** copied (`l1_tx` 281, `l1_tx_io` 2,767, `l1_tx_asset` 1,714, `l1_redeemer` 312, `l1_event` 297, `l1_block_header` 9, `l1_protocol_params` 9, `sync_cursor` 3), and **9 real 28-byte L2 header hashes** read from `l1_block_header.header_hash`, which carries the value minted into the MBLC state-queue token. Those hashes are what `generateDataset` assigns to its settled blocks, so I6 is an agreement with real data rather than a shape check.
 
 ## Schema constraints the profile must satisfy
 
