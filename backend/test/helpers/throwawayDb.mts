@@ -66,16 +66,32 @@ export function assertThrowawayName(name: string): void {
   }
 }
 
-function adminUrl(database = "postgres"): string {
-  const base = process.env.POSTGRES_URL;
-  if (!base) throw new Error("POSTGRES_URL is not set");
-  const url = new URL(base);
+/**
+ * Which PostgreSQL server the harness operates on.
+ *
+ * Defaults to `POSTGRES_URL`, but the benchmark harness passes
+ * `BENCH_POSTGRES_URL` instead. That separation matters: throwaway databases
+ * were landing on the same instance as the live Midgard node, so a benchmark
+ * competed with the node for CPU and shared buffers and the number it produced
+ * described the contention rather than the query.
+ */
+export function serverUrl(baseUrl?: string): string {
+  const base = baseUrl ?? process.env.POSTGRES_URL;
+  if (!base) throw new Error("no PostgreSQL URL: set POSTGRES_URL or pass one");
+  return base;
+}
+
+export function adminUrl(database = "postgres", baseUrl?: string): string {
+  const url = new URL(serverUrl(baseUrl));
   url.pathname = `/${database}`;
   return url.toString();
 }
 
-async function withAdmin<T>(work: (c: Client) => Promise<T>): Promise<T> {
-  const client = new Client({ connectionString: adminUrl() });
+async function withAdmin<T>(
+  work: (c: Client) => Promise<T>,
+  baseUrl?: string,
+): Promise<T> {
+  const client = new Client({ connectionString: adminUrl("postgres", baseUrl) });
   await client.connect();
   try {
     return await work(client);
@@ -85,7 +101,10 @@ async function withAdmin<T>(work: (c: Client) => Promise<T>): Promise<T> {
 }
 
 /** True only for a database carrying this harness's mark. */
-export async function isMarkedThrowaway(name: string): Promise<boolean> {
+export async function isMarkedThrowaway(
+  name: string,
+  baseUrl?: string,
+): Promise<boolean> {
   if (!NAME.test(name)) return false;
   return withAdmin(async (c) => {
     const { rows } = await c.query<{ mark: string | null }>(
@@ -94,7 +113,7 @@ export async function isMarkedThrowaway(name: string): Promise<boolean> {
       [name],
     );
     return rows.length > 0 && rows[0].mark === MARKER;
-  });
+  }, baseUrl);
 }
 
 /**
@@ -103,9 +122,9 @@ export async function isMarkedThrowaway(name: string): Promise<boolean> {
  * Refuses on a name it could not have generated, and refuses on a database
  * carrying no mark, so a name collision cannot turn into data loss.
  */
-export async function dropDatabase(name: string): Promise<void> {
+export async function dropDatabase(name: string, baseUrl?: string): Promise<void> {
   assertThrowawayName(name);
-  if (!created.has(name) && !(await isMarkedThrowaway(name))) {
+  if (!created.has(name) && !(await isMarkedThrowaway(name, baseUrl))) {
     throw new Error(
       `refusing to drop "${name}": not created by this harness and not marked ` +
         `"${MARKER}"`,
@@ -118,7 +137,7 @@ export async function dropDatabase(name: string): Promise<void> {
       [name],
     );
     await c.query(`DROP DATABASE IF EXISTS "${name}"`);
-  });
+  }, baseUrl);
   created.delete(name);
 }
 
@@ -128,7 +147,7 @@ export async function dropDatabase(name: string): Promise<void> {
  * Takes no name: supplying one is the hazard this module exists to remove.
  * Fails if the generated name is somehow taken rather than dropping it.
  */
-export async function createDatabase(): Promise<string> {
+export async function createDatabase(baseUrl?: string): Promise<string> {
   const name = throwawayName();
   await withAdmin(async (c) => {
     const { rows } = await c.query(
@@ -140,7 +159,7 @@ export async function createDatabase(): Promise<string> {
     }
     await c.query(`CREATE DATABASE "${name}"`);
     await c.query(`COMMENT ON DATABASE "${name}" IS '${MARKER}'`);
-  });
+  }, baseUrl);
   created.add(name);
   return name;
 }
@@ -152,16 +171,17 @@ export async function createDatabase(): Promise<string> {
  */
 export async function withThrowawayNodeDb(
   work: (db: Client) => Promise<void>,
+  baseUrl?: string,
 ): Promise<void> {
-  const name = await createDatabase();
-  const client = new Client({ connectionString: adminUrl(name) });
+  const name = await createDatabase(baseUrl);
+  const client = new Client({ connectionString: adminUrl(name, baseUrl) });
   try {
     await client.connect();
     await client.query(stripPsqlMeta(await readFile(FIXTURE, "utf8")));
     await work(client);
   } finally {
     await client.end().catch(() => {});
-    await dropDatabase(name);
+    await dropDatabase(name, baseUrl);
   }
 }
 

@@ -1,0 +1,69 @@
+# An isolated PostgreSQL for benchmarking.
+#
+# Separate from `explorer-postgres` and from the node's database for two
+# reasons, both of which make the difference between a measurement and a guess:
+#
+#   - **contention.** Throwaway benchmark databases were landing on the same
+#     instance as the live Midgard node. On a two-core machine a benchmark then
+#     competes with the node for CPU and shared buffers, and the number it
+#     reports describes the contention rather than the query.
+#   - **instrumentation.** `pg_stat_statements` needs `shared_preload_libraries`
+#     and therefore a restart, which is not something to do to a database
+#     something else is using. Here it is preloaded from the start.
+#
+# Settings are stated rather than inherited, because a plan captured under an
+# unknown `work_mem` cannot be compared with one captured later.
+#
+#   docker compose -f docker-compose.bench.yml up -d
+#
+services:
+  bench-postgres:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    container_name: midgard-bench-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${BENCH_POSTGRES_USER:-bench}
+      # No default, for the same reason the other compose files give none: a
+      # shipped password is a known password everywhere the file is reused.
+      POSTGRES_PASSWORD: ${BENCH_POSTGRES_PASSWORD:?set BENCH_POSTGRES_PASSWORD before starting}
+      POSTGRES_DB: ${BENCH_POSTGRES_DB:-bench_control}
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      # 5,000 distinct statements is far more than the workload set produces,
+      # so eviction cannot silently drop the query being measured.
+      - -c
+      - pg_stat_statements.max=5000
+      - -c
+      - pg_stat_statements.track=all
+      # Recorded with every baseline. A number whose planner settings are
+      # unknown cannot be compared against a later one.
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - effective_cache_size=1GB
+      # Timing per block, so shared-block figures come with I/O cost attached.
+      - -c
+      - track_io_timing=on
+    ports:
+      - "${BIND_HOST:-127.0.0.1}:${BENCH_POSTGRES_PORT:-5436}:5432"
+    volumes:
+      # A named volume, not a bind mount: benchmark data is disposable and
+      # should never share a filesystem path with anything that is not.
+      - bench-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1g
+
+volumes:
+  bench-pgdata:
