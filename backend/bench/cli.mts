@@ -9,9 +9,11 @@ import { PROFILES } from "./profiles.mjs";
  *
  * `--mode smoke` proves the harness works. `--mode baseline` is the
  * measurement of record and applies `baselineGate`, which refuses a machine
- * with under 30 GB free, refuses to certify concurrency on two cores, and
- * refuses any run with an unmeasured budget. A smoke run's numbers are not
- * baselines and the report says which it was.
+ * with under 30 GB free and refuses any run with an unmeasured budget. Core
+ * count does not block: two cores is the accepted minimum supported runtime
+ * profile, and the report stamps `hardware` so a number is read as that
+ * profile rather than as universal production hardware. A smoke run's numbers
+ * are not baselines and the report says which it was.
  *
  * Requires:
  *   BENCH_POSTGRES_URL       the dedicated benchmark server
