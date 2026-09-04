@@ -72,6 +72,21 @@ export type SearchMix = {
   miss: number;
 };
 
+/**
+ * `tx_admissions.status`, the four values `public.tx_admission_status` permits.
+ *
+ * Seeding these is not free: `tx_admissions_check1` requires a lease owner and
+ * expiry on `validating` and forbids them elsewhere, and `tx_admissions_check2`
+ * requires `terminal_at` on the two terminal states and forbids it on the two
+ * live ones. A mix is a set of constraints, not just a ratio.
+ */
+export type AdmissionMix = {
+  queued: number;
+  validating: number;
+  accepted: number;
+  rejected: number;
+};
+
 export type Profile = {
   name: "small" | "target" | "stress";
   /** What question this profile answers. */
@@ -92,14 +107,18 @@ export type Profile = {
    * truncation path is never taken and `asset-roster` measures the easy case.
    */
   ledgerTruncates: boolean;
-  /** Per-block event counts. The totals below are derived from these. */
+  /**
+   * Per-block event counts. These are authoritative and the dataset totals are
+   * derived from them by `expectedTotals`.
+   *
+   * An earlier draft stated both, and they contradicted: these shapes imply
+   * 3,700 deposits and 1,850 withdrawals at 5,000 blocks, against stated totals
+   * of 2,000 and 800. A generator cannot honour both, so it would have silently
+   * broken whichever it checked second.
+   */
   depositsPerBlock: Shape;
   withdrawalsPerBlock: Shape;
   forcedPerBlock: Shape;
-  /** Target totals. The generator matches the shapes and lands within 5%. */
-  deposits: number;
-  withdrawals: number;
-  forcedTransactions: number;
   inputsPerTx: Shape;
   outputsPerTx: Shape;
   /** Native assets on one output, over and above ada. */
@@ -108,6 +127,29 @@ export type Profile = {
   addresses: number;
   /** Distinct native assets (policy plus name) across the dataset. */
   assets: number;
+  /**
+   * Zipf exponent for address activity. Zero is uniform.
+   *
+   * Uniform is the trap: 5,000 addresses over 5,000 transactions gives every
+   * address about one entry, so `address-history` measures a one-row page and
+   * passes. Real explorers are dominated by a few hot addresses, and those are
+   * the pages that hurt.
+   */
+  addressSkew: number;
+  /** Zipf exponent for holders per asset. Same trap as `addressSkew`. */
+  assetHolderSkew: number;
+  /** Quantity held per asset position. A flat quantity hides digit-width cost. */
+  assetQuantity: Shape;
+  /** Fraction of outputs carrying an inline datum. */
+  datumRate: number;
+  /** Fraction of outputs carrying a script reference. */
+  scriptRefRate: number;
+  /** Fraction of transactions carrying redeemers. */
+  redeemerRate: number;
+  /** `tx_admissions.status` split. Drives the metrics panel and the tx page. */
+  admissionMix: AdmissionMix;
+  /** `event_info` and `raw_event_info` sizes on deposits and withdrawals. */
+  eventPayloadBytes: Shape;
   searchMix: SearchMix;
   /**
    * I6: blocks that also exist in the real L1 index snapshot.
@@ -187,14 +229,19 @@ export const PROFILES = {
     depositsPerBlock: { p50: 0, p95: 2, p99: 3, max: 4 },
     withdrawalsPerBlock: { p50: 0, p95: 1, p99: 2, max: 2 },
     forcedPerBlock: { p50: 0, p95: 1, p99: 1, max: 1 },
-    deposits: 20,
-    withdrawals: 10,
-    forcedTransactions: 5,
     inputsPerTx: { p50: 1, p95: 3, p99: 4, max: 5 },
     outputsPerTx: { p50: 2, p95: 4, p99: 5, max: 6 },
     assetsPerOutput: { p50: 0, p95: 1, p99: 2, max: 3 },
     addresses: 40,
     assets: 8,
+    addressSkew: 1.1,
+    assetHolderSkew: 1.1,
+    assetQuantity: { p50: 1, p95: 1_000, p99: 100_000, max: 10_000_000 },
+    datumRate: 0.1,
+    scriptRefRate: 0.05,
+    redeemerRate: 0.1,
+    admissionMix: { queued: 0.1, validating: 0.05, accepted: 0.8, rejected: 0.05 },
+    eventPayloadBytes: { p50: 88, p95: 274, p99: 512, max: 1_024 },
     searchMix: { uniqueHit: 0.5, multiHit: 0.25, miss: 0.25 },
     settledBlocks: REAL_SETTLED_BLOCKS,
     txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 800, p99: 1_200, max: 66_000 },
@@ -246,14 +293,19 @@ export const PROFILES = {
     depositsPerBlock: { p50: 0, p95: 2, p99: 6, max: 20 },
     withdrawalsPerBlock: { p50: 0, p95: 1, p99: 3, max: 10 },
     forcedPerBlock: { p50: 0, p95: 0, p99: 1, max: 5 },
-    deposits: 2_000,
-    withdrawals: 800,
-    forcedTransactions: 300,
     inputsPerTx: { p50: 1, p95: 4, p99: 12, max: 40 },
     outputsPerTx: { p50: 2, p95: 6, p99: 16, max: 60 },
     assetsPerOutput: { p50: 0, p95: 2, p99: 5, max: 20 },
     addresses: 5_000,
     assets: 400,
+    addressSkew: 1.2,
+    assetHolderSkew: 1.2,
+    assetQuantity: { p50: 1, p95: 10_000, p99: 1_000_000, max: 9_000_000_000 },
+    datumRate: 0.15,
+    scriptRefRate: 0.05,
+    redeemerRate: 0.2,
+    admissionMix: { queued: 0.05, validating: 0.02, accepted: 0.85, rejected: 0.08 },
+    eventPayloadBytes: { p50: 88, p95: 274, p99: 1_024, max: 4_096 },
     searchMix: { uniqueHit: 0.5, multiHit: 0.25, miss: 0.25 },
     settledBlocks: REAL_SETTLED_BLOCKS,
     txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 2_048, p99: 6_144, max: 96_000 },
@@ -296,14 +348,19 @@ export const PROFILES = {
     depositsPerBlock: { p50: 0, p95: 2, p99: 6, max: 20 },
     withdrawalsPerBlock: { p50: 0, p95: 1, p99: 3, max: 10 },
     forcedPerBlock: { p50: 0, p95: 0, p99: 1, max: 5 },
-    deposits: 20_000,
-    withdrawals: 8_000,
-    forcedTransactions: 3_000,
     inputsPerTx: { p50: 1, p95: 4, p99: 12, max: 40 },
     outputsPerTx: { p50: 2, p95: 6, p99: 16, max: 60 },
     assetsPerOutput: { p50: 0, p95: 2, p99: 5, max: 20 },
     addresses: 50_000,
     assets: 4_000,
+    addressSkew: 1.2,
+    assetHolderSkew: 1.2,
+    assetQuantity: { p50: 1, p95: 10_000, p99: 1_000_000, max: 9_000_000_000 },
+    datumRate: 0.15,
+    scriptRefRate: 0.05,
+    redeemerRate: 0.2,
+    admissionMix: { queued: 0.05, validating: 0.02, accepted: 0.85, rejected: 0.08 },
+    eventPayloadBytes: { p50: 88, p95: 274, p99: 1_024, max: 4_096 },
     searchMix: { uniqueHit: 0.5, multiHit: 0.25, miss: 0.25 },
     settledBlocks: REAL_SETTLED_BLOCKS,
     txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 2_048, p99: 6_144, max: 96_000 },
@@ -326,3 +383,43 @@ export const PROFILES = {
 } as const satisfies Record<string, Profile>;
 
 export type ProfileName = keyof typeof PROFILES;
+
+/**
+ * The dataset totals a profile implies.
+ *
+ * Derived, never declared. The per-block shapes are the specification; a total
+ * stated beside them is a second source of truth that can disagree, and did.
+ */
+export function expectedTotals(profile: Profile): {
+  deposits: number;
+  withdrawals: number;
+  forcedTransactions: number;
+} {
+  return {
+    deposits: Math.round(meanOf(profile.depositsPerBlock) * profile.blocks),
+    withdrawals: Math.round(meanOf(profile.withdrawalsPerBlock) * profile.blocks),
+    forcedTransactions: Math.round(
+      meanOf(profile.forcedPerBlock) * profile.blocks,
+    ),
+  };
+}
+
+/**
+ * The mean of a shape under the same piecewise-linear inverse CDF the sampler
+ * uses, so a predicted total and a generated one agree.
+ */
+export function meanOf(shape: Shape): number {
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+  const at = (q: number) => {
+    if (q < 0.5) return lerp(0, shape.p50, q / 0.5);
+    if (q < 0.95) return lerp(shape.p50, shape.p95, (q - 0.5) / 0.45);
+    if (q < 0.99) return lerp(shape.p95, shape.p99, (q - 0.95) / 0.04);
+    return lerp(shape.p99, shape.max, (q - 0.99) / 0.01);
+  };
+  const steps = 20_000;
+  let total = 0;
+  for (let i = 0; i < steps; i += 1) {
+    total += Math.max(0, Math.round(at((i + 0.5) / steps)));
+  }
+  return total / steps;
+}

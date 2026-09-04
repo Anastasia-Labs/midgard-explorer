@@ -43,7 +43,8 @@ These are correctness properties, not size knobs. A generator that violates one 
 | I5 | **The node's count arithmetic holds exactly.** `expected_l2_transaction_count` equals the journal row count; the four event counts sum to `expected_total_event_count`; `expected_transition_step_count` equals it | The live node satisfies the first on all 9 rows, and the database enforces the rest. A generator that breaks any of them makes the block page contradict itself |
 | I6 | **Cross-source identifiers agree on the overlap set, and the rest are explicitly unsettled** | The index snapshot holds 9 real `l1_block_header` rows, so at most 9 generated blocks can carry a real settlement counterpart. Requiring all 5,000 to agree is impossible. Requiring the 9 is possible, and it exercises both render paths: `getDeploymentContext`, `getIndexSettlement` and `blockSettlement` on the settled blocks, and the not-yet-settled path on the rest. **An unsettled block must render as unsettled, never as missing data** |
 | I7 | Every field marked `adopt` or already-exposed in `coverage-manifest.json` receives a **semantically valid** value | ADR 0008. The generator fails rather than emitting a column-name digest |
-| I8 | Transaction bytes are **codec-produced and codec-readable** | Preserves the existing property that a seed cannot describe a transaction the decoder would reject |
+| I8 | Transaction bytes are **codec-produced and codec-readable** | Preserves the existing property that a seed cannot describe a transaction the decoder would reject. Necessary, and weaker than I14 |
+| I14 | **Transactions are spendable, not merely decodable.** Every outref is produced once and spent at most once; every input names an output produced earlier; lovelace balances exactly as inputs = outputs + fee; assets are conserved because nothing mints | `outref` is the primary key of `mempool_ledger` and `confirmed_ledger`, so a duplicate is a failed load, not a realism complaint. An earlier generator cycled two input templates, which duplicated inputs inside a transaction and re-spent the same outref in every transaction of the dataset. Value and asset conservation are what stop the address and asset pages from displaying balances that could not exist |
 | I9 | Foreign keys resolve; no orphan members | Cascade relationships are real in the schema |
 | I10 | Generation is **deterministic**: same profile, same bytes | A baseline that cannot be reproduced is not a baseline |
 | I11 | **Excluded from coverage does not mean excluded from seeding.** Every `NOT NULL` column without a default must be filled, whatever its coverage verdict | Found 2026-09-04: `pending_block_finalizations` has **28** such columns, including `state_queue_lease_token`, which `coverage-scope.md` marks `exclude` under D6. A generator that seeds only adopted columns cannot insert a single row |
@@ -66,7 +67,7 @@ Three, chosen to answer three different questions.
 | Status mix | 100% `finalized`, **0 active** (the live node has no active finalization) |
 | Timestamp collisions | none (I4) |
 | Ledger UTxOs | 200, below `SCAN_LIMIT`, so no truncation |
-| Deposits / withdrawals / forced | 20 / 10 / 5 |
+| Deposits / withdrawals / forced | 29 / 15 / 14, **derived** from the per-block shapes |
 | Settled against real L1 | 9 blocks |
 
 ### `target`
@@ -81,7 +82,7 @@ Three, chosen to answer three different questions.
 | Status mix | terminal rows 98% `finalized` / 2% `abandoned`, plus **exactly one** `submitted_unconfirmed` | Terminal split is an **ASSUMPTION**; the single active row is schema-enforced |
 | Timestamp collisions | 5% of blocks share `block_end_time` | I4 |
 | Ledger UTxOs | **25,000** | Above `SCAN_LIMIT` (20,000) so `truncated` is true and `asset-roster` measures the partial-coverage path (I12) |
-| Deposits / withdrawals / forced | 2,000 / 800 / 300 total, distributed by the per-block shapes below |
+| Deposits / withdrawals / forced | **3,700 / 1,850 / 250**, derived | Totals are computed from the per-block shapes, never declared beside them. An earlier draft stated 2,000 / 800 / 300 next to shapes implying 3,700 / 1,850 / 250, and no generator can satisfy both |
 | Settled against real L1 | 9 blocks; the other 4,991 render as unsettled (I6) |
 | Transaction body size | p50 383 B, p95 2 KB, p99 6 KB | **Derived, not dialled.** An outcome of the structure shapes below; p50 from the live `immutable` measurement, and the codec independently encodes a 1-input, 2-output transaction at 386 B |
 | Oversize transactions | 5, each above 64 KB | The structure shapes top out near 6 KB, so nothing else crosses `MAX_INLINE_CBOR_BYTES` (I12) |
@@ -113,9 +114,21 @@ Stated because without them two implementations satisfy the same profile and pro
 | `forcedPerBlock` | rows | p50 0, p95 1, p99 1, max 1 | p50 0, p95 0, p99 1, max 5 |
 | `addresses` | distinct | 40 | 5,000 / 50,000 |
 | `assets` | distinct policy plus name | 8 | 400 / 4,000 |
+| `addressSkew` | Zipf exponent | 1.1 | 1.2 |
+| `assetHolderSkew` | Zipf exponent | 1.1 | 1.2 |
+| `assetQuantity` | quantity per position | p50 1, p95 1e3, p99 1e5, max 1e7 | p50 1, p95 1e4, p99 1e6, max 9e9 |
+| `datumRate` | share of outputs | 0.10 | 0.15 |
+| `scriptRefRate` | share of outputs | 0.05 | 0.05 |
+| `redeemerRate` | share of transactions | 0.10 | 0.20 |
+| `admissionMix` | share of `tx_admissions` | 10 / 5 / 80 / 5 | 5 / 2 / 85 / 8 (queued / validating / accepted / rejected) |
+| `eventPayloadBytes` | bytes | p50 88, p95 274, p99 512, max 1,024 | p50 88, p95 274, p99 1,024, max 4,096 |
+
+**Skew is not decoration.** Uniform addresses give every address about one entry at `target`, so `address-history` measures a one-row page and reports a pass. The same holds for asset holders and the asset roster. `eventPayloadBytes` p50 and p95 are the live measured `event_info` (88 B) and `raw_event_info` (274 B) sizes.
+
+**`admissionMix` is a set of constraints, not a ratio.** `tx_admissions_check1` requires a lease owner and expiry on `validating` and forbids them elsewhere; `tx_admissions_check2` requires `terminal_at` on `accepted` and `rejected` and forbids it on `queued` and `validating`. Every state must appear or those paths are never seeded.
 | `searchMix` | share of issued terms | 50% unique hit, 25% multi hit, 25% miss | same |
 
-Per-block event counts are constrained, not free: the four kinds must sum to `expected_total_event_count`, which must equal `expected_transition_step_count` (I5). The generator draws the four, then writes the sums; it never draws the sums.
+Totals are **derived from these shapes**, never stated beside them (I13 extended). Per-block event counts are also constrained, not free: the four kinds must sum to `expected_total_event_count`, which must equal `expected_transition_step_count` (I5). The generator draws the four, then writes the sums; it never draws the sums.
 
 `searchMix` matters more than it looks. An all-miss mix measures the index scan and never the result assembly; an all-hit mix does the reverse. Both would report a `search-prefix` pass while measuring half the route.
 
@@ -146,6 +159,14 @@ Consequence, carried into the register per D16: a budget measured on `target` is
 - **Take the 9 real L2 header hashes from the cloned index snapshot** and assign them to the 9 settled blocks, so I6 holds against real data rather than a re-derivation.
 - `ANALYZE` after load. Without it the planner works from empty-table statistics and every plan captured is fiction.
 - Record with each dataset: PostgreSQL version, `work_mem`, `shared_buffers`, `effective_cache_size`, CPU count, RAM, and the index snapshot checksum.
+### What "valid" does and does not mean here
+
+Stated rather than implied. The generated transactions satisfy I8 and I14: they decode, they spend real prior outputs exactly once, and value and assets balance.
+
+They are **not signature-valid**. The witness set is the corpus one, so signatures do not correspond to the bodies built here, and the addresses are not the hashes of any key that signed. Making them correspond needs blake2b224 for the payment credential, which Node's `crypto` does not provide (it offers blake2b512 with no digest-length parameter), plus key generation and address derivation.
+
+This is a deliberate boundary, not an oversight. Nothing in the explorer reads a witness or checks a credential, so signature validity buys no measurement, while the properties in I14 are the difference between a dataset that loads and one that does not. Any future consumer that needs signature validity must treat this as unmet.
+
 - Transaction bytes come from the **real codec**: `encodeMidgardNativeTxCanonical` over structures assembled from the decoded `shape-corpus.json` parts, verified by decoding what was encoded (I8). The canonical round-trip is byte-identical, so a generated transaction is one the decoder accepts by construction.
 - The `stress` seed belongs to a benchmark suite, never the unit suite.
 - Seed every `NOT NULL`-without-default column (I11). For a column the coverage scope excludes, a deterministic placeholder is correct: it is never read, and its only job is to satisfy the constraint. For a column the scope adopts, a placeholder is forbidden (I7).

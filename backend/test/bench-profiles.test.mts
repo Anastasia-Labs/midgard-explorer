@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import {
   MAX_INLINE_CBOR_BYTES,
   PROFILES,
+  expectedTotals,
   REAL_SETTLED_BLOCKS,
   SCAN_LIMIT,
   type Profile,
@@ -178,11 +179,57 @@ describe("PROFILES", () => {
     }
   });
 
+  it("derives dataset totals from the shapes rather than declaring them twice", () => {
+    // The defect this replaces: the profile stated both per-block shapes and
+    // dataset totals, and they disagreed by 1.85x on deposits and 2.31x on
+    // withdrawals. A generator cannot honour both, so it would have silently
+    // broken whichever it checked second.
+    const totals = expectedTotals(PROFILES.target);
+    expect(totals.deposits).toBe(3_700);
+    expect(totals.withdrawals).toBe(1_850);
+    expect(totals.forcedTransactions).toBe(250);
+    for (const p of all) {
+      const t = expectedTotals(p);
+      expect(t.deposits, p.name).toBeGreaterThan(0);
+      expect(t.withdrawals, p.name).toBeGreaterThan(0);
+    }
+  });
+
+  it("specifies the distributions the heavy read paths depend on", () => {
+    // Each of these drives a workload that would otherwise measure a trivial
+    // case: uniform addresses make address-history a one-row page, flat asset
+    // holders make the asset roster uniform, and no admission mix leaves the
+    // metrics panel counting one status.
+    for (const p of all) {
+      expect(p.addressSkew, p.name).toBeGreaterThan(0);
+      expect(p.assetHolderSkew, p.name).toBeGreaterThan(0);
+      expect(p.assetQuantity.max, p.name).toBeGreaterThan(p.assetQuantity.p50);
+      expect(p.datumRate, p.name).toBeGreaterThan(0);
+      expect(p.scriptRefRate, p.name).toBeGreaterThan(0);
+      expect(p.redeemerRate, p.name).toBeGreaterThan(0);
+      expect(p.eventPayloadBytes.p50, p.name).toBeGreaterThan(0);
+      const admission =
+        p.admissionMix.queued +
+        p.admissionMix.validating +
+        p.admissionMix.accepted +
+        p.admissionMix.rejected;
+      expect(admission, p.name).toBeCloseTo(1, 5);
+      // Both live states must appear, or the lease constraints are never
+      // exercised, and both terminal states, or `terminal_at` never is.
+      expect(p.admissionMix.validating, p.name).toBeGreaterThan(0);
+      expect(p.admissionMix.rejected, p.name).toBeGreaterThan(0);
+    }
+  });
+
   it("matches the numbers stated in the specification", async () => {
     const spec = await readFile("../docs/dataset-profiles.md", "utf8");
     expect(spec).toContain(PROFILES.target.blocks.toLocaleString("en-US"));
     expect(spec).toContain(PROFILES.stress.blocks.toLocaleString("en-US"));
     expect(spec).toContain(PROFILES.target.ledgerUtxos.toLocaleString("en-US"));
+    // The derived totals, so prose and code cannot drift apart again.
+    const totals = expectedTotals(PROFILES.target);
+    expect(spec).toContain(totals.deposits.toLocaleString("en-US"));
+    expect(spec).toContain(totals.withdrawals.toLocaleString("en-US"));
     // The corrected status vocabulary must be in the spec, not just the code.
     expect(spec).toContain("abandoned");
     expect(spec).not.toContain("finalized / pending / failed");
