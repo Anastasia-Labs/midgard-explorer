@@ -151,6 +151,16 @@ export type ServerHandle = {
  * databases from inside a test that has already imported them is not possible
  * without leaking that state into every other test in the worker.
  */
+/**
+ * The per-client request allowance given to the benchmark server.
+ *
+ * High enough that no run can reach it: `stress` is twelve workloads and the
+ * iteration count is a parameter, so this must not become a new invisible
+ * ceiling. Recorded in the report, because a latency number means nothing
+ * without the configuration it was measured under.
+ */
+export const BENCH_RATE_LIMIT_MAX = 1_000_000;
+
 export async function startServer(
   setup: BenchSetup,
   port: number,
@@ -173,6 +183,14 @@ export async function startServer(
       // benchmark is measuring against.
       L1_SYNC_ENABLED: "false",
       NODE_ENV: "production",
+      // The server rate-limits per client at 120 requests a minute. A run is
+      // twelve workloads of 40 requests from one address, so the first three
+      // workloads consumed the whole allowance and every workload after them
+      // measured a 429: sub-millisecond, zero bytes, no database work. The
+      // limiter middleware still runs and its per-request cost is still in the
+      // numbers; only the threshold moves, because the benchmark client is not
+      // a viewer and throttling it measures the limiter rather than the route.
+      API_RATE_LIMIT_MAX: String(BENCH_RATE_LIMIT_MAX),
       ...extraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -342,6 +360,8 @@ export type HarnessReport = {
   datasetChecksum: Checksum;
   indexChecksum: Checksum;
   iterations: number;
+  /** What the measured server was configured with, so a number can be read. */
+  serverConfig: { apiRateLimitMax: number };
   results: Judgement[];
   startedAt: string;
   finishedAt: string;
@@ -424,6 +444,7 @@ export async function runHarness(options: {
       datasetChecksum: setup.datasetChecksum,
       indexChecksum: setup.indexSnapshot.checksum,
       iterations: options.run?.iterations ?? 0,
+      serverConfig: { apiRateLimitMax: BENCH_RATE_LIMIT_MAX },
       results,
       startedAt,
       finishedAt: new Date().toISOString(),

@@ -30,7 +30,12 @@ smoke("harness smoke run", () => {
       // A handful of the catalogue, one per cache mode, so every path through
       // runWorkload is exercised without a long run.
       only: ["blocks-list-page-1", "block-detail", "metrics", "metrics-cached"],
-      run: { iterations: 8, timeoutMs: 20_000 },
+      // Above the server's default 120-per-minute allowance across these four
+      // workloads (4 x 40 = 160). At 8 the smoke run stayed under the limit and
+      // could not see that a real run exhausts it after three workloads and
+      // measures 429s from then on. This is the cheapest place that reproduces
+      // it end to end.
+      run: { iterations: 40, timeoutMs: 20_000 },
     });
 
     expect(report.mode).toBe("smoke");
@@ -39,7 +44,7 @@ smoke("harness smoke run", () => {
 
     // Every workload actually reached the server and got answers.
     for (const result of report.results) {
-      expect(result.stats.count, result.workload).toBe(8);
+      expect(result.stats.count, result.workload).toBe(40);
       expect(result.stats.errorRate, result.workload).toBe(0);
       expect(result.stats.timeoutRate, result.workload).toBe(0);
       expect(result.stats.p95Ms, result.workload).toBeGreaterThan(0);
@@ -75,7 +80,14 @@ smoke("harness smoke run", () => {
     expect(parsed.environment.gitCommit).toMatch(/^[0-9a-f]{40}$/);
   }, 600_000);
 
-  it("refuses to certify this machine as a baseline", async () => {
+  it("judges this machine against the real gate, whatever the answer is", async () => {
+    // This asserted that the gate refuses this machine, on two grounds that
+    // have both since gone: the core count stopped blocking when two cores were
+    // accepted as the minimum supported profile, and the disk was freed past
+    // the 30 GB threshold. Asserting a refusal would now fail for the good
+    // reason that the machine became eligible, so it asserts the contract
+    // instead: whatever the gate says, it must be about disk headroom or a
+    // workload that measured nothing, never about the core count.
     const { baselineGate } = await import("../bench/harness.mjs");
     const { captureEnvironment } = await import("../bench/environment.mjs");
     const { Client } = await import("pg");
@@ -83,9 +95,11 @@ smoke("harness smoke run", () => {
     await client.connect();
     try {
       const environment = await captureEnvironment(client);
-      const blocking = baselineGate(environment, []);
-      // Two cores and a full disk: both must be named.
-      expect(blocking.length).toBeGreaterThan(0);
+      expect(baselineGate(environment, []).join(" ")).not.toMatch(/core/i);
+
+      // And it still refuses on the conditions that do disqualify a run.
+      const starved = { ...environment, freeDiskBytes: 1024 ** 3 };
+      expect(baselineGate(starved, []).join(" ")).toMatch(/30 GB free/);
     } finally {
       await client.end();
     }
