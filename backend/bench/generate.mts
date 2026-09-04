@@ -65,8 +65,20 @@ export type Dataset = {
 };
 
 /** The tables this generator fills, in foreign-key order for loading. */
+/**
+ * The tables this generator fills, in an order the foreign keys accept.
+ *
+ * The member tables reference the event tables, not the other way round:
+ * `pending_block_finalization_deposits.member_id` references
+ * `deposits_utxos.event_id`, and withdrawals do the same. So the event rows
+ * must exist first. An earlier order put the members first and the load failed
+ * on the first deposit.
+ */
 export const LOAD_ORDER = [
   "pending_block_finalizations",
+  "deposits_utxos",
+  "withdrawal_utxos",
+  "forced_transaction_utxos",
   "pending_block_finalization_txs",
   "pending_block_finalization_deposits",
   "pending_block_finalization_withdrawals",
@@ -75,9 +87,6 @@ export const LOAD_ORDER = [
   "pending_block_finalization_transition_trace",
   "pending_block_finalization_event_to_step",
   "da_payloads",
-  "deposits_utxos",
-  "withdrawal_utxos",
-  "forced_transaction_utxos",
   "mempool_ledger",
   "confirmed_ledger",
   "immutable",
@@ -269,7 +278,13 @@ export function generateDataset(
   }
 
   emitOversize(tables, parts, profile, blocks);
-  emitLedger(tables, ledger.remaining());
+
+  // The confirmed ledger is the state at the last finalized block, so it is
+  // snapshotted before the mempool spends run. `mempool_ledger` is that state
+  // plus what the mempool has done to it, which is why the two differ.
+  emitLedgerRows(tables, "confirmed_ledger", ledger.remaining());
+  emitMempool(tables, ledger, profile, blocks);
+  emitLedgerRows(tables, "mempool_ledger", ledger.remaining());
   return { profile, blocks, tables };
 }
 
@@ -299,6 +314,12 @@ function emitBlockRows(
     base_tail_datum_cbor: hash32(`tail-datum:${block.height}`).toString("hex"),
     block_start_time: block.blockStartTime,
     header_cbor: block.headerCbor,
+    // Explicit, not left to `DEFAULT now()`. A dataset carrying wall-clock
+    // timestamps is not reproducible, so two loads of one profile would
+    // checksum differently. It also makes ADR 0008's watermark testable: a
+    // pass over this data has to produce the same result twice.
+    created_at: block.blockStartTime,
+    updated_at: block.blockEndTime,
     expected_withdrawal_count: BigInt(counts.withdrawals),
     expected_forced_transaction_count: BigInt(counts.forcedTransactions),
     expected_l2_transaction_count: BigInt(counts.l2Transactions),
@@ -328,6 +349,8 @@ function emitBlockRows(
     transition_step_count: BigInt(counts.transitionSteps),
     block_start_time: block.blockStartTime,
     block_end_time: block.blockEndTime,
+    created_at: block.blockStartTime,
+    updated_at: block.blockEndTime,
   });
 
   block.transactions.forEach((tx, ordinal) => {
@@ -352,14 +375,22 @@ function emitBlockRows(
       tx_id: txId,
       time_stamp_tz: block.blockEndTime,
     });
-    for (const output of tx.outputs) {
+    // One row per (tx, address) pair, not per output.
+    // `address_history_tx_id_address_key` is unique, and a transaction paying
+    // the same address twice is ordinary rather than exceptional.
+    for (const address of new Set(tx.outputs.map((o) => o.address))) {
       tables.address_history.push({
         tx_id: txId,
-        address: output.address,
+        address,
         created_at: block.blockEndTime,
       });
     }
-    emitAdmission(tables, txId, block, profile, next);
+    emitAdmission(tables, txId, Buffer.from(tx.bytes), block, profile, next);
+    tables.mempool_tx_deltas.push({
+      tx_id: txId,
+      spent_cbor: Buffer.from(tx.bytes).subarray(0, 64),
+      produced_cbor: Buffer.from(tx.outputs[0]?.output ?? tx.bytes.subarray(0, 32)),
+    });
   });
 
   emitEvents(tables, block, profile, next);
@@ -371,6 +402,7 @@ function emitBlockRows(
 function emitAdmission(
   tables: Record<string, Row[]>,
   txId: Buffer,
+  canonicalCbor: Buffer,
   block: GeneratedBlock,
   profile: Profile,
   next: () => number,
@@ -385,6 +417,9 @@ function emitAdmission(
   const validating = status === "validating";
   tables.tx_admissions.push({
     tx_id: txId,
+    tx_canonical_cbor: canonicalCbor,
+    tx_canonical_cbor_sha256: createHash("sha256").update(canonicalCbor).digest(),
+    submit_source: "native",
     status,
     // check1: a lease exists on `validating` and nowhere else.
     lease_owner: validating ? `operator-${block.height % 4}` : null,
@@ -400,13 +435,14 @@ function emitAdmission(
     last_seen_at: block.blockEndTime,
     arrival_seq: BigInt(tables.tx_admissions.length + 1),
     next_attempt_at: block.blockEndTime,
+    updated_at: block.blockEndTime,
   });
   if (status === "rejected") {
     tables.tx_rejections.push({
       tx_id: txId,
-      reason_code: "ScriptFailure",
-      reason_detail: "generated dataset rejection",
-      rejected_at: block.blockEndTime,
+      reject_code: "ScriptFailure",
+      reject_detail: "generated dataset rejection",
+      created_at: block.blockEndTime,
     });
   }
 }
@@ -450,14 +486,32 @@ function emitEvents(
     const eventId = hash32(`withdrawal:${block.height}:${i}`);
     tables.withdrawal_utxos.push({
       event_id: eventId,
-      event_info: payload(`withdrawal-info:${block.height}:${i}`),
+      // `raw_event_info`, not `event_info`: withdrawals and deposits do not
+      // share a column vocabulary, and the live p95 of 274 B is this column.
+      raw_event_info: payload(`withdrawal-info:${block.height}:${i}`),
       inclusion_time: block.blockEndTime,
+      withdrawal_l1_tx_hash: hash32(`withdrawal-l1:${block.height}:${i}`),
+      withdrawal_l1_output_index: i,
+      asset_name: Buffer.from(`withdraw${i}`).subarray(0, 32),
+      l2_outref: hash32(`withdrawal-outref:${block.height}:${i}`),
+      // 28, not 32: `withdrawal_utxos_l2_owner_check` requires a credential-
+      // sized value here while its sibling hashes are 32 bytes.
+      l2_owner: hash28(`withdrawal-owner:${block.height}:${i}`),
+      l2_value: hash32(`withdrawal-value:${block.height}:${i}`),
+      l1_address: hash32(`withdrawal-l1-addr:${block.height}:${i}`),
+      l1_datum: hash32(`withdrawal-l1-datum:${block.height}:${i}`),
+      refund_address: hash32(`withdrawal-refund:${block.height}:${i}`),
+      refund_datum: hash32(`withdrawal-refund-datum:${block.height}:${i}`),
       // The check constraints require both of these whenever status is not
       // `awaiting`, so a `projected` row without them will not insert.
       settlement_event_info: payload(`withdrawal-settle:${block.height}:${i}`),
-      validity: "TxIsValid",
+      // Withdrawals have their own validity vocabulary. `TxIsValid` belongs to
+      // `forced_transaction_utxos.operator_validity` and is rejected here.
+      validity: "WithdrawalIsValid",
       projected_header_hash: headerHash,
       status: "projected",
+      created_at: block.blockStartTime,
+      updated_at: block.blockEndTime,
     });
     tables.pending_block_finalization_withdrawals.push(
       memberRow(headerHash, eventId, i, "withdrawal_utxos", block.blockEndTime),
@@ -479,6 +533,8 @@ function emitEvents(
       inclusion_time: block.blockEndTime,
       projected_header_hash: headerHash,
       status: "projected",
+      created_at: block.blockStartTime,
+      updated_at: block.blockEndTime,
     });
     tables.pending_block_finalization_forced_transactions.push(
       memberRow(
@@ -513,18 +569,17 @@ function memberRow(
 
 /** The transition trace and its event-to-step mapping, one row per event. */
 function emitTrace(tables: Record<string, Row[]>, block: GeneratedBlock): void {
+  // Both are member tables with the same eight columns as the others, not the
+  // step/event index pair their names suggest.
   for (let step = 0; step < block.counts.transitionSteps; step += 1) {
-    tables.pending_block_finalization_transition_trace.push({
-      header_hash: block.headerHash,
-      step_index: step,
-      payload_cbor: hash32(`trace:${block.height}:${step}`),
-      payload_sha256: hash32(`trace-sha:${block.height}:${step}`),
-    });
-    tables.pending_block_finalization_event_to_step.push({
-      header_hash: block.headerHash,
-      event_index: step,
-      step_index: step,
-    });
+    const traceId = hash32(`trace:${block.height}:${step}`);
+    tables.pending_block_finalization_transition_trace.push(
+      memberRow(block.headerHash, traceId, step, "transition_trace", block.blockEndTime),
+    );
+    const stepId = hash32(`event-step:${block.height}:${step}`);
+    tables.pending_block_finalization_event_to_step.push(
+      memberRow(block.headerHash, stepId, step, "event_to_step", block.blockEndTime),
+    );
   }
 }
 
@@ -534,16 +589,14 @@ function emitSpentUtxoMembers(
   block: GeneratedBlock,
   spent: readonly Utxo[],
 ): void {
+  // Four columns, not the eight the other member tables carry. This one keys
+  // on `outref` and stores the `output` directly.
   spent.forEach((utxo, ordinal) => {
     tables.pending_block_finalization_utxos.push({
       header_hash: block.headerHash,
-      member_id: utxo.outref,
+      outref: utxo.outref,
       ordinal,
-      payload_cbor: utxo.output,
-      payload_sha256: createHash("sha256").update(utxo.output).digest(),
-      source_table: "mempool_ledger",
-      source_id: utxo.outref,
-      source_time_stamp_tz: block.blockEndTime,
+      output: utxo.output,
     });
   });
 }
@@ -580,18 +633,49 @@ function emitOversize(
   }
 }
 
-/** Whatever remains unspent is the live ledger. Spent rows are gone, as upstream. */
-function emitLedger(
+/**
+ * Transactions that exist without a block: admitted to the mempool, and a
+ * smaller set already processed but not finalized.
+ *
+ * Left empty these are a silent coverage gap. The mempool panel renders, shows
+ * nothing, and its budget passes on an empty query.
+ */
+function emitMempool(
   tables: Record<string, Row[]>,
+  ledger: ReturnType<typeof createLedger>,
+  profile: Profile,
+  blocks: readonly GeneratedBlock[],
+): void {
+  const at = blocks[blocks.length - 1]?.blockEndTime ?? new Date(EPOCH);
+  const total = profile.mempoolTransactions + profile.processedMempoolTransactions;
+  for (let i = 0; i < total; i += 1) {
+    const step = ledger.spend({ inputs: 1, outputs: 2 });
+    if (!step) break;
+    const table = i < profile.mempoolTransactions ? "mempool" : "processed_mempool";
+    tables[table].push({
+      tx_id: Buffer.from(step.tx.txId),
+      tx: Buffer.from(step.tx.bytes),
+      time_stamp_tz: at,
+    });
+  }
+}
+
+/** Whatever remains unspent is a ledger. Spent rows are gone, as upstream. */
+function emitLedgerRows(
+  tables: Record<string, Row[]>,
+  table: "mempool_ledger" | "confirmed_ledger",
   remaining: readonly Utxo[],
 ): void {
+  const withSource = table === "mempool_ledger";
   for (const utxo of remaining) {
-    tables.mempool_ledger.push({
+    tables[table].push({
       tx_id: utxo.txId,
       outref: utxo.outref,
       output: utxo.output,
       address: utxo.address,
-      source_event_id: null,
+      // `confirmed_ledger` has no `source_event_id`; only the mempool ledger
+      // tracks which deposit produced a row.
+      ...(withSource ? { source_event_id: null } : {}),
       time_stamp_tz: new Date(EPOCH),
     });
   }

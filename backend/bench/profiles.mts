@@ -150,6 +150,15 @@ export type Profile = {
   admissionMix: AdmissionMix;
   /** `event_info` and `raw_event_info` sizes on deposits and withdrawals. */
   eventPayloadBytes: Shape;
+  /**
+   * Transactions sitting in `mempool`, admitted but not yet in a block.
+   *
+   * Zero here is a silent coverage gap rather than a small one: the mempool
+   * panel renders, shows nothing, and its budget passes.
+   */
+  mempoolTransactions: number;
+  /** Transactions in `processed_mempool`, processed but not finalized. */
+  processedMempoolTransactions: number;
   searchMix: SearchMix;
   /**
    * I6: blocks that also exist in the real L1 index snapshot.
@@ -242,6 +251,8 @@ export const PROFILES = {
     redeemerRate: 0.1,
     admissionMix: { queued: 0.1, validating: 0.05, accepted: 0.8, rejected: 0.05 },
     eventPayloadBytes: { p50: 88, p95: 274, p99: 512, max: 1_024 },
+    mempoolTransactions: 6,
+    processedMempoolTransactions: 3,
     searchMix: { uniqueHit: 0.5, multiHit: 0.25, miss: 0.25 },
     settledBlocks: REAL_SETTLED_BLOCKS,
     txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 800, p99: 1_200, max: 66_000 },
@@ -306,6 +317,8 @@ export const PROFILES = {
     redeemerRate: 0.2,
     admissionMix: { queued: 0.05, validating: 0.02, accepted: 0.85, rejected: 0.08 },
     eventPayloadBytes: { p50: 88, p95: 274, p99: 1_024, max: 4_096 },
+    mempoolTransactions: 200,
+    processedMempoolTransactions: 80,
     searchMix: { uniqueHit: 0.5, multiHit: 0.25, miss: 0.25 },
     settledBlocks: REAL_SETTLED_BLOCKS,
     txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 2_048, p99: 6_144, max: 96_000 },
@@ -361,6 +374,8 @@ export const PROFILES = {
     redeemerRate: 0.2,
     admissionMix: { queued: 0.05, validating: 0.02, accepted: 0.85, rejected: 0.08 },
     eventPayloadBytes: { p50: 88, p95: 274, p99: 1_024, max: 4_096 },
+    mempoolTransactions: 2_000,
+    processedMempoolTransactions: 800,
     searchMix: { uniqueHit: 0.5, multiHit: 0.25, miss: 0.25 },
     settledBlocks: REAL_SETTLED_BLOCKS,
     txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 2_048, p99: 6_144, max: 96_000 },

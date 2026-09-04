@@ -155,7 +155,7 @@ Consequence, carried into the register per D16: a budget measured on `target` is
 ## Generation mechanics
 
 - `COPY FROM STDIN`, or batches sized so `rows × columns < 60,000`. The bind-parameter cap is 65,535 and `stress` writes millions of rows.
-- Insert in foreign-key order: `pending_block_finalizations`, `pending_block_finalization_txs`, the four member tables, `deposits_utxos`, `withdrawal_utxos`, `forced_transaction_utxos`, `mempool_ledger`, `da_payloads`.
+- Insert in foreign-key order: `pending_block_finalizations`, then **the event tables** (`deposits_utxos`, `withdrawal_utxos`, `forced_transaction_utxos`), then the member tables, then `da_payloads`, the ledgers and the transaction tables. **The members reference the events, not the reverse**: `pending_block_finalization_deposits.member_id` references `deposits_utxos.event_id`, and withdrawals do the same. An earlier draft of this line had it backwards and the load failed on the first deposit.
 - **Take the 9 real L2 header hashes from the cloned index snapshot** and assign them to the 9 settled blocks, so I6 holds against real data rather than a re-derivation.
 - `ANALYZE` after load. Without it the planner works from empty-table statistics and every plan captured is fiction.
 - Record with each dataset: PostgreSQL version, `work_mem`, `shared_buffers`, `effective_cache_size`, CPU count, RAM, and the index snapshot checksum.
