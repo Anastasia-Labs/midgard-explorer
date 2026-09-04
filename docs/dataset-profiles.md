@@ -47,7 +47,8 @@ These are correctness properties, not size knobs. A generator that violates one 
 | I9 | Foreign keys resolve; no orphan members | Cascade relationships are real in the schema |
 | I10 | Generation is **deterministic**: same profile, same bytes | A baseline that cannot be reproduced is not a baseline |
 | I11 | **Excluded from coverage does not mean excluded from seeding.** Every `NOT NULL` column without a default must be filled, whatever its coverage verdict | Found 2026-09-04: `pending_block_finalizations` has **28** such columns, including `state_queue_lease_token`, which `coverage-scope.md` marks `exclude` under D6. A generator that seeds only adopted columns cannot insert a single row |
-| I12 | **A profile that claims to cross a bound crosses it strictly** | `getSpendableLedger` reports `truncated: total > rows.length` against `SCAN_LIMIT = 20_000`. At exactly 20,000 the two are equal, `truncated` is false, and `asset-roster` measures the easy case while appearing to measure the hard one |
+| I12 | **A profile that claims to cross a bound crosses it strictly** | Two bounds, both `>` and not `>=`. `getSpendableLedger` reports `truncated: total > rows.length` against `SCAN_LIMIT = 20_000`, and `decode/transaction.ts:512` sets `cborTruncated` on `txBytes.length > MAX_INLINE_CBOR_BYTES`. Sized exactly on either bound, the truncation path is never taken and the budget measures the easy case while appearing to measure the hard one |
+| I13 | **Transaction bytes are derived from structure, never dialled to a number** | Inputs, outputs and assets per output determine the size. Specifying the byte distribution independently over-constrains the generator and lets it satisfy one while violating the other. The two agree where it matters: the codec encodes a 1-input, 2-output transaction at 386 B against a measured live p50 of 383 B |
 
 ## Profiles
 
@@ -82,7 +83,8 @@ Three, chosen to answer three different questions.
 | Ledger UTxOs | **25,000** | Above `SCAN_LIMIT` (20,000) so `truncated` is true and `asset-roster` measures the partial-coverage path (I12) |
 | Deposits / withdrawals / forced | 2,000 / 800 / 300 total, distributed by the per-block shapes below |
 | Settled against real L1 | 9 blocks; the other 4,991 render as unsettled (I6) |
-| Transaction body size | p50 383 B, p95 2 KB, p99 8 KB, max 64 KB | p50 from the live `immutable` measurement; the tail is an **ASSUMPTION** |
+| Transaction body size | p50 383 B, p95 2 KB, p99 6 KB | **Derived, not dialled.** An outcome of the structure shapes below; p50 from the live `immutable` measurement, and the codec independently encodes a 1-input, 2-output transaction at 386 B |
+| Oversize transactions | 5, each above 64 KB | The structure shapes top out near 6 KB, so nothing else crosses `MAX_INLINE_CBOR_BYTES` (I12) |
 | `header_cbor` | p50 361 B, p95 1 KB | p50 measured live; tail assumed |
 
 ### `stress`
@@ -144,6 +146,7 @@ Consequence, carried into the register per D16: a budget measured on `target` is
 - **Take the 9 real L2 header hashes from the cloned index snapshot** and assign them to the 9 settled blocks, so I6 holds against real data rather than a re-derivation.
 - `ANALYZE` after load. Without it the planner works from empty-table statistics and every plan captured is fiction.
 - Record with each dataset: PostgreSQL version, `work_mem`, `shared_buffers`, `effective_cache_size`, CPU count, RAM, and the index snapshot checksum.
+- Transaction bytes come from the **real codec**: `encodeMidgardNativeTxCanonical` over structures assembled from the decoded `shape-corpus.json` parts, verified by decoding what was encoded (I8). The canonical round-trip is byte-identical, so a generated transaction is one the decoder accepts by construction.
 - The `stress` seed belongs to a benchmark suite, never the unit suite.
 - Seed every `NOT NULL`-without-default column (I11). For a column the coverage scope excludes, a deterministic placeholder is correct: it is never read, and its only job is to satisfy the constraint. For a column the scope adopts, a placeholder is forbidden (I7).
 

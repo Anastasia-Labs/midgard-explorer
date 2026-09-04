@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import {
+  MAX_INLINE_CBOR_BYTES,
   PROFILES,
   REAL_SETTLED_BLOCKS,
   SCAN_LIMIT,
@@ -163,6 +164,17 @@ describe("PROFILES", () => {
     for (const p of all) {
       expect(Array.isArray(p.assumptions), p.name).toBe(true);
       expect(p.assumptions.length, p.name).toBeGreaterThan(0);
+    }
+  });
+
+  it("carries transactions that actually exceed MAX_INLINE_CBOR_BYTES", () => {
+    // `decode/transaction.ts:512` sets cborTruncated on
+    // `txBytes.length > MAX_INLINE_CBOR_BYTES`, so 64 KB exactly does not
+    // truncate. The structure shapes top out near 6 KB, so the oversize count
+    // is the only thing that reaches the cap, and the stated max must clear it.
+    for (const p of all) {
+      expect(p.oversizeTransactions, p.name).toBeGreaterThan(0);
+      expect(p.txBodyBytes.max, p.name).toBeGreaterThan(MAX_INLINE_CBOR_BYTES);
     }
   });
 

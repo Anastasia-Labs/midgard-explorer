@@ -117,7 +117,30 @@ export type Profile = {
    * legitimately unsettled, which is a state the routes must render as such.
    */
   settledBlocks: number;
+  /**
+   * Expected transaction size, an **outcome** of the structure shapes above
+   * rather than an input to them. Inputs, outputs and assets per output
+   * determine the bytes; specifying both independently over-constrains the
+   * generator and lets it satisfy one by violating the other.
+   *
+   * Corroborated: the codec encodes a 1-input, 2-output transaction at 386
+   * bytes, against a measured live p50 of 383. The structural p50 and the byte
+   * p50 agree without being forced to.
+   *
+   * `max` is reached only by `oversizeTransactions`, never by the shapes.
+   */
   txBodyBytes: Shape;
+  /**
+   * Transactions built deliberately larger than `MAX_INLINE_CBOR_BYTES`.
+   *
+   * `decode/transaction.ts:512` sets `cborTruncated` on
+   * `txBytes.length > MAX_INLINE_CBOR_BYTES`, so a transaction of exactly
+   * 64 KB does not truncate. The structure shapes top out near 6 KB, so
+   * without these the `transaction-detail` truncation path is never measured
+   * and its budget passes on the easy case. Same defect as sizing the ledger
+   * at exactly `SCAN_LIMIT` (I12).
+   */
+  oversizeTransactions: number;
   headerCborBytes: Shape;
   /** I1: 28, not 32. `utils.ts:15` sets HASH28_HEX = 56. */
   headerHashBytes: 28;
@@ -137,6 +160,9 @@ export const REAL_SETTLED_BLOCKS = 9;
 
 /** Mirrors `SCAN_LIMIT` in `src/db/asset.ts`. */
 export const SCAN_LIMIT = 20_000;
+
+/** Mirrors `MAX_INLINE_CBOR_BYTES` in `src/decode/transaction.ts`. */
+export const MAX_INLINE_CBOR_BYTES = 64 * 1024;
 
 export const PROFILES = {
   /**
@@ -171,7 +197,8 @@ export const PROFILES = {
     assets: 8,
     searchMix: { uniqueHit: 0.5, multiHit: 0.25, miss: 0.25 },
     settledBlocks: REAL_SETTLED_BLOCKS,
-    txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 800, p99: 1_200, max: 2_048 },
+    txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 800, p99: 1_200, max: 66_000 },
+    oversizeTransactions: 1,
     headerCborBytes: { p50: MEASURED_HEADER_CBOR_P50, p95: 512, p99: 700, max: 1_024 },
     headerHashBytes: 28,
     rootHexLength: 64,
@@ -229,7 +256,8 @@ export const PROFILES = {
     assets: 400,
     searchMix: { uniqueHit: 0.5, multiHit: 0.25, miss: 0.25 },
     settledBlocks: REAL_SETTLED_BLOCKS,
-    txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 2_048, p99: 8_192, max: 65_536 },
+    txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 2_048, p99: 6_144, max: 96_000 },
+    oversizeTransactions: 5,
     headerCborBytes: { p50: MEASURED_HEADER_CBOR_P50, p95: 1_024, p99: 2_048, max: 4_096 },
     headerHashBytes: 28,
     rootHexLength: 64,
@@ -278,7 +306,8 @@ export const PROFILES = {
     assets: 4_000,
     searchMix: { uniqueHit: 0.5, multiHit: 0.25, miss: 0.25 },
     settledBlocks: REAL_SETTLED_BLOCKS,
-    txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 2_048, p99: 8_192, max: 65_536 },
+    txBodyBytes: { p50: MEASURED_TX_BODY_P50, p95: 2_048, p99: 6_144, max: 96_000 },
+    oversizeTransactions: 20,
     headerCborBytes: { p50: MEASURED_HEADER_CBOR_P50, p95: 1_024, p99: 2_048, max: 4_096 },
     headerHashBytes: 28,
     rootHexLength: 64,
