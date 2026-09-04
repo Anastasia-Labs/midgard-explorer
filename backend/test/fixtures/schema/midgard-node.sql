@@ -76,7 +76,11 @@ CREATE TABLE "blocks" (
 -- CreateTable
 CREATE TABLE "address_history" (
     "tx_id" BYTEA NOT NULL,
-    "address" TEXT NOT NULL
+    "address" TEXT NOT NULL,
+    -- Added 2026-09-04: present on the live node and absent here. Found by the
+    -- coverage lint, not by the adopted-column drift test, which only checks
+    -- adopted columns and this one is deferred.
+    "created_at" TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- CreateIndex
