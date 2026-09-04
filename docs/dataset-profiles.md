@@ -51,7 +51,7 @@ These are correctness properties, not size knobs. A generator that violates one 
 | I10 | Generation is **deterministic**: same profile, same bytes | A baseline that cannot be reproduced is not a baseline |
 | I11 | **Excluded from coverage does not mean excluded from seeding.** Every `NOT NULL` column without a default must be filled, whatever its coverage verdict | Found 2026-09-04: `pending_block_finalizations` has **28** such columns, including `state_queue_lease_token`, which `coverage-scope.md` marks `exclude` under D6. A generator that seeds only adopted columns cannot insert a single row |
 | I12 | **A profile that claims to cross a bound crosses it strictly** | Two bounds, both `>` and not `>=`. `getSpendableLedger` reports `truncated: total > rows.length` against `SCAN_LIMIT = 20_000`, and `decode/transaction.ts:512` sets `cborTruncated` on `txBytes.length > MAX_INLINE_CBOR_BYTES`. Sized exactly on either bound, the truncation path is never taken and the budget measures the easy case while appearing to measure the hard one |
-| I13 | **Transaction bytes are derived from structure, never dialled to a number** | Inputs, outputs and assets per output determine the size. Specifying the byte distribution independently over-constrains the generator and lets it satisfy one while violating the other. The two agree where it matters: the codec encodes a 1-input, 2-output transaction at 386 B against a measured live p50 of 383 B |
+| I13 | **Anything the shapes determine is derived, never declared beside them.** Transaction bytes come from the structure; event totals come from the per-block shapes; the live ledger size comes from the block count and the input and output shapes | Specifying a derived quantity independently over-constrains the generator and lets it satisfy one while violating the other. Found three times: transaction bytes against the structure, event totals against the per-block shapes, and the ledger size against the block and output shapes. Where a bound matters the number stays, as a **floor**: the ledger must clear `SCAN_LIMIT` (I12), and how far above is an outcome |
 
 ## Profiles
 
@@ -68,7 +68,7 @@ Three, chosen to answer three different questions.
 | Empty blocks | **78%**, matching the live node exactly (7 of 9) |
 | Status mix | 100% `finalized`, **0 active** (the live node has no active finalization) |
 | Timestamp collisions | none (I4) |
-| Ledger UTxOs | 200, below `SCAN_LIMIT`, so no truncation |
+| Ledger UTxOs | at least 200, below `SCAN_LIMIT`, so no truncation |
 | Deposits / withdrawals / forced | 29 / 15 / 14, **derived** from the per-block shapes |
 | Settled against real L1 | 9 blocks |
 
@@ -83,7 +83,7 @@ Three, chosen to answer three different questions.
 | Empty blocks | **30%** | **APPROVED as a pessimistic challenge profile.** Live data is 78% empty; 30% is deliberately harsher because 78% would make most list pages trivially cheap and hide the cost the budgets exist to catch |
 | Status mix | terminal rows 98% `finalized` / 2% `abandoned`, plus **exactly one** `submitted_unconfirmed` | Terminal split is an **ASSUMPTION**; the single active row is schema-enforced |
 | Timestamp collisions | 5% of blocks share `block_end_time` | I4 |
-| Ledger UTxOs | **25,000** | Above `SCAN_LIMIT` (20,000) so `truncated` is true and `asset-roster` measures the partial-coverage path (I12) |
+| Ledger UTxOs | **at least 25,000** (a floor; the shapes produce about 30,500) | Above `SCAN_LIMIT` (20,000) so `truncated` is true and `asset-roster` measures the partial-coverage path (I12). A **floor, not a target**: the block count and the input and output shapes determine the size, and declaring an exact figure beside them is the same defect as declaring event totals beside their shapes (I13) |
 | Deposits / withdrawals / forced | **3,700 / 1,850 / 250**, derived | Totals are computed from the per-block shapes, never declared beside them. An earlier draft stated 2,000 / 800 / 300 next to shapes implying 3,700 / 1,850 / 250, and no generator can satisfy both |
 | Settled against real L1 | 9 blocks; the other 4,991 render as unsettled (I6) |
 | Transaction body size | p50 383 B, p95 2 KB, p99 6 KB | **Derived, not dialled.** An outcome of the structure shapes below; p50 from the live `immutable` measurement, and the codec independently encodes a 1-input, 2-output transaction at 386 B |

@@ -237,9 +237,24 @@ export function createLedger(parts: CorpusParts, options: LedgerOptions): Ledger
     const spent = takeInputs(Math.max(1, spec.inputs));
     if (spent.length === 0) return null;
 
-    const available = spent.reduce((total, u) => total + u.lovelace, 0n);
-    if (available <= fee + MIN_OUTPUT_LOVELACE) {
-      // Cannot fund even one output. Put the inputs back rather than burn them.
+    // Consolidate rather than give up.
+    //
+    // Repeated splitting fragments the ledger: after a few thousand blocks of
+    // one-in-three-out the average UTxO is too small to fund an output on its
+    // own, and a fixed input count starts returning null. A caller that treats
+    // null as "stop" then silently produces an empty table, which is how
+    // `processed_mempool` came out empty at `target` while passing at `small`.
+    // Taking another input is also what a real wallet does.
+    let available = spent.reduce((total, u) => total + u.lovelace, 0n);
+    const floor = fee + MIN_OUTPUT_LOVELACE;
+    while (available <= floor && unspent.length > 0 && spent.length < 64) {
+      const extra = takeInputs(1);
+      if (extra.length === 0) break;
+      spent.push(...extra);
+      available += extra[0].lovelace;
+    }
+    if (available <= floor) {
+      // Genuinely unfundable. Put the inputs back rather than burn them.
       unspent.push(...spent);
       return null;
     }

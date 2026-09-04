@@ -62,6 +62,8 @@ export type Dataset = {
   profile: Profile;
   blocks: readonly GeneratedBlock[];
   tables: Record<string, Row[]>;
+  /** The genesis size this dataset was built with, after calibration. */
+  genesisUtxos: number;
 };
 
 /** The tables this generator fills, in foreign-key order for loading. */
@@ -135,11 +137,44 @@ export type GenerateOptions = {
   parts?: CorpusParts;
 };
 
+/**
+ * Generates a dataset, topping up the genesis pool if the live ledger would
+ * fall short of the profile's floor.
+ *
+ * `ledgerUtxos` is a **floor, not a target**. The final unspent set is an
+ * outcome of the block count and the input and output shapes, exactly as
+ * transaction size is an outcome of the structure (I13). At `target` those
+ * shapes produce about 30,000 live UTxOs from the smallest possible genesis,
+ * so demanding exactly 25,000 would mean overriding the shapes that produced
+ * it. What the floor exists for is the bound: the ledger must clear
+ * `SCAN_LIMIT` or `asset-roster` measures the untruncated case.
+ *
+ * So calibration only ever raises. Deterministic: the same profile takes the
+ * same number of passes and produces the same bytes.
+ */
 export function generateDataset(
   profile: Profile,
   options: GenerateOptions = {},
+  forceGenesis?: number,
 ): Dataset {
   const parts = options.parts ?? loadCorpus();
+  let genesis: number | undefined = forceGenesis;
+  let dataset = buildDataset(profile, options, parts, genesis);
+  for (let pass = 0; pass < (forceGenesis === undefined ? 3 : 0); pass += 1) {
+    const achieved = dataset.tables.mempool_ledger.length;
+    if (achieved >= profile.ledgerUtxos) break;
+    genesis = (genesis ?? dataset.genesisUtxos) + (profile.ledgerUtxos - achieved);
+    dataset = buildDataset(profile, options, parts, genesis);
+  }
+  return dataset;
+}
+
+function buildDataset(
+  profile: Profile,
+  options: GenerateOptions,
+  parts: CorpusParts,
+  genesisOverride: number | undefined,
+): Dataset {
   const next = rng(profile.seed);
 
   // Draw the per-block event counts first, so the ledger can be sized to land
@@ -167,10 +202,9 @@ export function generateDataset(
       total + block.l2Transactions * (block.outputs - block.inputs),
     0,
   );
-  const genesisUtxos = Math.max(
-    Math.ceil(profile.ledgerUtxos * 0.05),
-    profile.ledgerUtxos - netGrowth,
-  );
+  const genesisUtxos =
+    genesisOverride ??
+    Math.max(Math.ceil(profile.ledgerUtxos * 0.05), profile.ledgerUtxos - netGrowth);
 
   const ledger = createLedger(parts, {
     seed: profile.seed + 1,
@@ -285,7 +319,7 @@ export function generateDataset(
   emitLedgerRows(tables, "confirmed_ledger", ledger.remaining());
   emitMempool(tables, ledger, profile, blocks);
   emitLedgerRows(tables, "mempool_ledger", ledger.remaining());
-  return { profile, blocks, tables };
+  return { profile, blocks, tables, genesisUtxos };
 }
 
 /** Every row a single block contributes, across the member and event tables. */
@@ -649,8 +683,10 @@ function emitMempool(
   const at = blocks[blocks.length - 1]?.blockEndTime ?? new Date(EPOCH);
   const total = profile.mempoolTransactions + profile.processedMempoolTransactions;
   for (let i = 0; i < total; i += 1) {
-    const step = ledger.spend({ inputs: 1, outputs: 2 });
-    if (!step) break;
+    const step = ledger.spend({ inputs: 2, outputs: 2 });
+    // `continue`, not `break`: one unfundable draw is not a reason to leave the
+    // rest of the mempool empty.
+    if (!step) continue;
     const table = i < profile.mempoolTransactions ? "mempool" : "processed_mempool";
     tables[table].push({
       tx_id: Buffer.from(step.tx.txId),

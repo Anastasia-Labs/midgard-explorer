@@ -98,6 +98,15 @@ export type Profile = {
   statusMix: StatusMix;
   /** Fraction of blocks sharing a `block_end_time` with at least one other. */
   timestampCollisionRate: number;
+  /**
+   * The **floor** for the live ledger, not a target.
+   *
+   * The final unspent set is an outcome of the block count and the input and
+   * output shapes, the same way transaction size is an outcome of the
+   * structure (I13). What this number is for is the bound: above `SCAN_LIMIT`
+   * the `asset-roster` truncation path is measured, at or below it the easy
+   * case is.
+   */
   ledgerUtxos: number;
   /**
    * Whether `getSpendableLedger` truncates on this profile.
