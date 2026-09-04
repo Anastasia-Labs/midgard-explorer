@@ -368,6 +368,20 @@ export type HarnessReport = {
   iterations: number;
   /** What the measured server was configured with, so a number can be read. */
   serverConfig: { apiRateLimitMax: number };
+  /**
+   * Which part of the catalogue this run covers.
+   *
+   * `backend-only` is the honest name for what a harness run measures: the
+   * catalogue holds frontend-origin rows the backend does not serve. The first
+   * `target` run reported twelve of thirteen workloads with no mention of the
+   * thirteenth, which read as full coverage.
+   */
+  scope: "backend-only" | "subset";
+  /** Every catalogue workload, either measured or excluded with a reason. */
+  coverage: {
+    measured: string[];
+    excluded: { workload: string; reason: string }[];
+  };
   results: Judgement[];
   startedAt: string;
   finishedAt: string;
@@ -382,9 +396,73 @@ export type HarnessReport = {
 export function baselineGate(
   environment: EnvironmentReport,
   results: readonly Judgement[],
+  coverage?: {
+    scope: "backend-only" | "subset";
+    excluded: readonly { workload: string; reason: string }[];
+  },
 ): string[] {
   const blocking: string[] = [];
   const GB = 1024 ** 3;
+
+
+  // A subset is a diagnostic run. Only a full backend sweep is a baseline.
+  if (coverage?.scope === "subset") {
+    blocking.push(
+      "only a subset of the catalogue ran: a baseline covers every " +
+        "backend-origin workload",
+    );
+  }
+
+  // Coverage is checked against the catalogue, not taken on trust. Recording an
+  // exclusion list and never validating it would leave exactly the hole this
+  // closes: a workload can go missing and the report still reads complete.
+  if (coverage) {
+    const known = new Set(WORKLOADS.map((w) => w.name));
+    const expected = WORKLOADS.filter((w) => w.origin === "backend").map((w) => w.name);
+    const measured = results.map((r) => r.workload);
+    const seen = new Map<string, number>();
+    for (const name of measured) seen.set(name, (seen.get(name) ?? 0) + 1);
+
+    for (const [name, times] of seen) {
+      if (!known.has(name)) {
+        blocking.push(`measured "${name}", which is not in the catalogue`);
+      }
+      if (times > 1) {
+        blocking.push(`"${name}" was measured ${times} times: a workload appears once`);
+      }
+    }
+    if (coverage.scope === "backend-only") {
+      for (const name of expected) {
+        if (!seen.has(name)) {
+          blocking.push(`backend workload "${name}" is missing from the results`);
+        }
+      }
+    }
+
+    const excludedNames = new Set<string>();
+    for (const entry of coverage.excluded) {
+      if (!known.has(entry.workload)) {
+        blocking.push(`excluded "${entry.workload}", which is not in the catalogue`);
+      }
+      if (entry.reason.trim() === "") {
+        blocking.push(`exclusion of "${entry.workload}" gives no reason`);
+      }
+      if (seen.has(entry.workload)) {
+        blocking.push(`"${entry.workload}" is both measured and excluded`);
+      }
+      excludedNames.add(entry.workload);
+    }
+
+    // Every catalogue row lands in exactly one of the two sets.
+    for (const workload of WORKLOADS) {
+      if (!seen.has(workload.name) && !excludedNames.has(workload.name)) {
+        blocking.push(
+          `"${workload.name}" is neither measured nor excluded: the report does ` +
+            `not account for it`,
+        );
+      }
+    }
+  }
   if (environment.freeDiskBytes >= 0 && environment.freeDiskBytes < 30 * GB) {
     blocking.push(
       `needs 30 GB free before starting, found ${(environment.freeDiskBytes / GB).toFixed(1)} GB: PostgreSQL needs WAL and temp headroom, and a starved filesystem is what the timing would describe`,
@@ -439,9 +517,19 @@ export async function runHarness(options: {
   let server: ServerHandle | null = null;
   try {
     server = await startServer(setup, options.port);
-    const selected = options.only
-      ? WORKLOADS.filter((w) => options.only?.includes(w.name))
+    const wanted = options.only;
+    const selected = wanted
+      ? WORKLOADS.filter((w) => wanted.includes(w.name))
       : WORKLOADS.filter((w) => w.origin === "backend");
+    // Every catalogue row is accounted for, so a missing one is a stated
+    // exclusion rather than an absence nobody can see in the report.
+    const excluded = WORKLOADS.filter((w) => !selected.includes(w)).map((w) => ({
+      workload: w.name,
+      reason: wanted
+        ? "not in the requested subset"
+        : `origin is ${w.origin}: not served by the backend under test`,
+    }));
+    const scope = wanted ? ("subset" as const) : ("backend-only" as const);
     const results: Judgement[] = [];
     for (const workload of selected) {
       results.push(await runWorkload(workload, setup, server, probe, options.run));
@@ -466,12 +554,16 @@ export async function runHarness(options: {
       environment,
       warnings: [
         ...environmentWarnings(environment),
-        ...(options.mode === "baseline" ? baselineGate(environment, results) : []),
+        ...(options.mode === "baseline"
+          ? baselineGate(environment, results, { scope, excluded })
+          : []),
       ],
       datasetChecksum: setup.datasetChecksum,
       indexChecksum: setup.indexSnapshot.checksum,
       iterations: options.run?.iterations ?? 0,
       serverConfig: { apiRateLimitMax: BENCH_RATE_LIMIT_MAX },
+      scope,
+      coverage: { measured: results.map((r) => r.workload), excluded },
       results,
       startedAt,
       finishedAt: new Date().toISOString(),

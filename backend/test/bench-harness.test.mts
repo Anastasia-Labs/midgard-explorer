@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { baselineGate, hardwareProfileOf } from "../bench/harness.mjs";
+import { WORKLOADS } from "../bench/workloads.mjs";
 import type { EnvironmentReport } from "../bench/environment.mjs";
 import type { Judgement } from "../bench/judge.mjs";
 
@@ -21,6 +22,8 @@ const healthy: EnvironmentReport = {
   freeDiskBytes: 100 * GB,
   nodeVersion: "v24",
   gitCommit: "a".repeat(40),
+  gitDirty: false,
+  buildHash: "b".repeat(64),
   capturedAt: new Date().toISOString(),
 };
 
@@ -31,7 +34,7 @@ const clean: Judgement[] = [
     breaches: [],
     unmeasured: [],
     stats: {
-      count: 40, p50Ms: 10, p95Ms: 20, p99Ms: 30, maxMs: 40,
+      count: 40, successCount: 40, p50Ms: 10, p95Ms: 20, p99Ms: 30, maxMs: 40,
       errorRate: 0, timeoutRate: 0, rps: 50, wireBytes: 100, uncompressedBytes: 200,
     },
     dbWork: { statements: 3, sharedBlocks: 10, tempBytes: 0, execMs: 1 },
@@ -62,6 +65,84 @@ describe("baselineGate", () => {
     const blocking = baselineGate(healthy, dead);
     expect(blocking.join(" ")).toMatch(/metrics/);
     expect(blocking.join(" ")).toMatch(/measured nothing/);
+  });
+
+  it("refuses a subset run, which is a diagnostic and not a baseline", () => {
+    const blocking = baselineGate(healthy, clean, { scope: "subset", excluded: [] });
+    expect(blocking.join(" ")).toMatch(/subset of the catalogue/);
+  });
+
+  describe("coverage is checked against the catalogue, not taken on trust", () => {
+    const backend = WORKLOADS.filter((w) => w.origin === "backend").map((w) => w.name);
+    const frontend = WORKLOADS.filter((w) => w.origin !== "backend").map((w) => w.name);
+    const asResults = (names: readonly string[]): Judgement[] =>
+      names.map((workload) => ({ ...clean[0], workload }));
+    const fullExclusions = frontend.map((workload) => ({
+      workload,
+      reason: "origin is frontend: not served by the backend under test",
+    }));
+    const complete = { scope: "backend-only" as const, excluded: fullExclusions };
+
+    it("accepts a sweep that accounts for every catalogue row exactly once", () => {
+      expect(baselineGate(healthy, asResults(backend), complete)).toEqual([]);
+    });
+
+    it("refuses a missing backend workload", () => {
+      const short = asResults(backend.slice(0, -1));
+      const blocking = baselineGate(healthy, short, complete);
+      expect(blocking.join(" ")).toMatch(new RegExp(`${backend.at(-1)}.*missing`));
+    });
+
+    it("refuses a workload measured twice", () => {
+      const doubled = asResults([...backend, backend[0]]);
+      expect(baselineGate(healthy, doubled, complete).join(" ")).toMatch(
+        /was measured 2 times/,
+      );
+    });
+
+    it("refuses a result that is not in the catalogue at all", () => {
+      const bogus = asResults([...backend, "invented-workload"]);
+      expect(baselineGate(healthy, bogus, complete).join(" ")).toMatch(
+        /invented-workload.*not in the catalogue/,
+      );
+    });
+
+    it("refuses an exclusion with a blank reason", () => {
+      const blank = {
+        scope: "backend-only" as const,
+        excluded: frontend.map((workload) => ({ workload, reason: "  " })),
+      };
+      expect(baselineGate(healthy, asResults(backend), blank).join(" ")).toMatch(
+        /gives no reason/,
+      );
+    });
+
+    it("refuses an exclusion naming something the catalogue does not have", () => {
+      const unknown = {
+        scope: "backend-only" as const,
+        excluded: [...fullExclusions, { workload: "ghost", reason: "n/a" }],
+      };
+      expect(baselineGate(healthy, asResults(backend), unknown).join(" ")).toMatch(
+        /excluded "ghost", which is not in the catalogue/,
+      );
+    });
+
+    it("refuses a workload that is both measured and excluded", () => {
+      const both = {
+        scope: "backend-only" as const,
+        excluded: [...fullExclusions, { workload: backend[0], reason: "contradictory" }],
+      };
+      expect(baselineGate(healthy, asResults(backend), both).join(" ")).toMatch(
+        /both measured and excluded/,
+      );
+    });
+
+    it("refuses a row that is neither measured nor excluded", () => {
+      const silent = { scope: "backend-only" as const, excluded: [] };
+      expect(baselineGate(healthy, asResults(backend), silent).join(" ")).toMatch(
+        new RegExp(`${frontend[0]}.*neither measured nor excluded`),
+      );
+    });
   });
 
   it("refuses below 30 GB free, naming the headroom reason", () => {
