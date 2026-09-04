@@ -189,3 +189,15 @@ describe("WORKLOADS", () => {
     expect(register).toContain("INSUFFICIENT");
   });
 });
+
+describe("the saturation workload cannot share a cached promise", () => {
+  it("bypasses the cache, because a bounded id pool repeats its pages", () => {
+    const saturation = WORKLOADS.find((w) => w.name === "blocks-list-saturation")!;
+    expect(saturation.concurrency).toBeGreaterThan(1);
+    // The pool yields 25 distinct pages, so any longer run repeats them, and at
+    // concurrency 32 the repeats can coalesce onto one in-flight cached
+    // promise. That measures the cache deduplicating work rather than the
+    // queueing this row exists to measure, and it passed on exactly that.
+    expect(saturation.cacheMode).toBe("cold");
+  });
+});

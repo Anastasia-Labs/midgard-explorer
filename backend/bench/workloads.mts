@@ -246,7 +246,13 @@ export const WORKLOADS: readonly Workload[] = [
     origin: "backend",
     template: "/api/blocks/:page",
     buildPath: (ids) => `/api/blocks/${ids.page}`,
-    cacheMode: "unique-key",
+    // `cold`, not `unique-key`. The id pool yields 25 distinct pages, so a run
+    // longer than 25 requests repeats them, and at concurrency 32 the repeats
+    // can share one in-flight cached promise. That turns a saturation test into
+    // a measurement of the cache coalescing duplicate work, and it passed on
+    // exactly that. The bypass makes every one of the 32 concurrent requests do
+    // the real query, which is the queueing this row is meant to measure.
+    cacheMode: "cold",
     concurrency: 32,
     profile: "target",
     // Throughput budget: the pool is bounded, so this measures queueing rather
