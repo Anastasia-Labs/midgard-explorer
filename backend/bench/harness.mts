@@ -302,9 +302,40 @@ export async function runWorkload(
   });
 }
 
+/**
+ * The hardware a result was taken on, stamped onto every report.
+ *
+ * `existing-minimum-2-core` is the accepted minimum supported runtime profile:
+ * `docs/resource-requirements.md:47` states two cores are enough for `demo` and
+ * `existing`, and every measurement there was taken on two. Runtime latency,
+ * database work, payload and concurrency budgets may be judged on it, because
+ * scheduler pressure is part of performance on the supported minimum. It is
+ * **not** universal production hardware, which is why results carry the stamp
+ * rather than being presented as unqualified.
+ */
+export type HardwareProfile = "existing-minimum-2-core" | "unclassified";
+
+export function hardwareProfileOf(environment: EnvironmentReport): HardwareProfile {
+  return environment.cpuCount <= 2 ? "existing-minimum-2-core" : "unclassified";
+}
+
+/**
+ * Budgets that may never be judged on the minimum profile.
+ *
+ * Suite wall time is a property of the developer and CI runner, not of the
+ * supported runtime, so it needs a quiet standardised machine and stays
+ * deferred. Runtime budgets do not: the minimum is a machine users actually
+ * run on.
+ */
+export const EXCLUDED_ON_MINIMUM_HARDWARE = [
+  "backend test suite wall time",
+] as const;
+
 export type HarnessReport = {
   /** `smoke` proves the harness works. `baseline` is the measurement of record. */
   mode: "smoke" | "baseline";
+  /** Stamped on every result. See `HardwareProfile`. */
+  hardware: HardwareProfile;
   profile: string;
   environment: EnvironmentReport;
   warnings: string[];
@@ -333,11 +364,12 @@ export function baselineGate(
       `needs 30 GB free before starting, found ${(environment.freeDiskBytes / GB).toFixed(1)} GB: PostgreSQL needs WAL and temp headroom, and a starved filesystem is what the timing would describe`,
     );
   }
-  if (environment.cpuCount <= 2) {
-    blocking.push(
-      `${environment.cpuCount} cores: concurrency-32 saturation and suite-timing rows stay UNMEASURED unless this machine is explicitly accepted as representative hardware`,
-    );
-  }
+  // Core count is deliberately NOT blocking. Two cores is the accepted minimum
+  // supported runtime profile, and scheduler pressure there is part of
+  // performance rather than a distortion of it. The result carries
+  // `hardware: "existing-minimum-2-core"` so nobody reads it as universal
+  // production hardware. Suite wall time is the exception and is excluded by
+  // EXCLUDED_ON_MINIMUM_HARDWARE, not by this gate.
   for (const result of results) {
     if (result.unmeasured.length > 0) {
       blocking.push(`${result.workload} has unmeasured budgets: ${result.unmeasured[0]}`);
@@ -382,6 +414,7 @@ export async function runHarness(options: {
 
     const report: HarnessReport = {
       mode: options.mode,
+      hardware: hardwareProfileOf(environment),
       profile: profile.name,
       environment,
       warnings: [

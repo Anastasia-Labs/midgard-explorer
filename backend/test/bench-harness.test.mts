@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { baselineGate } from "../bench/harness.mjs";
+import { baselineGate, hardwareProfileOf } from "../bench/harness.mjs";
 import type { EnvironmentReport } from "../bench/environment.mjs";
 import type { Judgement } from "../bench/judge.mjs";
 
@@ -49,12 +49,19 @@ describe("baselineGate", () => {
     expect(blocking.join(" ")).toMatch(/5\.2 GB/);
   });
 
-  it("refuses to certify concurrency on a two-core machine", () => {
-    // A concurrency-32 saturation run there measures scheduling, not the
-    // server, unless the hardware is explicitly accepted as representative.
-    const blocking = baselineGate({ ...healthy, cpuCount: 2 }, clean);
-    expect(blocking.join(" ")).toMatch(/cores/);
-    expect(blocking.join(" ")).toMatch(/representative hardware/);
+  it("permits a baseline on the accepted two-core minimum", () => {
+    // Ruled 2026-09-04: two cores is the minimum supported runtime profile
+    // (docs/resource-requirements.md:47), so runtime, database, payload and
+    // concurrency budgets may be judged there. Scheduler pressure is part of
+    // performance on the supported minimum, not a distortion of it.
+    expect(baselineGate({ ...healthy, cpuCount: 2 }, clean)).toEqual([]);
+  });
+
+  it("stamps the hardware, so a result is qualified rather than universal", () => {
+    expect(hardwareProfileOf({ ...healthy, cpuCount: 2 })).toBe(
+      "existing-minimum-2-core",
+    );
+    expect(hardwareProfileOf({ ...healthy, cpuCount: 16 })).toBe("unclassified");
   });
 
   it("refuses when any workload had an unmeasured budget", () => {
@@ -67,8 +74,9 @@ describe("baselineGate", () => {
   });
 
   it("reports every blocking reason, not just the first", () => {
-    const blocking = baselineGate({ ...healthy, freeDiskBytes: 1 * GB, cpuCount: 2 }, [
+    const blocking = baselineGate({ ...healthy, freeDiskBytes: 1 * GB }, [
       { ...clean[0], verdict: "UNMEASURED", unmeasured: ["temp bytes: warm"] },
+      { ...clean[0], workload: "metrics", verdict: "UNMEASURED", unmeasured: ["statements"] },
     ]);
     expect(blocking.length).toBe(3);
   });

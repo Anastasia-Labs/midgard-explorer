@@ -99,11 +99,10 @@ export function environmentWarnings(report: EnvironmentReport): string[] {
       `only ${(report.freeDiskBytes / 1024 ** 3).toFixed(1)} GB free: PostgreSQL cannot reliably spill temp files, so temp-byte budgets error rather than measure`,
     );
   }
-  if (report.cpuCount <= 2) {
-    warnings.push(
-      `${report.cpuCount} cores: a concurrency-32 saturation workload measures scheduling, not the server`,
-    );
-  }
+  // Not a warning any more: two cores is the accepted minimum supported runtime
+  // profile, and scheduler pressure there is part of performance on it. The
+  // report stamps `hardware` instead, so a number is qualified rather than
+  // disclaimed.
   if (report.settings.track_io_timing !== "on") {
     warnings.push("track_io_timing is off, so shared-block figures carry no I/O cost");
   }

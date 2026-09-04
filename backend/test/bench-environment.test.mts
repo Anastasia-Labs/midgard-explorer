@@ -35,9 +35,10 @@ describe("environmentWarnings", () => {
     expect(warnings.join(" ")).toMatch(/free/);
   });
 
-  it("warns that a two-core box cannot measure a saturation workload", () => {
-    const warnings = environmentWarnings({ ...healthy, cpuCount: 2 });
-    expect(warnings.join(" ")).toMatch(/cores/);
+  it("does not warn about two cores, the accepted minimum profile", () => {
+    // Ruled 2026-09-04. The report stamps `existing-minimum-2-core` instead of
+    // disclaiming the number, because two cores is a machine users run on.
+    expect(environmentWarnings({ ...healthy, cpuCount: 2 })).toEqual([]);
   });
 
   it("warns when I/O timing is off", () => {

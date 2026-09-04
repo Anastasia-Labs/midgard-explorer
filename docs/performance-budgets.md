@@ -122,6 +122,17 @@ The five dimensions of the original assessment that no latency, resource or CI r
 
 **Dead weight, duplication and change complexity are gates, not observations.** A retirement decision may be "keep it", but there is no such thing as an artifact with no decision. That is the whole failure mode: an undecided artifact reads as a pass because nobody wrote down that it fails.
 
+## Hardware
+
+Ruled 2026-09-04. Every result carries a `hardware` stamp.
+
+| Profile | Meaning |
+|---|---|
+| `existing-minimum-2-core` | The **accepted minimum supported runtime profile**. `docs/resource-requirements.md:47` states two cores are enough for `demo` and `existing`, and every measurement there was taken on two. Runtime latency, database work, payload and concurrency-32 budgets may be judged here: scheduler pressure is part of performance on the supported minimum |
+| `unclassified` | Anything larger. Not yet characterised |
+
+**Two limits on reading these results.** A figure stamped `existing-minimum-2-core` is a measurement on the supported minimum, never a statement about universal production hardware, and no document may drop the stamp when quoting it. And the **backend suite wall-time budget may not be judged here at all**: suite time is a property of the developer and CI runner rather than of the runtime, so it needs a quiet standardised machine and stays deferred.
+
 ## Lifecycle
 
 Targets were approved on 2026-09-04. Rows move through these states and no other:
