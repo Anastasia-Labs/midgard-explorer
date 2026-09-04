@@ -232,6 +232,7 @@ function buildDataset(
 
   const blocks: GeneratedBlock[] = [];
   let time = EPOCH;
+  let previousStart = new Date(EPOCH);
   let previousEnd = new Date(EPOCH);
 
   for (let height = 0; height < profile.blocks; height += 1) {
@@ -240,10 +241,18 @@ function buildDataset(
     // makes the header-hash tiebreak observable.
     const collides =
       height > 0 && next() < profile.timestampCollisionRate;
-    const blockStartTime = new Date(time);
+    // A colliding block shares the predecessor's whole window, not just its end.
+    // Taking the earlier end while keeping a later start inverts the two, and
+    // `da_payloads_check` enforces block_end_time >= block_start_time. One
+    // collision was survivable because the times came out equal; two in a row
+    // put the end a full block behind the start, which is what `target` hit.
+    const blockStartTime = collides ? new Date(previousStart) : new Date(time);
     time += BLOCK_SPACING_MS;
-    const blockEndTime = collides ? previousEnd : new Date(time);
-    previousEnd = blockEndTime;
+    const blockEndTime = collides ? new Date(previousEnd) : new Date(time);
+    if (!collides) {
+      previousStart = blockStartTime;
+      previousEnd = blockEndTime;
+    }
 
     const settled = height < profile.settledBlocks;
     const headerHash =
