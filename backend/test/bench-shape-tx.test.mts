@@ -107,7 +107,15 @@ describe("buildTx", () => {
     const tx = buildTx(
       parts,
       inputs,
-      [makeOutput(parts, { addressId: 7, lovelace: 5_000_000n, assetIds: [1, 2, 3] })],
+      [makeOutput(parts, {
+        addressId: 7,
+        lovelace: 5_000_000n,
+        assets: new Map([
+          [1, 10n],
+          [2, 20n],
+          [3, 30n],
+        ]),
+      })],
       FEE,
     );
     const full = decodeMidgardNativeTxFullFromCanonicalCbor(Buffer.from(tx.bytes));
@@ -129,6 +137,37 @@ describe("buildTx", () => {
       written,
     );
     for (const o of tx.outputs) expect(o.address).toMatch(/^addr_test1/);
+  });
+
+  it("attaches a datum and a script reference the decoder reads back", () => {
+    const tx = buildTx(
+      parts,
+      inputs,
+      [makeOutput(parts, { addressId: 3, lovelace: 5_000_000n, datum: true, scriptRef: true })],
+      FEE,
+    );
+    const full = decodeMidgardNativeTxFullFromCanonicalCbor(Buffer.from(tx.bytes));
+    const [out] = decodeMidgardNativeByteListPreimage(full.body.outputsPreimageCbor);
+    const decoded = decodeMidgardTxOutput(out);
+    expect(decoded.datum).toBeDefined();
+    expect(decoded.script_ref).toBeDefined();
+  });
+
+  it("attaches redeemers only when asked", () => {
+    const without = decodeMidgardNativeTxFullFromCanonicalCbor(
+      Buffer.from(buildTx(parts, inputs, outputs, FEE, false).bytes),
+    );
+    const with_ = decodeMidgardNativeTxFullFromCanonicalCbor(
+      Buffer.from(buildTx(parts, inputs, outputs, FEE, true).bytes),
+    );
+    expect(
+      decodeMidgardNativeByteListPreimage(without.witnessSet.redeemerTxWitsPreimageCbor)
+        .length,
+    ).toBe(0);
+    expect(
+      decodeMidgardNativeByteListPreimage(with_.witnessSet.redeemerTxWitsPreimageCbor)
+        .length,
+    ).toBe(1);
   });
 
   it("I10: the same inputs produce the same bytes", () => {

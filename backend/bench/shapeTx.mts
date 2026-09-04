@@ -30,6 +30,10 @@ const CORPUS = "test/fixtures/shape-corpus.json";
 
 /** The `multi-input` entry: two inputs and the smallest outputs in the set. */
 const BASE_ENTRY = "4";
+/** Carries an inline datum on one output. */
+const DATUM_ENTRY = "1";
+/** Carries both an inline datum and a script reference. */
+const SCRIPT_REF_ENTRY = "2";
 
 type DecodedOutput = ReturnType<typeof decodeMidgardTxOutput>;
 
@@ -46,6 +50,12 @@ export type CorpusParts = {
   inputTemplates: readonly Buffer[];
   addressLength: number;
   policyId: string;
+  /** A real inline datum, lifted from the corpus rather than invented. */
+  datumTemplate: NonNullable<DecodedOutput["datum"]>;
+  /** A real script reference, same source. */
+  scriptRefTemplate: NonNullable<DecodedOutput["script_ref"]>;
+  /** One encoded redeemer, `[tag, index, data, [mem, steps]]`. */
+  redeemerPreimage: Buffer;
 };
 
 export type ShapedOutput = {
@@ -72,6 +82,25 @@ export function loadCorpus(path: string = CORPUS): CorpusParts {
     full.body.spendInputsPreimageCbor,
   );
   const outputTemplate = decodeMidgardTxOutput(outputs[0]);
+
+  const withDatum = decodeMidgardNativeByteListPreimage(
+    decodeMidgardNativeTxFullFromCanonicalCbor(
+      Buffer.from(corpus.entries[DATUM_ENTRY].canonicalTxHex, "hex"),
+    ).body.outputsPreimageCbor,
+  )
+    .map((o) => decodeMidgardTxOutput(o))
+    .find((o) => o.datum !== undefined);
+  const withScriptRef = decodeMidgardNativeByteListPreimage(
+    decodeMidgardNativeTxFullFromCanonicalCbor(
+      Buffer.from(corpus.entries[SCRIPT_REF_ENTRY].canonicalTxHex, "hex"),
+    ).body.outputsPreimageCbor,
+  )
+    .map((o) => decodeMidgardTxOutput(o))
+    .find((o) => o.script_ref !== undefined);
+  if (!withDatum?.datum || !withScriptRef?.script_ref) {
+    throw new Error("corpus lost its datum or script-reference entry");
+  }
+
   return {
     version: full.version,
     validity: full.validity,
@@ -81,6 +110,14 @@ export function loadCorpus(path: string = CORPUS): CorpusParts {
     inputTemplates: inputs.map((i) => Buffer.from(i)),
     addressLength: Buffer.from(outputTemplate.address).length,
     policyId: corpus.policyId,
+    datumTemplate: withDatum.datum,
+    scriptRefTemplate: withScriptRef.script_ref,
+    // `[tag, index, data, [mem, steps]]`, the shape `decode/transaction.ts:119`
+    // documents. No corpus entry carries one, so this is built and then read
+    // back by the explorer's own decoder in the tests.
+    redeemerPreimage: Buffer.from(
+      encodeCbor([Buffer.from(encodeCbor([0, 0, 42, [1_000_000, 500_000_000]]))]),
+    ),
   };
 }
 
@@ -126,10 +163,16 @@ export function outrefOf(txId: Uint8Array, index: number): Buffer {
 export type OutputSpec = {
   addressId: number;
   lovelace: bigint;
-  /** Asset ids to attach. Grouped into policies by `NAMES_PER_POLICY`. */
-  assetIds?: readonly number[];
-  /** Quantity per asset id, defaulting to one. */
-  quantityOf?: (assetId: number) => bigint;
+  /**
+   * Asset id to quantity. A Map rather than a list, so an output holding the
+   * same asset from two inputs carries one entry with the summed quantity,
+   * which is what conservation has to be checked against.
+   */
+  assets?: ReadonlyMap<number, bigint>;
+  /** Attach the corpus inline datum. */
+  datum?: boolean;
+  /** Attach the corpus script reference. */
+  scriptRef?: boolean;
 };
 
 /** One encoded output at the address, value and assets given. */
@@ -140,10 +183,10 @@ export function makeOutput(parts: CorpusParts, spec: OutputSpec): ShapedOutput {
   // under JSON.stringify, so this shape is invisible when inspecting a decoded
   // output rather than encoding one.
   const assets = new Map<string, Map<string, bigint>>();
-  for (const id of spec.assetIds ?? []) {
+  for (const [id, quantity] of spec.assets ?? new Map<number, bigint>()) {
     const policy = policyFor(parts, Math.floor(id / NAMES_PER_POLICY));
     const names = assets.get(policy) ?? new Map<string, bigint>();
-    names.set(assetNameFor(id), spec.quantityOf?.(id) ?? 1n);
+    names.set(assetNameFor(id), quantity);
     assets.set(policy, names);
   }
   const output = Buffer.from(
@@ -151,6 +194,8 @@ export function makeOutput(parts: CorpusParts, spec: OutputSpec): ShapedOutput {
       ...parts.outputTemplate,
       address: addressBytes,
       value: { lovelace: spec.lovelace, assets },
+      datum: spec.datum === true ? parts.datumTemplate : undefined,
+      script_ref: spec.scriptRef === true ? parts.scriptRefTemplate : undefined,
     }),
   );
   return {
@@ -174,6 +219,7 @@ function assemble(
   inputs: readonly Buffer[],
   outputs: readonly ShapedOutput[],
   fee: bigint,
+  withRedeemers = false,
 ): ShapedTx {
   const seen = new Set(inputs.map((i) => i.toString("hex")));
   if (seen.size !== inputs.length) {
@@ -183,7 +229,12 @@ function assemble(
     encodeMidgardNativeTxCanonical({
       version: parts.version,
       validity: parts.validity,
-      witnessSet: parts.witnessSet,
+      witnessSet: withRedeemers
+        ? {
+            ...parts.witnessSet,
+            redeemerTxWitsPreimageCbor: parts.redeemerPreimage,
+          }
+        : parts.witnessSet,
       body: {
         ...parts.body,
         fee,
@@ -206,8 +257,9 @@ export function buildTx(
   inputs: readonly Buffer[],
   outputs: readonly ShapedOutput[],
   fee: bigint,
+  withRedeemers = false,
 ): ShapedTx {
-  return assemble(parts, inputs, outputs, fee);
+  return assemble(parts, inputs, outputs, fee, withRedeemers);
 }
 
 /**

@@ -1,4 +1,5 @@
-import { rng } from "./random.mjs";
+import type { Shape } from "./profiles.mjs";
+import { rng, sampleCount } from "./random.mjs";
 import {
   buildTx,
   makeOutput,
@@ -49,7 +50,15 @@ export type Utxo = {
   addressId: number;
   address: string;
   lovelace: bigint;
-  assetIds: readonly number[];
+  /**
+   * Asset id to quantity. A Map, not a list: an output funded by two inputs
+   * that both held asset 7 carries one entry with the summed quantity, and
+   * conservation is checked against those sums rather than against occurrence
+   * counts.
+   */
+  assets: ReadonlyMap<number, bigint>;
+  hasDatum: boolean;
+  hasScriptRef: boolean;
   output: Buffer;
 };
 
@@ -61,6 +70,21 @@ export type LedgerOptions = {
   assets: number;
   genesisUtxos: number;
   genesisLovelace: bigint;
+  /** Distinct assets placed on one output. Realized at genesis and preserved. */
+  assetsPerOutput?: Shape;
+  /** Quantity per asset position. */
+  assetQuantity?: Shape;
+  /**
+   * Zipf exponent for which asset an id draw lands on. Concentrates holdings on
+   * a minority of assets, which is what the asset roster actually meets.
+   */
+  assetHolderSkew?: number;
+  /** Share of outputs carrying an inline datum. */
+  datumRate?: number;
+  /** Share of outputs carrying a script reference. */
+  scriptRefRate?: number;
+  /** Share of transactions carrying redeemers. */
+  redeemerRate?: number;
   /**
    * Zipf exponent for address selection. Above zero concentrates activity on a
    * minority of addresses, which is what `address-history` actually meets.
@@ -72,7 +96,6 @@ export type LedgerOptions = {
 export type SpendSpec = {
   inputs: number;
   outputs: number;
-  assetsPerOutput: number;
 };
 
 export type SpendResult = {
@@ -80,6 +103,7 @@ export type SpendResult = {
   spent: readonly Utxo[];
   created: readonly Utxo[];
   fee: bigint;
+  withRedeemers: boolean;
 };
 
 export type Ledger = {
@@ -115,6 +139,12 @@ export function createLedger(parts: CorpusParts, options: LedgerOptions): Ledger
   const next = rng(options.seed);
   const fee = options.fee ?? FEE;
   const pickAddress = zipf(options.addresses, options.addressSkew ?? 1.1);
+  const pickAsset = zipf(options.assets, options.assetHolderSkew ?? 1.1);
+  const assetsPerOutput = options.assetsPerOutput ?? { p50: 0, p95: 2, p99: 5, max: 20 };
+  const assetQuantity = options.assetQuantity ?? { p50: 1, p95: 1_000, p99: 100_000, max: 10_000_000 };
+  const datumRate = options.datumRate ?? 0;
+  const scriptRefRate = options.scriptRefRate ?? 0;
+  const redeemerRate = options.redeemerRate ?? 0;
   const unspent: Utxo[] = [];
   const seen = new Set<string>();
   const touches: number[] = [];
@@ -133,9 +163,17 @@ export function createLedger(parts: CorpusParts, options: LedgerOptions): Ledger
     index: number,
     addressId: number,
     lovelace: bigint,
-    assetIds: readonly number[],
+    assets: ReadonlyMap<number, bigint>,
+    hasDatum: boolean,
+    hasScriptRef: boolean,
   ): Utxo => {
-    const shaped = makeOutput(parts, { addressId, lovelace, assetIds });
+    const shaped = makeOutput(parts, {
+      addressId,
+      lovelace,
+      assets,
+      datum: hasDatum,
+      scriptRef: hasScriptRef,
+    });
     return {
       outref: outrefOf(txId, index),
       txId,
@@ -143,9 +181,24 @@ export function createLedger(parts: CorpusParts, options: LedgerOptions): Ledger
       addressId,
       address: shaped.address,
       lovelace,
-      assetIds,
+      assets,
+      hasDatum,
+      hasScriptRef,
       output: Buffer.from(shaped.output),
     };
+  };
+
+  /** Assets for one genesis output: a skewed draw of ids, each with a quantity. */
+  const drawAssets = (): Map<number, bigint> => {
+    const holdings = new Map<number, bigint>();
+    if (options.assets <= 0) return holdings;
+    const wanted = sampleCount(next(), assetsPerOutput);
+    for (let i = 0; i < wanted; i += 1) {
+      const id = pickAsset(next());
+      const quantity = BigInt(Math.max(1, sampleCount(next(), assetQuantity)));
+      holdings.set(id, (holdings.get(id) ?? 0n) + quantity);
+    }
+    return holdings;
   };
 
   // Genesis. One synthetic transaction id per output keeps the outrefs distinct
@@ -154,11 +207,17 @@ export function createLedger(parts: CorpusParts, options: LedgerOptions): Ledger
   for (let i = 0; i < options.genesisUtxos; i += 1) {
     const txId = Buffer.alloc(32);
     txId.writeUInt32BE(i + 1, 28);
-    const assetIds =
-      options.assets > 0 && i % 3 === 0 ? [i % options.assets] : [];
     genesisUtxos.push(
       record(
-        utxoFrom(txId, 0, pickAddress(next()), options.genesisLovelace, assetIds),
+        utxoFrom(
+          txId,
+          0,
+          pickAddress(next()),
+          options.genesisLovelace,
+          drawAssets(),
+          next() < datumRate,
+          next() < scriptRefRate,
+        ),
       ),
     );
   }
@@ -186,21 +245,37 @@ export function createLedger(parts: CorpusParts, options: LedgerOptions): Ledger
     const affordable = Number(spendable / MIN_OUTPUT_LOVELACE);
     const count = Math.max(1, Math.min(spec.outputs, affordable));
 
-    // Assets move; they are never created. Every asset held by an input lands
-    // on exactly one output, spread round robin.
-    const incoming = spent.flatMap((u) => [...u.assetIds]);
-    const perOutput: number[][] = Array.from({ length: count }, () => []);
-    incoming.forEach((id, i) => perOutput[i % count].push(id));
+    // Assets move; they are never created. Every unit an input held lands on
+    // exactly one output. Positions are spread round robin, and a repeated
+    // asset id sums rather than appearing twice, because a Map key is unique
+    // and the ledger tables would collapse it anyway.
+    const incoming: [number, bigint][] = [];
+    for (const utxo of spent) {
+      for (const [id, quantity] of utxo.assets) incoming.push([id, quantity]);
+    }
+    const perOutput: Map<number, bigint>[] = Array.from(
+      { length: count },
+      () => new Map<number, bigint>(),
+    );
+    incoming.forEach(([id, quantity], i) => {
+      const slot = perOutput[i % count];
+      slot.set(id, (slot.get(id) ?? 0n) + quantity);
+    });
 
     const each = spendable / BigInt(count);
     const remainder = spendable - each * BigInt(count);
 
     const addressIds = Array.from({ length: count }, () => pickAddress(next()));
+    const datums = Array.from({ length: count }, () => next() < datumRate);
+    const scriptRefs = Array.from({ length: count }, () => next() < scriptRefRate);
+    const withRedeemers = next() < redeemerRate;
     const outputs = addressIds.map((addressId, i) =>
       makeOutput(parts, {
         addressId,
         lovelace: i === 0 ? each + remainder : each,
-        assetIds: perOutput[i],
+        assets: perOutput[i],
+        datum: datums[i],
+        scriptRef: scriptRefs[i],
       }),
     );
     const tx = buildTx(
@@ -208,6 +283,7 @@ export function createLedger(parts: CorpusParts, options: LedgerOptions): Ledger
       spent.map((u) => u.outref),
       outputs,
       fee,
+      withRedeemers,
     );
 
     const created = outputs.map((shaped, i) =>
@@ -218,11 +294,13 @@ export function createLedger(parts: CorpusParts, options: LedgerOptions): Ledger
         addressId: addressIds[i],
         address: shaped.address,
         lovelace: i === 0 ? each + remainder : each,
-        assetIds: perOutput[i],
+        assets: perOutput[i],
+        hasDatum: datums[i],
+        hasScriptRef: scriptRefs[i],
         output: Buffer.from(shaped.output),
       }),
     );
-    return { tx, spent, created, fee };
+    return { tx, spent, created, fee, withRedeemers };
   };
 
   return {

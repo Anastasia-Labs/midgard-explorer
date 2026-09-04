@@ -22,6 +22,12 @@ const ledgerFor = (seed = 1) =>
     assets: 40,
     genesisUtxos: 300,
     genesisLovelace: 5_000_000_000n,
+    assetsPerOutput: { p50: 0, p95: 2, p99: 5, max: 20 },
+    assetQuantity: { p50: 1, p95: 1_000, p99: 100_000, max: 10_000_000 },
+    assetHolderSkew: 1.2,
+    datumRate: 0.15,
+    scriptRefRate: 0.05,
+    redeemerRate: 0.2,
   });
 
 describe("createLedger", () => {
@@ -35,7 +41,7 @@ describe("createLedger", () => {
     const ledger = ledgerFor();
     let produced = 300;
     for (let i = 0; i < 200; i += 1) {
-      const step = ledger.spend({ inputs: 2, outputs: 3, assetsPerOutput: 1 });
+      const step = ledger.spend({ inputs: 2, outputs: 3 });
       if (step) produced += step.created.length;
     }
     expect(ledger.seenOutrefs().size).toBe(produced);
@@ -45,7 +51,7 @@ describe("createLedger", () => {
     const ledger = ledgerFor();
     const spent = new Set<string>();
     for (let i = 0; i < 200; i += 1) {
-      const step = ledger.spend({ inputs: 3, outputs: 2, assetsPerOutput: 0 });
+      const step = ledger.spend({ inputs: 3, outputs: 2 });
       if (!step) continue;
       for (const utxo of step.spent) {
         const key = utxo.outref.toString("hex");
@@ -59,7 +65,7 @@ describe("createLedger", () => {
   it("conserves lovelace exactly: inputs equal outputs plus fee", () => {
     const ledger = ledgerFor();
     for (let i = 0; i < 150; i += 1) {
-      const step = ledger.spend({ inputs: 2, outputs: 4, assetsPerOutput: 0 });
+      const step = ledger.spend({ inputs: 2, outputs: 4 });
       if (!step) continue;
       const into = step.spent.reduce((t, u) => t + u.lovelace, 0n);
       const outOf = step.created.reduce((t, u) => t + u.lovelace, 0n);
@@ -73,22 +79,26 @@ describe("createLedger", () => {
     // genesis and only move afterwards.
     const ledger = ledgerFor();
     for (let i = 0; i < 150; i += 1) {
-      const step = ledger.spend({ inputs: 3, outputs: 2, assetsPerOutput: 2 });
+      const step = ledger.spend({ inputs: 3, outputs: 2 });
       if (!step) continue;
-      const count = (list: readonly { assetIds: readonly number[] }[]) => {
-        const tally = new Map<number, number>();
+      // Quantities, not occurrence counts. An asset held by two inputs must
+      // arrive as one summed entry, and a tally of ids would call that equal
+      // while the amounts had halved.
+      const total = (list: readonly { assets: ReadonlyMap<number, bigint> }[]) => {
+        const tally = new Map<number, bigint>();
         for (const u of list) {
-          for (const id of u.assetIds) tally.set(id, (tally.get(id) ?? 0) + 1);
+          for (const [id, q] of u.assets) tally.set(id, (tally.get(id) ?? 0n) + q);
         }
         return tally;
       };
+      const count = total;
       expect(count(step.created)).toEqual(count(step.spent));
     }
   });
 
   it("spends only outputs that exist, and the transaction says so", () => {
     const ledger = ledgerFor();
-    const step = ledger.spend({ inputs: 3, outputs: 2, assetsPerOutput: 0 });
+    const step = ledger.spend({ inputs: 3, outputs: 2 });
     expect(step).not.toBeNull();
     const full = decodeMidgardNativeTxFullFromCanonicalCbor(Buffer.from(step!.tx.bytes));
     const written = decodeMidgardNativeByteListPreimage(full.body.spendInputsPreimageCbor)
@@ -106,7 +116,7 @@ describe("createLedger", () => {
       genesisLovelace: 2_000_000n,
     });
     // 400 outputs cannot each clear the minimum from two small inputs.
-    const step = poor.spend({ inputs: 2, outputs: 400, assetsPerOutput: 0 });
+    const step = poor.spend({ inputs: 2, outputs: 400 });
     if (step) {
       expect(step.created.length).toBeLessThan(400);
       for (const u of step.created) expect(u.lovelace).toBeGreaterThan(0n);
@@ -117,8 +127,8 @@ describe("createLedger", () => {
     const a = ledgerFor(9);
     const b = ledgerFor(9);
     for (let i = 0; i < 40; i += 1) {
-      const x = a.spend({ inputs: 2, outputs: 2, assetsPerOutput: 1 });
-      const y = b.spend({ inputs: 2, outputs: 2, assetsPerOutput: 1 });
+      const x = a.spend({ inputs: 2, outputs: 2 });
+      const y = b.spend({ inputs: 2, outputs: 2 });
       expect(Buffer.from(x!.tx.bytes)).toEqual(Buffer.from(y!.tx.bytes));
     }
   });
@@ -135,7 +145,7 @@ describe("createLedger", () => {
       genesisLovelace: 5_000_000_000n,
     });
     for (let i = 0; i < 500; i += 1) {
-      ledger.spend({ inputs: 2, outputs: 3, assetsPerOutput: 0 });
+      ledger.spend({ inputs: 2, outputs: 3 });
     }
     const perAddress = new Map<number, number>();
     for (const id of ledger.addressTouches()) {
