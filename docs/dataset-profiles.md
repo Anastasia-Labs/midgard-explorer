@@ -31,6 +31,7 @@ These are correctness properties, not size knobs. A generator that violates one 
 | I8 | Transaction bytes are **codec-produced and codec-readable** | Preserves the existing property that a seed cannot describe a transaction the decoder would reject |
 | I9 | Foreign keys resolve; no orphan members | Cascade relationships are real in the schema |
 | I10 | Generation is **deterministic**: same profile, same bytes | A baseline that cannot be reproduced is not a baseline |
+| I11 | **Excluded from coverage does not mean excluded from seeding.** Every `NOT NULL` column without a default must be filled, whatever its coverage verdict | Found 2026-09-04: `pending_block_finalizations` has **28** such columns, including `state_queue_lease_token`, which `coverage-scope.md` marks `exclude` under D6. A generator that seeds only adopted columns cannot insert a single row |
 
 ## Profiles
 
@@ -98,6 +99,7 @@ Consequence, carried into the register per D16: a budget measured on `target` is
 - `ANALYZE` after load. Without it the planner works from empty-table statistics and every plan captured is fiction.
 - Record with each dataset: PostgreSQL version, `work_mem`, `shared_buffers`, `effective_cache_size`, CPU count, RAM, and the index snapshot checksum.
 - The `stress` seed belongs to a benchmark suite, never the unit suite.
+- Seed every `NOT NULL`-without-default column (I11). For a column the coverage scope excludes, a deterministic placeholder is correct: it is never read, and its only job is to satisfy the constraint. For a column the scope adopts, a placeholder is forbidden (I7).
 
 ## Open questions for approval
 
