@@ -9,7 +9,11 @@ import type { Workload } from "../bench/workloads.mjs";
  */
 
 const stats = (over: Partial<Stats> = {}): Stats => ({
-  count: 100,
+  // Above MIN_SAMPLES_FOR_P99: below it a p99 budget is UNMEASURED, because a
+  // nearest-rank p99 over a hundred samples is the second-largest observation
+  // rather than a percentile. These cases are about the budgets, not that rule.
+  count: 1_000,
+  successCount: 1_000,
   p50Ms: 50,
   p95Ms: 100,
   p99Ms: 150,

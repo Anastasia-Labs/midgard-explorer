@@ -24,7 +24,17 @@ export type Sample = {
 };
 
 export type Stats = {
+  /** Requests issued, including the ones that failed. Rates divide by this. */
   count: number;
+  /**
+   * Requests that returned a usable response.
+   *
+   * Latency percentiles are taken from these alone. A timeout contributes its
+   * whole ceiling to the sample and an error returns almost instantly, so a
+   * population mixing them describes neither the route's speed nor its
+   * failures. `errorRate` and `timeoutRate` carry the failures instead.
+   */
+  successCount: number;
   p50Ms: number;
   p95Ms: number;
   p99Ms: number;
@@ -131,12 +141,15 @@ export function summarise(
   elapsedMs: number,
   uncompressedBytes: number,
 ): Stats {
-  const latencies = samples.map((s) => s.ms);
   const errors = samples.filter((s) => s.timedOut === false && (s.status < 200 || s.status >= 400));
   const timeouts = samples.filter((s) => s.timedOut);
-  const ok = samples.filter((s) => s.status >= 200 && s.status < 400);
+  // One definition of success, used for the latency population and the payload
+  // alike, rather than two that disagree at the edges.
+  const ok = samples.filter((s) => !s.timedOut && s.status >= 200 && s.status < 400);
+  const latencies = ok.map((s) => s.ms);
   return {
     count: samples.length,
+    successCount: ok.length,
     p50Ms: percentileOf(latencies, 0.5),
     p95Ms: percentileOf(latencies, 0.95),
     p99Ms: percentileOf(latencies, 0.99),

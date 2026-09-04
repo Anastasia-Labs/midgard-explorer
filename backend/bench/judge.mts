@@ -14,6 +14,13 @@ import type { Workload } from "./workloads.mjs";
  * The second: a warm-cache run may not settle a database budget. Every `/api/`
  * route carries a five-second response cache, so a repeated path measures the
  * cache; a statement count taken from it describes the cache's zero work.
+ *
+ * The third: a tail percentile needs enough samples to be a percentile. The
+ * percentile is nearest-rank, so at 40 samples `ceil(0.99 * 40) - 1` is index
+ * 39, the largest observation. Every "p99" in the first `target` run was the
+ * maximum wearing a percentile's name, and a single slow request decided it.
+ * The count that matters is successful responses, not attempts: a route that
+ * failed 900 of 1,000 requests has 100 latencies, however many it issued.
  */
 
 export type Verdict = "PASS" | "FAIL" | "UNMEASURED";
@@ -28,6 +35,15 @@ export type Judgement = {
   stats: Stats;
   dbWork: DbWork;
 };
+
+/**
+ * Successful samples required before a p99 verdict is recorded.
+ *
+ * At 1,000 the nearest-rank p99 is index `ceil(0.99 * 1000) - 1 = 989`, the
+ * 11th-largest observation, so no single outlier can set it. Below this the
+ * budget is `UNMEASURED`: not a pass, and not a failure either.
+ */
+export const MIN_SAMPLES_FOR_P99 = 1_000;
 
 export type JudgeInput = {
   workload: Workload;
@@ -56,7 +72,17 @@ export function judge(input: JudgeInput): Judgement {
   };
 
   check("p95", stats.p95Ms, budget.p95Ms, "ms");
-  check("p99", stats.p99Ms, budget.p99Ms, "ms");
+  if (budget.p99Ms !== undefined) {
+    if (stats.successCount < MIN_SAMPLES_FOR_P99) {
+      unmeasured.push(
+        `p99: ${stats.successCount} successful samples is under ` +
+          `${MIN_SAMPLES_FOR_P99}, so the nearest-rank p99 rests on too few ` +
+          `observations to be a percentile`,
+      );
+    } else {
+      check("p99", stats.p99Ms, budget.p99Ms, "ms");
+    }
+  }
   check("error rate", stats.errorRate, budget.maxErrorRate, "rate");
   check("timeout rate", stats.timeoutRate, budget.maxTimeoutRate, "rate");
   check("wire bytes", stats.wireBytes, budget.maxWireBytes, "bytes");

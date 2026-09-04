@@ -125,3 +125,42 @@ describe("runRequests", () => {
     expect(stats.errorRate).toBe(1);
   });
 });
+
+describe("the latency population is successes only", () => {
+  const sample = (ms: number, status: number, timedOut = false) => ({
+    ms, status, timedOut, wireBytes: 100,
+  });
+
+  it("excludes errors and timeouts, so a fast 500 cannot flatter a percentile", () => {
+    // Nine real 100 ms responses plus a 1 ms error. Including the error would
+    // drag the median down and report a route as faster than it ever was.
+    const withError = summarise(
+      [...Array.from({ length: 9 }, () => sample(100, 200)), sample(1, 500)],
+      1_000,
+      0,
+    );
+    expect(withError.count).toBe(10);
+    expect(withError.successCount).toBe(9);
+    expect(withError.p50Ms).toBe(100);
+    // The rate still carries the failure; only the latency population drops it.
+    expect(withError.errorRate).toBeCloseTo(0.1, 5);
+  });
+
+  it("excludes a timeout, whose ceiling is not a measurement of the route", () => {
+    const withTimeout = summarise(
+      [...Array.from({ length: 9 }, () => sample(100, 200)), sample(30_000, 0, true)],
+      1_000,
+      0,
+    );
+    expect(withTimeout.successCount).toBe(9);
+    expect(withTimeout.maxMs).toBe(100);
+    expect(withTimeout.timeoutRate).toBeCloseTo(0.1, 5);
+  });
+
+  it("reports no latency at all when nothing succeeded", () => {
+    const none = summarise([sample(1, 503), sample(2, 503)], 100, 0);
+    expect(none.successCount).toBe(0);
+    expect(none.p95Ms).toBe(0);
+    expect(none.errorRate).toBe(1);
+  });
+});
