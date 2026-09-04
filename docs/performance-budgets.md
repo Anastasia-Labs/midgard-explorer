@@ -1,6 +1,6 @@
 # Performance budget register
 
-**STATUS: TARGETS APPROVED, PENDING BASELINE.** Approved 2026-09-04. Every row now awaits a measurement, not a decision. `DISCOVERY` rows carry no target and cannot pass or fail. Rows marked `INSUFFICIENT` lack the sample size to resolve their target and report that rather than passing.
+**STATUS: LATENCY, RESOURCE AND CI TARGETS APPROVED, PENDING BASELINE. CODEBASE-HEALTH TARGETS PENDING APPROVAL.** The first three were approved 2026-09-04 and await a measurement, not a decision. The codebase-health table was written later and awaits a decision, so none of its rows is a gate yet. `DISCOVERY` rows carry no target and cannot pass or fail. Rows marked `INSUFFICIENT` lack the sample size to resolve their target and report that rather than passing.
 
 Generated alongside `backend/bench/workloads.mts`, which is the machine-readable form. The test `backend/test/bench-workloads.test.mts` fails if a workload here has no catalogue entry, or vice versa.
 
@@ -93,15 +93,19 @@ The wall-time median is a real observation from `gh run list`, over 10 runs, whi
 
 The five dimensions of the original assessment that no latency, resource or CI row measures. Without these the register could read all-`PASS` while dead weight, duplication and change cost sit where they are today.
 
-| Budget | Measured baseline | Target (approved) | Owner | Verification command | Status |
+**These targets are PROPOSED, not approved.** Every other table in this document carries numbers the owner approved on 2026-09-04. These were written on 2026-09-04 in the same pass that added the table, and no ruling has been made on them. They are starting points for that ruling, and **no row here may be cited as a gate until it is approved**. Resolve before `BASELINES`.
+
+| Budget | Measured baseline | Target (PROPOSED) | Owner | Verification command | Status |
 |---|---|---|---|---|---|
-| Frontend route JS, first load | not measured | ≤180 KB gzipped per route, ≤120 KB shared chunk | explorer | `next build` route table | PENDING BASELINE |
-| Backend test suite wall time | not measured | ≤120 s for the non-DB suite | explorer | `pnpm vitest run --reporter=basic` | PENDING BASELINE |
-| Backend test suite flakiness | one unexplained serial failure, cause unknown | 0 failures in 50 consecutive runs | explorer | `CI-ISOLATION` | PENDING BASELINE |
-| Dead weight retirement | 47 tracked files under `frontend/`, unretired | **every** dead or legacy artifact carries an explicit decision: retire, archive, or keep with a stated reason. Zero undecided | explorer | inventory in `LEGACY-RETIREMENT`, one row per artifact | PENDING BASELINE |
-| Duplication | not measured | no block over 40 lines duplicated 3 or more times; every remaining duplicate carries a stated reason | explorer | `jscpd` over `backend/src` and `frontend-new` | PENDING BASELINE |
-| Change complexity | not measured | the 10 highest-churn files each under 400 lines and one clear responsibility; no file over 800 lines without a stated reason | explorer | `git log --numstat` churn ranking crossed with line counts | PENDING BASELINE |
-| Fixture representativeness | not measured | every fixture response validates against its contract, and the fixture set covers every route the demo server serves plus the empty, truncated and error cases for each | explorer | fixture build, which fails on a contract violation | PENDING BASELINE |
+| Frontend route JS, first load | not measured | ≤180 KB gzipped per route, ≤120 KB shared chunk | explorer | `next build` route table | PENDING APPROVAL |
+| **Frontend test suite wall time** | **468 tests in 82 s: 46.9 s environment, 11 s execution, so 86% is overhead** | ≤30 s | explorer | `pnpm vitest run` in `frontend-new/app` | PENDING APPROVAL |
+| **Frontend test suite overhead share** | **86%** | ≤40% | explorer | same, environment plus setup over total | PENDING APPROVAL |
+| Backend test suite wall time | not measured | ≤120 s for the non-DB suite | explorer | `pnpm vitest run --reporter=basic` | PENDING APPROVAL |
+| Backend test suite flakiness | one unexplained serial failure, cause unknown | 0 failures in 50 consecutive runs | explorer | `CI-ISOLATION` | PENDING APPROVAL |
+| Dead weight retirement | 47 tracked files under `frontend/`, unretired | **every** dead or legacy artifact carries an explicit decision: retire, archive, or keep with a stated reason. Zero undecided | explorer | inventory in `LEGACY-RETIREMENT`, one row per artifact | PENDING APPROVAL |
+| Duplication | not measured | no block over 40 lines duplicated 3 or more times; every remaining duplicate carries a stated reason | explorer | `jscpd` over `backend/src` and `frontend-new` | PENDING APPROVAL |
+| Change complexity | not measured | the 10 highest-churn files each under 400 lines and one clear responsibility; no file over 800 lines without a stated reason | explorer | `git log --numstat` churn ranking crossed with line counts | PENDING APPROVAL |
+| Fixture representativeness | not measured | every fixture response validates against its contract, and the fixture set covers every route the demo server serves plus the empty, truncated and error cases for each | explorer | fixture build, which fails on a contract violation | PENDING APPROVAL |
 
 **Dead weight, duplication and change complexity are gates, not observations.** A retirement decision may be "keep it", but there is no such thing as an artifact with no decision. That is the whole failure mode: an undecided artifact reads as a pass because nobody wrote down that it fails.
 
@@ -112,6 +116,7 @@ Targets were approved on 2026-09-04. Rows move through these states and no other
 | State | Meaning |
 |---|---|
 | `PENDING BASELINE` | Target approved, no measurement yet. Every latency, resource and CI row is here |
+| `PENDING APPROVAL` | Target **proposed and not approved**. Cannot be cited as a gate. Every codebase-health row is here |
 | `DISCOVERY` | No target by decision. Exists to produce one. Cannot pass or fail, and is excluded from the 10/10 criterion |
 | `INSUFFICIENT` | Measured, but the sample cannot resolve the target. Reports this rather than passing |
 | `UNMEASURABLE` | Current data volume cannot exercise the target. Reports this rather than passing |
