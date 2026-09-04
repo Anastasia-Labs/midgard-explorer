@@ -51,13 +51,47 @@ export type JudgeInput = {
   dbWork: DbWork;
   /** False when `pg_stat_statements` is absent. Every database budget is then unmeasured. */
   dbProbeAvailable: boolean;
+  /** Distinct URLs issued. For `unique-key`, fewer than `requested` means repeats. */
+  distinctPaths?: number;
+  /** Requests issued. */
+  requested?: number;
 };
 
 export function judge(input: JudgeInput): Judgement {
-  const { workload, stats, dbWork, dbProbeAvailable } = input;
+  const { workload, stats, dbWork, dbProbeAvailable, distinctPaths, requested } = input;
   const budget = workload.budget;
   const breaches: string[] = [];
   const unmeasured: string[] = [];
+
+  // A repeated key is served by the five-second response cache, so the run
+  // measures the cache and not the route. At 1,000 requests against a pool of
+  // 50 this reported 5% of the real statement count and a p50 of under a
+  // millisecond, and three workloads turned from FAIL to PASS on it. Nothing
+  // here is judged unless every measured request had its own key.
+  const uninstrumented =
+    workload.cacheMode === "unique-key" &&
+    (distinctPaths === undefined || requested === undefined);
+  const repeats =
+    workload.cacheMode === "unique-key" &&
+    distinctPaths !== undefined &&
+    requested !== undefined &&
+    distinctPaths < requested;
+  // Fail closed. A caller that does not report what it issued has not shown the
+  // keys were distinct, and treating silence as "no repeats" would restore the
+  // false green by omission rather than by contamination.
+  if (uninstrumented) {
+    unmeasured.push(
+      "cache keys: the run did not report how many distinct paths it issued, " +
+        "so nothing here is known to have missed the response cache",
+    );
+  }
+  if (repeats) {
+    unmeasured.push(
+      `cache keys: ${distinctPaths} distinct paths for ${requested} requests, ` +
+        `so the repeats measure the response cache rather than the route`,
+    );
+  }
+  const unjudgeable = uninstrumented || repeats;
 
   const check = (
     name: string,
@@ -71,8 +105,8 @@ export function judge(input: JudgeInput): Judgement {
     }
   };
 
-  check("p95", stats.p95Ms, budget.p95Ms, "ms");
-  if (budget.p99Ms !== undefined) {
+  if (!unjudgeable) check("p95", stats.p95Ms, budget.p95Ms, "ms");
+  if (!unjudgeable && budget.p99Ms !== undefined) {
     if (stats.successCount < MIN_SAMPLES_FOR_P99) {
       unmeasured.push(
         `p99: ${stats.successCount} successful samples is under ` +
@@ -102,6 +136,10 @@ export function judge(input: JudgeInput): Judgement {
     if (!dbProbeAvailable) {
       // Zero from an absent probe satisfies any ceiling. Refused explicitly.
       unmeasured.push(`${name}: pg_stat_statements unavailable, so zero is not a pass`);
+      continue;
+    }
+    if (unjudgeable) {
+      unmeasured.push(`${name}: the cache keys were repeated or unreported`);
       continue;
     }
     if (workload.cacheMode === "warm") {

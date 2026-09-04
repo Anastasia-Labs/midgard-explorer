@@ -78,17 +78,28 @@ export async function resolveSeededIds(
   if (blocks.rowCount === 0 || txs.rowCount === 0 || addresses.rowCount === 0) {
     throw new Error("seeded database has no blocks, transactions or addresses");
   }
-  return Array.from({ length: size }, (_, i) => ({
-    blockHash: blocks.rows[i % blocks.rows.length].h,
-    txId: txs.rows[i % txs.rows.length].t,
-    address: addresses.rows[i % addresses.rows.length].a,
-    // Deep enough to be a real page, bounded by what was seeded.
-    page: 1 + (i % Math.max(1, Math.min(100, Math.floor(blocks.rows.length / 2)))),
+  // As many entries as the scarcest column can fill WITHOUT repeating. The old
+  // form padded to `size` with modulo, so a pool of 50 served 1,000 requests by
+  // cycling twenty times. Only the first pass missed the five-second response
+  // cache, so 95% of a `unique-key` run measured cache hits and every statement
+  // count came out at exactly 5% of its true value. A short pool must be short,
+  // and visible as such, rather than quietly repeating.
+  const length = Math.min(size, blocks.rows.length, txs.rows.length, addresses.rows.length);
+  const pages = Math.max(1, Math.floor(blocks.rows.length / 2));
+  return Array.from({ length }, (_, i) => ({
+    blockHash: blocks.rows[i].h,
+    txId: txs.rows[i].t,
+    address: addresses.rows[i].a,
+    // Deep enough to be a real page, bounded by what was seeded. Pages repeat
+    // where the pool outruns them; only cache-bypassing workloads use this.
+    page: 1 + (i % pages),
   }));
 }
 
 export type SetupOptions = {
   profile: Profile;
+  /** Distinct ids to resolve. A `unique-key` run needs one per request. */
+  poolSize?: number;
   /** The dedicated benchmark server. Never the live node or index. */
   benchUrl: string;
   /** The live explorer index, read-only, cloned into the benchmark server. */
@@ -118,7 +129,7 @@ export async function setupBench(options: SetupOptions): Promise<BenchSetup> {
   });
   await seedDataset(nodeClient, dataset);
   const datasetChecksum = await checksum(nodeClient, [...LOAD_ORDER]);
-  const ids = await resolveSeededIds(nodeClient);
+  const ids = await resolveSeededIds(nodeClient, options.poolSize ?? 50);
 
   return {
     nodeDb,
@@ -303,6 +314,12 @@ export async function runWorkload(
     return `${server.base}${workload.buildPath(ids)}`;
   };
 
+  // Counted from the paths actually issued, so this cannot drift from what ran.
+  const distinctPaths =
+    workload.cacheMode === "unique-key"
+      ? new Set(Array.from({ length: iterations }, (_, i) => urlFor(i))).size
+      : iterations;
+
   if (workload.cacheMode === "warm") {
     // Prime, so the measured requests are the cached path this row is about.
     await runRequests(urlFor, 2, 1, timeoutMs);
@@ -340,6 +357,8 @@ export async function runWorkload(
     stats: summarise(samples, elapsedMs, identity),
     dbWork: perRequest,
     dbProbeAvailable: probe.available,
+    distinctPaths,
+    requested: iterations,
   });
 }
 
@@ -557,6 +576,9 @@ export async function runHarness(options: {
     profile,
     benchUrl: options.benchUrl,
     liveIndexUrl: options.liveIndexUrl,
+    // One distinct key per request, so a `unique-key` workload measures the
+    // route rather than the response cache serving a repeated key.
+    poolSize: options.run?.iterations ?? 40,
   });
   let server: ServerHandle | null = null;
   try {

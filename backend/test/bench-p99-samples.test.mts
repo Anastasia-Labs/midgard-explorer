@@ -60,3 +60,69 @@ describe("p99 needs enough samples", () => {
     expect(result.breaches.join(" ")).toMatch(/p99/);
   });
 });
+
+describe("a repeated cache key is not a measurement", () => {
+  const uniqueKey = WORKLOADS.find((w) => w.cacheMode === "unique-key")!;
+
+  it("refuses every budget when the pool repeated its keys", () => {
+    // The exact shape of the contaminated 1,000-iteration run: a pool of 50
+    // cycled twenty times, so 95% of requests were cache hits and the statement
+    // count came out at 5% of its true value.
+    const result = judge({
+      workload: uniqueKey,
+      stats: { ...statsOf(1_000, 1), p50Ms: 0.8, p95Ms: 7.4 },
+      dbWork: { statements: 0.95, sharedBlocks: 1, tempBytes: 0, execMs: 1 },
+      dbProbeAvailable: true,
+      distinctPaths: 50,
+      requested: 1_000,
+    });
+    expect(result.verdict).toBe("UNMEASURED");
+    expect(result.unmeasured.join(" ")).toMatch(/50 distinct paths for 1000 requests/);
+    // The point: a flattering number must not become a PASS.
+    expect(result.breaches).toEqual([]);
+    expect(result.unmeasured.join(" ")).toMatch(/repeated or unreported/);
+  });
+
+  it("judges normally when every request had its own key", () => {
+    const result = judge({
+      workload: uniqueKey,
+      stats: statsOf(1_000, 1),
+      dbWork: { statements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
+      dbProbeAvailable: true,
+      distinctPaths: 1_000,
+      requested: 1_000,
+    });
+    expect(result.unmeasured.join(" ")).not.toMatch(/cache keys/);
+  });
+});
+
+describe("missing cache-key instrumentation fails closed", () => {
+  const uniqueKey = WORKLOADS.find((w) => w.cacheMode === "unique-key")!;
+
+  it("refuses a unique-key judgement that never reported its distinct paths", () => {
+    // Silence is not evidence of distinct keys. Without this the false green
+    // returns by omission: drop the instrumentation and everything passes.
+    const result = judge({
+      workload: uniqueKey,
+      stats: statsOf(1_000, 1),
+      dbWork: { statements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
+      dbProbeAvailable: true,
+    });
+    expect(result.verdict).toBe("UNMEASURED");
+    expect(result.unmeasured.join(" ")).toMatch(/did not report how many distinct paths/);
+    expect(result.breaches).toEqual([]);
+  });
+
+  it("refuses when only one half of the instrumentation arrived", () => {
+    for (const partial of [{ distinctPaths: 1_000 }, { requested: 1_000 }]) {
+      const result = judge({
+        workload: uniqueKey,
+        stats: statsOf(1_000, 1),
+        dbWork: { statements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
+        dbProbeAvailable: true,
+        ...partial,
+      });
+      expect(result.verdict, JSON.stringify(partial)).toBe("UNMEASURED");
+    }
+  });
+});
