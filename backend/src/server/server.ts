@@ -11,6 +11,7 @@ import http from "http";
 import { bigintStringify } from "./helpers";
 import { prisma } from "../db";
 import { indexerPrisma } from "../indexer/db";
+import { configureBenchBypass } from "./cache";
 import { startSync, type SyncHandle } from "../indexer/sync";
 import { reportDatabaseIdentity } from "../db/identity";
 import { mountRateLimits, startRateLimitSweeper } from "./rateLimit";
@@ -19,6 +20,16 @@ import { resolveCorsOrigin, securityHeaders } from "./security";
 export const startServer = async () => {
   const app = express();
   const server = http.createServer(app);
+
+  // Off unless a token is configured, which production does not set. See the
+  // note in cache.ts: a bare header would let any client disable the caches
+  // that keep `/api/metrics` and `/api/assets` from amplifying request rate.
+  configureBenchBypass(config.BENCH_CACHE_BYPASS_TOKEN);
+  if (config.BENCH_CACHE_BYPASS_TOKEN) {
+    logger.warn(
+      "benchmark cache bypass is ENABLED; this must not be set in production",
+    );
+  }
 
   app.use(securityHeaders);
 

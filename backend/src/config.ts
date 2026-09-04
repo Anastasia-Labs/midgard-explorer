@@ -56,6 +56,16 @@ const shape = {
   DB_CONNECTION_TIMEOUT_MS: positive.default(5_000),
   DB_IDLE_TIMEOUT_MS: positive.default(30_000),
   DB_STATEMENT_TIMEOUT_MS: positive.default(10_000),
+  /**
+   * Enables the benchmark cache bypass when set. Absent in production, and the
+   * bypass then does not exist at all rather than being merely unused.
+   *
+   * A secret rather than a bare header: on a public deployment a header anyone
+   * could send would let any client disable the response cache and turn the
+   * request amplification these caches prevent into a denial of service. Short
+   * values are rejected for the same reason.
+   */
+  BENCH_CACHE_BYPASS_TOKEN: blank(z.string().min(16)),
   RESPONSE_CACHE_MAX_ENTRIES: positive.default(1_000),
   // Declared in the Config type and passed into the cache, but never parsed:
   // the `as Config` cast below hid the mismatch, so the value was `undefined`
