@@ -23,12 +23,12 @@ Defined in `backend/bench/profiles.mts` (built during `DATASETS`). Distributions
 | Profile | Blocks | Txs per block | Status mix | Timestamp collisions | Ledger UTxOs |
 |---|---:|---|---|---|---:|
 | `small` | 50 | 0 to 5, skewed | 100% `finalized`, no active row | none | 200 |
-| `target` | 5,000 | 1 to 60, long tail | 98% `finalized` / 2% `abandoned`, plus **exactly one** non-terminal row | ~5% share a `block_end_time` | **25,000** |
+| `target` | 5,000 | 1 to 60, long tail | 98% `finalized` / 2% `abandoned`, plus **exactly one** non-terminal row | ~5% share a `block_end_time` | **≥25,000** (measured 30,479) |
 | `stress` | 50,000 | long tail to 500 | same, one non-terminal row | ~5% | 200,000 |
 
 **There is no `failed` status**, and the non-terminal states are not a percentage. `uniq_pending_block_finalizations_single_active` is a unique index on a constant with a partial predicate, so the database holds at most one non-terminal row in total. An earlier draft of this table asked for 300 of them.
 
-**25,000 rather than 20,000 ledger UTxOs**: `getSpendableLedger` reports `truncated: total > rows.length` against `SCAN_LIMIT = 20_000`, so at exactly 20,000 the truncation path is never taken and `asset-roster` measures the easy case while appearing to measure the hard one.
+**A floor of 25,000 rather than exactly 20,000 ledger UTxOs**: `getSpendableLedger` reports `truncated: total > rows.length` against `SCAN_LIMIT = 20_000`, so at exactly 20,000 the truncation path is never taken and `asset-roster` measures the easy case while appearing to measure the hard one. The figure is a floor because the block count and the output shapes determine the actual size, which measures 30,479.
 
 The status mix and the transaction distributions are **documented engineering assumptions**, not observations: the live database holds 9 finalized blocks and 2 journaled transactions, which cannot yield a distribution. Ruled 2026-09-04: explorer engineering owns them, with mandatory recalibration once real persisted data can supply a distribution.
 
