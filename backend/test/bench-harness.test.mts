@@ -43,6 +43,27 @@ describe("baselineGate", () => {
     expect(baselineGate(healthy, clean)).toEqual([]);
   });
 
+  it("refuses a run in which a workload never succeeded", () => {
+    // The real `target` run this came from: the server died after the third
+    // workload, so nine of twelve answered every request in under a
+    // millisecond with a refused connection. The gate returned no warnings and
+    // the CLI exited 0, so a run that measured nothing was recordable as the
+    // measurement of record.
+    const dead: Judgement[] = [
+      {
+        ...clean[0],
+        workload: "metrics",
+        verdict: "FAIL",
+        breaches: ["error rate 100.00% over 0.00%"],
+        stats: { ...clean[0].stats, p95Ms: 0.64, errorRate: 1, wireBytes: 0 },
+        dbWork: { statements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
+      },
+    ];
+    const blocking = baselineGate(healthy, dead);
+    expect(blocking.join(" ")).toMatch(/metrics/);
+    expect(blocking.join(" ")).toMatch(/measured nothing/);
+  });
+
   it("refuses below 30 GB free, naming the headroom reason", () => {
     const blocking = baselineGate({ ...healthy, freeDiskBytes: 5.2 * GB }, clean);
     expect(blocking.join(" ")).toMatch(/30 GB free/);

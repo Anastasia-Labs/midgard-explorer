@@ -140,6 +140,10 @@ export async function setupBench(options: SetupOptions): Promise<BenchSetup> {
 export type ServerHandle = {
   base: string;
   bypassToken: string;
+  /** `null` while the process is alive, the exit code once it is not. */
+  exitCode: () => number | null;
+  /** Whatever the server printed. The reason a mid-run death is explainable. */
+  output: () => string;
   stop: () => Promise<void>;
 };
 
@@ -238,6 +242,8 @@ export async function startServer(
   return {
     base,
     bypassToken,
+    exitCode: () => child.exitCode,
+    output: failure,
     stop: async () => {
       child.kill("SIGTERM");
       await new Promise((resolve) => setTimeout(resolve, 300));
@@ -394,6 +400,15 @@ export function baselineGate(
     if (result.unmeasured.length > 0) {
       blocking.push(`${result.workload} has unmeasured budgets: ${result.unmeasured[0]}`);
     }
+    // Distinct from a failing budget. A workload where nothing succeeded
+    // measured nothing, and a FAIL verdict would misread it as "too slow"
+    // rather than "never ran". This gate previously passed such a run with no
+    // warnings at all.
+    if (result.stats.errorRate >= 1) {
+      blocking.push(
+        `${result.workload} produced no successful responses: the run measured nothing`,
+      );
+    }
   }
   return blocking;
 }
@@ -430,6 +445,18 @@ export async function runHarness(options: {
     const results: Judgement[] = [];
     for (const workload of selected) {
       results.push(await runWorkload(workload, setup, server, probe, options.run));
+      // A dead server answers every request in under a millisecond with a
+      // refused connection, which reads as a fast workload with a 100% error
+      // rate. Without this check a crash after the third workload produced nine
+      // more rows of numbers that described nothing, and the report gave no
+      // reason. Stop at the first one and carry the server's own output.
+      const code = server.exitCode();
+      if (code !== null) {
+        throw new Error(
+          `the server exited with ${code} during "${workload.name}". Results up ` +
+            `to that point are not a measurement:\n${server.output()}`,
+        );
+      }
     }
 
     const report: HarnessReport = {
