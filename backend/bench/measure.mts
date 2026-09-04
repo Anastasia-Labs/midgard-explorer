@@ -57,6 +57,7 @@ export async function timedRequest(
   url: string,
   timeoutMs: number,
   encoding: "gzip, br" | "identity" = "gzip, br",
+  extra?: { bypass: string },
 ): Promise<Sample> {
   const target = new URL(url);
   const send = target.protocol === "https:" ? httpsRequest : httpRequest;
@@ -72,7 +73,12 @@ export async function timedRequest(
 
     const req = send(
       target,
-      { headers: { "Accept-Encoding": encoding } },
+      {
+        headers: {
+          "Accept-Encoding": encoding,
+          ...(extra ? { "x-explorer-bench-bypass": extra.bypass } : {}),
+        },
+      },
       (res) => {
         let wireBytes = 0;
         // Counted per chunk, before any decoding. Nothing here decompresses.
@@ -151,6 +157,8 @@ export async function runRequests(
   total: number,
   concurrency: number,
   timeoutMs: number,
+  /** Set for a `cold` workload, so neither cache layer is read or written. */
+  extra?: { bypass: string },
 ): Promise<{ samples: Sample[]; elapsedMs: number }> {
   const samples: Sample[] = [];
   const started = performance.now();
@@ -160,7 +168,7 @@ export async function runRequests(
       const index = next;
       next += 1;
       if (index >= total) return;
-      samples.push(await timedRequest(urlFor(index), timeoutMs));
+      samples.push(await timedRequest(urlFor(index), timeoutMs, "gzip, br", extra));
     }
   });
   await Promise.all(workers);

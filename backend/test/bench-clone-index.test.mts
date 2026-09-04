@@ -19,8 +19,15 @@ import {
  */
 
 const REQUIRE_DB = process.env.REQUIRE_DB === "1";
-// The live explorer index. Read-only here; the clone never writes to it.
-const INDEX_URL = process.env.INDEXER_POSTGRES_URL;
+/**
+ * The live explorer index, named by its own variable.
+ *
+ * NOT `INDEXER_POSTGRES_URL`: `test/setup-indexer-db.mts` overrides that with
+ * the `_test` database before any test module loads, so a test reading it
+ * clones an empty database and every assertion about "the real index" passes
+ * against nothing. This test did exactly that until 2026-09-04.
+ */
+const INDEX_URL = process.env.BENCH_SOURCE_INDEX_URL;
 const db = REQUIRE_DB && INDEX_URL ? describe : describe.skip;
 
 db("cloneIndex", () => {
@@ -45,7 +52,11 @@ db("cloneIndex", () => {
         expect(snapshot.checksum.tables[table], table).toBe(Number(live.rows[0].n));
       }
       expect(snapshot.checksum.digest).toMatch(/^[0-9a-f]{64}$/);
-      expect(snapshot.checksum.rows).toBeGreaterThan(0);
+      // Real content, not merely "some rows": the source must be the live
+      // index, which holds hundreds of real preprod transactions.
+      expect(snapshot.checksum.tables.l1_tx).toBeGreaterThan(100);
+      expect(snapshot.checksum.tables.l1_tx_io).toBeGreaterThan(1_000);
+      expect(snapshot.settledHashes.length).toBeGreaterThan(0);
 
       // The real L2 header hashes, 28 bytes each, from the MBLC token.
       for (const hash of snapshot.settledHashes) {

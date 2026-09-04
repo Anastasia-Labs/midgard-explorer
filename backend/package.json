@@ -34,7 +34,8 @@
     "verify:vendor": "vitest run test/vendor-provenance.test.mts",
     "audit:gate": "node scripts/audit-gate.mjs",
     "adopt-index": "ts-node scripts/adopt-index.ts",
-    "coverage:lint": "node scripts/coverage-lint.mjs"
+    "coverage:lint": "node scripts/coverage-lint.mjs",
+    "bench": "node --experimental-strip-types bench/cli.mts"
   },
   "author": "",
   "license": "ISC",

@@ -17,6 +17,15 @@ import { checksum, type Checksum } from "../test/helpers/throwawayDb.mjs";
  * reproducible is an anecdote.
  *
  * The source connection is used for `SELECT` only. Nothing here writes to it.
+ *
+ * **Which database is the source is not obvious, and getting it wrong is
+ * silent.** `test/setup-indexer-db.mts` overrides `INDEXER_POSTGRES_URL` with
+ * the `_test` database before any test module loads, which is a deliberate
+ * safety mechanism: the suite once deleted real indexed data. The consequence
+ * is that a test reading `INDEXER_POSTGRES_URL` clones an empty database and
+ * every assertion about "the real index" passes against nothing. So the
+ * benchmark source is named separately, and an empty clone is an error rather
+ * than a 0-row snapshot nobody notices.
  */
 
 const MIGRATIONS = "prisma-indexer/migrations";
@@ -129,8 +138,28 @@ export async function cloneIndex(
     // between runs and break I10 for a reason nothing else would explain.
     `SELECT header_hash FROM l1_block_header ORDER BY header_hash ASC`,
   );
+  const digest = await checksum(target, INDEX_TABLES);
+  assertUsableSnapshot(digest);
   return {
-    checksum: await checksum(target, INDEX_TABLES),
+    checksum: digest,
     settledHashes: rows.map((row) => Buffer.from(row.header_hash, "hex")),
   };
+}
+
+/**
+ * Refuses a snapshot that cannot support a benchmark.
+ *
+ * An empty clone is not a small dataset, it is the wrong database. The
+ * `real+extended` workloads exist to measure real L1 volume, and against zero
+ * rows they return instantly and pass every budget. Failing here is the only
+ * way that surfaces.
+ */
+export function assertUsableSnapshot(digest: Checksum): void {
+  if ((digest.tables.l1_tx ?? 0) === 0) {
+    throw new Error(
+      "index snapshot has no l1_tx rows: the source is empty or is the test " +
+        "database. Set BENCH_SOURCE_INDEX_URL to the live explorer index; " +
+        "INDEXER_POSTGRES_URL is overridden to the _test database under vitest.",
+    );
+  }
 }
