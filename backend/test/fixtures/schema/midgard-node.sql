@@ -724,6 +724,161 @@ ALTER TABLE ONLY public.pending_block_finalization_withdrawals
 ALTER TABLE ONLY public.pending_block_finalization_withdrawals
     ADD CONSTRAINT pending_block_finalization_withdrawals_member_id_fkey FOREIGN KEY (member_id) REFERENCES public.withdrawal_utxos(event_id) ON DELETE RESTRICT;
 
+
+--
+-- Added 2026-09-04: four tables the coverage scope adopts that the
+-- fixture did not carry. Dumped from the live node, not hand-written.
+--
+--
+--
+
+
+
+
+
+
+--
+-- Name: mempool_tx_deltas; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mempool_tx_deltas (
+    tx_id bytea NOT NULL,
+    spent_cbor bytea NOT NULL,
+    produced_cbor bytea NOT NULL
+);
+
+
+--
+-- Name: pending_block_finalization_event_to_step; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pending_block_finalization_event_to_step (
+    header_hash bytea NOT NULL,
+    member_id bytea NOT NULL,
+    ordinal integer NOT NULL,
+    payload_cbor bytea NOT NULL,
+    payload_sha256 bytea NOT NULL,
+    source_table text NOT NULL,
+    source_id bytea NOT NULL,
+    source_time_stamp_tz timestamp with time zone NOT NULL,
+    CONSTRAINT pending_block_finalization_event_to_step_ordinal_check CHECK ((ordinal >= 0)),
+    CONSTRAINT pending_block_finalization_event_to_step_payload_sha256_check CHECK ((octet_length(payload_sha256) = 32))
+);
+
+
+--
+-- Name: pending_block_finalization_transition_trace; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pending_block_finalization_transition_trace (
+    header_hash bytea NOT NULL,
+    member_id bytea NOT NULL,
+    ordinal integer NOT NULL,
+    payload_cbor bytea NOT NULL,
+    payload_sha256 bytea NOT NULL,
+    source_table text NOT NULL,
+    source_id bytea NOT NULL,
+    source_time_stamp_tz timestamp with time zone NOT NULL,
+    CONSTRAINT pending_block_finalization_transition_trac_payload_sha256_check CHECK ((octet_length(payload_sha256) = 32)),
+    CONSTRAINT pending_block_finalization_transition_trace_ordinal_check CHECK ((ordinal >= 0))
+);
+
+
+--
+-- Name: pending_block_finalization_utxos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pending_block_finalization_utxos (
+    header_hash bytea NOT NULL,
+    outref bytea NOT NULL,
+    ordinal integer NOT NULL,
+    output bytea NOT NULL
+);
+
+
+--
+-- Name: mempool_tx_deltas mempool_tx_deltas_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mempool_tx_deltas
+    ADD CONSTRAINT mempool_tx_deltas_pkey PRIMARY KEY (tx_id);
+
+
+--
+-- Name: pending_block_finalization_event_to_step pending_block_finalization_event_to_ste_header_hash_ordinal_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_block_finalization_event_to_step
+    ADD CONSTRAINT pending_block_finalization_event_to_ste_header_hash_ordinal_key UNIQUE (header_hash, ordinal);
+
+
+--
+-- Name: pending_block_finalization_event_to_step pending_block_finalization_event_to_step_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_block_finalization_event_to_step
+    ADD CONSTRAINT pending_block_finalization_event_to_step_pkey PRIMARY KEY (header_hash, member_id);
+
+
+--
+-- Name: pending_block_finalization_transition_trace pending_block_finalization_transition_t_header_hash_ordinal_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_block_finalization_transition_trace
+    ADD CONSTRAINT pending_block_finalization_transition_t_header_hash_ordinal_key UNIQUE (header_hash, ordinal);
+
+
+--
+-- Name: pending_block_finalization_transition_trace pending_block_finalization_transition_trace_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_block_finalization_transition_trace
+    ADD CONSTRAINT pending_block_finalization_transition_trace_pkey PRIMARY KEY (header_hash, member_id);
+
+
+--
+-- Name: pending_block_finalization_utxos pending_block_finalization_utxos_header_hash_ordinal_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_block_finalization_utxos
+    ADD CONSTRAINT pending_block_finalization_utxos_header_hash_ordinal_key UNIQUE (header_hash, ordinal);
+
+
+--
+-- Name: pending_block_finalization_utxos pending_block_finalization_utxos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_block_finalization_utxos
+    ADD CONSTRAINT pending_block_finalization_utxos_pkey PRIMARY KEY (header_hash, outref);
+
+
+--
+-- Name: pending_block_finalization_event_to_step pending_block_finalization_event_to_step_header_hash_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_block_finalization_event_to_step
+    ADD CONSTRAINT pending_block_finalization_event_to_step_header_hash_fkey FOREIGN KEY (header_hash) REFERENCES public.pending_block_finalizations(header_hash) ON DELETE CASCADE;
+
+
+--
+-- Name: pending_block_finalization_transition_trace pending_block_finalization_transition_trace_header_hash_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_block_finalization_transition_trace
+    ADD CONSTRAINT pending_block_finalization_transition_trace_header_hash_fkey FOREIGN KEY (header_hash) REFERENCES public.pending_block_finalizations(header_hash) ON DELETE CASCADE;
+
+
+--
+-- Name: pending_block_finalization_utxos pending_block_finalization_utxos_header_hash_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_block_finalization_utxos
+    ADD CONSTRAINT pending_block_finalization_utxos_header_hash_fkey FOREIGN KEY (header_hash) REFERENCES public.pending_block_finalizations(header_hash) ON DELETE CASCADE;
+
+
+--
+--
+
 --
 -- PostgreSQL database dump complete
 --
