@@ -1,15 +1,38 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
-import { PROFILES, type Profile } from "../bench/profiles.mjs";
+import {
+  PROFILES,
+  REAL_SETTLED_BLOCKS,
+  SCAN_LIMIT,
+  type Profile,
+  type Shape,
+} from "../bench/profiles.mjs";
 
 /**
- * The profiles encode the ten invariants in `docs/dataset-profiles.md`. Each
+ * The profiles encode the invariants in `docs/dataset-profiles.md`. Each
  * assertion here corresponds to one, because a generator that silently violates
  * an invariant produces a benchmark that measures the wrong thing and still
  * reports a number.
+ *
+ * The schema-derived assertions matter most: a profile the database would
+ * refuse to hold is not a specification, and the failure surfaces at seed time
+ * rather than at review time.
  */
 
 const all = Object.values(PROFILES) as Profile[];
+
+/** Every status the node's check constraint permits. */
+const TERMINAL = ["finalized", "abandoned"];
+const NON_TERMINAL = [
+  "pending_submission",
+  "submitted_local_finalization_pending",
+  "submitted_unconfirmed",
+  "observed_waiting_stability",
+];
+
+function monotonic(s: Shape): boolean {
+  return s.p50 <= s.p95 && s.p95 <= s.p99 && s.p99 <= s.max;
+}
 
 describe("PROFILES", () => {
   it("declares the three profiles the spec names", () => {
@@ -24,44 +47,111 @@ describe("PROFILES", () => {
     for (const p of all) expect(p.rootHexLength, p.name).toBe(64);
   });
 
-  it("I4: target and stress collide timestamps so the tiebreak is observable", () => {
-    // BYTEA-ORDERING's correctness test needs blocks that share a
-    // block_end_time; without collisions the tiebreak is never exercised.
+  it("I4: target and stress collide timestamps; small mirrors live and does not", () => {
+    // I4 is scoped to the profiles that exercise ordering. BYTEA-ORDERING's
+    // correctness test runs on target or stress, never on small, because live
+    // data has no collisions and small exists to mirror live data.
     expect(PROFILES.target.timestampCollisionRate).toBeGreaterThan(0);
     expect(PROFILES.stress.timestampCollisionRate).toBeGreaterThan(0);
     expect(PROFILES.small.timestampCollisionRate).toBe(0);
   });
 
+  it("uses only statuses the node's check constraint permits", () => {
+    for (const p of all) {
+      if (p.statusMix.activeState !== null) {
+        expect(NON_TERMINAL, p.name).toContain(p.statusMix.activeState);
+      }
+    }
+    // `failed` was never a status in this schema. Guard against it returning.
+    const source = JSON.stringify(PROFILES);
+    expect(source).not.toContain("failed");
+    expect(TERMINAL).toContain("abandoned");
+  });
+
+  it("respects uniq_pending_block_finalizations_single_active: at most one non-terminal row", () => {
+    // A UNIQUE index on the constant (1) with a partial predicate over the four
+    // non-terminal states permits exactly one such row in the whole table. A
+    // fractional "6% pending" is not merely wrong, it is uninsertable.
+    for (const p of all) {
+      expect(p.statusMix.activeRows, p.name).toBeLessThanOrEqual(1);
+      if (p.statusMix.activeRows === 0) {
+        expect(p.statusMix.activeState, p.name).toBeNull();
+      } else {
+        expect(p.statusMix.activeState, p.name).not.toBeNull();
+      }
+    }
+  });
+
+  it("splits the terminal rows into a distribution that sums to one", () => {
+    for (const p of all) {
+      const total = p.statusMix.finalized + p.statusMix.abandoned;
+      expect(total, p.name).toBeCloseTo(1, 5);
+    }
+  });
+
   it("carries the approved empty-block rates, small mirroring and target challenging", () => {
-    // small reproduces observed reality (7 of 9 live blocks are empty);
-    // target is deliberately harsher, approved 2026-09-04 as a challenge.
     expect(PROFILES.small.emptyBlockRate).toBeCloseTo(0.78, 2);
     expect(PROFILES.target.emptyBlockRate).toBeCloseTo(0.3, 2);
   });
 
   it("gives target enough blocks for the deepest paginated workload", () => {
-    // blocks-list-page-deep requests page 100. At 25 rows per page that needs
-    // 2,500 rows to exist, or the budget measures an empty page.
     expect(PROFILES.target.blocks).toBeGreaterThanOrEqual(2_500);
   });
 
-  it("sizes target's ledger to the scan bound it is meant to exercise", () => {
-    expect(PROFILES.target.ledgerUtxos).toBe(20_000);
+  it("sizes the ledger to actually cross SCAN_LIMIT where truncation is claimed", () => {
+    // `getSpendableLedger` reports `truncated: total > rows.length`. At exactly
+    // SCAN_LIMIT the two are equal, so the truncation path is never taken.
+    for (const p of all) {
+      if (p.ledgerTruncates) {
+        expect(p.ledgerUtxos, p.name).toBeGreaterThan(SCAN_LIMIT);
+      } else {
+        expect(p.ledgerUtxos, p.name).toBeLessThanOrEqual(SCAN_LIMIT);
+      }
+    }
+    expect(PROFILES.target.ledgerTruncates).toBe(true);
+  });
+
+  it("I6: cross-source agreement is scoped to the blocks the real L1 snapshot can settle", () => {
+    // The index snapshot holds 9 real l1_block_header rows. Requiring all 5,000
+    // generated blocks to have a settled counterpart is impossible; requiring
+    // the 9 is both possible and exercises the settled render path, while the
+    // rest exercise the unsettled one.
+    for (const p of all) {
+      expect(p.settledBlocks, p.name).toBe(REAL_SETTLED_BLOCKS);
+      expect(p.settledBlocks, p.name).toBeLessThanOrEqual(p.blocks);
+    }
+  });
+
+  it("specifies every distribution a generator needs, so two implementations agree", () => {
+    // Without these, two generators satisfying the same profile produce
+    // materially different workloads and both report a pass.
+    for (const p of all) {
+      for (const [field, shape] of [
+        ["txsPerBlock", p.txsPerBlock],
+        ["inputsPerTx", p.inputsPerTx],
+        ["outputsPerTx", p.outputsPerTx],
+        ["assetsPerOutput", p.assetsPerOutput],
+        ["depositsPerBlock", p.depositsPerBlock],
+        ["withdrawalsPerBlock", p.withdrawalsPerBlock],
+        ["forcedPerBlock", p.forcedPerBlock],
+        ["txBodyBytes", p.txBodyBytes],
+        ["headerCborBytes", p.headerCborBytes],
+      ] as const) {
+        expect(monotonic(shape), `${p.name}.${field}`).toBe(true);
+      }
+      expect(p.addresses, p.name).toBeGreaterThan(0);
+      expect(p.assets, p.name).toBeGreaterThan(0);
+      const search =
+        p.searchMix.uniqueHit + p.searchMix.multiHit + p.searchMix.miss;
+      expect(search, p.name).toBeCloseTo(1, 5);
+      expect(p.searchMix.miss, p.name).toBeGreaterThan(0);
+    }
   });
 
   it("I10: profiles are deterministic, carrying an explicit seed", () => {
     for (const p of all) expect(typeof p.seed, p.name).toBe("number");
-    // Distinct seeds, so two profiles cannot accidentally produce the same data.
     const seeds = all.map((p) => p.seed);
     expect(new Set(seeds).size).toBe(seeds.length);
-  });
-
-  it("keeps the status mix a distribution that sums to one", () => {
-    for (const p of all) {
-      const total =
-        p.statusMix.finalized + p.statusMix.pending + p.statusMix.failed;
-      expect(total, p.name).toBeCloseTo(1, 5);
-    }
   });
 
   it("orders the profiles strictly by size", () => {
@@ -78,8 +168,11 @@ describe("PROFILES", () => {
 
   it("matches the numbers stated in the specification", async () => {
     const spec = await readFile("../docs/dataset-profiles.md", "utf8");
-    expect(spec).toContain(`${PROFILES.target.blocks.toLocaleString("en-US")}`);
-    expect(spec).toContain(`${PROFILES.stress.blocks.toLocaleString("en-US")}`);
-    expect(spec).toContain("20,000");
+    expect(spec).toContain(PROFILES.target.blocks.toLocaleString("en-US"));
+    expect(spec).toContain(PROFILES.stress.blocks.toLocaleString("en-US"));
+    expect(spec).toContain(PROFILES.target.ledgerUtxos.toLocaleString("en-US"));
+    // The corrected status vocabulary must be in the spec, not just the code.
+    expect(spec).toContain("abandoned");
+    expect(spec).not.toContain("finalized / pending / failed");
   });
 });

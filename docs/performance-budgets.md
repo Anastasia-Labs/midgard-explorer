@@ -22,11 +22,15 @@ Defined in `backend/bench/profiles.mts` (built during `DATASETS`). Distributions
 
 | Profile | Blocks | Txs per block | Status mix | Timestamp collisions | Ledger UTxOs |
 |---|---:|---|---|---|---:|
-| `small` | 50 | 1 to 5, skewed | mostly finalized | none | 200 |
-| `target` | 5,000 | 1 to 60, long tail | finalized / pending / failed | ~5% share a `block_end_time` | 20,000 |
-| `stress` | 50,000 | long tail to 200 | same mix | ~5% | 200,000 |
+| `small` | 50 | 0 to 5, skewed | 100% `finalized`, no active row | none | 200 |
+| `target` | 5,000 | 1 to 60, long tail | 98% `finalized` / 2% `abandoned`, plus **exactly one** non-terminal row | ~5% share a `block_end_time` | **25,000** |
+| `stress` | 50,000 | long tail to 500 | same, one non-terminal row | ~5% | 200,000 |
 
-The status mix is a **documented product assumption**, not an observation: the live database holds 9 finalized blocks and 2 journaled transactions, which cannot yield a distribution. It needs an owner or a real deployment sample before any budget derived from it is treated as evidence.
+**There is no `failed` status**, and the non-terminal states are not a percentage. `uniq_pending_block_finalizations_single_active` is a unique index on a constant with a partial predicate, so the database holds at most one non-terminal row in total. An earlier draft of this table asked for 300 of them.
+
+**25,000 rather than 20,000 ledger UTxOs**: `getSpendableLedger` reports `truncated: total > rows.length` against `SCAN_LIMIT = 20_000`, so at exactly 20,000 the truncation path is never taken and `asset-roster` measures the easy case while appearing to measure the hard one.
+
+The status mix and the transaction distributions are **documented engineering assumptions**, not observations: the live database holds 9 finalized blocks and 2 journaled transactions, which cannot yield a distribution. Ruled 2026-09-04: explorer engineering owns them, with mandatory recalibration once real persisted data can supply a distribution.
 
 ## Latency and work budgets
 
@@ -84,6 +88,22 @@ Four separate measures. A blended failure rate hides which is which, and **a gat
 | First-pass PR rate | not measured (INSUFFICIENT) | ≥70% over ≥50 PRs | explorer | `gh pr list --state merged --limit 100` | PENDING BASELINE |
 
 The wall-time median is a real observation from `gh run list`, over 10 runs, which is enough for a median but not for a rate. The other three are unmeasured: the last 10 runs held 7 or 8 failures depending on sampling time, **none classified**, and 10 observations cannot resolve a 2% target either way.
+
+## Codebase health budgets
+
+The five dimensions of the original assessment that no latency, resource or CI row measures. Without these the register could read all-`PASS` while dead weight, duplication and change cost sit where they are today.
+
+| Budget | Measured baseline | Target (approved) | Owner | Verification command | Status |
+|---|---|---|---|---|---|
+| Frontend route JS, first load | not measured | ≤180 KB gzipped per route, ≤120 KB shared chunk | explorer | `next build` route table | PENDING BASELINE |
+| Backend test suite wall time | not measured | ≤120 s for the non-DB suite | explorer | `pnpm vitest run --reporter=basic` | PENDING BASELINE |
+| Backend test suite flakiness | one unexplained serial failure, cause unknown | 0 failures in 50 consecutive runs | explorer | `CI-ISOLATION` | PENDING BASELINE |
+| Dead weight retirement | 47 tracked files under `frontend/`, unretired | **every** dead or legacy artifact carries an explicit decision: retire, archive, or keep with a stated reason. Zero undecided | explorer | inventory in `LEGACY-RETIREMENT`, one row per artifact | PENDING BASELINE |
+| Duplication | not measured | no block over 40 lines duplicated 3 or more times; every remaining duplicate carries a stated reason | explorer | `jscpd` over `backend/src` and `frontend-new` | PENDING BASELINE |
+| Change complexity | not measured | the 10 highest-churn files each under 400 lines and one clear responsibility; no file over 800 lines without a stated reason | explorer | `git log --numstat` churn ranking crossed with line counts | PENDING BASELINE |
+| Fixture representativeness | not measured | every fixture response validates against its contract, and the fixture set covers every route the demo server serves plus the empty, truncated and error cases for each | explorer | fixture build, which fails on a contract violation | PENDING BASELINE |
+
+**Dead weight, duplication and change complexity are gates, not observations.** A retirement decision may be "keep it", but there is no such thing as an artifact with no decision. That is the whole failure mode: an undecided artifact reads as a pass because nobody wrote down that it fails.
 
 ## Lifecycle
 
