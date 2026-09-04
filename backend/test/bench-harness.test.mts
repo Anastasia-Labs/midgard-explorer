@@ -67,6 +67,28 @@ describe("baselineGate", () => {
     expect(blocking.join(" ")).toMatch(/measured nothing/);
   });
 
+  it("refuses a dirty tree, because HEAD would not name what ran", () => {
+    // The first `target` run was taken with uncommitted harness and generator
+    // changes and recorded only the HEAD commit.
+    const blocking = baselineGate({ ...healthy, gitDirty: true }, clean);
+    expect(blocking.join(" ")).toMatch(/working tree is dirty/);
+  });
+
+  it("refuses a baseline that did not build what it measured", () => {
+    // Timestamps cannot settle this: an artifact from another checkout is
+    // newer than every source file here and still wrong. The run must build.
+    const blocking = baselineGate(healthy, clean, undefined, null);
+    expect(blocking.join(" ")).toMatch(/did not build the backend/);
+  });
+
+  it("refuses when the artifact and the commit disagree", () => {
+    const blocking = baselineGate(healthy, clean, undefined, {
+      commit: "c".repeat(40),
+      builtAt: new Date().toISOString(),
+    });
+    expect(blocking.join(" ")).toMatch(/artifact and the commit disagree/);
+  });
+
   it("refuses a subset run, which is a diagnostic and not a baseline", () => {
     const blocking = baselineGate(healthy, clean, { scope: "subset", excluded: [] });
     expect(blocking.join(" ")).toMatch(/subset of the catalogue/);

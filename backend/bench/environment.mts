@@ -1,5 +1,7 @@
 import { cpus, totalmem } from "node:os";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 import type { Client } from "pg";
 
 /**
@@ -25,6 +27,15 @@ export type EnvironmentReport = {
   freeDiskBytes: number;
   nodeVersion: string;
   gitCommit: string;
+  /** True when the tree carries changes `gitCommit` does not describe. */
+  gitDirty: boolean;
+  /**
+   * sha256 over the whole `dist` tree, paths sorted, or "unknown".
+   *
+   * The entry point alone said nothing about the modules it imports, which is
+   * most of what actually ran.
+   */
+  buildHash: string;
   capturedAt: string;
 };
 
@@ -42,6 +53,48 @@ const SETTINGS = [
 function gitCommit(): string {
   try {
     return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Uncommitted changes, including untracked files. */
+function gitDirty(): boolean {
+  try {
+    return execFileSync("git", ["status", "--porcelain"], { encoding: "utf8" }).trim() !== "";
+  } catch {
+    // Unknown is not clean: a baseline may not be certified on a tree whose
+    // state could not be read.
+    return true;
+  }
+}
+
+/**
+ * The artifact the benchmark actually ran, named by content.
+ *
+ * Every file under `dist`, in sorted path order, so the digest covers the
+ * imported modules rather than just the entry point. Timestamps are not used:
+ * a stale artifact carried in from another checkout can be newer than every
+ * source file here, so freshness is established by building, not by mtime.
+ */
+function buildHash(root = "dist"): string {
+  try {
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) walk(full);
+        else files.push(full);
+      }
+    };
+    walk(root);
+    if (files.length === 0) return "unknown";
+    const digest = createHash("sha256");
+    for (const file of files.sort()) {
+      digest.update(file);
+      digest.update(createHash("sha256").update(readFileSync(file)).digest());
+    }
+    return digest.digest("hex");
   } catch {
     return "unknown";
   }
@@ -81,6 +134,8 @@ export async function captureEnvironment(db: Client): Promise<EnvironmentReport>
     freeDiskBytes: freeDisk(),
     nodeVersion: process.version,
     gitCommit: gitCommit(),
+    gitDirty: gitDirty(),
+    buildHash: buildHash(),
     capturedAt: new Date().toISOString(),
   };
 }

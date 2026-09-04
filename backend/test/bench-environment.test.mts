@@ -21,6 +21,8 @@ describe("environmentWarnings", () => {
     freeDiskBytes: 100 * 1024 ** 3,
     nodeVersion: "v24",
     gitCommit: "abc",
+    gitDirty: false,
+    buildHash: "b".repeat(64),
     capturedAt: new Date().toISOString(),
   };
 

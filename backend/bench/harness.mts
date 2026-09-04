@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { Client } from "pg";
@@ -164,6 +164,23 @@ export type ServerHandle = {
  * without the configuration it was measured under.
  */
 export const BENCH_RATE_LIMIT_MAX = 1_000_000;
+
+/**
+ * Builds the backend the harness is about to measure.
+ *
+ * A baseline runs `dist/index.js`, and an unbuilt change is measured as if it
+ * were absent while the commit claims otherwise. Timestamps could not settle
+ * this: an artifact carried in from another checkout is newer than every source
+ * file here and still wrong. So the baseline builds, and records what it built
+ * from. Throws on a failed build rather than measuring the previous artifact.
+ */
+export function buildBackend(): { commit: string; builtAt: string } {
+  execFileSync("pnpm", ["build"], { stdio: "pipe", encoding: "utf8" });
+  const commit = execFileSync("git", ["rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
+  return { commit, builtAt: new Date().toISOString() };
+}
 
 export async function startServer(
   setup: BenchSetup,
@@ -377,6 +394,8 @@ export type HarnessReport = {
    * thirteenth, which read as full coverage.
    */
   scope: "backend-only" | "subset";
+  /** The build this run performed, `null` for a smoke run that did not build. */
+  build: { commit: string; builtAt: string } | null;
   /** Every catalogue workload, either measured or excluded with a reason. */
   coverage: {
     measured: string[];
@@ -400,10 +419,33 @@ export function baselineGate(
     scope: "backend-only" | "subset";
     excluded: readonly { workload: string; reason: string }[];
   },
+  /** The build this run performed, `null` when it measured whatever was there. */
+  build?: { commit: string; builtAt: string } | null,
 ): string[] {
   const blocking: string[] = [];
   const GB = 1024 ** 3;
 
+  // Provenance. The first `target` run was taken from a working tree carrying
+  // uncommitted harness and generator changes, and recorded only the HEAD
+  // commit, so the artifact named a state that never produced it.
+  if (environment.gitDirty) {
+    blocking.push(
+      "the working tree is dirty: a baseline must name the exact commit that " +
+        "produced it, and HEAD does not describe uncommitted changes",
+    );
+  }
+  if (build === null) {
+    blocking.push(
+      "the baseline did not build the backend: it measured whatever artifact " +
+        "was already in dist, which no commit describes",
+    );
+  }
+  if (build && build.commit !== environment.gitCommit) {
+    blocking.push(
+      `built from ${build.commit.slice(0, 8)} but running at ` +
+        `${environment.gitCommit.slice(0, 8)}: the artifact and the commit disagree`,
+    );
+  }
 
   // A subset is a diagnostic run. Only a full backend sweep is a baseline.
   if (coverage?.scope === "subset") {
@@ -504,6 +546,8 @@ export async function runHarness(options: {
 }): Promise<HarnessReport> {
   const startedAt = new Date().toISOString();
   const profile = PROFILES[options.profileName];
+  // Before the environment capture, so `buildHash` describes what will run.
+  const build = options.mode === "baseline" ? buildBackend() : null;
   const control = new Client({ connectionString: options.benchUrl });
   await control.connect();
   const environment = await captureEnvironment(control);
@@ -555,7 +599,7 @@ export async function runHarness(options: {
       warnings: [
         ...environmentWarnings(environment),
         ...(options.mode === "baseline"
-          ? baselineGate(environment, results, { scope, excluded })
+          ? baselineGate(environment, results, { scope, excluded }, build)
           : []),
       ],
       datasetChecksum: setup.datasetChecksum,
@@ -563,6 +607,7 @@ export async function runHarness(options: {
       iterations: options.run?.iterations ?? 0,
       serverConfig: { apiRateLimitMax: BENCH_RATE_LIMIT_MAX },
       scope,
+      build,
       coverage: { measured: results.map((r) => r.workload), excluded },
       results,
       startedAt,
