@@ -213,8 +213,11 @@ afterAll(() => {
     for (const name of [SRC, DEST, FOREIGN]) dropDb(name);
     return;
   }
-  // The whole server was the throwaway.
-  execFileSync("docker", ["rm", "-f", container], { stdio: "pipe" });
+  // The whole server was the throwaway. `-v` removes the anonymous volume the
+  // image declares for its data directory; without it the container goes and
+  // the volume stays, so every run of this suite left 233 MB behind and the
+  // `--rm` on `docker run` never got the chance to clean up.
+  execFileSync("docker", ["rm", "-f", "-v", container], { stdio: "pipe" });
 });
 
 describe("the seed the gates load", () => {
