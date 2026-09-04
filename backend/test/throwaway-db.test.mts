@@ -1,37 +1,54 @@
 import { describe, expect, it } from "vitest";
 import {
-  assertThrowaway,
+  assertThrowawayName,
   checksum,
+  dropDatabase,
+  isMarkedThrowaway,
+  throwawayName,
   withThrowawayNodeDb,
 } from "./helpers/throwawayDb.mjs";
 
 const REQUIRE_DB = process.env.REQUIRE_DB === "1";
 const db = REQUIRE_DB ? describe : describe.skip;
 
-describe("assertThrowaway", () => {
-  it("refuses any database that is not a throwaway", () => {
-    // These are the names a mistake would actually reach for. The guard exists
-    // so no code path in this module can address one.
+describe("throwaway naming", () => {
+  it("refuses every name this harness could not have generated", () => {
+    // The names a mistake would actually reach for, plus the ones a suffix
+    // check used to let through. `customer_data_bench` is the case that made
+    // the old guard unsafe: it looked like ours and was not.
     for (const name of [
       "midgard",
       "midgard_explorer",
       "postgres",
-      "midgard_bench_live",
       "template1",
+      "customer_data_bench",
+      "node_a1b2c3d4_bench",
+      "bench_",
+      "bench_notlonghex",
+      "bench_ABCDEF01234567890123456789012345",
+      'bench_00000000000000000000000000000000"; DROP DATABASE midgard; --',
     ]) {
-      expect(() => assertThrowaway(name), name).toThrow(/must end in "_bench"/);
+      expect(() => assertThrowawayName(name), name).toThrow(/refusing/);
     }
   });
 
-  it("refuses an unsafe identifier even with the right suffix", () => {
-    for (const name of ['x"; DROP DATABASE midgard; --_bench', "Bad_bench", "1_bench"]) {
-      expect(() => assertThrowaway(name), name).toThrow();
-    }
+  it("accepts what throwawayName produces, and produces distinct names", () => {
+    const a = throwawayName();
+    const b = throwawayName();
+    expect(() => assertThrowawayName(a)).not.toThrow();
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^bench_[0-9a-f]{32}$/);
   });
+});
 
-  it("accepts a well-formed throwaway name", () => {
-    expect(() => assertThrowaway("node_a1b2c3d4_bench")).not.toThrow();
-  });
+db("ownership guard", () => {
+  it("refuses to drop a well-formed name that carries no mark", async () => {
+    // The database does not exist, so it cannot be marked. The point is that
+    // the refusal comes from the missing mark rather than from the name.
+    const name = throwawayName();
+    expect(await isMarkedThrowaway(name)).toBe(false);
+    await expect(dropDatabase(name)).rejects.toThrow(/not marked/);
+  }, 30_000);
 });
 
 db("withThrowawayNodeDb", () => {
@@ -50,13 +67,19 @@ db("withThrowawayNodeDb", () => {
   }, 60_000);
 
   it("drops the database even when the callback throws", async () => {
+    let name = "";
     await expect(
-      withThrowawayNodeDb(async () => {
+      withThrowawayNodeDb(async (client) => {
+        const { rows } = await client.query<{ db: string }>(
+          `select current_database() as db`,
+        );
+        name = rows[0].db;
         throw new Error("boom");
       }),
     ).rejects.toThrow("boom");
-    // Nothing to assert on directly without listing databases; the value is
-    // that the finally ran and the next test gets a clean server.
+    expect(name).toMatch(/^bench_[0-9a-f]{32}$/);
+    // It is gone, so it no longer carries the mark.
+    expect(await isMarkedThrowaway(name)).toBe(false);
   }, 60_000);
 });
 
