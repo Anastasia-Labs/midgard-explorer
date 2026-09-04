@@ -118,29 +118,39 @@ function assetNameFor(id: number): string {
  * by policy. */
 const NAMES_PER_POLICY = 4;
 
-function outputFor(
-  parts: CorpusParts,
-  addressId: number,
-  assetsPerOutput: number,
-): ShapedOutput {
-  const addressBytes = addressFor(parts, addressId);
+/** The CBOR outref `[txId, index]`, exactly as the node stores it. */
+export function outrefOf(txId: Uint8Array, index: number): Buffer {
+  return Buffer.from(encodeCbor([Buffer.from(txId), index]));
+}
+
+export type OutputSpec = {
+  addressId: number;
+  lovelace: bigint;
+  /** Asset ids to attach. Grouped into policies by `NAMES_PER_POLICY`. */
+  assetIds?: readonly number[];
+  /** Quantity per asset id, defaulting to one. */
+  quantityOf?: (assetId: number) => bigint;
+};
+
+/** One encoded output at the address, value and assets given. */
+export function makeOutput(parts: CorpusParts, spec: OutputSpec): ShapedOutput {
+  const addressBytes = addressFor(parts, spec.addressId);
   // Nested Maps, not a plain object: `assets` is keyed by policy id, and each
   // policy holds a Map of asset name to amount. An object serialises to `{}`
   // under JSON.stringify, so this shape is invisible when inspecting a decoded
   // output rather than encoding one.
   const assets = new Map<string, Map<string, bigint>>();
-  for (let i = 0; i < assetsPerOutput; i += 1) {
-    const id = addressId * 31 + i;
+  for (const id of spec.assetIds ?? []) {
     const policy = policyFor(parts, Math.floor(id / NAMES_PER_POLICY));
     const names = assets.get(policy) ?? new Map<string, bigint>();
-    names.set(assetNameFor(id), BigInt(1_000 + i));
+    names.set(assetNameFor(id), spec.quantityOf?.(id) ?? 1n);
     assets.set(policy, names);
   }
   const output = Buffer.from(
     encodeMidgardTxOutput({
       ...parts.outputTemplate,
       address: addressBytes,
-      value: { ...parts.outputTemplate.value, assets },
+      value: { lovelace: spec.lovelace, assets },
     }),
   );
   return {
@@ -150,14 +160,25 @@ function outputFor(
   };
 }
 
+/**
+ * Encodes a transaction over the exact inputs and outputs given.
+ *
+ * Inputs are outrefs the caller has already chosen, not a count. A count is
+ * what let an earlier version cycle two templates, which duplicated inputs
+ * inside one transaction and re-spent the same outref across every
+ * transaction in the dataset. `outref` is the primary key of both ledger
+ * tables, so that dataset does not merely look wrong, it fails to load.
+ */
 function assemble(
   parts: CorpusParts,
+  inputs: readonly Buffer[],
   outputs: readonly ShapedOutput[],
-  inputCount: number,
+  fee: bigint,
 ): ShapedTx {
-  const inputs = Array.from({ length: inputCount }, (_, i) =>
-    parts.inputTemplates[i % parts.inputTemplates.length],
-  );
+  const seen = new Set(inputs.map((i) => i.toString("hex")));
+  if (seen.size !== inputs.length) {
+    throw new Error("duplicate input inside one transaction");
+  }
   const bytes = Buffer.from(
     encodeMidgardNativeTxCanonical({
       version: parts.version,
@@ -165,7 +186,8 @@ function assemble(
       witnessSet: parts.witnessSet,
       body: {
         ...parts.body,
-        spendInputsPreimageCbor: Buffer.from(encodeCbor(inputs)),
+        fee,
+        spendInputsPreimageCbor: Buffer.from(encodeCbor([...inputs])),
         outputsPreimageCbor: Buffer.from(
           encodeCbor(outputs.map((o) => Buffer.from(o.output))),
         ),
@@ -175,32 +197,17 @@ function assemble(
   // Decode what was encoded. This is the property I8 actually asserts, and it
   // costs one decode per transaction to hold it rather than assume it.
   const full = decodeMidgardNativeTxFullFromCanonicalCbor(bytes);
-  return {
-    txId: computeMidgardNativeTxId(full),
-    bytes,
-    outputs,
-    inputCount,
-  };
+  return { txId: computeMidgardNativeTxId(full), bytes, outputs, inputCount: inputs.length };
 }
 
-export type TxSpec = {
-  inputs: number;
-  outputs: number;
-  assetsPerOutput: number;
-  /** One address id per output. */
-  addressIds: readonly number[];
-};
-
-export function buildTx(parts: CorpusParts, spec: TxSpec): ShapedTx {
-  const count = Math.max(1, spec.outputs);
-  const outputs = Array.from({ length: count }, (_, i) =>
-    outputFor(
-      parts,
-      spec.addressIds[i % Math.max(1, spec.addressIds.length)] ?? i,
-      spec.assetsPerOutput,
-    ),
-  );
-  return assemble(parts, outputs, Math.max(1, spec.inputs));
+/** Encodes a transaction. Inputs are outrefs, never a count. */
+export function buildTx(
+  parts: CorpusParts,
+  inputs: readonly Buffer[],
+  outputs: readonly ShapedOutput[],
+  fee: bigint,
+): ShapedTx {
+  return assemble(parts, inputs, outputs, fee);
 }
 
 /**
@@ -214,16 +221,28 @@ export function buildTx(parts: CorpusParts, spec: TxSpec): ShapedTx {
 export function buildOversizeTx(
   parts: CorpusParts,
   minBytes: number,
+  inputs: readonly Buffer[],
+  totalLovelace: bigint,
+  fee: bigint,
   addressBase = 900_000,
 ): ShapedTx {
   let count = Math.max(2, Math.ceil(minBytes / 64));
   for (let attempt = 0; attempt < 12; attempt += 1) {
-    const tx = buildTx(parts, {
-      inputs: 2,
-      outputs: count,
-      assetsPerOutput: 0,
-      addressIds: Array.from({ length: count }, (_, i) => addressBase + i),
-    });
+    const each = (totalLovelace - fee) / BigInt(count);
+    if (each <= 0n) throw new Error("not enough value for an oversize transaction");
+    const outputs = Array.from({ length: count }, (_, i) =>
+      makeOutput(parts, { addressId: addressBase + i, lovelace: each }),
+    );
+    // The division rounds down, so any remainder rides on the first output and
+    // the value still balances exactly.
+    const remainder = totalLovelace - fee - each * BigInt(count);
+    if (remainder > 0n) {
+      outputs[0] = makeOutput(parts, {
+        addressId: addressBase,
+        lovelace: each + remainder,
+      });
+    }
+    const tx = assemble(parts, inputs, outputs, fee);
     if (tx.bytes.length > minBytes) return tx;
     count = Math.ceil(count * 1.4);
   }
