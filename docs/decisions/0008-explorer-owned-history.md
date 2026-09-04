@@ -45,7 +45,7 @@ ADR 0007 rejected projecting the node's tables into explorer-owned copies, on tw
 
 > The node's schema cannot support incremental projection. Most of the tables the explorer reads carry no `updated_at`, and several are defined by deletion.
 
-Verified 2026-09-04. Only 7 of 22 in-scope tables carry `updated_at`: `pending_block_finalizations`, `da_payloads`, `withdrawal_utxos`, `forced_transaction_utxos`, `tx_admissions`, plus two excluded operator tables. A transaction genuinely moves between `mempool`, `processed_mempool` and `immutable`, which is a delete plus an insert. `confirmed_ledger` and `mempool_ledger` rows are deleted when spent. `deposits_utxos` has no `updated_at` and its `status` advances with no timestamp changing.
+Verified 2026-09-04 against the schema fixture. **5 of the 22 in-scope tables carry `updated_at`**: `pending_block_finalizations`, `da_payloads`, `withdrawal_utxos`, `forced_transaction_utxos`, `tx_admissions`. The two operator tables are not among the 22 and are not counted here; an earlier draft said "7 of 22" by adding them to the in-scope total, which was wrong twice. A transaction genuinely moves between `mempool`, `processed_mempool` and `immutable`, which is a delete plus an insert. `confirmed_ledger` and `mempool_ledger` rows are deleted when spent. `deposits_utxos` has no `updated_at` and its `status` advances with no timestamp changing.
 
 **So wholesale projection remains rejected.** This ADR narrows the scope to the subset where the objection does not apply, and accepts a different synchronization model for the rest.
 
@@ -87,9 +87,19 @@ Three mechanisms, because one does not fit the whole surface. Choosing per table
 
 | Mechanism | Where | Why |
 |---|---|---|
-| **Incremental watermark** | `pending_block_finalizations`, `da_payloads`, `withdrawal_utxos`, `forced_transaction_utxos` | These carry `updated_at`. Verified present 2026-09-04 |
+| **Incremental watermark, with overlap and reconciliation** | `pending_block_finalizations`, `da_payloads`, `withdrawal_utxos`, `forced_transaction_utxos` | These carry `updated_at`, but see the caveat below: presence is not maintenance |
 | **Generation-based full reconciliation** | `deposits_utxos`, and any mutable current-state table without `updated_at` | A watermark cannot see a status change with no timestamp. Each pass writes a generation id; rows absent from the newest generation are marked no longer observed, never silently dropped |
 | **Append-only observation model** | Finalized members, transaction bodies | Records what was observed and when: source key, payload hash, first observed, last observed, and explicit coverage gaps |
+
+**`updated_at` is not trustworthy on its own, and the schema proves it.** All four columns are declared `timestamp with time zone DEFAULT now() NOT NULL`, and **the node schema contains no triggers at all**: zero `CREATE TRIGGER` and zero `CREATE FUNCTION` in the dump. A `DEFAULT` fires on `INSERT` and never on `UPDATE`. So the column advances only if the node's application code sets it explicitly in every statement that modifies a row. That is upstream code we do not own and cannot audit, and a single `UPDATE` that omits it makes a row permanently invisible to a naive watermark.
+
+The watermark is therefore used with three qualifications, all of which are requirements on the implementation:
+
+1. **Order and page by `(updated_at, primary key)`, never `updated_at` alone.** Many rows share a timestamp, and a watermark that resumes at a bare timestamp either re-reads or skips the rest of that group.
+2. **Scan with a deliberate overlap window**, re-reading a bounded period behind the watermark on every pass, so a late or clock-skewed write is picked up rather than stepped over. The window is a stated parameter, not an implicit constant.
+3. **The watermark is an optimisation, not the correctness mechanism.** Generation-based reconciliation is what establishes correctness, and it runs over the watermark tables too, not only over the tables that lack the column. If reconciliation finds rows the watermark missed, that is recorded as a disagreement, and its rate is a monitored figure. A rising rate means the upstream does not maintain the column, and the affected table moves to full reconciliation.
+
+Concretely: watermark for freshness, reconciliation for truth.
 
 **The L1 cursor strategy does not transfer.** The L1 indexer advances a height cursor over an append-only chain. The L2 surface has rows that move between tables, rows deleted on spend, cascade deletes, status changes with no timestamp, and short-lived states that can appear and vanish between two polling passes. A height cursor captures none of that. The L1 lane contributes its **patterns**, which are proven and reusable, and none of its **cursor semantics**:
 
@@ -106,6 +116,30 @@ Until a vertical slice proves otherwise, **this is a large item, not a second la
 
 Without change data capture or an upstream event log, the explorer sees only what it polled. Every surface built on this store says **"observed by the explorer"**, with its coverage window and known gaps. It never says "complete history". A gap in observation is rendered as a gap, never as an absence of events.
 
+## Finality, correction and staleness
+
+Three different events look alike from a poller's position and must not be conflated. The distinction is a requirement on the implementation, because the wrong classification either loses real history or preserves a wrong answer forever.
+
+| Event | What the explorer observes | What the explorer does |
+|---|---|---|
+| **Pruning** | A row we persisted is no longer present upstream, and its content never changed while we could see it | Keep it. This is the case this ADR exists for. Mark it `no longer observed upstream`, with the generation that last saw it |
+| **Correction** | A row we persisted is still present upstream but its content now differs | The node wins. Replace the served value, retain the prior observation, and record the disagreement. Never silently overwrite without a trace |
+| **Rollback** | A block we recorded as finalized is contradicted upstream, whether by disappearance with a replacement at the same height or by a changed commitment | Treated as a correction, and additionally **quarantines the route**: the affected route reverts to reading the node until reconciliation clears |
+
+**"Finalized" here means the node's `status = 'finalized'`, which is an L2 statement, not L1 settlement.** The two are separate and the explorer already renders them separately. Persisting a block whose L2 status is `finalized` says nothing about whether its commitment is settled on Cardano L1, and no persisted-store surface may imply otherwise.
+
+**Behaviour when the persisted store is stale or incomplete.** A cut-over route does not silently serve whatever it has. Every response from a cut-over route carries its freshness (the timestamp of the newest successful reconciliation for its tables) and its coverage (whether the requested range is fully within an observed window).
+
+| Store condition | Route behaviour |
+|---|---|
+| Fresh, within the stated bound, coverage complete | Serve from the explorer store |
+| Freshness outside the stated bound | Fall back to the node for that request, and report the degraded source in the response |
+| Coverage gap inside the requested range | Serve what is observed and render the gap **as a gap**, never as an absence of events. A list must not present a hole as the end of the data |
+| Reconciliation reported a disagreement on the requested entity | Serve the node's answer |
+| Node unreachable and store stale | Serve the store, labelled stale with its age. This is the one case where stale beats nothing, and it is labelled |
+
+The staleness bound is a stated parameter per route, approved before that route cuts over, and it is measured. A route whose freshness bound is not met is not cut over.
+
 ## Cutover, per route
 
 A route moves only after all five, in order:
@@ -120,11 +154,19 @@ A route that fails any step keeps reading the node. Cutover is per route, never 
 
 ## Fixtures
 
-One canonical data model produces all three artifacts, so they cannot drift:
+**One pipeline, not three generators.** An earlier draft said one canonical model produces all three artifacts independently. That is not sufficient: three generators sharing a model can still disagree with what the real routes actually return, because only one of them ever runs the route code. The direction is a chain, and each stage is derived from the previous one:
 
-- HTTP responses for the zero-dependency fixture server.
-- PostgreSQL seeds for integration and performance testing.
-- Expected contract snapshots for tests.
+```
+canonical records  ->  SQL seed  ->  real backend routes  ->  contract-validated snapshots  ->  demo server
+```
+
+- **Canonical records** are the single source, satisfying the invariants in `docs/dataset-profiles.md`.
+- **SQL seed** is generated from them and loaded into a throwaway database.
+- **Real backend routes** are then exercised against that database. Nothing hand-writes a response body.
+- **Contract-validated snapshots** are the captured responses, each validated against the schema in `frontend-new/contracts/src/` before it is written. A response that fails its contract fails the build.
+- **Demo server** replays those snapshots.
+
+The property this buys, which the three-generator design did not: a fixture cannot describe a response the real route would never produce. Contract drift, route changes and codec changes all break the fixture build rather than being discovered later against a stale artifact.
 
 **ADR 0003's `demo` mode keeps its property of needing no Docker and no PostgreSQL.** It is the mode a first-time contributor uses, and requiring a database would remove its reason to exist. The fixture server continues to serve generated responses.
 
