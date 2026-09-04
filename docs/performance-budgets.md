@@ -93,19 +93,24 @@ The wall-time median is a real observation from `gh run list`, over 10 runs, whi
 
 The five dimensions of the original assessment that no latency, resource or CI row measures. Without these the register could read all-`PASS` while dead weight, duplication and change cost sit where they are today.
 
-**These targets are PROPOSED, not approved.** Every other table in this document carries numbers the owner approved on 2026-09-04. These were written on 2026-09-04 in the same pass that added the table, and no ruling has been made on them. They are starting points for that ruling, and **no row here may be cited as a gate until it is approved**. Resolve before `BASELINES`.
+**These targets are PROPOSED, not approved.** Every other table in this document carries numbers the owner approved on 2026-09-04. No ruling has been made on these, and **no row here may be cited as a gate until it is approved**. Resolve before `BASELINES`.
+
+**Baselines measured 2026-09-04**, so the targets are now set against observation rather than invented. Two corrections came out of measuring:
+
+- **The 82-second frontend suite figure was stale.** Three runs give 32.7 s median with a 0.7 s spread. The overhead *share* is the real problem and did not improve: 19.3 s of environment against 3.8 s of execution.
+- **The original duplication target passed trivially.** At 40 lines the codebase has zero clones, so the gate would have measured nothing. Measured at 12 lines it is 0.90%, which is a number that can move.
 
 | Budget | Measured baseline | Target (PROPOSED) | Owner | Verification command | Status |
 |---|---|---|---|---|---|
-| Frontend route JS, first load | not measured | ≤180 KB gzipped per route, ≤120 KB shared chunk | explorer | `next build` route table | PENDING APPROVAL |
-| **Frontend test suite wall time** | **468 tests in 82 s: 46.9 s environment, 11 s execution, so 86% is overhead** | ≤30 s | explorer | `pnpm vitest run` in `frontend-new/app` | PENDING APPROVAL |
-| **Frontend test suite overhead share** | **86%** | ≤40% | explorer | same, environment plus setup over total | PENDING APPROVAL |
-| Backend test suite wall time | not measured | ≤120 s for the non-DB suite | explorer | `pnpm vitest run --reporter=basic` | PENDING APPROVAL |
+| Frontend total client JS | **848.6 KB gzipped over 28 chunks; the largest single chunk is 422.8 KB, half of all client JS** | total ≤900 KB gzipped, largest chunk ≤250 KB | explorer | `.next/static/chunks`, gzipped | PENDING APPROVAL |
+| **Frontend test suite wall time** | **32.7 s median of 3 runs (33.28, 32.68, 32.56), 468 tests** | ≤20 s | explorer | `pnpm vitest run` in `frontend-new/app` | PENDING APPROVAL |
+| **Frontend test suite overhead share** | **88%: 19.3 s environment and 3.8 s execution of 32.7 s** | ≤60% | explorer | same, 1 minus execution over total | PENDING APPROVAL |
+| Backend test suite wall time | **96.6 to 127.1 s over 3 runs, 689 tests**, a 31% spread | ≤120 s, once the spread is characterised | explorer | `pnpm vitest run` in `backend` | PENDING APPROVAL |
 | Backend test suite flakiness | one unexplained serial failure, cause unknown | 0 failures in 50 consecutive runs | explorer | `CI-ISOLATION` | PENDING APPROVAL |
 | Dead weight retirement | 47 tracked files under `frontend/`, unretired | **every** dead or legacy artifact carries an explicit decision: retire, archive, or keep with a stated reason. Zero undecided | explorer | inventory in `LEGACY-RETIREMENT`, one row per artifact | PENDING APPROVAL |
-| Duplication | not measured | no block over 40 lines duplicated 3 or more times; every remaining duplicate carries a stated reason | explorer | `jscpd` over `backend/src` and `frontend-new` | PENDING APPROVAL |
-| Change complexity | not measured | the 10 highest-churn files each under 400 lines and one clear responsibility; no file over 800 lines without a stated reason | explorer | `git log --numstat` churn ranking crossed with line counts | PENDING APPROVAL |
-| Fixture representativeness | not measured | every fixture response validates against its contract, and the fixture set covers every route the demo server serves plus the empty, truncated and error cases for each | explorer | fixture build, which fails on a contract violation | PENDING APPROVAL |
+| Duplication | **0.90%: 15 clones, 265 lines over 203 files** at 12 lines / 50 tokens. Zero at 40 lines | ≤1.5% at 12 lines / 50 tokens | explorer | `jscpd --min-lines 12 --min-tokens 50` over `backend/src` and `frontend-new` | PENDING APPROVAL |
+| Change complexity | **top-10 churn peaks at 524 lines (`indexer/sync.ts`), then 418 (`indexer/koios.ts`); largest source file is 637 (`decode/transaction.ts`), largest tracked is 871 (an e2e spec)** | the 10 highest-churn files each under 400 lines; no file over 800 lines without a stated reason | explorer | `git log --numstat` churn crossed with line counts | PENDING APPROVAL |
+| Fixture representativeness | not measurable until the fixture pipeline exists | every fixture response validates against its contract, and the set covers every route the demo server serves plus the empty, truncated and error cases | explorer | fixture build, which fails on a contract violation | PENDING APPROVAL |
 
 **Dead weight, duplication and change complexity are gates, not observations.** A retirement decision may be "keep it", but there is no such thing as an artifact with no decision. That is the whole failure mode: an undecided artifact reads as a pass because nobody wrote down that it fails.
 
