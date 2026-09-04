@@ -139,6 +139,22 @@ describe("WORKLOADS", () => {
     }
   });
 
+  it("labels every register row with a data provenance", async () => {
+    // A number measured on generated data is evidence about a change, not about
+    // production. Without the label a reader cannot tell which they are holding.
+    const register = await readFile("../docs/performance-budgets.md", "utf8");
+    for (const w of WORKLOADS) {
+      const row = register
+        .split("\n")
+        .find((line) => line.includes(`\`${w.name}\``) && line.startsWith("|"));
+      expect(row, `${w.name} has no register row`).toBeDefined();
+      expect(
+        /`(real|real\+extended|generated)`/.test(row as string),
+        `${w.name} has no provenance`,
+      ).toBe(true);
+    }
+  });
+
   it("carries no stale pre-approval language", async () => {
     // The targets were approved on 2026-09-04. Text describing them as
     // proposals, or as awaiting approval, contradicts the committed state and

@@ -12,6 +12,8 @@ Generated alongside `backend/bench/workloads.mts`, which is the machine-readable
 - **`cold` means application-cache cold, both layers.** `/api/metrics` and `/api/assets` each have two: a `cachePublicJson` response entry and an inner `cached(...)` work entry with its own 10s TTL. `clearCache()` empties both but is in-process, so a cold run comes from restarting the process or a benchmark-only bypass gated off in production. It does **not** mean a cold PostgreSQL buffer cache; that is reported separately as shared blocks.
 - **Buffer work is `hit + read`, not `read`.** A full scan served entirely from shared buffers reports zero reads. A read-only budget would pass it while it does exactly the work the budget exists to catch. Measured across both databases.
 - **`DISCOVERY` rows cannot pass or fail.** They have no target yet and exist to produce one. They are excluded from the 10/10 criterion until they are converted to budgets.
+- **Provenance says what a number is evidence of.** `real` comes from the explorer index, which holds 281 real preprod transactions and 2,767 IOs. `generated` comes from the seeded profiles, because the node database holds 9 blocks and 2 transactions and produces one block every 3.6 days on average, with nothing in 22 days. A `generated` number is valid for comparing before and after a change and provisional for absolute pass/fail.
+- **`UNMEASURABLE` is not `PASS`.** A budget that current volume cannot exercise reports this. `OFFSET 2475` against 9 rows returns an empty page in about a millisecond; recording that as a pass would manufacture a false green on the budget the B+C decision rests on.
 - **`BLOCKED` is not `PASS`.** A blocked budget with a shipped fallback means implementation scope is complete and the product is not at 10/10.
 
 ## Profiles
@@ -28,21 +30,21 @@ The status mix is a **documented product assumption**, not an observation: the l
 
 ## Latency and work budgets
 
-| Budget | Measured baseline | Target (approved) | Profile | Cache mode | Owner | Dependency | Verification command | Status | Fallback if blocked |
-|---|---|---|---|---|---|---|---|---|---|
-| `blocks-list-page-1` | not measured | p95 200 ms / p99 400 ms, ≤4 statements, 0 temp bytes | target | cold | explorer | UR-1 | `bench/harness.mts --workload blocks-list-page-1` | PENDING BASELINE | Cursor pagination plus a hard depth cap |
-| `blocks-list-page-deep` | not measured | p95 300 ms / p99 600 ms, ≤4 statements, 0 temp bytes | target | cold | explorer | UR-1 | `bench/harness.mts --workload blocks-list-page-deep` | PENDING BASELINE | Depth cap with a documented error past it |
-| `transactions-list-page-1` | not measured | p95 200 ms / p99 400 ms, ≤4 statements | target | cold | explorer | UR-1 | `bench/harness.mts --workload transactions-list-page-1` | PENDING BASELINE | As above |
-| `transactions-list-page-deep` | not measured | p95 300 ms / p99 600 ms, ≤4 statements | target | cold | explorer | UR-1 | `bench/harness.mts --workload transactions-list-page-deep` | PENDING BASELINE | As above |
-| `block-detail` | not measured | p95 250 ms / p99 500 ms, ≤8 statements, ≤128 KB wire, ≤512 KB identity | target | unique-key | explorer | none | `bench/harness.mts --workload block-detail` | PENDING BASELINE | **Bound the decoded transaction rows first**, see below |
-| `transaction-detail` | not measured | p95 250 ms / p99 500 ms, ≤8 statements, ≤192 KB wire, ≤768 KB identity | target | unique-key | explorer | none | `bench/harness.mts --workload transaction-detail` | PENDING BASELINE | Lower `MAX_INLINE_CBOR_BYTES` from 64 KB |
-| `search-prefix` | not measured | p95 400 ms / p99 800 ms, ≤200k shared blocks (`hit + read`) | target | unique-key | explorer | none | `bench/harness.mts --workload search-prefix` | PENDING BASELINE | Raise `MIN_PREFIX`; or an expression index, which is upstream-owned |
-| `metrics` | not measured | p95 500 ms / p99 1,000 ms, ≤9 statements | target | cold | explorer | none | `bench/harness.mts --workload metrics` | PENDING BASELINE | Split the panel into independent snapshots |
-| `metrics-cached` | not measured | p95 20 ms / p99 40 ms | target | warm | explorer | none | `bench/harness.mts --workload metrics-cached` | PENDING BASELINE | n/a, this measures the cache on purpose |
-| `asset-roster` | not measured | p95 800 ms / p99 1,600 ms, ≤2 statements | target | cold | explorer | none | `bench/harness.mts --workload asset-roster` | PENDING BASELINE | Lower `SCAN_LIMIT` and report reduced coverage |
-| `address-history` | not measured | p95 250 ms / p99 500 ms, ≤6 statements | target | unique-key | explorer | none | `bench/harness.mts --workload address-history` | PENDING BASELINE | Cursor pagination |
-| `overview-aggregate` | not measured | p95 600 ms / p99 1,200 ms, ≤256 KB wire, ≤1 MB identity | target | cold | explorer | none | `bench/harness.mts --workload overview-aggregate` | PENDING BASELINE | One backend aggregate route |
-| `blocks-list-saturation` | not measured | p95 1,500 ms / p99 3,000 ms at concurrency 32, **≥20 req/s**, timeouts ≤0.1%, errors ≤1% | target | unique-key | explorer | UR-1 | `bench/harness.mts --workload blocks-list-saturation` | PENDING BASELINE | Raise pool `max`, or shed load at the edge |
+| Budget | Measured baseline | Target (approved) | **Provenance** | Profile | Cache mode | Owner | Dependency | Verification command | Status | Fallback if blocked |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `blocks-list-page-1` | not measured | p95 200 ms / p99 400 ms, ≤4 statements, 0 temp bytes | `generated` | target | cold | explorer | UR-1 | `bench/harness.mts --workload blocks-list-page-1` | PENDING BASELINE | Cursor pagination plus a hard depth cap |
+| `blocks-list-page-deep` | not measured | p95 300 ms / p99 600 ms, ≤4 statements, 0 temp bytes | `generated` | target | cold | explorer | UR-1 | `bench/harness.mts --workload blocks-list-page-deep` | PENDING BASELINE | Depth cap with a documented error past it |
+| `transactions-list-page-1` | not measured | p95 200 ms / p99 400 ms, ≤4 statements | `generated` | target | cold | explorer | UR-1 | `bench/harness.mts --workload transactions-list-page-1` | PENDING BASELINE | As above |
+| `transactions-list-page-deep` | not measured | p95 300 ms / p99 600 ms, ≤4 statements | `generated` | target | cold | explorer | UR-1 | `bench/harness.mts --workload transactions-list-page-deep` | PENDING BASELINE | As above |
+| `block-detail` | not measured | p95 250 ms / p99 500 ms, ≤8 statements, ≤128 KB wire, ≤512 KB identity | `generated` | target | unique-key | explorer | none | `bench/harness.mts --workload block-detail` | PENDING BASELINE | **Bound the decoded transaction rows first**, see below |
+| `transaction-detail` | not measured | p95 250 ms / p99 500 ms, ≤8 statements, ≤192 KB wire, ≤768 KB identity | `generated` | target | unique-key | explorer | none | `bench/harness.mts --workload transaction-detail` | PENDING BASELINE | Lower `MAX_INLINE_CBOR_BYTES` from 64 KB |
+| `search-prefix` | not measured | p95 400 ms / p99 800 ms, ≤200k shared blocks (`hit + read`) | `real+extended` | target | unique-key | explorer | none | `bench/harness.mts --workload search-prefix` | PENDING BASELINE | Raise `MIN_PREFIX`; or an expression index, which is upstream-owned |
+| `metrics` | not measured | p95 500 ms / p99 1,000 ms, ≤9 statements | `generated` | target | cold | explorer | none | `bench/harness.mts --workload metrics` | PENDING BASELINE | Split the panel into independent snapshots |
+| `metrics-cached` | not measured | p95 20 ms / p99 40 ms | `generated` | target | warm | explorer | none | `bench/harness.mts --workload metrics-cached` | PENDING BASELINE | n/a, this measures the cache on purpose |
+| `asset-roster` | not measured | p95 800 ms / p99 1,600 ms, ≤2 statements | `generated` | target | cold | explorer | none | `bench/harness.mts --workload asset-roster` | PENDING BASELINE | Lower `SCAN_LIMIT` and report reduced coverage |
+| `address-history` | not measured | p95 250 ms / p99 500 ms, ≤6 statements | `real+extended` | target | unique-key | explorer | none | `bench/harness.mts --workload address-history` | PENDING BASELINE | Cursor pagination |
+| `overview-aggregate` | not measured | p95 600 ms / p99 1,200 ms, ≤256 KB wire, ≤1 MB identity | `generated` | target | cold | explorer | none | `bench/harness.mts --workload overview-aggregate` | PENDING BASELINE | One backend aggregate route |
+| `blocks-list-saturation` | not measured | p95 1,500 ms / p99 3,000 ms at concurrency 32, **≥20 req/s**, timeouts ≤0.1%, errors ≤1% | `generated` | target | unique-key | explorer | UR-1 | `bench/harness.mts --workload blocks-list-saturation` | PENDING BASELINE | Raise pool `max`, or shed load at the edge |
 
 ### The block-detail fallback, corrected
 
@@ -92,6 +94,7 @@ Targets were approved on 2026-09-04. Rows move through these states and no other
 | `PENDING BASELINE` | Target approved, no measurement yet. Every latency, resource and CI row is here |
 | `DISCOVERY` | No target by decision. Exists to produce one. Cannot pass or fail, and is excluded from the 10/10 criterion |
 | `INSUFFICIENT` | Measured, but the sample cannot resolve the target. Reports this rather than passing |
+| `UNMEASURABLE` | Current data volume cannot exercise the target. Reports this rather than passing |
 | `PASS` / `FAIL` | Measured against an approved target |
 | `BLOCKED` | Fails on an open dependency with a shipped fallback. **Not `PASS`**: implementation scope can be complete while the product is below 10/10 |
 
