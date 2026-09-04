@@ -1,6 +1,6 @@
 # Performance budget register
 
-**STATUS: LATENCY, RESOURCE AND CI TARGETS APPROVED, PENDING BASELINE. CODEBASE-HEALTH TARGETS PENDING APPROVAL.** The first three were approved 2026-09-04 and await a measurement, not a decision. The codebase-health table was written later and awaits a decision, so none of its rows is a gate yet. `DISCOVERY` rows carry no target and cannot pass or fail. Rows marked `INSUFFICIENT` lack the sample size to resolve their target and report that rather than passing.
+**STATUS: ALL TARGETS APPROVED EXCEPT BACKEND SUITE WALL TIME.** Latency, resource and CI targets were approved 2026-09-04 and await measurement. The codebase-health targets were ruled the same day: five unchanged, three revised, one deferred. Four now read `FAIL` and two read `PASS` against measured baselines, so the register carries its first measured outcomes. `DISCOVERY` rows carry no target and cannot pass or fail. Rows marked `INSUFFICIENT` lack the sample size to resolve their target and report that rather than passing.
 
 Generated alongside `backend/bench/workloads.mts`, which is the machine-readable form. The test `backend/test/bench-workloads.test.mts` fails if a workload here has no catalogue entry, or vice versa.
 
@@ -93,7 +93,13 @@ The wall-time median is a real observation from `gh run list`, over 10 runs, whi
 
 The five dimensions of the original assessment that no latency, resource or CI row measures. Without these the register could read all-`PASS` while dead weight, duplication and change cost sit where they are today.
 
-**These targets are PROPOSED, not approved.** Every other table in this document carries numbers the owner approved on 2026-09-04. No ruling has been made on these, and **no row here may be cited as a gate until it is approved**. Resolve before `BASELINES`.
+**Ruled 2026-09-04.** Five approved unchanged, three revised, one deferred. Only the deferred row still blocks `BASELINES`.
+
+**Why the bundle rows are ratchets, not limits.** The 422.8 KB chunk is the lazily instantiated ELK layout worker (`UtxoFlowCanvas.tsx:118`, behind `needsElk` and a `typeof Worker` guard), so it is not initial-load JS and a 250 KB cap on it would gate the wrong thing. Verified: the chunk contains 352 `elk` references and no route imports it eagerly. A no-regression ratchet holds the line until the analyzer can give real per-route initial-load figures, which is the `DISCOVERY` row below.
+
+**Why environment time replaced the overhead ratio.** A ratio of overhead to total is gameable in the wrong direction: adding slow assertions improves it while making the suite worse. An absolute environment-time target cannot be satisfied that way.
+
+**Why duplication tightened to 1.0%.** ≤1.5% against a 0.90% baseline would licence a 67% regression and still read green.
 
 **Baselines measured 2026-09-04**, so the targets are now set against observation rather than invented. Two corrections came out of measuring:
 
@@ -102,15 +108,17 @@ The five dimensions of the original assessment that no latency, resource or CI r
 
 | Budget | Measured baseline | Target (PROPOSED) | Owner | Verification command | Status |
 |---|---|---|---|---|---|
-| Frontend total client JS | **848.6 KB gzipped over 28 chunks; the largest single chunk is 422.8 KB, half of all client JS** | total ≤900 KB gzipped, largest chunk ≤250 KB | explorer | `.next/static/chunks`, gzipped | PENDING APPROVAL |
-| **Frontend test suite wall time** | **32.7 s median of 3 runs (33.28, 32.68, 32.56), 468 tests** | ≤20 s | explorer | `pnpm vitest run` in `frontend-new/app` | PENDING APPROVAL |
-| **Frontend test suite overhead share** | **88%: 19.3 s environment and 3.8 s execution of 32.7 s** | ≤60% | explorer | same, 1 minus execution over total | PENDING APPROVAL |
-| Backend test suite wall time | **96.6 to 127.1 s over 3 runs, 689 tests**, a 31% spread | ≤120 s, once the spread is characterised | explorer | `pnpm vitest run` in `backend` | PENDING APPROVAL |
-| Backend test suite flakiness | one unexplained serial failure, cause unknown | 0 failures in 50 consecutive runs | explorer | `CI-ISOLATION` | PENDING APPROVAL |
-| Dead weight retirement | 47 tracked files under `frontend/`, unretired | **every** dead or legacy artifact carries an explicit decision: retire, archive, or keep with a stated reason. Zero undecided | explorer | inventory in `LEGACY-RETIREMENT`, one row per artifact | PENDING APPROVAL |
-| Duplication | **0.90%: 15 clones, 265 lines over 203 files** at 12 lines / 50 tokens. Zero at 40 lines | ≤1.5% at 12 lines / 50 tokens | explorer | `jscpd --min-lines 12 --min-tokens 50` over `backend/src` and `frontend-new` | PENDING APPROVAL |
-| Change complexity | **top-10 churn peaks at 524 lines (`indexer/sync.ts`), then 418 (`indexer/koios.ts`); largest source file is 637 (`decode/transaction.ts`), largest tracked is 871 (an e2e spec)** | the 10 highest-churn files each under 400 lines; no file over 800 lines without a stated reason | explorer | `git log --numstat` churn crossed with line counts | PENDING APPROVAL |
-| Fixture representativeness | not measurable until the fixture pipeline exists | every fixture response validates against its contract, and the set covers every route the demo server serves plus the empty, truncated and error cases | explorer | fixture build, which fails on a contract violation | PENDING APPROVAL |
+| Frontend total client JS | 848.6 KB gzipped over 28 chunks | **no regression: ≤865.6 KB (baseline +2%)** | explorer | `.next/static/chunks`, gzipped | PASS (holds by construction) |
+| Lazy ELK worker chunk | 422.8 KB gzipped, 1,416 KB raw | **no regression: ≤431.3 KB (baseline +2%)** | explorer | same | PASS (holds by construction) |
+| Per-route initial-load JS | **not measured**: Next 16 dropped First Load JS from its build output | to be set from the bundle analyzer, before `FINAL-VERIFICATION` | explorer | `@next/bundle-analyzer` | **DISCOVERY** |
+| Frontend test suite wall time | 32.7 s median of 3 runs (33.28, 32.68, 32.56), 468 tests | **≤20 s** | explorer | `pnpm vitest run` in `frontend-new/app` | **FAIL** |
+| Frontend test environment time | 19.3 s of 32.7 s | **≤8 s absolute** | explorer | same, the `environment` figure | **FAIL** |
+| Backend test suite wall time | 96.6 to 127.1 s over 3 runs, a 31% spread | **DEFERRED**: separate median and p90 targets, set after ≥10 same-machine runs | explorer | `pnpm vitest run` in `backend` | PENDING APPROVAL |
+| Backend test suite flakiness | one unexplained serial failure, cause unknown | 0 failures in 50 consecutive runs | explorer | `CI-ISOLATION` | INSUFFICIENT |
+| Dead weight retirement | 47 tracked files under `frontend/`, none decided | **every** dead or legacy artifact carries an explicit decision: retire, archive, or keep with a stated reason. Zero undecided | explorer | inventory in `LEGACY-RETIREMENT`, one row per artifact | **FAIL** |
+| Duplication | 0.90%: 15 clones, 265 lines over 203 files, at 12 lines / 50 tokens | **≤1.0%** at 12 lines / 50 tokens | explorer | `jscpd --min-lines 12 --min-tokens 50` | **PASS** |
+| Change complexity | top-10 churn peaks at 524 lines (`indexer/sync.ts`), then 418 (`indexer/koios.ts`); largest source 637 (`decode/transaction.ts`), largest tracked 871 (an e2e spec) | the 10 highest-churn files each under 400 lines; no file over 800 lines without a stated reason | explorer | `git log --numstat` churn crossed with line counts | **FAIL** |
+| Fixture representativeness | not measurable until the fixture pipeline exists | every fixture response validates against its contract, and the set covers every route the demo server serves plus the empty, truncated and error cases | explorer | fixture build, which fails on a contract violation | UNMEASURABLE |
 
 **Dead weight, duplication and change complexity are gates, not observations.** A retirement decision may be "keep it", but there is no such thing as an artifact with no decision. That is the whole failure mode: an undecided artifact reads as a pass because nobody wrote down that it fails.
 
@@ -122,7 +130,7 @@ Targets were approved on 2026-09-04. Rows move through these states and no other
 |---|---|
 | `PENDING BASELINE` | Target approved, no measurement yet. Every latency, resource and CI row is here |
 | `PENDING APPROVAL` | Target **proposed and not approved**. Cannot be cited as a gate. Every codebase-health row is here |
-| `DISCOVERY` | No target by decision. Exists to produce one. Cannot pass or fail, and is excluded from the 10/10 criterion |
+| `DISCOVERY` | No target by decision. Exists to produce one. Cannot pass or fail, and is excluded from the 10/10 criterion **during `BASELINES` only**. Before `FINAL-VERIFICATION` every `DISCOVERY` row must either become an approved budget or be removed as irrelevant with stated evidence. A row cannot stay permanently unmeasured while the register claims 10/10 |
 | `INSUFFICIENT` | Measured, but the sample cannot resolve the target. Reports this rather than passing |
 | `UNMEASURABLE` | Current data volume cannot exercise the target. Reports this rather than passing |
 | `PASS` / `FAIL` | Measured against an approved target |

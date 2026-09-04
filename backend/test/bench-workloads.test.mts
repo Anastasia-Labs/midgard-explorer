@@ -177,12 +177,12 @@ describe("WORKLOADS", () => {
   it("keeps every register row in a declared lifecycle state", async () => {
     const register = await readFile("../docs/performance-budgets.md", "utf8");
     expect(register).toContain(
-      "LATENCY, RESOURCE AND CI TARGETS APPROVED, PENDING BASELINE",
+      "ALL TARGETS APPROVED EXCEPT BACKEND SUITE WALL TIME",
     );
-    // The codebase-health targets were written without a ruling on their
-    // numbers, so the header must not claim the whole register is approved.
-    expect(register).toContain("CODEBASE-HEALTH TARGETS PENDING APPROVAL");
     expect(register).toContain("| `PENDING APPROVAL` |");
+    // A DISCOVERY row is excluded from the 10/10 criterion during BASELINES
+    // only. Left permanently unmeasured it would sit inside a 10/10 claim.
+    expect(register).toContain("during `BASELINES` only");
     // DISCOVERY rows have no target and are excluded from the 10/10 criterion.
     expect(register).toContain("DISCOVERY");
     // A sample too small to resolve its target reports INSUFFICIENT, not PASS.
