@@ -35,7 +35,8 @@
     "audit:gate": "node scripts/audit-gate.mjs",
     "adopt-index": "ts-node scripts/adopt-index.ts",
     "coverage:lint": "node scripts/coverage-lint.mjs",
-    "bench": "node --import ./bench/register.mjs bench/cli.mts"
+    "bench": "node --import ./bench/register.mjs bench/cli.mts",
+    "bench:attribute": "node --import ./bench/register.mjs bench/attribute.mts"
   },
   "author": "",
   "license": "ISC",
