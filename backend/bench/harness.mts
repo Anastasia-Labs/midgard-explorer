@@ -1,6 +1,7 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
+import { readFileSync, readdirSync } from "node:fs";
 import { Client } from "pg";
 import { cloneIndex, type IndexSnapshot } from "./cloneIndex.mjs";
 import { captureEnvironment, environmentWarnings, type EnvironmentReport } from "./environment.mjs";
@@ -151,6 +152,8 @@ export async function setupBench(options: SetupOptions): Promise<BenchSetup> {
 export type ServerHandle = {
   base: string;
   bypassToken: string;
+  /** Highest resident memory the server reached, in bytes. */
+  peakRssBytes: () => number;
   /** `null` while the process is alive, the exit code once it is not. */
   exitCode: () => number | null;
   /** Whatever the server printed. The reason a mid-run death is explainable. */
@@ -228,6 +231,42 @@ export async function startServer(
     stdio: ["ignore", "pipe", "pipe"],
   });
 
+  // Peak resident memory, sampled from /proc rather than by spawning `ps`:
+  // a benchmark must not pay for its own instrument. The backend is one
+  // process with no worker pool, but children are followed anyway so a future
+  // pool cannot silently fall outside the figure. This replaces a documented
+  // `backend/scripts/measure.mjs` that never existed, and measures the peak
+  // during the run that produces the baseline rather than in a separate one.
+  let peakRss = 0;
+  const rssOf = (pid: number): number => {
+    try {
+      const match = /VmRSS:\s+(\d+)\s+kB/.exec(readFileSync(`/proc/${pid}/status`, "utf8"));
+      return match ? Number(match[1]) * 1024 : 0;
+    } catch {
+      return 0;
+    }
+  };
+  const treeRss = (pid: number, seen = new Set<number>()): number => {
+    if (seen.has(pid)) return 0;
+    seen.add(pid);
+    let total = rssOf(pid);
+    try {
+      for (const task of readdirSync(`/proc/${pid}/task`)) {
+        const children = readFileSync(`/proc/${pid}/task/${task}/children`, "utf8").trim();
+        for (const child of children ? children.split(/\s+/) : []) {
+          total += treeRss(Number(child), seen);
+        }
+      }
+    } catch {
+      // The process ended, or /proc is unavailable. Whatever was read stands.
+    }
+    return total;
+  };
+  const sampler = setInterval(() => {
+    if (child.pid !== undefined) peakRss = Math.max(peakRss, treeRss(child.pid));
+  }, 500);
+  sampler.unref();
+
   const base = `http://127.0.0.1:${port}`;
   // `/healthz`, taken from `catalogue.ts:212`. An earlier version probed
   // `/api/health`, which the backend does not serve, so the wait timed out
@@ -270,9 +309,11 @@ export async function startServer(
   return {
     base,
     bypassToken,
+    peakRssBytes: () => peakRss,
     exitCode: () => child.exitCode,
     output: failure,
     stop: async () => {
+      clearInterval(sampler);
       child.kill("SIGTERM");
       await new Promise((resolve) => setTimeout(resolve, 300));
       if (child.exitCode === null) child.kill("SIGKILL");
@@ -419,6 +460,8 @@ export type HarnessReport = {
   scope: "backend-only" | "subset";
   /** The build this run performed, `null` for a smoke run that did not build. */
   build: { commit: string; builtAt: string } | null;
+  /** Highest resident memory the measured server reached, in bytes. */
+  peakRssBytes: number;
   /** Every catalogue workload, either measured or excluded with a reason. */
   coverage: {
     measured: string[];
@@ -634,6 +677,7 @@ export async function runHarness(options: {
       serverConfig: { apiRateLimitMax: BENCH_RATE_LIMIT_MAX },
       scope,
       build,
+      peakRssBytes: server.peakRssBytes(),
       coverage: { measured: results.map((r) => r.workload), excluded },
       results,
       startedAt,

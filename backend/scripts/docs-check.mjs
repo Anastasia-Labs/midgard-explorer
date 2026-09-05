@@ -28,7 +28,14 @@ const PAGES = [
   "docs/running-existing-midgard.md",
   "docs/running-full-midgard.md",
   "docs/troubleshooting.md",
-  "docs/resource-requirements.md",
+  // Every top-level page under docs/, scanned as a directory. Listing them by
+  // hand left `docs/performance-budgets.md` outside the gate entirely: the
+  // register that governs the performance programme was never checked for a
+  // link or a command, and carried thirteen verification commands naming a
+  // flag that never existed.
+  ...readdirSync(join(repoRoot, "docs"))
+    .filter((name) => name.endsWith(".md"))
+    .map((name) => `docs/${name}`),
   // Release records carry operational commands an operator runs during a
   // rollout, which is the worst possible place for a command that no longer
   // exists. Scanned as a directory so a new record is gated the day it lands
@@ -157,6 +164,43 @@ for (const page of PAGES) {
   }
   for (const [, inline] of text.matchAll(/`([^`\n]+)`/g)) {
     readCommands([inline], PACKAGE_OF[page]);
+  }
+}
+
+/**
+ * A documented script invocation must name a script that exists.
+ *
+ * The gate only ever checked `pnpm <script>`, so a bare path in a table cell
+ * went unread. `docs/performance-budgets.md` named
+ * `bench/harness.mts --workload <name>` as the verification command for
+ * thirteen rows, and neither that entry point nor that flag existed, while the
+ * gate reported that every documented command exists.
+ *
+ * Only invocations are checked: a script path FOLLOWED BY ARGUMENTS. A bare
+ * `db.ts` or `route.ts` in prose is a reference to source, not a command, and
+ * flagging those made the gate fail on correct documentation.
+ */
+const INVOCATION = /^([a-zA-Z0-9_@./-]+\.(?:mjs|mts|ts|sh|js))\s+\S/;
+const SCRIPT_DIRS = [
+  "",
+  "backend/",
+  "backend/scripts/",
+  "frontend-new/",
+  "frontend-new/app/",
+  "frontend-new/app/scripts/",
+  "scripts/",
+];
+
+for (const page of PAGES) {
+  const text = readFileSync(join(repoRoot, page), "utf8");
+  for (const [, inline] of text.matchAll(/`([^`\n]+)`/g)) {
+    const match = INVOCATION.exec(inline.trim());
+    if (!match) continue;
+    const target = match[1];
+    const found = SCRIPT_DIRS.some((dir) => existsSync(join(repoRoot, dir + target)));
+    if (!found) {
+      problems.push(`${page}: "${inline}" runs ${target}, which does not exist`);
+    }
   }
 }
 

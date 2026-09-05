@@ -1,5 +1,6 @@
 import { runHarness } from "./harness.mjs";
 import { PROFILES } from "./profiles.mjs";
+import { WORKLOADS } from "./workloads.mjs";
 
 /**
  * Runs the workload catalogue and writes a JSON report.
@@ -14,6 +15,10 @@ import { PROFILES } from "./profiles.mjs";
  * profile, and the report stamps `hardware` so a number is read as that
  * profile rather than as universal production hardware. A smoke run's numbers
  * are not baselines and the report says which it was.
+ *
+ * `--only <workload>` runs one row of the catalogue. A subset is a diagnostic
+ * and `baselineGate` refuses to certify it, which is why the per-row commands
+ * in `docs/performance-budgets.md` use `--mode smoke`.
  *
  * Requires:
  *   BENCH_POSTGRES_URL       the dedicated benchmark server
@@ -41,6 +46,12 @@ if (mode !== "smoke" && mode !== "baseline") {
   throw new Error(`mode must be smoke or baseline, got ${mode}`);
 }
 
+const only = process.argv.indexOf("--only");
+const onlyWorkload = only === -1 ? undefined : process.argv[only + 1];
+if (onlyWorkload !== undefined && !WORKLOADS.some((w) => w.name === onlyWorkload)) {
+  throw new Error(`unknown workload: ${onlyWorkload}`);
+}
+
 const benchUrl = process.env.BENCH_POSTGRES_URL;
 const liveIndexUrl = process.env.BENCH_SOURCE_INDEX_URL;
 if (!benchUrl || !liveIndexUrl) {
@@ -52,6 +63,7 @@ if (!benchUrl || !liveIndexUrl) {
 
 const report = await runHarness({
   profileName,
+  only: onlyWorkload ? [onlyWorkload] : undefined,
   benchUrl,
   liveIndexUrl,
   port: Number(arg("port", "43200")),

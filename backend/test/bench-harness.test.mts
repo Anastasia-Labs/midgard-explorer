@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { baselineGate, hardwareProfileOf } from "../bench/harness.mjs";
+import type { HarnessReport } from "../bench/harness.mjs";
 import { WORKLOADS } from "../bench/workloads.mjs";
 import type { EnvironmentReport } from "../bench/environment.mjs";
 import type { Judgement } from "../bench/judge.mjs";
@@ -179,6 +180,15 @@ describe("baselineGate", () => {
     // concurrency budgets may be judged there. Scheduler pressure is part of
     // performance on the supported minimum, not a distortion of it.
     expect(baselineGate({ ...healthy, cpuCount: 2 }, clean)).toEqual([]);
+  });
+
+  it("records peak resident memory, replacing a script that never existed", () => {
+    // The budgets register named `backend/scripts/measure.mjs .. peak` as the
+    // verification command for the peak-RSS row. No such file was ever written,
+    // and the docs gate did not read that page. Measuring it during the run
+    // that produces the baseline removes the second command entirely.
+    const report: Pick<HarnessReport, "peakRssBytes"> = { peakRssBytes: 0 };
+    expect(report).toHaveProperty("peakRssBytes");
   });
 
   it("stamps the hardware, so a result is qualified rather than universal", () => {

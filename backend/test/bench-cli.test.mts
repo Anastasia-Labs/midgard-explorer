@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const run = promisify(execFile);
@@ -34,6 +35,30 @@ describe("the bench CLI as a program", () => {
     expect(stderr).not.toMatch(/ERR_MODULE_NOT_FOUND/);
     expect(stderr).toMatch(/set BENCH_POSTGRES_URL and BENCH_SOURCE_INDEX_URL/);
   }, 60_000);
+
+  it("rejects an unknown workload, so --only cannot silently measure nothing", async () => {
+    // `docs/performance-budgets.md` names `pnpm bench --only <row>` for every
+    // latency row. It previously named a `--workload` flag that never existed,
+    // and the docs gate did not read that page at all.
+    const failure = await run(
+      "node",
+      ["--import", "./bench/register.mjs", "bench/cli.mts", "--only", "no-such-row"],
+      { env: process.env, cwd: process.cwd() },
+    ).catch((error: { stderr: string }) => error);
+    const stderr = (failure as { stderr: string }).stderr;
+    expect(stderr).not.toMatch(/ERR_MODULE_NOT_FOUND/);
+    expect(stderr).toMatch(/unknown workload: no-such-row/);
+  }, 60_000);
+
+  it("accepts every workload the budgets document names", async () => {
+    const { WORKLOADS } = await import("../bench/workloads.mjs");
+    const doc = await readFile("../docs/performance-budgets.md", "utf8");
+    const named = [...doc.matchAll(/`pnpm bench --only ([a-z0-9-]+)/g)].map((m) => m[1]);
+    expect(named.length).toBeGreaterThan(0);
+    for (const name of named) {
+      expect(WORKLOADS.some((w) => w.name === name), name).toBe(true);
+    }
+  });
 
   it("rejects an unknown profile through the real entry point", async () => {
     const failure = await run(
