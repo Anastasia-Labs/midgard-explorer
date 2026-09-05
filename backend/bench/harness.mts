@@ -7,7 +7,7 @@ import { cloneIndex, type IndexSnapshot } from "./cloneIndex.mjs";
 import { captureEnvironment, environmentWarnings, type EnvironmentReport } from "./environment.mjs";
 import { generateDataset, LOAD_ORDER } from "./generate.mjs";
 import { judge, type Judgement } from "./judge.mjs";
-import { identitySize, runRequests, summarise } from "./measure.mjs";
+import { encodedSize, identitySize, runRequests, summarise } from "./measure.mjs";
 import { createDbProbe, ZERO_WORK, type DbWork } from "./pgStats.mjs";
 import { PROFILES, type Profile } from "./profiles.mjs";
 import { seedDataset } from "./seedShaped.mjs";
@@ -426,10 +426,12 @@ export async function runWorkload(
   // set, and neither can be answered from a report that recorded the identity
   // size for two rows out of twelve. One extra request per workload.
   const identity = await identitySize(urlFor(0), timeoutMs);
+  // The same url, offered compression, so the pair is comparable.
+  const encoded = await encodedSize(urlFor(0), timeoutMs);
 
   return judge({
     workload,
-    stats: summarise(samples, elapsedMs, identity),
+    stats: { ...summarise(samples, elapsedMs, identity), encodedBytes: encoded },
     dbWork: perRequest,
     dbProbeAvailable: probe.available,
     distinctPaths,

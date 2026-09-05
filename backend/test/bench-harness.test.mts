@@ -36,7 +36,7 @@ const clean: Judgement[] = [
     unmeasured: [],
     stats: {
       count: 40, successCount: 40, p50Ms: 10, p95Ms: 20, p99Ms: 30, maxMs: 40,
-      errorRate: 0, timeoutRate: 0, rps: 50, wireBytes: 100, uncompressedBytes: 200,
+      errorRate: 0, timeoutRate: 0, rps: 50, wireBytes: 100, uncompressedBytes: 200, encodedBytes: 120,
     },
     dbWork: { statements: 3, routeStatements: 3, transactionControl: 0, metadataStatements: 0, sharedBlocks: 10, tempBytes: 0, execMs: 1 },
   },

@@ -23,6 +23,7 @@ const stats = (over: Partial<Stats> = {}): Stats => ({
   rps: 50,
   wireBytes: 1_000,
   uncompressedBytes: 4_000,
+  encodedBytes: 1_200,
   ...over,
 });
 

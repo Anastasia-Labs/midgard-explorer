@@ -44,6 +44,13 @@ export type Stats = {
   rps: number;
   wireBytes: number;
   uncompressedBytes: number;
+  /**
+   * The same url fetched with `Accept-Encoding: gzip, br`.
+   *
+   * Comparable to `uncompressedBytes` because both come from one url; the
+   * measured `wireBytes` is a median across many and is not.
+   */
+  encodedBytes: number;
 };
 
 /** Nearest-rank percentile. No interpolation: a real observation, not a blend. */
@@ -161,6 +168,9 @@ export function summarise(
     // detail would otherwise dominate the figure for a whole route.
     wireBytes: percentileOf(ok.map((s) => s.wireBytes), 0.5),
     uncompressedBytes,
+    // Filled in by the caller, which fetches the same url with compression
+    // offered. Zero here rather than absent, so a Stats value is always whole.
+    encodedBytes: 0,
   };
 }
 
@@ -191,6 +201,22 @@ export async function runRequests(
 /** The identity-encoded size, for the compression ratio. */
 export async function identitySize(url: string, timeoutMs: number): Promise<number> {
   const sample = await timedRequest(url, timeoutMs, "identity");
+  return sample.wireBytes;
+}
+
+/**
+ * The size of the same response when compression is offered.
+ *
+ * The measured requests do not send `Accept-Encoding`, so `wireBytes` is an
+ * uncompressed body and matched the identity size exactly on every fixed-path
+ * workload. Two register rows ask whether compression ever enlarges a response
+ * and what it saves; neither could be answered from two numbers that are equal
+ * by construction. This asks for the encoded body of the SAME url the identity
+ * size came from, so the pair is comparable. A unique-key workload's median
+ * wire size, drawn from a thousand different responses, is not.
+ */
+export async function encodedSize(url: string, timeoutMs: number): Promise<number> {
+  const sample = await timedRequest(url, timeoutMs, "gzip, br");
   return sample.wireBytes;
 }
 

@@ -15,7 +15,7 @@ const withP99 = WORKLOADS.find((w) => w.budget.p99Ms !== undefined)!;
 
 const statsOf = (successCount: number, p99Ms: number, count = successCount) => ({
   count, successCount, p50Ms: 10, p95Ms: 20, p99Ms, maxMs: p99Ms,
-  errorRate: 0, timeoutRate: 0, rps: 50, wireBytes: 10, uncompressedBytes: 10,
+  errorRate: 0, timeoutRate: 0, rps: 50, wireBytes: 10, uncompressedBytes: 10, encodedBytes: 10,
 });
 
 const noWork = {

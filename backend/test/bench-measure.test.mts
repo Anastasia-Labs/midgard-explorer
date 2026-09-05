@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
 import { gzipSync } from "node:zlib";
 import {
+  encodedSize,
   identitySize,
   percentileOf,
   runRequests,
@@ -162,5 +163,18 @@ describe("the latency population is successes only", () => {
     expect(none.successCount).toBe(0);
     expect(none.p95Ms).toBe(0);
     expect(none.errorRate).toBe(1);
+  });
+});
+
+describe("encoded size is comparable to identity size", () => {
+  it("asks for compression, unlike the measured requests", async () => {
+    // The measured requests send no Accept-Encoding, so `wireBytes` is an
+    // uncompressed body: on every fixed-path workload it equalled the identity
+    // size exactly. Two register rows ask what compression saves, and two
+    // numbers that are equal by construction cannot answer them.
+    const identity = await identitySize(`${base}/big`, 5_000);
+    const encoded = await encodedSize(`${base}/big`, 5_000);
+    expect(identity).toBeGreaterThan(1024);
+    expect(encoded).toBeLessThan(identity);
   });
 });
