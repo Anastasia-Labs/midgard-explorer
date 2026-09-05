@@ -421,10 +421,11 @@ export async function runWorkload(
     execMs: totals.execMs / per,
   };
 
-  const identity =
-    workload.budget.maxUncompressedBytes === undefined
-      ? 0
-      : await identitySize(urlFor(0), timeoutMs);
+  // Always, not only where a budget names it. Two register rows ask whether
+  // compression ever enlarges a response and what it saves across the route
+  // set, and neither can be answered from a report that recorded the identity
+  // size for two rows out of twelve. One extra request per workload.
+  const identity = await identitySize(urlFor(0), timeoutMs);
 
   return judge({
     workload,
