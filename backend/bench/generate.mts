@@ -246,6 +246,8 @@ function* buildBatches(
     profile.statusMix.activeRows === 1 ? profile.blocks - 1 : -1;
 
   const blocks: GeneratedBlock[] = [];
+  // Outside `tables`, so flushing a batch cannot restart it.
+  const seq = { admissions: 0 };
   let time = EPOCH;
   let previousStart = new Date(EPOCH);
   let previousEnd = new Date(EPOCH);
@@ -338,7 +340,7 @@ function* buildBatches(
       blocks.push(block);
     }
 
-    emitBlockRows(tables, block, profile, spentUtxos, next);
+    emitBlockRows(tables, block, profile, spentUtxos, next, seq);
 
     // Hand the batch over and start an empty one. The ledger and the last block
     // survive because later work needs them; the rows do not.
@@ -425,6 +427,15 @@ function emitBlockRows(
   profile: Profile,
   spent: readonly Utxo[],
   next: () => number,
+  /**
+   * Monotonic across the whole run, not across the current batch.
+   *
+   * `arrival_seq` was `tables.tx_admissions.length + 1`, which restarts at one
+   * every time a streaming batch is flushed and cleared. `stress` then violated
+   * `tx_admissions_arrival_seq_key` on the second batch. A counter that lives
+   * outside the arrays cannot be reset by emptying them.
+   */
+  seq: { admissions: number },
 ): void {
   const { headerHash, counts } = block;
 
@@ -515,7 +526,7 @@ function emitBlockRows(
         created_at: block.blockEndTime,
       });
     }
-    emitAdmission(tables, txId, Buffer.from(tx.bytes), block, profile, next);
+    emitAdmission(tables, txId, Buffer.from(tx.bytes), block, profile, next, seq);
     tables.mempool_tx_deltas.push({
       tx_id: txId,
       spent_cbor: Buffer.from(tx.bytes).subarray(0, 64),
@@ -536,6 +547,7 @@ function emitAdmission(
   block: GeneratedBlock,
   profile: Profile,
   next: () => number,
+  seq: { admissions: number },
 ): void {
   const status = pick(next(), [
     ["queued", profile.admissionMix.queued],
@@ -563,7 +575,7 @@ function emitAdmission(
     reject_detail: status === "rejected" ? "generated dataset rejection" : null,
     first_seen_at: block.blockStartTime,
     last_seen_at: block.blockEndTime,
-    arrival_seq: BigInt(tables.tx_admissions.length + 1),
+    arrival_seq: BigInt((seq.admissions += 1)),
     next_attempt_at: block.blockEndTime,
     updated_at: block.blockEndTime,
   });

@@ -32,10 +32,14 @@ describe("streamDataset", () => {
     for (const table of LOAD_ORDER) {
       expect(seen[table].length, `${table} row count`).toBe(whole.tables[table].length);
     }
-    // Content, not just counts: a batch boundary must not reorder or drop.
-    expect(stable(seen.da_payloads)).toBe(stable(whole.tables.da_payloads));
-    expect(stable(seen.address_history)).toBe(stable(whole.tables.address_history));
-    expect(stable(seen.immutable)).toBe(stable(whole.tables.immutable));
+    // EVERY table, by content. Checking three of them let a real defect through:
+    // `arrival_seq` was derived from `tables.tx_admissions.length`, which a
+    // flushed batch resets to zero, so `stress` violated
+    // `tx_admissions_arrival_seq_key` on its second batch. Counts matched
+    // because the number of rows was right; only the values were wrong.
+    for (const table of LOAD_ORDER) {
+      expect(stable(seen[table]), `${table} content`).toBe(stable(whole.tables[table]));
+    }
   }, 120_000);
 
   it("reports what it wrote, so a short ledger is visible rather than silent", async () => {
