@@ -273,6 +273,13 @@ export async function startServer(
   // against a server that was already up. This is the same defect the workload
   // catalogue exists to prevent: a hand-written path that 404s.
   const healthPath = "/healthz";
+  // Liveness first, then readiness. `/healthz` answers as soon as the process
+  // is up, which is several seconds before Prisma can serve a data route: a
+  // run that started on liveness alone recorded three workloads of 100% errors
+  // in under two seconds and called them measurements. `/readyz` checks the
+  // databases, so it is the signal that the server can answer what the
+  // benchmark is about to ask.
+  const readyPath = "/readyz";
   const deadline = Date.now() + 60_000;
   // Accumulated, not overwritten: a config failure prints its reason first and
   // the stack last, so keeping only the final chunk loses the reason.
@@ -301,6 +308,28 @@ export async function startServer(
       child.kill("SIGKILL");
       throw new Error(
         `server did not become healthy in 60s; last ${healthPath} status: ${lastStatus}\n${failure()}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  const readyBy = Date.now() + 120_000;
+  for (;;) {
+    if (child.exitCode !== null) {
+      throw new Error(`server exited with ${child.exitCode}:\n${failure()}`);
+    }
+    try {
+      const probe = await fetch(`${base}${readyPath}`);
+      lastStatus = probe.status;
+      if (probe.ok) break;
+    } catch {
+      // Not answering yet.
+    }
+    if (Date.now() > readyBy) {
+      child.kill("SIGKILL");
+      throw new Error(
+        `server was live but never became ready in 120s; last ${readyPath} ` +
+          `status: ${lastStatus}. Measuring here records errors as latency.\n${failure()}`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
