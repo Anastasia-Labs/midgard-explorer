@@ -169,12 +169,27 @@ export function generateDataset(
   return dataset;
 }
 
-function buildDataset(
+/**
+ * The dataset in batches, so a profile larger than memory can be seeded.
+ *
+ * `stress` is 50,000 blocks and roughly 370,000 transactions, and holding every
+ * CBOR body at once is what exhausted a 4 GB machine. Yielding lets the caller
+ * write each batch and drop it. `blocksPerBatch = Infinity` yields once and is
+ * exactly the old behaviour, which is what `buildDataset` still asks for.
+ *
+ * `retainBlocks` is separate because the block array is the other unbounded
+ * cost: it holds every transaction's bytes. Only the last block is ever needed
+ * after the loop (`emitOversize` and `emitMempool` both read `blocks.at(-1)`),
+ * so a streaming caller keeps that one and discards the rest.
+ */
+function* buildBatches(
   profile: Profile,
   options: GenerateOptions,
   parts: CorpusParts,
   genesisOverride: number | undefined,
-): Dataset {
+  blocksPerBatch = Number.POSITIVE_INFINITY,
+  retainBlocks = true,
+): Generator<Record<string, Row[]>, Omit<Dataset, "tables">> {
   const next = rng(profile.seed);
 
   // Draw the per-block event counts first, so the ledger can be sized to land
@@ -315,9 +330,22 @@ function buildDataset(
       settled,
       transactions,
     };
-    blocks.push(block);
+    // A streaming caller keeps only the block the finalisers read, because the
+    // array otherwise holds every transaction's bytes for the whole run.
+    if (retainBlocks) blocks.push(block);
+    else {
+      blocks.length = 0;
+      blocks.push(block);
+    }
 
     emitBlockRows(tables, block, profile, spentUtxos, next);
+
+    // Hand the batch over and start an empty one. The ledger and the last block
+    // survive because later work needs them; the rows do not.
+    if ((height + 1) % blocksPerBatch === 0) {
+      yield tables;
+      for (const name of LOAD_ORDER) tables[name] = [];
+    }
   }
 
   emitOversize(tables, parts, profile, blocks);
@@ -328,7 +356,66 @@ function buildDataset(
   emitLedgerRows(tables, "confirmed_ledger", ledger.remaining());
   emitMempool(tables, ledger, profile, blocks);
   emitLedgerRows(tables, "mempool_ledger", ledger.remaining());
-  return { profile, blocks, tables, genesisUtxos };
+  yield tables;
+  return { profile, blocks, genesisUtxos };
+}
+
+/**
+ * Generates and seeds a profile without holding it in memory.
+ *
+ * `stress` does not fit: 50,000 blocks carry roughly 370,000 transactions, and
+ * their CBOR bodies alone exceed what this machine has. Each batch is written
+ * and dropped, so peak memory is a batch plus the UTxO graph rather than the
+ * whole dataset.
+ *
+ * The genesis calibration in `generateDataset` cannot run here, because it
+ * measures the finished ledger and would mean generating the profile several
+ * times. The ledger size is a floor rather than a target, so a short result is
+ * reported for the caller to judge instead of being silently re-seeded.
+ */
+export async function streamDataset(
+  profile: Profile,
+  options: GenerateOptions,
+  seed: (tables: Record<string, Row[]>) => Promise<void>,
+  blocksPerBatch = 500,
+): Promise<{ rows: number; ledgerRows: number; batches: number }> {
+  const parts = options.parts ?? loadCorpus();
+  const batches = buildBatches(profile, options, parts, undefined, blocksPerBatch, false);
+  let rows = 0;
+  let ledgerRows = 0;
+  let count = 0;
+  let step = batches.next();
+  while (!step.done) {
+    for (const table of LOAD_ORDER) {
+      rows += step.value[table]?.length ?? 0;
+    }
+    ledgerRows += step.value.mempool_ledger?.length ?? 0;
+    await seed(step.value);
+    count += 1;
+    step = batches.next();
+  }
+  return { rows, ledgerRows, batches: count };
+}
+
+/** Every batch merged into one dataset. The in-memory path, unchanged. */
+function buildDataset(
+  profile: Profile,
+  options: GenerateOptions,
+  parts: CorpusParts,
+  genesisOverride: number | undefined,
+): Dataset {
+  const tables: Record<string, Row[]> = Object.fromEntries(
+    LOAD_ORDER.map((name) => [name, [] as Row[]]),
+  );
+  const batches = buildBatches(profile, options, parts, genesisOverride);
+  let step = batches.next();
+  while (!step.done) {
+    for (const [table, rows] of Object.entries(step.value)) {
+      if (rows.length > 0) tables[table].push(...rows);
+    }
+    step = batches.next();
+  }
+  return { ...step.value, tables };
 }
 
 /** Every row a single block contributes, across the member and event tables. */

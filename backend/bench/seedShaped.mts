@@ -90,6 +90,24 @@ function normalize(value: unknown): unknown {
   return value;
 }
 
+/**
+ * Seeds one batch, in load order, without analysing.
+ *
+ * A streaming run calls this many times; `ANALYZE` belongs once at the end, not
+ * after every batch, because statistics gathered over a fraction of the rows
+ * are worse than none and the cost repeats.
+ */
+export async function seedBatch(
+  db: Client,
+  tables: Record<string, Row[]>,
+): Promise<number> {
+  let total = 0;
+  for (const table of LOAD_ORDER) {
+    total += await insertTable(db, table, tables[table] ?? []);
+  }
+  return total;
+}
+
 export async function seedDataset(
   db: Client,
   dataset: Dataset,
@@ -102,10 +120,22 @@ export async function seedDataset(
     total += inserted[table];
   }
   // Statistics, not a formality. See the note at the top of this file.
+  const analyzed = await analyzeTables(db);
+  return { inserted, total, analyzed };
+}
+
+/**
+ * Gathers statistics over every loaded table.
+ *
+ * Extracted so the streaming path runs it once at the end rather than after
+ * every batch: statistics taken over a fraction of the rows are worse than
+ * none, and the cost would repeat for each batch.
+ */
+export async function analyzeTables(db: Client): Promise<string[]> {
   const analyzed: string[] = [];
   for (const table of LOAD_ORDER) {
     await db.query(`ANALYZE ${quoteIdent(table)}`);
     analyzed.push(table);
   }
-  return { inserted, total, analyzed };
+  return analyzed;
 }

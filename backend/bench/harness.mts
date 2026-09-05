@@ -5,12 +5,12 @@ import { readFileSync, readdirSync } from "node:fs";
 import { Client } from "pg";
 import { cloneIndex, type IndexSnapshot } from "./cloneIndex.mjs";
 import { captureEnvironment, environmentWarnings, type EnvironmentReport } from "./environment.mjs";
-import { generateDataset, LOAD_ORDER } from "./generate.mjs";
+import { generateDataset, streamDataset, LOAD_ORDER } from "./generate.mjs";
 import { judge, type Judgement } from "./judge.mjs";
 import { encodedSize, identitySize, runRequests, summarise } from "./measure.mjs";
 import { createDbProbe, ZERO_WORK, type DbWork } from "./pgStats.mjs";
 import { PROFILES, type Profile } from "./profiles.mjs";
-import { seedDataset } from "./seedShaped.mjs";
+import { analyzeTables, seedBatch, seedDataset } from "./seedShaped.mjs";
 import { WORKLOADS, type SeededIds, type Workload } from "./workloads.mjs";
 import {
   adminUrl,
@@ -125,10 +125,28 @@ export async function setupBench(options: SetupOptions): Promise<BenchSetup> {
 
   // The real L2 header hashes from the snapshot settle the generated blocks,
   // so the cross-source routes agree with real data rather than a re-derivation.
-  const dataset = generateDataset(profile, {
-    settledHashes: indexSnapshot.settledHashes,
-  });
-  await seedDataset(nodeClient, dataset);
+  // Above this size the dataset does not fit in memory: `stress` is 50,000
+  // blocks carrying about 370,000 transactions, and holding every CBOR body at
+  // once exhausted the machine. The streaming path writes each batch and drops
+  // it, and emits identical rows, which `bench-stream-dataset.test.mts` checks
+  // row for row. Below it the in-memory path keeps its genesis calibration,
+  // which needs the finished ledger and so cannot run while streaming.
+  const STREAM_ABOVE_BLOCKS = 10_000;
+  if (profile.blocks > STREAM_ABOVE_BLOCKS) {
+    await streamDataset(
+      profile,
+      { settledHashes: indexSnapshot.settledHashes },
+      async (tables) => {
+        await seedBatch(nodeClient, tables);
+      },
+    );
+    await analyzeTables(nodeClient);
+  } else {
+    const dataset = generateDataset(profile, {
+      settledHashes: indexSnapshot.settledHashes,
+    });
+    await seedDataset(nodeClient, dataset);
+  }
   const datasetChecksum = await checksum(nodeClient, [...LOAD_ORDER]);
   const ids = await resolveSeededIds(nodeClient, options.poolSize ?? 50);
 
