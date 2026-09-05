@@ -57,8 +57,14 @@ try {
   for (const workload of selected) {
     const urlFor = (i: number) =>
       `${handle.base}${workload.buildPath(setup.ids[i % setup.ids.length])}`;
+    // The same cache mode the baseline uses for this workload, not always the
+    // bypass. Bypassing skips the inner work cache too, which changed the class
+    // split: `block-detail` attributed 3 statements to metadata under bypass
+    // and 1 in the baseline. A diagnostic that explains a different code path
+    // than the one measured explains nothing.
+    const headers = workload.cacheMode === "cold" ? { bypass: handle.bypassToken } : undefined;
     await probe.reset();
-    await runRequests(urlFor, requests, 1, 30_000, { bypass: handle.bypassToken });
+    await runRequests(urlFor, requests, 1, 30_000, headers);
     const attribution = await attributeFrom(control, workload.name, requests);
     results.push(attribution);
 

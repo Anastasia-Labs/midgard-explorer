@@ -1,5 +1,5 @@
 import type { Client } from "pg";
-import { classifyStatement } from "./attribution.mjs";
+import { classifyStatement, normalizeQuery } from "./attribution.mjs";
 
 /**
  * Database work per request, measured from PostgreSQL rather than guessed.
@@ -109,7 +109,7 @@ export async function createDbProbe(control: Client): Promise<DbProbe> {
         ms: string | null;
       }>(
         `SELECT calls::text AS calls,
-                regexp_replace(query, '\s+', ' ', 'g') AS query,
+                query,
                 (shared_blks_hit + shared_blks_read)::text AS shared,
                 (temp_blks_read + temp_blks_written)::text AS temp,
                 total_exec_time::text AS ms
@@ -123,7 +123,7 @@ export async function createDbProbe(control: Client): Promise<DbProbe> {
         work.sharedBlocks += Number(row.shared ?? 0);
         work.tempBytes += Number(row.temp ?? 0) * blocks;
         work.execMs += Number(row.ms ?? 0);
-        const kind = classifyStatement(row.query);
+        const kind = classifyStatement(normalizeQuery(row.query));
         if (kind === "transaction-control") work.transactionControl += calls;
         else if (kind === "metadata") work.metadataStatements += calls;
         else work.routeStatements += calls;

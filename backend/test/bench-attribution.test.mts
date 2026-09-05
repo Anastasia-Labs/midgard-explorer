@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyStatement } from "../bench/attribution.mjs";
+import { classifyStatement, normalizeQuery } from "../bench/attribution.mjs";
 
 /**
  * The classifier, against query texts captured from a real request.
@@ -47,5 +47,27 @@ describe("classifyStatement", () => {
     expect(
       classifyStatement("SELECT l2_transaction_count FROM da_payloads WHERE header_hash = $1"),
     ).toBe("route-query");
+  });
+});
+
+describe("normalizeQuery", () => {
+  it("collapses the newlines pg_stat_statements stores, keeping every letter", () => {
+    const raw = 'SELECT "public"."sync_cursor"."source"\n  FROM "public"."sync_cursor"\n WHERE x = $1';
+    const normalized = normalizeQuery(raw);
+    expect(normalized).toBe(
+      'SELECT "public"."sync_cursor"."source" FROM "public"."sync_cursor" WHERE x = $1',
+    );
+    // The regression this exists for: a `\s` written inside a template literal
+    // collapses to a plain `s`, so the normalisation stripped every letter s.
+    // `sync_cursor` then failed to match and was counted as route work, while
+    // `index_binding`, which has no s, kept matching. The classifier must still
+    // see the table name after normalising.
+    expect(normalized).toContain("sync_cursor");
+    expect(classifyStatement(normalized)).toBe("metadata");
+  });
+
+  it("does not remove the letter s from a query", () => {
+    const normalized = normalizeQuery("SELECT status, class FROM sessions");
+    expect(normalized).toBe("SELECT status, class FROM sessions");
   });
 });

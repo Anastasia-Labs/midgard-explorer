@@ -22,6 +22,20 @@ export type StatementClass =
   /** Everything the route asked for on behalf of the response. */
   | "route-query";
 
+/**
+ * Collapses whitespace so a multi-line query reads as one line.
+ *
+ * In TypeScript, not SQL. The same normalisation was written twice as a
+ * `regexp_replace(query, '\\s+', ...)` literal, and one copy sat in a template
+ * literal where `\s` collapses to a plain `s`, so it stripped the letter s from
+ * every query text. `sync_cursor` stopped matching and was counted as route
+ * work; `index_binding`, which contains no s, kept matching. One helper, tested
+ * once, removes the hazard rather than fixing it in two places.
+ */
+export function normalizeQuery(query: string): string {
+  return query.replace(/\s+/g, " ").trim();
+}
+
 const TRANSACTION_CONTROL =
   /^\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|SET\s+TRANSACTION|START\s+TRANSACTION)\b/i;
 
@@ -62,7 +76,7 @@ export async function attributeFrom(
   requests: number,
 ): Promise<Attribution> {
   const { rows } = await control.query<{ calls: string; query: string }>(
-    `SELECT calls::text AS calls, regexp_replace(query, '\\s+', ' ', 'g') AS query
+    `SELECT calls::text AS calls, query
        FROM pg_stat_statements
       WHERE query NOT LIKE '%pg_stat_statements%'
       ORDER BY calls DESC, query ASC`,
@@ -78,11 +92,12 @@ export async function attributeFrom(
 
   for (const row of rows) {
     const calls = Number(row.calls);
-    const statementClass = classifyStatement(row.query);
+    const query = normalizeQuery(row.query);
+    const statementClass = classifyStatement(query);
     byClass[statementClass] += calls / requests;
     total += calls / requests;
     statements.push({
-      query: row.query,
+      query,
       calls,
       perRequest: calls / requests,
       statementClass,
