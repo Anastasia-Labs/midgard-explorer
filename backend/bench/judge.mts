@@ -127,7 +127,13 @@ export function judge(input: JudgeInput): Judgement {
   }
 
   const dbBudgets: [string, number | undefined, number, string][] = [
-    ["statements", budget.maxDbStatements, dbWork.statements, "count"],
+    // Route queries, not every statement. Ruled 2026-09-05: the fixed
+    // BEGIN / SET TRANSACTION ISOLATION LEVEL REPEATABLE READ / COMMIT is the
+    // snapshot consistency the explorer depends on, not something a query
+    // change can remove, and counting it put `asset-roster`'s budget of two
+    // below the three-statement floor. The preamble is recorded in `dbWork`
+    // and reported; it is simply not what the budget is about.
+    ["route statements", budget.maxDbStatements, dbWork.routeStatements, "count"],
     ["shared blocks", budget.maxSharedBlocks, dbWork.sharedBlocks, "count"],
     ["temp bytes", budget.maxTempBytes, dbWork.tempBytes, "bytes"],
   ];

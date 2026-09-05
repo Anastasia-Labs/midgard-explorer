@@ -37,7 +37,7 @@ const clean: Judgement[] = [
       count: 40, successCount: 40, p50Ms: 10, p95Ms: 20, p99Ms: 30, maxMs: 40,
       errorRate: 0, timeoutRate: 0, rps: 50, wireBytes: 100, uncompressedBytes: 200,
     },
-    dbWork: { statements: 3, sharedBlocks: 10, tempBytes: 0, execMs: 1 },
+    dbWork: { statements: 3, routeStatements: 3, transactionControl: 0, metadataStatements: 0, sharedBlocks: 10, tempBytes: 0, execMs: 1 },
   },
 ];
 
@@ -59,7 +59,7 @@ describe("baselineGate", () => {
         verdict: "FAIL",
         breaches: ["error rate 100.00% over 0.00%"],
         stats: { ...clean[0].stats, p95Ms: 0.64, errorRate: 1, wireBytes: 0 },
-        dbWork: { statements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
+        dbWork: { statements: 0, routeStatements: 0, transactionControl: 0, metadataStatements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
       },
     ];
     const blocking = baselineGate(healthy, dead);

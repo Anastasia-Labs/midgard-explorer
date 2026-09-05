@@ -340,11 +340,15 @@ export async function runWorkload(
 
   // Budgets are per request. Cluster totals divided by the requests that
   // produced them, which is why nothing else may touch this server during a run.
+  const per = Math.max(1, samples.length);
   const perRequest: DbWork = {
-    statements: totals.statements / Math.max(1, samples.length),
-    sharedBlocks: totals.sharedBlocks / Math.max(1, samples.length),
-    tempBytes: totals.tempBytes / Math.max(1, samples.length),
-    execMs: totals.execMs / Math.max(1, samples.length),
+    statements: totals.statements / per,
+    routeStatements: totals.routeStatements / per,
+    transactionControl: totals.transactionControl / per,
+    metadataStatements: totals.metadataStatements / per,
+    sharedBlocks: totals.sharedBlocks / per,
+    tempBytes: totals.tempBytes / per,
+    execMs: totals.execMs / per,
   };
 
   const identity =

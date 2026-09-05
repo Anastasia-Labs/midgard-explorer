@@ -47,7 +47,17 @@ const workload = (over: Partial<Workload> = {}): Workload => ({
   ...over,
 });
 
-const work = { statements: 3, sharedBlocks: 500, tempBytes: 0, execMs: 20 };
+// The preamble is present and deliberately not what the budget counts:
+// `statements` is the raw total, `routeStatements` is what `judge` compares.
+const work = {
+  statements: 6,
+  routeStatements: 3,
+  transactionControl: 3,
+  metadataStatements: 0,
+  sharedBlocks: 500,
+  tempBytes: 0,
+  execMs: 20,
+};
 
 describe("judge", () => {
   it("passes a run inside every budget", () => {
@@ -63,7 +73,7 @@ describe("judge", () => {
     const result = judge({
       workload: workload(),
       stats: stats(),
-      dbWork: { statements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
+      dbWork: { statements: 0, routeStatements: 0, transactionControl: 0, metadataStatements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
       dbProbeAvailable: false,
     });
     expect(result.verdict).toBe("UNMEASURED");
@@ -75,7 +85,7 @@ describe("judge", () => {
     const result = judge({
       workload: workload({ cacheMode: "warm" }),
       stats: stats(),
-      dbWork: { statements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
+      dbWork: { statements: 0, routeStatements: 0, transactionControl: 0, metadataStatements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
       dbProbeAvailable: true,
     });
     expect(result.verdict).toBe("UNMEASURED");
@@ -138,5 +148,54 @@ describe("judge", () => {
     // A real failure outranks an unmeasured budget: the run did breach.
     expect(result.verdict).toBe("FAIL");
     expect(result.unmeasured.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the budget counts route queries, not the preamble", () => {
+  /**
+   * Ruled 2026-09-05. Every request pays BEGIN / SET TRANSACTION ISOLATION
+   * LEVEL REPEATABLE READ / COMMIT, which is the snapshot consistency the
+   * explorer depends on. Counting it made `asset-roster`'s budget of two
+   * unreachable at any query count, and turned seven of eight measured
+   * failures into a property of the preamble rather than of the route.
+   */
+  it("passes a route inside its budget however large the preamble is", () => {
+    const result = judge({
+      workload: workload(),
+      stats: stats(),
+      // asset-roster's real shape: 5 statements, of which 2 are the route's.
+      dbWork: {
+        statements: 5,
+        routeStatements: 2,
+        transactionControl: 3,
+        metadataStatements: 0,
+        sharedBlocks: 500,
+        tempBytes: 0,
+        execMs: 20,
+      },
+      dbProbeAvailable: true,
+    });
+    expect(result.breaches.join(" ")).not.toMatch(/statements/);
+  });
+
+  it("still fails a route whose own queries exceed the budget", () => {
+    // block-detail: 19 total, 10 of them the route's, against a budget of 8.
+    const result = judge({
+      workload: workload({
+        budget: { ...workload().budget, maxDbStatements: 8 },
+      }),
+      stats: stats(),
+      dbWork: {
+        statements: 19,
+        routeStatements: 10,
+        transactionControl: 6,
+        metadataStatements: 3,
+        sharedBlocks: 500,
+        tempBytes: 0,
+        execMs: 20,
+      },
+      dbProbeAvailable: true,
+    });
+    expect(result.breaches.join(" ")).toMatch(/route statements 10 over 8/);
   });
 });

@@ -18,7 +18,10 @@ const statsOf = (successCount: number, p99Ms: number, count = successCount) => (
   errorRate: 0, timeoutRate: 0, rps: 50, wireBytes: 10, uncompressedBytes: 10,
 });
 
-const noWork = { statements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 };
+const noWork = {
+  statements: 0, routeStatements: 0, transactionControl: 0, metadataStatements: 0,
+  sharedBlocks: 0, tempBytes: 0, execMs: 0,
+};
 
 describe("p99 needs enough samples", () => {
   it("does not judge a p99 from 40 samples, in either direction", () => {
@@ -71,7 +74,7 @@ describe("a repeated cache key is not a measurement", () => {
     const result = judge({
       workload: uniqueKey,
       stats: { ...statsOf(1_000, 1), p50Ms: 0.8, p95Ms: 7.4 },
-      dbWork: { statements: 0.95, sharedBlocks: 1, tempBytes: 0, execMs: 1 },
+      dbWork: { statements: 0.95, routeStatements: 0.95, transactionControl: 0, metadataStatements: 0, sharedBlocks: 1, tempBytes: 0, execMs: 1 },
       dbProbeAvailable: true,
       distinctPaths: 50,
       requested: 1_000,
@@ -87,7 +90,7 @@ describe("a repeated cache key is not a measurement", () => {
     const result = judge({
       workload: uniqueKey,
       stats: statsOf(1_000, 1),
-      dbWork: { statements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
+      dbWork: { statements: 0, routeStatements: 0, transactionControl: 0, metadataStatements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
       dbProbeAvailable: true,
       distinctPaths: 1_000,
       requested: 1_000,
@@ -105,7 +108,7 @@ describe("missing cache-key instrumentation fails closed", () => {
     const result = judge({
       workload: uniqueKey,
       stats: statsOf(1_000, 1),
-      dbWork: { statements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
+      dbWork: { statements: 0, routeStatements: 0, transactionControl: 0, metadataStatements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
       dbProbeAvailable: true,
     });
     expect(result.verdict).toBe("UNMEASURED");
@@ -118,7 +121,7 @@ describe("missing cache-key instrumentation fails closed", () => {
       const result = judge({
         workload: uniqueKey,
         stats: statsOf(1_000, 1),
-        dbWork: { statements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
+        dbWork: { statements: 0, routeStatements: 0, transactionControl: 0, metadataStatements: 0, sharedBlocks: 0, tempBytes: 0, execMs: 0 },
         dbProbeAvailable: true,
         ...partial,
       });

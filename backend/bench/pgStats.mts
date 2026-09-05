@@ -1,4 +1,5 @@
 import type { Client } from "pg";
+import { classifyStatement } from "./attribution.mjs";
 
 /**
  * Database work per request, measured from PostgreSQL rather than guessed.
@@ -21,7 +22,23 @@ import type { Client } from "pg";
  */
 
 export type DbWork = {
+  /** Every statement, including the transaction preamble. */
   statements: number;
+  /**
+   * Statements the route issued on the response's behalf.
+   *
+   * The budget is judged on this. Every request also pays a fixed
+   * `BEGIN` / `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` / `COMMIT`,
+   * which is the snapshot consistency the explorer depends on rather than
+   * anything a query change could remove. Counting it made `asset-roster`'s
+   * budget of two statements unreachable at any query count, and made seven of
+   * eight failures a property of the preamble rather than of the route.
+   */
+  routeStatements: number;
+  /** The transaction preamble, recorded but not judged. */
+  transactionControl: number;
+  /** `sync_cursor` and `index_binding` bookkeeping, recorded but not judged. */
+  metadataStatements: number;
   /** `shared_blks_hit + shared_blks_read`, summed over statements. */
   sharedBlocks: number;
   tempBytes: number;
@@ -31,6 +48,9 @@ export type DbWork = {
 
 export const ZERO_WORK: DbWork = {
   statements: 0,
+  routeStatements: 0,
+  transactionControl: 0,
+  metadataStatements: 0,
   sharedBlocks: 0,
   tempBytes: 0,
   execMs: 0,
@@ -79,26 +99,36 @@ export async function createDbProbe(control: Client): Promise<DbProbe> {
       await control.query(`SELECT pg_stat_statements_reset()`);
     },
     read: async () => {
+      // Per query, not one aggregate: the class split is what the budget is
+      // judged on, and it cannot be recovered from a sum.
       const { rows } = await control.query<{
-        calls: string | null;
+        calls: string;
+        query: string;
         shared: string | null;
         temp: string | null;
         ms: string | null;
       }>(
-        `SELECT sum(calls)::text AS calls,
-                sum(shared_blks_hit + shared_blks_read)::text AS shared,
-                sum(temp_blks_read + temp_blks_written)::text AS temp,
-                sum(total_exec_time)::text AS ms
+        `SELECT calls::text AS calls,
+                regexp_replace(query, '\s+', ' ', 'g') AS query,
+                (shared_blks_hit + shared_blks_read)::text AS shared,
+                (temp_blks_read + temp_blks_written)::text AS temp,
+                total_exec_time::text AS ms
            FROM pg_stat_statements
           WHERE query NOT LIKE '%pg_stat_statements%'`,
       );
-      const row = rows[0];
-      return {
-        statements: Number(row?.calls ?? 0),
-        sharedBlocks: Number(row?.shared ?? 0),
-        tempBytes: Number(row?.temp ?? 0) * blocks,
-        execMs: Number(row?.ms ?? 0),
-      };
+      const work = { ...ZERO_WORK };
+      for (const row of rows) {
+        const calls = Number(row.calls);
+        work.statements += calls;
+        work.sharedBlocks += Number(row.shared ?? 0);
+        work.tempBytes += Number(row.temp ?? 0) * blocks;
+        work.execMs += Number(row.ms ?? 0);
+        const kind = classifyStatement(row.query);
+        if (kind === "transaction-control") work.transactionControl += calls;
+        else if (kind === "metadata") work.metadataStatements += calls;
+        else work.routeStatements += calls;
+      }
+      return work;
     },
   };
 }
