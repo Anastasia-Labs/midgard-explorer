@@ -176,9 +176,20 @@ describe("WORKLOADS", () => {
 
   it("keeps every register row in a declared lifecycle state", async () => {
     const register = await readFile("../docs/performance-budgets.md", "utf8");
-    expect(register).toContain(
-      "ALL TARGETS APPROVED EXCEPT BACKEND SUITE WALL TIME",
-    );
+    // The header states where the register stands. It used to be asserted as a
+    // fixed sentence, which meant the sentence had to be edited whenever the
+    // state changed and said nothing about whether it was true. Assert the
+    // property instead: a header claiming the baseline is measured must not sit
+    // above a row still waiting for that measurement.
+    const status = register.split("\n").find((line) => line.startsWith("**STATUS:"));
+    expect(status, "the register must open with a STATUS line").toBeDefined();
+    if (/BASELINE IS MEASURED/.test(status ?? "")) {
+      expect(register, "a measured header may not sit above a pending row").not.toMatch(
+        /\| PENDING BASELINE \|/,
+      );
+      // And it must name the artifact the verdicts came from.
+      expect(status).toMatch(/performance\/baselines\/target-[0-9a-f]{8}\.json/);
+    }
     expect(register).toContain("| `PENDING APPROVAL` |");
     // A DISCOVERY row is excluded from the 10/10 criterion during BASELINES
     // only. Left permanently unmeasured it would sit inside a 10/10 claim.
