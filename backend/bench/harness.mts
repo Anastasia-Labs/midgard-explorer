@@ -725,7 +725,7 @@ export async function runHarness(options: {
     server = await startServer(setup, options.port);
     let payload: PayloadSource;
     try {
-      edge = await startEdge(options.port, options.port + 1);
+      edge = await startEdge(options.port);
       payload = { at: "edge", image: edge.image };
     } catch (error) {
       payload = { at: "origin", reason: error instanceof Error ? error.message : String(error) };

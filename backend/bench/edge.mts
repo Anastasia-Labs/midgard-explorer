@@ -38,8 +38,11 @@ export type EdgeHandle = {
  * receives is decided here and not at the origin. The template is the
  * repository's own file, mounted read-only, and the cache lives in a tmpfs so
  * the container leaves no volume behind.
+ *
+ * Docker chooses the host port and this reads it back. Taking the origin's port
+ * plus one assumed that port was free, and inside the test suite it was not.
  */
-export async function startEdge(originPort: number, edgePort: number): Promise<EdgeHandle> {
+export async function startEdge(originPort: number): Promise<EdgeHandle> {
   const image = edgeImage();
   const name = `midgard-bench-edge-${randomBytes(4).toString("hex")}`;
   await run("docker", [
@@ -47,7 +50,7 @@ export async function startEdge(originPort: number, edgePort: number): Promise<E
     "--env", `BACKEND_ORIGIN=host.docker.internal:${originPort}`,
     "--env", "NGINX_ENVSUBST_FILTER=BACKEND_ORIGIN",
     "--add-host", "host.docker.internal:host-gateway",
-    "--publish", `127.0.0.1:${edgePort}:8080`,
+    "--publish", "127.0.0.1::8080",
     "--volume", `${TEMPLATE}:/etc/nginx/templates/default.conf.template:ro`,
     "--tmpfs", "/var/cache/nginx",
     image,
@@ -56,7 +59,18 @@ export async function startEdge(originPort: number, edgePort: number): Promise<E
     await run("docker", ["rm", "--force", "--volumes", name]).catch(() => {});
   };
 
-  const base = `http://127.0.0.1:${edgePort}`;
+  const { stdout: published } = await run("docker", ["port", name, "8080/tcp"]).catch(
+    async (error: unknown) => {
+      await stop();
+      throw error;
+    },
+  );
+  const port = /127\.0\.0\.1:(\d+)/.exec(published)?.[1];
+  if (port === undefined) {
+    await stop();
+    throw new Error(`the edge proxy published no loopback port: ${published.trim()}`);
+  }
+  const base = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 60_000;
   for (;;) {
     try {

@@ -60,7 +60,7 @@ withDocker("the edge proxy", () => {
     });
     await new Promise<void>((resolve) => origin.listen(0, resolve));
     const originPort = (origin.address() as AddressInfo).port;
-    const edge = await startEdge(originPort, originPort + 1);
+    const edge = await startEdge(originPort);
     try {
       // Raw bytes: `fetch` decompresses on the way in, which would hide
       // exactly what this checks.
