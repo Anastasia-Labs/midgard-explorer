@@ -1,4 +1,5 @@
 import { config } from "../config";
+import { timedPass } from "../telemetry/metrics";
 import { prisma } from "../db";
 import { logger } from "../logger";
 import {
@@ -436,7 +437,7 @@ export function startSync(deps: Partial<StartSyncDeps> = {}): SyncHandle {
         return;
       }
       try {
-        await pass();
+        await timedPass(pass);
       } catch (err) {
         logger.error(`L1 sync failed, retrying next interval: ${String(err)}`);
       }

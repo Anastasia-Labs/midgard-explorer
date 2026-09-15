@@ -50,6 +50,7 @@
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@prisma/client-runtime-utils": "^7.8.0",
+    "@prometheus-io/client": "^0.16.1",
     "dotenv": "^17.4.2",
     "dotenv-expand": "^12.0.3",
     "express": "^5.2.1",

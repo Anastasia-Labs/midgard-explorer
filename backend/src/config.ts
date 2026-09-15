@@ -66,6 +66,15 @@ const shape = {
    * values are rejected for the same reason.
    */
   BENCH_CACHE_BYPASS_TOKEN: blank(z.string().min(16)),
+  /**
+   * The Prometheus listener's port. Unset, there is no listener at all. It is
+   * its own port rather than a route on the API, so the edge proxy, which
+   * forwards every `/api/` path, never publishes it.
+   */
+  METRICS_PORT: blank(positive),
+  /** Loopback by default. A container deployment may name a private address
+   * its scraper reaches; nothing may publish this port to the internet. */
+  METRICS_HOST: required.default("127.0.0.1"),
   RESPONSE_CACHE_MAX_ENTRIES: positive.default(1_000),
   // Declared in the Config type and passed into the cache, but never parsed:
   // the `as Config` cast below hid the mismatch, so the value was `undefined`
@@ -155,6 +164,13 @@ export const CONFIG_KEYS = Object.keys(shape);
 export const configSchema = z
   .object(shape)
   .superRefine((value, ctx) => {
+    if (value.METRICS_PORT !== undefined && value.METRICS_PORT === value.BACKEND_PORT) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["METRICS_PORT"],
+        message: "must differ from BACKEND_PORT: metrics are never served on the API port",
+      });
+    }
     if (
       value.REQUIRE_MIDGARD_READ_REPLICA &&
       value.MIDGARD_READ_REPLICA_URL === undefined

@@ -2,18 +2,22 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Prisma, PrismaClient } from "../../prisma-indexer/indexer-client";
 import { config } from "../config";
 import { boundedPoolConfig } from "../db/pool";
+import { instrumentAdapter } from "../telemetry/instrumentAdapter";
 
 // The database the explorer owns. Separate client from src/db.ts, which reads
 // the node's Postgres and never writes to it.
-const adapter = new PrismaPg(
-  boundedPoolConfig({
-    connectionString: config.INDEXER_POSTGRES_URL,
-    max: config.INDEXER_DB_POOL_MAX,
-    connectionTimeoutMs: config.DB_CONNECTION_TIMEOUT_MS,
-    idleTimeoutMs: config.DB_IDLE_TIMEOUT_MS,
-    statementTimeoutMs: config.DB_STATEMENT_TIMEOUT_MS,
-    applicationName: "midgard-explorer-l1-indexer",
-  }),
+const adapter = instrumentAdapter(
+  new PrismaPg(
+    boundedPoolConfig({
+      connectionString: config.INDEXER_POSTGRES_URL,
+      max: config.INDEXER_DB_POOL_MAX,
+      connectionTimeoutMs: config.DB_CONNECTION_TIMEOUT_MS,
+      idleTimeoutMs: config.DB_IDLE_TIMEOUT_MS,
+      statementTimeoutMs: config.DB_STATEMENT_TIMEOUT_MS,
+      applicationName: "midgard-explorer-l1-indexer",
+    }),
+  ),
+  "index",
 );
 export const indexerPrisma = new PrismaClient({ adapter });
 

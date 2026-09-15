@@ -16,6 +16,8 @@ import { startSync, type SyncHandle } from "../indexer/sync";
 import { reportDatabaseIdentity } from "../db/identity";
 import { mountRateLimits, startRateLimitSweeper } from "./rateLimit";
 import { resolveCorsOrigin, securityHeaders } from "./security";
+import { observeRequests } from "../telemetry/http";
+import { startMetricsServer } from "../telemetry/server";
 
 export const startServer = async () => {
   const app = express();
@@ -31,6 +33,7 @@ export const startServer = async () => {
     );
   }
 
+  app.use(observeRequests);
   app.use(securityHeaders);
 
   // Refuses at boot rather than serving with a wildcard: see security.ts.
@@ -70,6 +73,11 @@ export const startServer = async () => {
   startRateLimitSweeper();
 
   registerRoutes(app);
+
+  const metricsServer =
+    config.METRICS_PORT === undefined
+      ? null
+      : startMetricsServer(config.METRICS_HOST, config.METRICS_PORT);
 
   // Background L1 indexing. Deliberately after route registration: a sync
   // failure must never prevent the API from coming up.
@@ -133,6 +141,7 @@ export const startServer = async () => {
       server.close(() => resolve());
       server.closeIdleConnections();
     });
+    metricsServer?.close();
 
     void Promise.all([indexerDrained, httpDrained]).then(async () => {
       await prisma.$disconnect();

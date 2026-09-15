@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { responseCache, routeLabel } from "../telemetry/metrics";
 import type { RequestHandler } from "express";
 
 /**
@@ -132,6 +133,7 @@ export function cachePublicJson(
       // Neither read nor written: a benchmark run must not warm the cache for
       // the requests that follow it either.
       res.setHeader("X-Explorer-Cache", "BYPASS");
+      responseCache.inc({ route: routeLabel(req), result: "bypass" });
       return bypassStore.run(true, () => next());
     }
 
@@ -144,12 +146,14 @@ export function cachePublicJson(
       responses.set(key, hit);
       res.setHeader("Age", String(Math.floor((now - hit.createdAt) / 1_000)));
       res.setHeader("X-Explorer-Cache", "HIT");
+      responseCache.inc({ route: routeLabel(req), result: "hit" });
       setSharedCacheHeaders(res, ttlMs);
       return res.status(200).json(hit.body);
     }
     if (hit) drop(key);
 
     res.setHeader("X-Explorer-Cache", "MISS");
+    responseCache.inc({ route: routeLabel(req), result: "miss" });
     setSharedCacheHeaders(res, ttlMs);
     const sendJson = res.json.bind(res);
     res.json = ((body: unknown) => {

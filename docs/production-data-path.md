@@ -73,6 +73,36 @@ For Cloudflare, Fastly, CloudFront, or another CDN:
 - apply a global client/origin request budget at the CDN when running multiple
   backend processes.
 
+## Metrics
+
+Set `METRICS_PORT` to serve Prometheus metrics at `/metrics` on a separate
+listener. It binds `127.0.0.1` unless `METRICS_HOST` names another address, and
+it refuses to share `BACKEND_PORT`. The edge proxy never forwards it. Do not
+publish this port: it describes the process, not the chain.
+
+| Metric | Labels | What it answers |
+|---|---|---|
+| `explorer_http_request_duration_seconds` | `route`, `method`, `status_class` | Route latency, per route template |
+| `explorer_route_statements_per_request` | `route` | The statement count the route budgets judge, per request |
+| `explorer_db_statement_duration_seconds` | `database` (`node`, `index`), `class` | Time per statement; `class` separates route work from index bookkeeping |
+| `explorer_response_cache_total` | `route`, `result` (`hit`, `miss`, `bypass`) | How often the in-process cache answers |
+| `explorer_indexer_pass_duration_seconds` | `outcome` | How long each L1 sync pass takes, and whether it failed |
+| `process_resident_memory_bytes`, `nodejs_*` | none | Memory, heap, event-loop lag and garbage collection |
+
+`route` is always a template such as `/api/blocks/:page`, never the path a
+client sent, so walking every block adds no series. A request no route matched
+is labelled `unmatched`. Statement counts leave out `BEGIN` and `COMMIT`, the
+same rule the benchmark uses.
+
+A scrape job on the same host, with `METRICS_PORT=9464`:
+
+```yaml
+scrape_configs:
+  - job_name: midgard-explorer
+    static_configs:
+      - targets: ["127.0.0.1:9464"]
+```
+
 ## Readiness, and what each answer gates
 
 | Route | Answers | Gates |
