@@ -20,6 +20,10 @@ import { WORKLOADS } from "./workloads.mjs";
  * and `baselineGate` refuses to certify it, which is why the per-row commands
  * in `docs/performance-budgets.md` use `--mode smoke`.
  *
+ * `--with-frontend` also builds the production frontend, starts it against the
+ * backend under test, and measures the routes the frontend serves itself. A
+ * baseline taken with it has scope `full` and must account for all of them.
+ *
  * Requires:
  *   BENCH_POSTGRES_URL       the dedicated benchmark server
  *   BENCH_SOURCE_INDEX_URL   the LIVE explorer index, read-only. Not
@@ -70,6 +74,7 @@ const report = await runHarness({
   mode,
   outFile: arg("out", `bench-${mode}-${profileName}.json`),
   run: { iterations: Number(arg("iterations", "40")) },
+  withFrontend: process.argv.includes("--with-frontend"),
 });
 
 for (const warning of report.warnings) {

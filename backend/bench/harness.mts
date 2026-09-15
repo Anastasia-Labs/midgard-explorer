@@ -5,6 +5,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { Client } from "pg";
 import { cloneIndex, type IndexSnapshot } from "./cloneIndex.mjs";
 import { startEdge, type EdgeHandle } from "./edge.mjs";
+import { buildFrontend, startFrontend, type FrontendHandle } from "./frontend.mjs";
+import { createServer as createNetServer } from "node:net";
 import { captureEnvironment, environmentWarnings, type EnvironmentReport } from "./environment.mjs";
 import { generateDataset, streamDataset, LOAD_ORDER } from "./generate.mjs";
 import { judge, type Judgement } from "./judge.mjs";
@@ -531,9 +533,11 @@ export type HarnessReport = {
    * `target` run reported twelve of thirteen workloads with no mention of the
    * thirteenth, which read as full coverage.
    */
-  scope: "backend-only" | "subset";
+  scope: "backend-only" | "full" | "subset";
   /** The build this run performed, `null` for a smoke run that did not build. */
   build: { commit: string; builtAt: string } | null;
+  /** The production frontend build a `full` run measured, `null` otherwise. */
+  frontendBuild: { buildId: string; builtAt: string } | null;
   /** Highest resident memory the measured server reached, in bytes. */
   peakRssBytes: number;
   /** Every catalogue workload, either measured or excluded with a reason. */
@@ -566,7 +570,7 @@ export function baselineGate(
   environment: EnvironmentReport,
   results: readonly Judgement[],
   coverage?: {
-    scope: "backend-only" | "subset";
+    scope: "backend-only" | "full" | "subset";
     excluded: readonly { workload: string; reason: string }[];
   },
   /** The build this run performed, `null` when it measured whatever was there. */
@@ -598,7 +602,8 @@ export function baselineGate(
     );
   }
 
-  // A subset is a diagnostic run. Only a full backend sweep is a baseline.
+  // A subset is a diagnostic run. A baseline is a backend sweep, or a full one
+  // that also runs the frontend's own routes.
   if (coverage?.scope === "subset") {
     blocking.push(
       "only a subset of the catalogue ran: a baseline covers every " +
@@ -611,7 +616,9 @@ export function baselineGate(
   // closes: a workload can go missing and the report still reads complete.
   if (coverage) {
     const known = new Set(WORKLOADS.map((w) => w.name));
-    const expected = WORKLOADS.filter((w) => w.origin === "backend").map((w) => w.name);
+    const expected = WORKLOADS.filter(
+      (w) => coverage.scope === "full" || w.origin === "backend",
+    ).map((w) => w.name);
     const measured = results.map((r) => r.workload);
     const seen = new Map<string, number>();
     for (const name of measured) seen.set(name, (seen.get(name) ?? 0) + 1);
@@ -624,10 +631,11 @@ export function baselineGate(
         blocking.push(`"${name}" was measured ${times} times: a workload appears once`);
       }
     }
-    if (coverage.scope === "backend-only") {
+    if (coverage.scope !== "subset") {
       for (const name of expected) {
         if (!seen.has(name)) {
-          blocking.push(`backend workload "${name}" is missing from the results`);
+          const origin = WORKLOADS.find((w) => w.name === name)?.origin ?? "backend";
+          blocking.push(`${origin} workload "${name}" is missing from the results`);
         }
       }
     }
@@ -692,6 +700,16 @@ export function baselineGate(
 }
 
 /** Runs the catalogue end to end and writes a JSON report. */
+/** A port nothing is listening on, taken from the kernel and released. */
+async function freePort(): Promise<number> {
+  const probe = createNetServer();
+  await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", () => resolve()));
+  const address = probe.address();
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  if (address === null || typeof address === "string") throw new Error("no free port");
+  return address.port;
+}
+
 export async function runHarness(options: {
   profileName: keyof typeof PROFILES;
   benchUrl: string;
@@ -701,11 +719,16 @@ export async function runHarness(options: {
   only?: readonly string[];
   outFile?: string;
   run?: RunOptions;
+  /** Also build and start the production frontend and measure its routes. */
+  withFrontend?: boolean;
 }): Promise<HarnessReport> {
   const startedAt = new Date().toISOString();
   const profile = PROFILES[options.profileName];
   // Before the environment capture, so `buildHash` describes what will run.
   const build = options.mode === "baseline" ? buildBackend() : null;
+  // Before the database is seeded, while memory is free: `next build` is the
+  // heaviest step of a run on a two-core machine.
+  const frontendBuild = options.withFrontend ? buildFrontend() : null;
   const control = new Client({ connectionString: options.benchUrl });
   await control.connect();
   const environment = await captureEnvironment(control);
@@ -721,6 +744,7 @@ export async function runHarness(options: {
   });
   let server: ServerHandle | null = null;
   let edge: EdgeHandle | null = null;
+  let frontend: FrontendHandle | null = null;
   try {
     server = await startServer(setup, options.port);
     let payload: PayloadSource;
@@ -730,10 +754,13 @@ export async function runHarness(options: {
     } catch (error) {
       payload = { at: "origin", reason: error instanceof Error ? error.message : String(error) };
     }
+    if (options.withFrontend) {
+      frontend = await startFrontend(server.base, await freePort());
+    }
     const wanted = options.only;
     const selected = wanted
       ? WORKLOADS.filter((w) => wanted.includes(w.name))
-      : WORKLOADS.filter((w) => w.origin === "backend");
+      : WORKLOADS.filter((w) => w.origin === "backend" || frontend !== null);
     // Every catalogue row is accounted for, so a missing one is a stated
     // exclusion rather than an absence nobody can see in the report.
     const excluded = WORKLOADS.filter((w) => !selected.includes(w)).map((w) => ({
@@ -742,12 +769,31 @@ export async function runHarness(options: {
         ? "not in the requested subset"
         : `origin is ${w.origin}: not served by the backend under test`,
     }));
-    const scope = wanted ? ("subset" as const) : ("backend-only" as const);
+    const scope = wanted ? ("subset" as const) : frontend ? ("full" as const) : ("backend-only" as const);
     const results: Judgement[] = [];
     for (const workload of selected) {
+      if (workload.origin === "frontend" && frontend === null) {
+        throw new Error(`"${workload.name}" is a frontend route: run with --with-frontend`);
+      }
+      // A frontend route is requested from the Next server, which compresses
+      // its own responses; the API edge proxy never sees it.
+      const target = workload.origin === "frontend" && frontend ? { ...server, base: frontend.base } : server;
       results.push(
-        await runWorkload(workload, setup, server, probe, options.run, edge?.base),
+        await runWorkload(
+          workload,
+          setup,
+          target,
+          probe,
+          options.run,
+          workload.origin === "frontend" ? frontend?.base : edge?.base,
+        ),
       );
+      const frontendCode = frontend?.exitCode() ?? null;
+      if (frontendCode !== null) {
+        throw new Error(
+          `the frontend exited with ${frontendCode} during "${workload.name}":\n${frontend?.output()}`,
+        );
+      }
       // A dead server answers every request in under a millisecond with a
       // refused connection, which reads as a fast workload with a 100% error
       // rate. Without this check a crash after the third workload produced nine
@@ -782,6 +828,7 @@ export async function runHarness(options: {
       serverConfig: { apiRateLimitMax: BENCH_RATE_LIMIT_MAX },
       scope,
       build,
+      frontendBuild,
       peakRssBytes: server.peakRssBytes(),
       coverage: { measured: results.map((r) => r.workload), excluded },
       results,
@@ -794,6 +841,7 @@ export async function runHarness(options: {
     }
     return report;
   } finally {
+    await frontend?.stop();
     await edge?.stop();
     await server?.stop();
     await setup.cleanup();

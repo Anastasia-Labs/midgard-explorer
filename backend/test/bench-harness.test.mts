@@ -126,6 +126,17 @@ describe("baselineGate", () => {
       expect(baselineGate(healthy, asResults(backend), complete)).toEqual([]);
     });
 
+    it("accepts a full run, frontend routes included, with nothing excluded", () => {
+      const full = { scope: "full" as const, excluded: [] };
+      expect(baselineGate(healthy, asResults([...backend, ...frontend]), full)).toEqual([]);
+    });
+
+    it("refuses a full run that dropped a frontend route", () => {
+      const full = { scope: "full" as const, excluded: [] };
+      const blocking = baselineGate(healthy, asResults(backend), full);
+      expect(blocking.join(" ")).toMatch(new RegExp(`frontend workload "${frontend[0]}" is missing`));
+    });
+
     it("refuses a missing backend workload", () => {
       const short = asResults(backend.slice(0, -1));
       const blocking = baselineGate(healthy, short, complete);

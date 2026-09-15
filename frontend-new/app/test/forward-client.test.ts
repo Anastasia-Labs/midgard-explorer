@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { forwardedFrom } from "../src/lib/forwardClient";
+import { benchBypassHeader, forwardedFrom } from "../src/lib/forwardClient";
 
 /**
  * What this server passes on about the viewer.
@@ -57,5 +57,15 @@ describe("forwardedFrom", () => {
     expect(forwardedFrom(headers({ "x-forwarded-for": "198.51.100.1 ,  203.0.113.9  " }))).toEqual({
       "x-forwarded-for": "203.0.113.9",
     });
+  });
+});
+
+describe("benchBypassHeader", () => {
+  it("passes the benchmark header through only when the request carries one", () => {
+    const withToken = new Request("http://x/api/overview", {
+      headers: { "x-explorer-bench-bypass": "a".repeat(32) },
+    });
+    expect(benchBypassHeader(withToken)).toEqual({ "x-explorer-bench-bypass": "a".repeat(32) });
+    expect(benchBypassHeader(new Request("http://x/api/overview"))).toEqual({});
   });
 });
