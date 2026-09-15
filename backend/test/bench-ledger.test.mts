@@ -157,4 +157,19 @@ describe("createLedger", () => {
       top.reduce((t, n) => t + n, 0) / counts.reduce((t, n) => t + n, 0);
     expect(share).toBeGreaterThan(0.3);
   });
+
+  it("keeps no ledger bytes inside a shared buffer slab", () => {
+    // An entry outlives the batch that produced it. A slice of Node's shared
+    // 8 KB slab keeps the whole slab alive, and with it that batch's discarded
+    // rows: the streamed `stress` profile grew to 2.7 GB this way.
+    const ledger = ledgerFor();
+    for (let i = 0; i < 200; i += 1) ledger.spend({ inputs: 2, outputs: 3 });
+    const entries = [...ledger.genesis(), ...ledger.remaining()];
+    expect(entries.length).toBeGreaterThan(300);
+    for (const utxo of entries) {
+      for (const bytes of [utxo.outref, utxo.txId, utxo.output]) {
+        expect(bytes.buffer.byteLength).toBe(bytes.byteLength);
+      }
+    }
+  });
 });

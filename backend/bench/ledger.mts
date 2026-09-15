@@ -116,6 +116,20 @@ export type Ledger = {
   remaining: () => readonly Utxo[];
 };
 
+/**
+ * A copy with its own backing store.
+ *
+ * `Buffer.from` places anything under 4 KB in a shared 8 KB slab, and one live
+ * slice keeps the whole slab alive. A ledger entry outlives the batch that
+ * created it, so each one pinned a slab full of that batch's discarded table
+ * rows: `stress` reached 2.7 GB resident with a live heap of 538 MB.
+ */
+const unpooled = (bytes: Uint8Array): Buffer => {
+  const copy = Buffer.allocUnsafeSlow(bytes.length);
+  copy.set(bytes);
+  return copy;
+};
+
 /** A Zipf sampler over `n` ranks, built once and inverted per draw. */
 function zipf(n: number, exponent: number): (u: number) => number {
   const cumulative = new Float64Array(n);
@@ -151,7 +165,13 @@ export function createLedger(parts: CorpusParts, options: LedgerOptions): Ledger
   const seen = new Set<string>();
   const touches: number[] = [];
 
-  const record = (utxo: Utxo): Utxo => {
+  const record = (created: Utxo): Utxo => {
+    const utxo: Utxo = {
+      ...created,
+      outref: unpooled(created.outref),
+      txId: unpooled(created.txId),
+      output: unpooled(created.output),
+    };
     const key = utxo.outref.toString("hex");
     if (seen.has(key)) throw new Error(`outref produced twice: ${key}`);
     seen.add(key);
