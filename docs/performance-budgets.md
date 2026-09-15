@@ -121,8 +121,8 @@ The five dimensions of the original assessment that no latency, resource or CI r
 | Frontend total client JS | 848.6 KB gzipped over 28 chunks | **no regression: ≤865.6 KB (baseline +2%)** | explorer | `.next/static/chunks`, gzipped | PASS (holds by construction) |
 | Lazy ELK worker chunk | 422.8 KB gzipped, 1,416 KB raw | **no regression: ≤431.3 KB (baseline +2%)** | explorer | same | PASS (holds by construction) |
 | Per-route initial-load JS | **not measured**: Next 16 dropped First Load JS from its build output | to be set from the bundle analyzer, before `FINAL-VERIFICATION` | explorer | `@next/bundle-analyzer` | **DISCOVERY** |
-| Frontend test suite wall time | 32.7 s median of 3 runs (33.28, 32.68, 32.56), 468 tests | **≤20 s** | explorer | `pnpm vitest run` in `frontend-new/app` | **FAIL** |
-| Frontend test environment time | 19.3 s of 32.7 s | **≤8 s absolute** | explorer | same, the `environment` figure | **FAIL** |
+| Frontend test suite wall time | 32.7 s median of 3 runs (33.28, 32.68, 32.56), 468 tests. **2026-09-15, `node` by default:** 14.35 s median of 3 (14.33, 14.83, 14.35), against 25.24 s (25.17, 25.24, 25.34) for `jsdom` everywhere, alternated in one session | **≤20 s** | explorer | `pnpm vitest run` in `frontend-new/app` | PASS |
+| Frontend test environment time | 19.3 s of 32.7 s. **2026-09-15:** 4.63 s median of 3 (4.58, 4.73, 4.63), against 15.35 s for `jsdom` everywhere | **≤8 s absolute** | explorer | same, the `environment` figure | PASS |
 | Backend test suite wall time | 96.6 to 127.1 s over 3 runs, a 31% spread | **DEFERRED**: separate median and p90 targets, set after ≥10 same-machine runs | explorer | `pnpm vitest run` in `backend` | PENDING APPROVAL |
 | Backend test suite flakiness | one unexplained serial failure, cause unknown | 0 failures in 50 consecutive runs | explorer | `CI-ISOLATION` | INSUFFICIENT |
 | Dead weight retirement | 47 tracked files under `frontend/`, none decided | **every** dead or legacy artifact carries an explicit decision: retire, archive, or keep with a stated reason. Zero undecided | explorer | inventory in `LEGACY-RETIREMENT`, one row per artifact | **FAIL** |
