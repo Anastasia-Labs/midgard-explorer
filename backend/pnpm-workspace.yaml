@@ -17,6 +17,15 @@ overrides:
   # the newest 3.1.x on purpose: it clears all four and has been published long
   # enough to have been looked at, which a release from yesterday has not.
   fast-uri: 3.1.6
+  # Three moderate advisories published 2026-09-08 cover everything below
+  # 4.13.5: an incomplete fix letting `toSSG()` write outside its output
+  # directory, unbounded dot-notation nesting in `parseBody()`, and a query
+  # parser that reads past the URL fragment. hono reaches this tree only through
+  # `prisma dev`, which the explorer never runs, but it is a fix, not a waiver:
+  # @prisma/dev asks for ^4.12.8 and @hono/node-server for ^4, so 4.13.5 is
+  # inside both ranges, and it is the first patched release rather than the
+  # newest, published long enough to have been looked at.
+  hono: 4.13.5
   ip-address: 10.3.1
   nanoid: 3.3.18
   postcss: 8.5.26
