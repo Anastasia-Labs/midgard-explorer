@@ -192,6 +192,52 @@ export async function getTotalTransactions() {
   return Number(rows[0]?.n ?? 0n);
 }
 
+export type TransactionPageRow = {
+  height: number | null;
+  header_hash: Uint8Array;
+  tx_id: Uint8Array;
+  time_stamp_tz: Date;
+  tx: Uint8Array | null;
+  committed: boolean;
+  finalization_status: string | null;
+};
+
+/** The rows of one transactions page, newest block first. Takes the reader so
+ * the page and its total can share one snapshot. */
+export function transactionsPageRows(
+  db: NodeReader,
+  offset: number,
+  limit: number,
+  filter: string | null,
+) {
+  return db.$queryRaw<TransactionPageRow[]>`WITH page AS (
+      -- Keys only. Sorting with the transaction bytes attached carried
+      -- every row before the page through the sort, which spilled to disk
+      -- on a deep page; the bytes are read for the page's rows alone.
+      SELECT j.header_hash, j.member_id, j.ordinal, f.block_end_time, f.status
+        FROM pending_block_finalization_txs AS j
+        JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
+       WHERE ${filter}::text IS NULL OR f.status = ${filter}
+       ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC,
+                j.ordinal ASC
+      OFFSET ${offset}
+       LIMIT ${limit}
+    )
+    SELECT (SELECT MIN(b.height)::int FROM blocks AS b
+             WHERE b.header_hash = p.header_hash) AS height,
+      p.header_hash,
+      p.member_id AS tx_id,
+      j.source_time_stamp_tz AS time_stamp_tz,
+      j.payload_cbor AS tx,
+      true AS committed,
+      p.status AS finalization_status
+    FROM page AS p
+    JOIN pending_block_finalization_txs AS j
+      ON j.header_hash = p.header_hash AND j.member_id = p.member_id
+    ORDER BY p.block_end_time DESC, encode(p.header_hash, 'hex') DESC,
+             p.ordinal ASC;`;
+}
+
 /** One page of transactions, optionally narrowed to a settlement status.
  *
  * The filter is applied in SQL rather than to the page after it is fetched.
@@ -206,34 +252,7 @@ export async function getTransactionsPage(page: number, status?: string) {
   // Rows and total in one snapshot: see `readConsistently`.
   const [rows, total] = await readConsistently(async (db) =>
     Promise.all(  [
-      db.$queryRaw<
-        Array<{
-          height: number | null;
-          header_hash: Uint8Array;
-          tx_id: Uint8Array;
-          time_stamp_tz: Date;
-          tx: Uint8Array | null;
-          committed: boolean;
-          finalization_status: string | null;
-        }>
-      >`WITH legacy AS (
-          SELECT header_hash, MIN(height)::int AS height FROM blocks GROUP BY header_hash
-        )
-        SELECT l.height,
-          j.header_hash,
-          j.member_id AS tx_id,
-          j.source_time_stamp_tz AS time_stamp_tz,
-          j.payload_cbor AS tx,
-          true AS committed,
-          f.status AS finalization_status
-        FROM pending_block_finalization_txs AS j
-        JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
-        LEFT JOIN legacy AS l ON l.header_hash = j.header_hash
-        WHERE ${filter}::text IS NULL OR f.status = ${filter}
-        ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC,
-                 j.ordinal ASC
-        OFFSET ${offset}
-        LIMIT ${limit};`,
+      transactionsPageRows(db, offset, limit, filter),
       db.$queryRaw<Array<{ n: bigint }>>`
         SELECT COUNT(*)::bigint AS n
           FROM pending_block_finalization_txs AS j
