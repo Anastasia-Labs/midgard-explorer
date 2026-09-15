@@ -1,6 +1,6 @@
 # Performance budget register
 
-**STATUS: THE BACKEND TARGET BASELINE IS MEASURED.** Every backend latency, database, payload and resource row now carries a verdict from one artifact, [`efc9af69`](performance/baselines/target-efc9af69.json): ten workloads pass and two fail. Rows this run cannot settle say why rather than staying silent: `overview-aggregate` is `BLOCKED` on a frontend harness, Web Vitals on `TELEMETRY`, and the three CI quality rows are `INSUFFICIENT` at n=10 against targets naming 50. Backend suite wall time still awaits a standardised runner, and the `stress` profile, which now generates in batches (6.8 million rows, 3.2 GB, 667 MB peak heap), awaits a run on a machine that meets the 30 GB and quiet-load gates. The codebase-health targets were ruled 2026-09-04: five unchanged, three revised, one deferred.
+**STATUS: THE BACKEND TARGET BASELINE IS MEASURED.** Every backend latency, database, payload and resource row now carries a verdict from one artifact, [`efc9af69`](performance/baselines/target-efc9af69.json): ten workloads pass and two fail. Rows this run cannot settle say why rather than staying silent: `overview-aggregate` now has a harness (`--with-frontend`) but no run yet, Web Vitals are collected but have no production samples, and the three CI quality rows are `INSUFFICIENT` at n=12, every failure classified, against targets naming 50. Backend suite wall time still awaits a standardised runner, and the `stress` profile, which now generates in batches (6.8 million rows, 3.2 GB, 667 MB peak heap), awaits a run on a machine that meets the 30 GB and quiet-load gates. The codebase-health targets were ruled 2026-09-04: five unchanged, three revised, one deferred.
 
 Generated alongside `backend/bench/workloads.mts`, which is the machine-readable form. The test `backend/test/bench-workloads.test.mts` fails if a workload here has no catalogue entry, or vice versa.
 
@@ -38,9 +38,9 @@ The status mix and the transaction distributions are **documented engineering as
 
 **A statement budget counts route queries.** Every request also pays a fixed `BEGIN`, `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ` and `COMMIT`, and the two detail routes pay it twice because they read both databases. That preamble is snapshot consistency, not something a query change can remove, and counting it put `asset-roster`'s budget of two below the three-statement floor. It is recorded in each row and judged in none. Ruled 2026-09-05.
 
-**Nothing is compressed, anywhere.** The origin has no compression middleware and no such dependency, and the edge proxy ships with `gzip` commented out and no directive in `infra/nginx/explorer-api.conf.template`. Asking for `gzip, br` returns exactly the identity bytes on all eleven eligible routes, so `address-history` sends 1.8 MB uncompressed. That is why the aggregate reduction row reads 0.0% against a 40% target, and why the row above it passes vacuously: a response that is never encoded can never be enlarged by encoding.
+**Nothing is compressed, anywhere.** The origin has no compression middleware and no such dependency, and the edge proxy ships with `gzip` commented out and no directive in `infra/nginx/explorer-api.conf.template`. Asking for `gzip, br` returns exactly the identity bytes on all eleven eligible routes, so `address-history` sends 1.8 MB uncompressed. That is why the aggregate reduction row reads 0.0% against a 40% target, and why the row above it passes vacuously: a response that is never encoded can never be enlarged by encoding. Since `1dc880db` the edge compresses JSON and the harness measures sizes through it; a smoke run at `target` shrank the eligible routes by 84.8%, which is not a baseline.
 
-Eight of the twelve breach a **statement count** and nothing else, apart from one temp-I/O breach. **No latency budget fails anywhere.** The optimisation work therefore starts from query counts, not from response times.
+Two of the twelve fail, and neither on latency: `block-detail` on route statements (10 against 8) and `transactions-list-page-deep` on temp I/O (3,538 KB against 0). **No latency budget fails anywhere.** Commits since this run target both (`0bcc98d5`, `a66273e6`) and compression (`1dc880db`); they were measured on their own branches, and these rows keep this run's figures until a rerun records them.
 
 | Budget | Measured baseline | Target (approved) | **Provenance** | Profile | Cache mode | Owner | Dependency | Verification command | Status | Fallback if blocked |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -92,18 +92,28 @@ Four separate measures. A blended failure rate hides which is which, and **a gat
 
 | Budget | Measured baseline | Target (approved) | Owner | Verification command | Status |
 |---|---|---|---|---|---|
-| Median wall time | **10.75 min** (median of the last 10 runs; the range was 9.6 to 14.3) | ≤8 min | explorer | `gh run list --limit 100 --json createdAt,updatedAt` | FAIL |
-| Infrastructure flake rate | not classified, n=10 (INSUFFICIENT) | ≤2% over ≥50 runs | explorer | classification table, `CI-ISOLATION` | INSUFFICIENT: n=10 against a target that names ≥50 runs |
-| Rerun disagreement rate | not measured (INSUFFICIENT) | ≤2% over ≥50 runs | explorer | rerun each failure in the window | INSUFFICIENT: no reruns recorded against a target that names ≥50 |
-| First-pass PR rate | not measured (INSUFFICIENT) | ≥70% over ≥50 PRs | explorer | `gh pr list --state merged --limit 100` | INSUFFICIENT: n well under the ≥50 PRs the target names |
+| Median wall time | **10.68 min** over all 12 hosted runs (3.7 to 14.3), 2026-08-28 to 2026-09-03 | ≤8 min | explorer | `gh run list --limit 100 --json createdAt,updatedAt` | FAIL |
+| Infrastructure flake rate | **0 of 12** runs failed on infrastructure; all 15 failed jobs classified below | ≤2% over ≥50 runs | explorer | classification table below | INSUFFICIENT: n=12 against a target that names ≥50 runs |
+| Rerun disagreement rate | no run was repeated on the same commit, so there is nothing to disagree | ≤2% over ≥50 runs | explorer | rerun each failure in the window | INSUFFICIENT: 0 reruns |
+| First-pass PR rate | no pull request has merged (#2 and #3 are open) | ≥70% over ≥50 PRs | explorer | `gh pr list --state merged --limit 100` | INSUFFICIENT: 0 merged PRs |
 
-The wall-time median is a real observation from `gh run list`, over 10 runs, which is enough for a median but not for a rate. The other three are unmeasured: the last 10 runs held 7 or 8 failures depending on sampling time, **none classified**, and 10 observations cannot resolve a 2% target either way.
+**Every failure in the window, classified.** 9 of 12 runs failed, on 15 jobs. Each class is settled by the commit that made the job pass, not by the log message: several logs carry incidental noise (`Koios fetch failed`, `Can't reach database`) that was not the cause.
+
+| Class | Jobs | Failures | Fixed by |
+|---|---:|---|---|
+| Gate working as intended | 6 | two unrecorded advisories (`mysql2`; `qs` and `fast-uri`); six unused imports in the frontend; `Ctrl-C` left the API answering; the seed listed transactions it did not claim; `pnpm dev` waited for Docker to accept rather than for Postgres to be healthy | `80adccff`, `8732cf45`, `e6f934d6`, `6d98bf69`, `03027993`, `a36d6813` |
+| CI-only configuration | 5 | a doctor step asserted a mode that is not built; the `pnpm dev` job had no `backend/.env`; the contract gate had no database password; a third copy of the package checks ran without a database; an assertion checked a restart rule the adoption record does not keep | `4aac146b` (two), `76dea831`, `63a57135`, `07aa1c6a` |
+| Nondeterministic test | 2 | database suites shared one database under file parallelism; a width was measured before hydration settled | `cf111e73`, `26a224fe` |
+| Not attributable | 2 | two readiness steps of the removed development script's `up existing` mode, which was replaced whole rather than fixed | `6d98bf69` |
+| Infrastructure | 0 | none | |
+
+The nondeterministic class is the one the flake budget exists for, and it is not infrastructure: both were defects in tests that passed locally by timing. The database race has not recurred in the ten runs after its fix, and the hydration fix has run once, as its own commit. Neither count is enough to call them gone.
 
 ## Codebase health budgets
 
 The five dimensions of the original assessment that no latency, resource or CI row measures. Without these the register could read all-`PASS` while dead weight, duplication and change cost sit where they are today.
 
-**Ruled 2026-09-04.** Five approved unchanged, three revised, one deferred. Only the deferred row still blocks `BASELINES`.
+**Ruled 2026-09-04.** Five approved unchanged, three revised, one deferred. The deferred row, backend suite wall time, still waits for ten same-machine runs.
 
 **Why the bundle rows are ratchets, not limits.** The 422.8 KB chunk is the lazily instantiated ELK layout worker (`UtxoFlowCanvas.tsx:118`, behind `needsElk` and a `typeof Worker` guard), so it is not initial-load JS and a 250 KB cap on it would gate the wrong thing. Verified: the chunk contains 352 `elk` references and no route imports it eagerly. A no-regression ratchet holds the line until the analyzer can give real per-route initial-load figures, which is the `DISCOVERY` row below.
 
@@ -116,7 +126,7 @@ The five dimensions of the original assessment that no latency, resource or CI r
 - **The 82-second frontend suite figure was stale.** Three runs give 32.7 s median with a 0.7 s spread. The overhead *share* is the real problem and did not improve: 19.3 s of environment against 3.8 s of execution.
 - **The original duplication target passed trivially.** At 40 lines the codebase has zero clones, so the gate would have measured nothing. Measured at 12 lines it is 0.90%, which is a number that can move.
 
-| Budget | Measured baseline | Target (PROPOSED) | Owner | Verification command | Status |
+| Budget | Measured baseline | Target (approved) | Owner | Verification command | Status |
 |---|---|---|---|---|---|
 | Frontend total client JS | 848.6 KB gzipped over 28 chunks | **no regression: ≤865.6 KB (baseline +2%)** | explorer | `.next/static/chunks`, gzipped | PASS (holds by construction) |
 | Lazy ELK worker chunk | 422.8 KB gzipped, 1,416 KB raw | **no regression: ≤431.3 KB (baseline +2%)** | explorer | same | PASS (holds by construction) |
@@ -125,9 +135,17 @@ The five dimensions of the original assessment that no latency, resource or CI r
 | Frontend test environment time | 19.3 s of 32.7 s. **2026-09-15:** 4.63 s median of 3 (4.58, 4.73, 4.63), against 15.35 s for `jsdom` everywhere | **≤8 s absolute** | explorer | same, the `environment` figure | PASS |
 | Backend test suite wall time | 96.6 to 127.1 s over 3 runs, a 31% spread | **DEFERRED**: separate median and p90 targets, set after ≥10 same-machine runs | explorer | `pnpm vitest run` in `backend` | PENDING APPROVAL |
 | Backend test suite flakiness | one unexplained serial failure, cause unknown | 0 failures in 50 consecutive runs | explorer | `CI-ISOLATION` | INSUFFICIENT |
-| Dead weight retirement | 47 tracked files under `frontend/`, none decided | **every** dead or legacy artifact carries an explicit decision: retire, archive, or keep with a stated reason. Zero undecided | explorer | inventory in `LEGACY-RETIREMENT`, one row per artifact | **FAIL** |
+| Dead weight retirement | 3 artifacts, all decided 2026-09-15 (inventory below) | **every** dead or legacy artifact carries an explicit decision: retire, archive, or keep with a stated reason. Zero undecided | explorer | inventory below, one row per artifact | PASS |
 | Duplication | 0.90%: 15 clones, 265 lines over 203 files, at 12 lines / 50 tokens | **≤1.0%** at 12 lines / 50 tokens | explorer | `jscpd --min-lines 12 --min-tokens 50` | **PASS** |
 | Change complexity | top-10 churn peaks at 524 lines (`indexer/sync.ts`), then 418 (`indexer/koios.ts`); largest source 637 (`decode/transaction.ts`), largest tracked 871 (an e2e spec) | the 10 highest-churn files each under 400 lines; no file over 800 lines without a stated reason | explorer | `git log --numstat` churn crossed with line counts | **FAIL** |
+
+**Dead and legacy artifacts, inventoried 2026-09-15.** Tracked files only: gitignored local prototypes under `frontend/` are not repository artifacts.
+
+| Artifact | Size | Decision | Reason |
+|---|---|---|---|
+| `frontend/`, the previous Vite client | 47 files, 6,304 lines | keep, frozen | Owner ruling 2026-08-25, confirmed 2026-09-15: the previous client, no longer developed, and no CI job builds it |
+| `getBlockHeader` in `backend/src/db/block.ts` | one wrapper | keep | No production caller since `0bcc98d5`; the block query tests read a header through it |
+| `getBlockDaMetadata` in `backend/src/db/block.ts` | one keyed query | keep | No production caller since `0bcc98d5`; it is the independent query the merged block read is checked against |
 | Fixture representativeness | not measurable until the fixture pipeline exists | every fixture response validates against its contract, and the set covers every route the demo server serves plus the empty, truncated and error cases | explorer | fixture build, which fails on a contract violation | UNMEASURABLE |
 
 **Dead weight, duplication and change complexity are gates, not observations.** A retirement decision may be "keep it", but there is no such thing as an artifact with no decision. That is the whole failure mode: an undecided artifact reads as a pass because nobody wrote down that it fails.
