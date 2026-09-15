@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { baselineGate, hardwareProfileOf } from "../bench/harness.mjs";
+import { baselineGate, hardwareProfileOf, outputExcerpt } from "../bench/harness.mjs";
 import type { HarnessReport } from "../bench/harness.mjs";
 import { WORKLOADS } from "../bench/workloads.mjs";
 import type { EnvironmentReport } from "../bench/environment.mjs";
@@ -213,5 +213,22 @@ describe("baselineGate", () => {
       { ...clean[0], workload: "metrics", verdict: "UNMEASURED", unmeasured: ["statements"] },
     ]);
     expect(blocking.length).toBe(3);
+  });
+});
+
+describe("outputExcerpt", () => {
+  it("keeps the reason a server printed last, not only its first lines", () => {
+    // Two `target` replays lost the server's reason for exiting: the startup
+    // log filled the first twelve lines and the error came after them.
+    const startup = Array.from({ length: 30 }, (_, i) => `startup line ${i}`);
+    const text = [...startup, "Error: the reason it died", "    at the frame that threw"].join("\n");
+    const excerpt = outputExcerpt(text, 12, 5);
+    expect(excerpt).toContain("startup line 0");
+    expect(excerpt).toContain("Error: the reason it died");
+    expect(excerpt).toContain("[15 lines omitted]");
+  });
+
+  it("returns short output whole", () => {
+    expect(outputExcerpt("one\ntwo\n")).toBe("one\ntwo");
   });
 });

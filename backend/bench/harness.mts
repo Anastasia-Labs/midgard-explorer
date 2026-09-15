@@ -167,6 +167,23 @@ export async function setupBench(options: SetupOptions): Promise<BenchSetup> {
   };
 }
 
+/**
+ * The start and the end of a server's output.
+ *
+ * A configuration failure prints its reason first. A server that dies in the
+ * middle of a run prints its reason last, and keeping only the first twelve
+ * lines lost that reason on two `target` replays that exited with code 1.
+ */
+export function outputExcerpt(output: string, head = 12, tail = 40): string {
+  const lines = output.trim().split("\n");
+  if (lines.length <= head + tail) return lines.join("\n");
+  return [
+    ...lines.slice(0, head),
+    `[${lines.length - head - tail} lines omitted]`,
+    ...lines.slice(-tail),
+  ].join("\n");
+}
+
 export type ServerHandle = {
   base: string;
   bypassToken: string;
@@ -309,7 +326,7 @@ export async function startServer(
   child.stdout?.on("data", (chunk: Buffer) => {
     stderr += chunk.toString();
   });
-  const failure = () => stderr.trim().split("\n").slice(0, 12).join("\n");
+  const failure = () => outputExcerpt(stderr);
 
   for (;;) {
     if (child.exitCode !== null) {
