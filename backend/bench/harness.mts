@@ -234,13 +234,32 @@ export function buildBackend(): { commit: string; builtAt: string } {
   return { commit, builtAt: new Date().toISOString() };
 }
 
+/**
+ * The node flags `pnpm start` runs the server with.
+ *
+ * Production starts the backend through that script, so a flag there, such as a
+ * heap cap, is part of what a baseline must measure. Read from the script
+ * rather than repeated here, where the two would drift.
+ */
+export function startScriptNodeFlags(
+  packageJson = readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+): string[] {
+  const start: unknown = JSON.parse(packageJson).scripts?.start;
+  const match = typeof start === "string" ? /^node((?:\s+--?\S+)*)\s+dist\/index\.js$/.exec(start.trim()) : null;
+  if (!match) {
+    throw new Error(`the start script is not "node [flags] dist/index.js": ${String(start)}`);
+  }
+  return match[1].trim().split(/\s+/).filter((flag) => flag.length > 0);
+}
+
 export async function startServer(
   setup: BenchSetup,
   port: number,
   extraEnv: Record<string, string> = {},
+  nodeFlags: readonly string[] = startScriptNodeFlags(),
 ): Promise<ServerHandle> {
   const bypassToken = randomBytes(24).toString("hex");
-  const child: ChildProcess = spawn(process.execPath, ["dist/index.js"], {
+  const child: ChildProcess = spawn(process.execPath, [...nodeFlags, "dist/index.js"], {
     env: {
       ...process.env,
       POSTGRES_URL: setup.nodeUrl,
@@ -524,7 +543,12 @@ export type HarnessReport = {
   indexChecksum: Checksum;
   iterations: number;
   /** What the measured server was configured with, so a number can be read. */
-  serverConfig: { apiRateLimitMax: number };
+  serverConfig: {
+    apiRateLimitMax: number;
+    /** The node flags the server ran with, and the ones `pnpm start` uses. */
+    nodeFlags: string[];
+    startScriptNodeFlags: string[];
+  };
   /**
    * Which part of the catalogue this run covers.
    *
@@ -576,6 +600,8 @@ export function baselineGate(
   /** The build this run performed, `null` when it measured whatever was there. */
   build?: { commit: string; builtAt: string } | null,
   payload?: PayloadSource,
+  /** The server's node flags against the start script's. */
+  nodeFlags?: { used: readonly string[]; startScript: readonly string[] },
 ): string[] {
   const blocking: string[] = [];
   const GB = 1024 ** 3;
@@ -689,6 +715,14 @@ export function baselineGate(
       );
     }
   }
+  // A heap cap or any other flag changes what is measured. A comparison run may
+  // override them; the measurement of record uses what deploys.
+  if (nodeFlags && nodeFlags.used.join(" ") !== nodeFlags.startScript.join(" ")) {
+    blocking.push(
+      `the server ran with node flags "${nodeFlags.used.join(" ")}", but pnpm start uses ` +
+        `"${nodeFlags.startScript.join(" ")}": a baseline measures the deployed configuration`,
+    );
+  }
   // Public traffic reaches the API through the edge proxy, which compresses.
   // Sizes taken at the origin describe bytes no client receives.
   if (payload?.at === "origin") {
@@ -721,6 +755,8 @@ export async function runHarness(options: {
   run?: RunOptions;
   /** Also build and start the production frontend and measure its routes. */
   withFrontend?: boolean;
+  /** Node flags for the server instead of the start script's, for a comparison run. */
+  serverNodeFlags?: readonly string[];
 }): Promise<HarnessReport> {
   const startedAt = new Date().toISOString();
   const profile = PROFILES[options.profileName];
@@ -729,6 +765,8 @@ export async function runHarness(options: {
   // Before the database is seeded, while memory is free: `next build` is the
   // heaviest step of a run on a two-core machine.
   const frontendBuild = options.withFrontend ? buildFrontend() : null;
+  const scriptFlags = startScriptNodeFlags();
+  const nodeFlags = options.serverNodeFlags ?? scriptFlags;
   const control = new Client({ connectionString: options.benchUrl });
   await control.connect();
   const environment = await captureEnvironment(control);
@@ -746,7 +784,7 @@ export async function runHarness(options: {
   let edge: EdgeHandle | null = null;
   let frontend: FrontendHandle | null = null;
   try {
-    server = await startServer(setup, options.port);
+    server = await startServer(setup, options.port, {}, nodeFlags);
     let payload: PayloadSource;
     try {
       edge = await startEdge(options.port);
@@ -816,7 +854,10 @@ export async function runHarness(options: {
       warnings: [
         ...environmentWarnings(environment),
         ...(options.mode === "baseline"
-          ? baselineGate(environment, results, { scope, excluded }, build, payload)
+          ? baselineGate(environment, results, { scope, excluded }, build, payload, {
+              used: nodeFlags,
+              startScript: scriptFlags,
+            })
           : []),
         ...(options.mode === "smoke" && payload.at === "origin"
           ? [`payload sizes measured at the origin: ${payload.reason}`]
@@ -825,7 +866,11 @@ export async function runHarness(options: {
       datasetChecksum: setup.datasetChecksum,
       indexChecksum: setup.indexSnapshot.checksum,
       iterations: options.run?.iterations ?? 0,
-      serverConfig: { apiRateLimitMax: BENCH_RATE_LIMIT_MAX },
+      serverConfig: {
+        apiRateLimitMax: BENCH_RATE_LIMIT_MAX,
+        nodeFlags: [...nodeFlags],
+        startScriptNodeFlags: scriptFlags,
+      },
       scope,
       build,
       frontendBuild,

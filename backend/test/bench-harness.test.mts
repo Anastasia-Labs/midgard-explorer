@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { baselineGate, hardwareProfileOf, outputExcerpt } from "../bench/harness.mjs";
+import { baselineGate, hardwareProfileOf, outputExcerpt, startScriptNodeFlags } from "../bench/harness.mjs";
 import type { HarnessReport } from "../bench/harness.mjs";
 import { WORKLOADS } from "../bench/workloads.mjs";
 import type { EnvironmentReport } from "../bench/environment.mjs";
@@ -104,6 +104,21 @@ describe("baselineGate", () => {
       image: "nginx:1.27-alpine@sha256:" + "0".repeat(64),
     });
     expect(edge).toEqual([]);
+  });
+
+  it("refuses a server run with node flags the start script does not use", () => {
+    // A heap cap is compared with and without in smoke runs. The measurement of
+    // record must be the configuration `pnpm start` deploys.
+    const differ = baselineGate(healthy, clean, undefined, undefined, undefined, {
+      used: ["--max-old-space-size=320"],
+      startScript: [],
+    });
+    expect(differ.join(" ")).toMatch(/node flags "--max-old-space-size=320", but pnpm start uses ""/);
+    const same = baselineGate(healthy, clean, undefined, undefined, undefined, {
+      used: ["--max-old-space-size=320"],
+      startScript: ["--max-old-space-size=320"],
+    });
+    expect(same).toEqual([]);
   });
 
   it("refuses a subset run, which is a diagnostic and not a baseline", () => {
@@ -257,5 +272,26 @@ describe("outputExcerpt", () => {
 
   it("returns short output whole", () => {
     expect(outputExcerpt("one\ntwo\n")).toBe("one\ntwo");
+  });
+});
+
+describe("startScriptNodeFlags", () => {
+  const pkg = (start: string) => JSON.stringify({ scripts: { start } });
+
+  it("reads the flags between node and the entry point", () => {
+    expect(startScriptNodeFlags(pkg("node dist/index.js"))).toEqual([]);
+    expect(startScriptNodeFlags(pkg("node --max-old-space-size=320 dist/index.js"))).toEqual([
+      "--max-old-space-size=320",
+    ]);
+    expect(startScriptNodeFlags(pkg("node --a --b=1  dist/index.js"))).toEqual(["--a", "--b=1"]);
+  });
+
+  it("refuses a start script it cannot read, rather than measuring without its flags", () => {
+    expect(() => startScriptNodeFlags(pkg("ts-node src/index.ts"))).toThrow(/start script/);
+    expect(() => startScriptNodeFlags(pkg("node dist/index.js --inspect"))).toThrow(/start script/);
+  });
+
+  it("parses this repository's own start script", () => {
+    expect(Array.isArray(startScriptNodeFlags())).toBe(true);
   });
 });

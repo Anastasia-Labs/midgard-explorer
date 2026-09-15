@@ -75,6 +75,12 @@ const report = await runHarness({
   outFile: arg("out", `bench-${mode}-${profileName}.json`),
   run: { iterations: Number(arg("iterations", "40")) },
   withFrontend: process.argv.includes("--with-frontend"),
+  // One quoted argument, so a flag's own leading dashes are not read as a CLI option.
+  serverNodeFlags: process.argv.includes("--server-node-flags")
+    ? (process.argv[process.argv.indexOf("--server-node-flags") + 1] ?? "")
+        .split(/\s+/)
+        .filter((flag) => flag.length > 0)
+    : undefined,
 });
 
 for (const warning of report.warnings) {

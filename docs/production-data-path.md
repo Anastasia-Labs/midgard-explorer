@@ -73,6 +73,13 @@ For Cloudflare, Fastly, CloudFront, or another CDN:
 - apply a global client/origin request budget at the CDN when running multiple
   backend processes.
 
+The frontend's host must compress JSON as well. `next start` compresses pages
+but not route handlers, so `/api/overview`, which the home page polls every
+ten seconds, leaves the Next server uncompressed. Vercel's CDN compresses the
+content types on its allowlist automatically; after deploying, confirm the
+route answers with `Content-Encoding: gzip` or `br`. A self-hosted `next start`
+needs a compressing proxy in front of it.
+
 ## Metrics
 
 Set `METRICS_PORT` to serve Prometheus metrics at `/metrics` on a separate
