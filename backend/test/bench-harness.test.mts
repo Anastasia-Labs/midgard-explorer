@@ -90,6 +90,22 @@ describe("baselineGate", () => {
     expect(blocking.join(" ")).toMatch(/artifact and the commit disagree/);
   });
 
+  it("refuses payload sizes taken at the origin, which no client receives", () => {
+    // The first `target` baseline measured every size at the origin, which
+    // sends identity bytes whatever it is offered, while public traffic is
+    // compressed by the edge proxy in front of it.
+    const origin = baselineGate(healthy, clean, undefined, undefined, {
+      at: "origin",
+      reason: "docker is not available",
+    });
+    expect(origin.join(" ")).toMatch(/measured at the origin.*docker is not available/);
+    const edge = baselineGate(healthy, clean, undefined, undefined, {
+      at: "edge",
+      image: "nginx:1.27-alpine@sha256:" + "0".repeat(64),
+    });
+    expect(edge).toEqual([]);
+  });
+
   it("refuses a subset run, which is a diagnostic and not a baseline", () => {
     const blocking = baselineGate(healthy, clean, { scope: "subset", excluded: [] });
     expect(blocking.join(" ")).toMatch(/subset of the catalogue/);

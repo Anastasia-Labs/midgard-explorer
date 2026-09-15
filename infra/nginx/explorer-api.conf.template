@@ -20,6 +20,17 @@ server {
   server_name _;
   server_tokens off;
 
+  # JSON is compressed here rather than at the origin. Public traffic arrives
+  # through this edge, and the backend sends identity bytes, so nothing a
+  # client received was compressed: `address-history` sent 1.8 MB as-is.
+  # Below 1 KB the gzip framing costs more than it saves.
+  gzip on;
+  gzip_types application/json;
+  gzip_min_length 1024;
+  gzip_comp_level 5;
+  gzip_proxied any;
+  gzip_vary on;
+
   # Both probes are always live and are never retained by this proxy.
   #
   # `/readyz` is what the page's own status indicator reads. A proxy that
@@ -41,6 +52,10 @@ server {
     proxy_pass http://${BACKEND_ORIGIN};
     proxy_http_version 1.1;
     proxy_set_header Connection "";
+    # The cache key carries no encoding, so the stored body must be the one
+    # every client can read. The origin is always asked for identity bytes, and
+    # compression is applied per response on the way out, cache hits included.
+    proxy_set_header Accept-Encoding "";
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;

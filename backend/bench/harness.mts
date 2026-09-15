@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { readFileSync, readdirSync } from "node:fs";
 import { Client } from "pg";
 import { cloneIndex, type IndexSnapshot } from "./cloneIndex.mjs";
+import { startEdge, type EdgeHandle } from "./edge.mjs";
 import { captureEnvironment, environmentWarnings, type EnvironmentReport } from "./environment.mjs";
 import { generateDataset, streamDataset, LOAD_ORDER } from "./generate.mjs";
 import { judge, type Judgement } from "./judge.mjs";
@@ -409,15 +410,18 @@ export async function runWorkload(
   server: ServerHandle,
   probe: Awaited<ReturnType<typeof createDbProbe>>,
   options: RunOptions = {},
+  /** Where the size probes are sent: the edge proxy when one runs. */
+  sizeBase: string = server.base,
 ): Promise<Judgement> {
   const iterations = options.iterations ?? (workload.concurrency > 1 ? 200 : 40);
   const timeoutMs = options.timeoutMs ?? 30_000;
   const pool = setup.ids;
 
-  const urlFor = (i: number) => {
+  const pathFor = (i: number) => {
     const ids = workload.cacheMode === "unique-key" ? pool[i % pool.length] : pool[0];
-    return `${server.base}${workload.buildPath(ids)}`;
+    return workload.buildPath(ids);
   };
+  const urlFor = (i: number) => `${server.base}${pathFor(i)}`;
 
   // Counted from the paths actually issued, so this cannot drift from what ran.
   const distinctPaths =
@@ -460,9 +464,12 @@ export async function runWorkload(
   // compression ever enlarges a response and what it saves across the route
   // set, and neither can be answered from a report that recorded the identity
   // size for two rows out of twelve. One extra request per workload.
-  const identity = await identitySize(urlFor(0), timeoutMs);
+  // Through the edge when one runs, because that is where a client's bytes are
+  // decided: the origin sends identity bytes whatever it is offered.
+  const sizeUrl = `${sizeBase}${pathFor(0)}`;
+  const identity = await identitySize(sizeUrl, timeoutMs);
   // The same url, offered compression, so the pair is comparable.
-  const encoded = await encodedSize(urlFor(0), timeoutMs);
+  const encoded = await encodedSize(sizeUrl, timeoutMs);
 
   return judge({
     workload,
@@ -535,9 +542,19 @@ export type HarnessReport = {
     excluded: { workload: string; reason: string }[];
   };
   results: Judgement[];
+  /** Where the identity and encoded sizes were measured. */
+  payload: PayloadSource;
   startedAt: string;
   finishedAt: string;
 };
+
+/**
+ * `edge` is the deployed proxy image in front of the server under test. `origin`
+ * means no edge could be started, and says why.
+ */
+export type PayloadSource =
+  | { at: "edge"; image: string }
+  | { at: "origin"; reason: string };
 
 /**
  * Conditions under which a run may be recorded as a baseline.
@@ -554,6 +571,7 @@ export function baselineGate(
   },
   /** The build this run performed, `null` when it measured whatever was there. */
   build?: { commit: string; builtAt: string } | null,
+  payload?: PayloadSource,
 ): string[] {
   const blocking: string[] = [];
   const GB = 1024 ** 3;
@@ -663,6 +681,13 @@ export function baselineGate(
       );
     }
   }
+  // Public traffic reaches the API through the edge proxy, which compresses.
+  // Sizes taken at the origin describe bytes no client receives.
+  if (payload?.at === "origin") {
+    blocking.push(
+      `payload sizes were measured at the origin, not through the edge proxy: ${payload.reason}`,
+    );
+  }
   return blocking;
 }
 
@@ -695,8 +720,16 @@ export async function runHarness(options: {
     poolSize: options.run?.iterations ?? 40,
   });
   let server: ServerHandle | null = null;
+  let edge: EdgeHandle | null = null;
   try {
     server = await startServer(setup, options.port);
+    let payload: PayloadSource;
+    try {
+      edge = await startEdge(options.port, options.port + 1);
+      payload = { at: "edge", image: edge.image };
+    } catch (error) {
+      payload = { at: "origin", reason: error instanceof Error ? error.message : String(error) };
+    }
     const wanted = options.only;
     const selected = wanted
       ? WORKLOADS.filter((w) => wanted.includes(w.name))
@@ -712,7 +745,9 @@ export async function runHarness(options: {
     const scope = wanted ? ("subset" as const) : ("backend-only" as const);
     const results: Judgement[] = [];
     for (const workload of selected) {
-      results.push(await runWorkload(workload, setup, server, probe, options.run));
+      results.push(
+        await runWorkload(workload, setup, server, probe, options.run, edge?.base),
+      );
       // A dead server answers every request in under a millisecond with a
       // refused connection, which reads as a fast workload with a 100% error
       // rate. Without this check a crash after the third workload produced nine
@@ -735,7 +770,10 @@ export async function runHarness(options: {
       warnings: [
         ...environmentWarnings(environment),
         ...(options.mode === "baseline"
-          ? baselineGate(environment, results, { scope, excluded }, build)
+          ? baselineGate(environment, results, { scope, excluded }, build, payload)
+          : []),
+        ...(options.mode === "smoke" && payload.at === "origin"
+          ? [`payload sizes measured at the origin: ${payload.reason}`]
           : []),
       ],
       datasetChecksum: setup.datasetChecksum,
@@ -747,6 +785,7 @@ export async function runHarness(options: {
       peakRssBytes: server.peakRssBytes(),
       coverage: { measured: results.map((r) => r.workload), excluded },
       results,
+      payload,
       startedAt,
       finishedAt: new Date().toISOString(),
     };
@@ -755,6 +794,7 @@ export async function runHarness(options: {
     }
     return report;
   } finally {
+    await edge?.stop();
     await server?.stop();
     await setup.cleanup();
     await control.end().catch(() => {});
