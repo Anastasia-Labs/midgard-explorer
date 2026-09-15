@@ -36,12 +36,16 @@ describe("endpoint catalogue", () => {
     }
   });
 
-  it("limits and caches every public API route by default", () => {
+  it("limits every public API route, and caches every read but never a write", () => {
     for (const endpoint of ENDPOINTS.filter((e) =>
       e.path.startsWith("/api/"),
     )) {
       expect(endpoint.rateLimited, endpoint.path).toBe(true);
-      expect(endpoint.cacheSeconds, endpoint.path).toBeGreaterThan(0);
+      if (endpoint.method === "get") {
+        expect(endpoint.cacheSeconds, endpoint.path).toBeGreaterThan(0);
+      } else {
+        expect(endpoint.cacheSeconds, endpoint.path).toBe(0);
+      }
     }
     expect(rateLimitedPaths()).toEqual(["/api"]);
   });
@@ -83,7 +87,7 @@ describe("generated OpenAPI document", () => {
   it("describes the rate limit where, and only where, one is enforced", () => {
     const document = openApiDocument();
     for (const endpoint of ENDPOINTS) {
-      const operation = document.paths[documentationPath(endpoint.path)]?.get;
+      const operation = document.paths[documentationPath(endpoint.path)]?.[endpoint.method];
       const has429 = operation?.responses?.["429"] !== undefined;
       expect(has429, endpoint.path).toBe(endpoint.rateLimited);
     }

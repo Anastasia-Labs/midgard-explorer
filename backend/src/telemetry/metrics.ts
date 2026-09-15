@@ -94,3 +94,36 @@ export async function timedPass<T>(pass: () => Promise<T>): Promise<T> {
     indexerPassDuration.observe({ outcome }, (performance.now() - started) / 1_000);
   }
 }
+
+const vitalLabels = ["route_class", "device_class"] as const;
+
+/**
+ * Web Vitals reported by browsers, one histogram each because the units differ.
+ *
+ * Each budget threshold is a bucket boundary (2.5 s, 0.2 s, 0.1), so the share
+ * of samples inside a budget is a bucket count, not a quantile interpolated
+ * between two boundaries that straddle it.
+ */
+export const webVitals = {
+  LCP: new Histogram({
+    name: "explorer_web_vitals_lcp_seconds",
+    help: "Largest Contentful Paint reported by browsers, by route class and device class.",
+    labelNames: vitalLabels,
+    buckets: [0.5, 1, 1.5, 2, 2.5, 3, 4, 6, 10],
+    registers: [registry],
+  }),
+  INP: new Histogram({
+    name: "explorer_web_vitals_inp_seconds",
+    help: "Interaction to Next Paint reported by browsers, by route class and device class.",
+    labelNames: vitalLabels,
+    buckets: [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1, 2],
+    registers: [registry],
+  }),
+  CLS: new Histogram({
+    name: "explorer_web_vitals_cls",
+    help: "Cumulative Layout Shift reported by browsers, by route class and device class.",
+    labelNames: vitalLabels,
+    buckets: [0.01, 0.05, 0.1, 0.15, 0.25, 0.5, 1],
+    registers: [registry],
+  }),
+};

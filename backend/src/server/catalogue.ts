@@ -19,6 +19,7 @@ import { getForcedTransactionsPageRoute } from "./routes/forcedTransactions";
 import { getMetricsRoute } from "./routes/metrics";
 import { getAssetRoute, getAssetsRoute } from "./routes/asset";
 import { getSearchRoute } from "./routes/search";
+import { postVitalsRoute } from "./routes/vitals";
 import { prisma } from "../db";
 import { indexerPrisma } from "../indexer/db";
 import { logger } from "../logger";
@@ -72,7 +73,8 @@ export type EndpointParameter = {
 };
 
 export type Endpoint = {
-  method: "get";
+  /** `post` only for the one route that accepts browser telemetry. */
+  method: "get" | "post";
   /** Express form, with `:param` segments. `documentationPath` converts it. */
   path: string;
   group: string;
@@ -83,6 +85,8 @@ export type Endpoint = {
   rateLimited: boolean;
   /** Shared-cache lifetime. Zero means do not cache this route. */
   cacheSeconds: number;
+  /** The OpenAPI request body, for a `post` route. */
+  requestBody?: Record<string, unknown>;
   handler: RequestHandler;
 };
 
@@ -116,13 +120,15 @@ const endpoint = (
   summary: string,
   handler: RequestHandler,
   options: {
+    method?: "get" | "post";
     parameters?: EndpointParameter[];
     notFound?: boolean;
     rateLimited?: boolean;
     cacheSeconds?: number;
+    requestBody?: Record<string, unknown>;
   } = {},
 ): Endpoint => ({
-  method: "get",
+  method: options.method ?? "get",
   path,
   group,
   summary,
@@ -134,7 +140,12 @@ const endpoint = (
   // All API responses are public. Five seconds protects the node from bursts
   // while keeping mutable lifecycle state fresh; immutable/expensive routes
   // override this below.
-  cacheSeconds: options.cacheSeconds ?? (path.startsWith("/api/") ? 5 : 0),
+  // A write is never a cached response.
+  cacheSeconds:
+    options.method === "post"
+      ? 0
+      : (options.cacheSeconds ?? (path.startsWith("/api/") ? 5 : 0)),
+  requestBody: options.requestBody,
   handler,
 });
 
@@ -244,6 +255,36 @@ export const ENDPOINTS: readonly Endpoint[] = [
     {
       rateLimited: true,
       cacheSeconds: 10,
+    },
+  ),
+  endpoint(
+    "/api/vitals",
+    "Telemetry",
+    "Record one Web Vitals sample from a page load",
+    postVitalsRoute,
+    {
+      method: "post",
+      rateLimited: true,
+      requestBody: {
+        required: true,
+        description:
+          "One sample, sent by the explorer's pages with navigator.sendBeacon as text/plain. LCP and INP are milliseconds; CLS has no unit.",
+        content: {
+          "text/plain": {
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["name", "value", "routeClass", "deviceClass"],
+              properties: {
+                name: { type: "string", enum: ["LCP", "INP", "CLS"] },
+                value: { type: "number", minimum: 0 },
+                routeClass: { type: "string", enum: ["overview", "list", "detail", "other"] },
+                deviceClass: { type: "string", enum: ["mobile", "desktop"] },
+              },
+            },
+          },
+        },
+      },
     },
   ),
   endpoint(
@@ -491,6 +532,10 @@ export function documentationPath(path: string): string {
 
 export function registerCatalogue(app: Express): void {
   for (const route of ENDPOINTS) {
+    if (route.method === "post") {
+      app.post(route.path, route.handler);
+      continue;
+    }
     app.get(
       route.path,
       cachePublicJson(

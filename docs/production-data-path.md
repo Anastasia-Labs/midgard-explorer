@@ -87,12 +87,31 @@ publish this port: it describes the process, not the chain.
 | `explorer_db_statement_duration_seconds` | `database` (`node`, `index`), `class` | Time per statement; `class` separates route work from index bookkeeping |
 | `explorer_response_cache_total` | `route`, `result` (`hit`, `miss`, `bypass`) | How often the in-process cache answers |
 | `explorer_indexer_pass_duration_seconds` | `outcome` | How long each L1 sync pass takes, and whether it failed |
+| `explorer_web_vitals_lcp_seconds`, `_inp_seconds`, `explorer_web_vitals_cls` | `route_class`, `device_class` | Web Vitals the explorer's pages report through `POST /api/vitals` |
 | `process_resident_memory_bytes`, `nodejs_*` | none | Memory, heap, event-loop lag and garbage collection |
 
 `route` is always a template such as `/api/blocks/:page`, never the path a
 client sent, so walking every block adds no series. A request no route matched
 is labelled `unmatched`. Statement counts leave out `BEGIN` and `COMMIT`, the
 same rule the benchmark uses.
+
+Pages send LCP, INP and CLS with `navigator.sendBeacon` in production builds.
+The browser only sends them when the page and the API share an origin, which the
+page's `connect-src 'self'` policy already requires of every browser request.
+Anyone can post a sample. Every field is a closed set or a bounded range, so a
+forged sample can skew a figure but cannot add a series, and the per-client
+rate limit applies. Read the figures as indicative, not audited.
+
+Each Web Vitals budget threshold is a bucket boundary, so the share of samples
+inside the LCP budget over 28 days, per cell, is a ratio of counts:
+
+```promql
+sum by (route_class, device_class) (increase(explorer_web_vitals_lcp_seconds_bucket{le="2.5"}[28d]))
+  / sum by (route_class, device_class) (increase(explorer_web_vitals_lcp_seconds_count[28d]))
+```
+
+The budget passes a cell when that share is at least 0.75 over at least 1,000
+samples. Prometheus must retain 28 days for the window to exist.
 
 A scrape job on the same host, with `METRICS_PORT=9464`:
 
