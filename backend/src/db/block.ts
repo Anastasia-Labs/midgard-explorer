@@ -69,13 +69,84 @@ export type BlockHeaderRecord = {
   payload_retained_locally: boolean;
 };
 
-/** One header summary. The journal is authoritative when present; DA and
- * `blocks` are detail-only compatibility fallbacks so an orphaned legacy row
- * remains inspectable without becoming part of the canonical header list. */
-export async function getBlockHeader(headerHash: string, db: NodeReader = prisma) {
+type DaMetadataRow = {
+  utxos_root: string;
+  transactions_root: string;
+  deposits_root: string;
+  withdrawals_root: string;
+  forced_transactions_root: string;
+  transition_trace_root: string;
+  event_to_step_root: string;
+  l2_transaction_count: bigint;
+  deposit_count: bigint;
+  withdrawal_count: bigint;
+  forced_transaction_count: bigint;
+  total_event_count: bigint;
+  transition_step_count: bigint;
+  block_start_time: Date;
+  block_end_time: Date;
+};
+
+const daMetadataFrom = (row: DaMetadataRow) => ({
+  ...row,
+  l2_transaction_count: Number(row.l2_transaction_count),
+  deposit_count: Number(row.deposit_count),
+  withdrawal_count: Number(row.withdrawal_count),
+  forced_transaction_count: Number(row.forced_transaction_count),
+  total_event_count: Number(row.total_event_count),
+  transition_step_count: Number(row.transition_step_count),
+});
+
+type FinalizationRow = {
+  status: string;
+  submitted_tx_hash: Uint8Array | null;
+  block_end_time: Date;
+  created_at: Date;
+  updated_at: Date;
+  observed_confirmed_at_ms: bigint | null;
+};
+
+const finalizationFrom = (row: FinalizationRow) => ({
+  status: row.status,
+  submitted_tx_hash: row.submitted_tx_hash ? toHex(row.submitted_tx_hash) : null,
+  blockEndTime: row.block_end_time,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  observedConfirmedAt:
+    row.observed_confirmed_at_ms === null
+      ? null
+      : new Date(Number(row.observed_confirmed_at_ms)),
+});
+
+/** Every column of one header query, prefixed where two tables share a name.
+ * The `da_` and `fin_` columns are null whenever `has_da` or `has_finalization`
+ * is false, and are read only when it is true. */
+type BlockSummaryRow = BlockHeaderRecord & {
+  has_da: boolean;
+  has_finalization: boolean;
+} & { [K in keyof DaMetadataRow as `da_${K}`]: DaMetadataRow[K] } & {
+  [K in keyof FinalizationRow as `fin_${K}`]: FinalizationRow[K];
+};
+
+/** The header, its DA metadata and its finalization from one statement.
+ *
+ * All three are keyed on the same hash in the same two tables, so the block
+ * page read them in three round trips for one row. The journal is
+ * authoritative when present; DA and `blocks` are detail-only compatibility
+ * fallbacks so an orphaned legacy row remains inspectable without becoming
+ * part of the canonical header list.
+ *
+ * Each source is narrowed to the key before the outer joins. Filtering on the
+ * joined `COALESCE` instead joined both tables whole on every request: 3 to
+ * 4.5 ms at `target` and growing with the chain, against 0.13 to 0.24 ms. */
+export async function getBlockSummary(headerHash: string, db: NodeReader = prisma) {
   const key = Buffer.from(headerHash, "hex");
-  const rows = await db.$queryRaw<BlockHeaderRecord[]>`
-    WITH materialized AS (
+  const rows = await db.$queryRaw<BlockSummaryRow[]>`
+    WITH f AS (
+      SELECT * FROM pending_block_finalizations WHERE header_hash = ${key}
+    ), d AS (
+      SELECT * FROM da_payloads WHERE header_hash = ${key}
+    ), materialized AS (
       SELECT header_hash, MIN(height)::int AS height, COUNT(*)::bigint AS count,
              MAX(time_stamp_tz) AS block_end_time
         FROM blocks WHERE header_hash = ${key} GROUP BY header_hash
@@ -89,13 +160,83 @@ export async function getBlockHeader(headerHash: string, db: NodeReader = prisma
            COALESCE(f.expected_withdrawal_count, d.withdrawal_count) AS header_withdrawal_count,
            COALESCE(f.expected_forced_transaction_count, d.forced_transaction_count) AS header_forced_transaction_count,
            COALESCE(b.count, 0)::bigint AS materialized_l2_transaction_count,
-           (d.header_hash IS NOT NULL) AS payload_retained_locally
-      FROM pending_block_finalizations AS f
-      FULL OUTER JOIN da_payloads AS d ON d.header_hash = f.header_hash
+           (d.header_hash IS NOT NULL) AS payload_retained_locally,
+           (d.header_hash IS NOT NULL) AS has_da,
+           d.utxos_root AS da_utxos_root,
+           d.transactions_root AS da_transactions_root,
+           d.deposits_root AS da_deposits_root,
+           d.withdrawals_root AS da_withdrawals_root,
+           d.forced_transactions_root AS da_forced_transactions_root,
+           d.transition_trace_root AS da_transition_trace_root,
+           d.event_to_step_root AS da_event_to_step_root,
+           d.l2_transaction_count AS da_l2_transaction_count,
+           d.deposit_count AS da_deposit_count,
+           d.withdrawal_count AS da_withdrawal_count,
+           d.forced_transaction_count AS da_forced_transaction_count,
+           d.total_event_count AS da_total_event_count,
+           d.transition_step_count AS da_transition_step_count,
+           d.block_start_time AS da_block_start_time,
+           d.block_end_time AS da_block_end_time,
+           (f.header_hash IS NOT NULL) AS has_finalization,
+           f.status AS fin_status,
+           f.submitted_tx_hash AS fin_submitted_tx_hash,
+           f.block_end_time AS fin_block_end_time,
+           f.created_at AS fin_created_at,
+           f.updated_at AS fin_updated_at,
+           f.observed_confirmed_at_ms AS fin_observed_confirmed_at_ms
+      FROM f
+      FULL OUTER JOIN d ON d.header_hash = f.header_hash
       FULL OUTER JOIN materialized AS b
-        ON b.header_hash = COALESCE(f.header_hash, d.header_hash)
-     WHERE COALESCE(f.header_hash, d.header_hash, b.header_hash) = ${key};`;
-  return rows[0] ?? null;
+        ON b.header_hash = COALESCE(f.header_hash, d.header_hash);`;
+  const row = rows[0];
+  if (!row) return { header: null, da: null, finalization: null };
+  const header: BlockHeaderRecord = {
+    header_hash: row.header_hash,
+    height: row.height,
+    block_start_time: row.block_start_time,
+    block_end_time: row.block_end_time,
+    header_l2_transaction_count: row.header_l2_transaction_count,
+    header_deposit_count: row.header_deposit_count,
+    header_withdrawal_count: row.header_withdrawal_count,
+    header_forced_transaction_count: row.header_forced_transaction_count,
+    materialized_l2_transaction_count: row.materialized_l2_transaction_count,
+    payload_retained_locally: row.payload_retained_locally,
+  };
+  const da = row.has_da
+    ? daMetadataFrom({
+        utxos_root: row.da_utxos_root,
+        transactions_root: row.da_transactions_root,
+        deposits_root: row.da_deposits_root,
+        withdrawals_root: row.da_withdrawals_root,
+        forced_transactions_root: row.da_forced_transactions_root,
+        transition_trace_root: row.da_transition_trace_root,
+        event_to_step_root: row.da_event_to_step_root,
+        l2_transaction_count: row.da_l2_transaction_count,
+        deposit_count: row.da_deposit_count,
+        withdrawal_count: row.da_withdrawal_count,
+        forced_transaction_count: row.da_forced_transaction_count,
+        total_event_count: row.da_total_event_count,
+        transition_step_count: row.da_transition_step_count,
+        block_start_time: row.da_block_start_time,
+        block_end_time: row.da_block_end_time,
+      })
+    : null;
+  const finalization = row.has_finalization
+    ? finalizationFrom({
+        status: row.fin_status,
+        submitted_tx_hash: row.fin_submitted_tx_hash,
+        block_end_time: row.fin_block_end_time,
+        created_at: row.fin_created_at,
+        updated_at: row.fin_updated_at,
+        observed_confirmed_at_ms: row.fin_observed_confirmed_at_ms,
+      })
+    : null;
+  return { header, da, finalization };
+}
+
+/** One header summary. See `getBlockSummary`, which this reads. */
+export async function getBlockHeader(headerHash: string, db: NodeReader = prisma) {
+  return (await getBlockSummary(headerHash, db)).header;
 }
 
 export type BlockListRecord = {
@@ -187,72 +328,25 @@ export async function getTotalBlocks() {
 
 export async function getBlockDaMetadata(headerHash: string, db: NodeReader = prisma) {
   const key = Buffer.from(headerHash, "hex");
-  const rows = await db.$queryRaw<
-    Array<{
-      utxos_root: string;
-      transactions_root: string;
-      deposits_root: string;
-      withdrawals_root: string;
-      forced_transactions_root: string;
-      transition_trace_root: string;
-      event_to_step_root: string;
-      l2_transaction_count: bigint;
-      deposit_count: bigint;
-      withdrawal_count: bigint;
-      forced_transaction_count: bigint;
-      total_event_count: bigint;
-      transition_step_count: bigint;
-      block_start_time: Date;
-      block_end_time: Date;
-    }>
-  >`SELECT utxos_root, transactions_root, deposits_root, withdrawals_root,
-       forced_transactions_root, transition_trace_root, event_to_step_root,
-       l2_transaction_count, deposit_count, withdrawal_count,
-       forced_transaction_count, total_event_count, transition_step_count,
-       block_start_time, block_end_time
-     FROM da_payloads WHERE header_hash = ${key};`;
+  const rows = await db.$queryRaw<DaMetadataRow[]>`
+    SELECT utxos_root, transactions_root, deposits_root, withdrawals_root,
+           forced_transactions_root, transition_trace_root, event_to_step_root,
+           l2_transaction_count, deposit_count, withdrawal_count,
+           forced_transaction_count, total_event_count, transition_step_count,
+           block_start_time, block_end_time
+      FROM da_payloads WHERE header_hash = ${key};`;
   const row = rows[0];
-  if (!row) return null;
-  return {
-    ...row,
-    l2_transaction_count: Number(row.l2_transaction_count),
-    deposit_count: Number(row.deposit_count),
-    withdrawal_count: Number(row.withdrawal_count),
-    forced_transaction_count: Number(row.forced_transaction_count),
-    total_event_count: Number(row.total_event_count),
-    transition_step_count: Number(row.transition_step_count),
-  };
+  return row ? daMetadataFrom(row) : null;
 }
 
 export async function getBlockFinalization(headerHash: string, db: NodeReader = prisma) {
   const key = Buffer.from(headerHash, "hex");
-  const rows = await db.$queryRaw<
-    Array<{
-      status: string;
-      submitted_tx_hash: Uint8Array | null;
-      block_end_time: Date;
-      created_at: Date;
-      updated_at: Date;
-      observed_confirmed_at_ms: bigint | null;
-    }>
-  >`SELECT status, submitted_tx_hash, block_end_time, created_at, updated_at,
-      observed_confirmed_at_ms
-    FROM pending_block_finalizations WHERE header_hash = ${key};`;
+  const rows = await db.$queryRaw<FinalizationRow[]>`
+    SELECT status, submitted_tx_hash, block_end_time, created_at, updated_at,
+           observed_confirmed_at_ms
+      FROM pending_block_finalizations WHERE header_hash = ${key};`;
   const row = rows[0];
-  if (!row) return null;
-  return {
-    status: row.status,
-    submitted_tx_hash: row.submitted_tx_hash
-      ? toHex(row.submitted_tx_hash)
-      : null,
-    blockEndTime: row.block_end_time,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    observedConfirmedAt:
-      row.observed_confirmed_at_ms === null
-        ? null
-        : new Date(Number(row.observed_confirmed_at_ms)),
-  };
+  return row ? finalizationFrom(row) : null;
 }
 
 export type BlockEventMember = {
@@ -262,24 +356,34 @@ export type BlockEventMember = {
 };
 
 /** IDs and order are enough to connect a header to the existing bridge pages;
- * payload bytes remain in the raw node journal and are not duplicated in JSON. */
+ * payload bytes remain in the raw node journal and are not duplicated in JSON.
+ * One statement over the three event tables, tagged by source, rather than a
+ * round trip per table. */
 export async function getBlockEvents(headerHash: string, db: NodeReader = prisma) {
   const key = Buffer.from(headerHash, "hex");
-  const [deposits, withdrawals, forcedTransactions] = await Promise.all([
-    db.$queryRaw<BlockEventMember[]>`
-      SELECT member_id, ordinal, source_time_stamp_tz
-        FROM pending_block_finalization_deposits
-       WHERE header_hash = ${key} ORDER BY ordinal ASC;`,
-    db.$queryRaw<BlockEventMember[]>`
-      SELECT member_id, ordinal, source_time_stamp_tz
-        FROM pending_block_finalization_withdrawals
-       WHERE header_hash = ${key} ORDER BY ordinal ASC;`,
-    db.$queryRaw<BlockEventMember[]>`
-      SELECT member_id, ordinal, source_time_stamp_tz
-        FROM pending_block_finalization_forced_transactions
-       WHERE header_hash = ${key} ORDER BY ordinal ASC;`,
-  ]);
-  return { deposits, withdrawals, forcedTransactions };
+  const rows = await db.$queryRaw<Array<BlockEventMember & { kind: string }>>`
+    SELECT 'deposit' AS kind, member_id, ordinal, source_time_stamp_tz
+      FROM pending_block_finalization_deposits WHERE header_hash = ${key}
+    UNION ALL
+    SELECT 'withdrawal', member_id, ordinal, source_time_stamp_tz
+      FROM pending_block_finalization_withdrawals WHERE header_hash = ${key}
+    UNION ALL
+    SELECT 'forced_transaction', member_id, ordinal, source_time_stamp_tz
+      FROM pending_block_finalization_forced_transactions WHERE header_hash = ${key}
+    ORDER BY kind, ordinal ASC;`;
+  const of = (kind: string): BlockEventMember[] =>
+    rows
+      .filter((row) => row.kind === kind)
+      .map(({ member_id, ordinal, source_time_stamp_tz }) => ({
+        member_id,
+        ordinal,
+        source_time_stamp_tz,
+      }));
+  return {
+    deposits: of("deposit"),
+    withdrawals: of("withdrawal"),
+    forcedTransactions: of("forced_transaction"),
+  };
 }
 
 export async function getBlocksPage(page: number, status?: string) {

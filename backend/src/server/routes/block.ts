@@ -2,12 +2,10 @@ import { Request, Response } from "express";
 import { config } from "../../config";
 import {
   getBlock,
-  getBlockDaMetadata,
   getBlockEvents,
-  getBlockHeader,
   getBlockHashByHeight,
-  getBlockFinalization,
   getBlockNeighbours,
+  getBlockSummary,
   getBlocksPage,
   getLastBlocks,
   getTotalBlocks,
@@ -45,9 +43,9 @@ export async function getBlockRoute(req: Request, res: Response) {
   // Cardano evidence missing.
   const headerHash = canonicalHash(raw);
 
-  // The six node reads share one snapshot, so a header cannot be read at one
-  // point in time and its finalization at another. On a streaming standby that
-  // is not hypothetical: replay advances between statements.
+  // The node reads share one snapshot, so a header cannot be read at one point
+  // in time and its finalization at another. On a streaming standby that is
+  // not hypothetical: replay advances between statements.
   //
   // The index read and the deployment context stay OUTSIDE it. They are a
   // different database, which can never share this snapshot, and holding a
@@ -55,16 +53,14 @@ export async function getBlockRoute(req: Request, res: Response) {
   // short read becomes a replay conflict.
   const nodeReads = readConsistently(async (db) =>
     Promise.all([
-      getBlockHeader(headerHash, db),
+      getBlockSummary(headerHash, db),
       getBlock(headerHash, db),
-      getBlockDaMetadata(headerHash, db),
-      getBlockFinalization(headerHash, db),
       getBlockNeighbours(headerHash, db),
       getBlockEvents(headerHash, db),
     ]),
   );
 
-  const [[header, rows, da, finalization, neighbours, events], context, indexed] =
+  const [[{ header, da, finalization }, rows, neighbours, events], context, indexed] =
     await Promise.all([
       nodeReads,
       getDeploymentContext(),
