@@ -1,6 +1,6 @@
 # Performance budget register
 
-**STATUS: THE BACKEND TARGET BASELINE IS MEASURED.** Every backend latency, database, payload and resource row now carries a verdict from one artifact, [`efc9af69`](performance/baselines/target-efc9af69.json): ten workloads pass and two fail. Rows this run cannot settle say why rather than staying silent: `overview-aggregate` now has a harness (`--with-frontend`) but no run yet, Web Vitals are collected but have no production samples, and the three CI quality rows are `INSUFFICIENT` at n=12, every failure classified, against targets naming 50. Backend suite wall time still awaits a standardised runner, and the `stress` profile, which now generates in batches (6.8 million rows, 3.2 GB, 667 MB peak heap), awaits a run on a machine that meets the 30 GB and quiet-load gates. The codebase-health targets were ruled 2026-09-04: five unchanged, three revised, one deferred.
+**STATUS: THE BACKEND TARGET BASELINE IS MEASURED.** Every backend latency, database, payload and resource row now carries a verdict from one artifact, [`efc9af69`](performance/baselines/target-efc9af69.json): ten workloads pass and two fail. Rows this run cannot settle say why rather than staying silent: `overview-aggregate` now has a harness (`--with-frontend`) but no run yet, Web Vitals are collected but have no production samples, and the three CI quality rows are `INSUFFICIENT` at n=12, every failure classified, against targets naming 50. Backend suite wall time still awaits a standardised runner. **The `stress` profile has now been measured** ([`stress-5ded259a`](performance/baselines/stress-5ded259a.json), 2026-09-16): three workloads pass, nine fail, `address-history` answers an error for every request, and the harness stamped the report NOT A BASELINE because two workloads carry too few successful samples for a percentile. The codebase-health targets were ruled 2026-09-04: five unchanged, three revised, one deferred.
 
 Generated alongside `backend/bench/workloads.mts`, which is the machine-readable form. The test `backend/test/bench-workloads.test.mts` fails if a workload here has no catalogue entry, or vice versa.
 
@@ -67,6 +67,35 @@ Fallbacks in order: paginate or cap the decoded transaction rows and report the 
 `address-history` draws the **1,000 busiest distinct addresses**, each requested once, equally weighted. That is the population the budget is about: a uniformly drawn address has a single entry and its page measures nothing, so the row would pass on addresses nobody looks up. With one request per address the p95 describes roughly the slowest 50 of those thousand and the p99 roughly the slowest 10. It is deliberately not a cold worst-case: repeating only the busiest 50 would measure a different thing, and if that is wanted later it belongs in its own row rather than silently inside this one.
 
 `address-history` deliberately carries no dependency: it sorts on `time_stamp_tz`, which **is** indexed upstream on `immutable`, `mempool` and `processed_mempool`. If it fails, the missing `block_end_time` index is not the diagnosis.
+
+## Stress profile: what 50,000 blocks does to this
+
+**Measured 2026-09-16 from one artifact, [`stress-5ded259a`](performance/baselines/stress-5ded259a.json): three workloads pass and nine fail.** The harness stamped the report **NOT A BASELINE**, because two workloads returned too few successful responses to carry a percentile. That stamp is the honest verdict on the run, and the failures below are still evidence: a route that answers 500 for every request has been measured, not missed.
+
+**What this run is.** The `stress` profile, 50,000 blocks and 6,834,440 rows in 3.2 GB, against the same approved targets as `target`, on the same two-core machine, with 1,000 requests per workload. It was built from `5ded259a`, which **predates** two committed fixes: `0bcc98d5` (block page statements) and `a66273e6` (transaction page key sort). The `block-detail` statement count and the transaction page's temp I/O below are therefore the pre-fix figures. The machine suspended twice during the run, for 5 minutes and 15 minutes, which inflates some individual samples and cannot produce an error rate.
+
+| Workload | Measured at `stress` | Same workload at `target` | Status |
+|---|---|---|---|
+| `blocks-list-page-1` | p50 937.9 / p95 1019.0 / p99 1075.9 ms, 2.01 route statements, 235,665.0 KB temp, 9.1 KB wire | p95 40.2 ms, 0 KB temp | FAIL: p95, p99 and temp bytes |
+| `blocks-list-page-deep` | p50 1033.8 / p95 1161.3 / p99 1246.2 ms, 2.01 route statements, 235,691.9 KB temp | p95 40.5 ms, 0 KB temp | FAIL: p95, p99 and temp bytes |
+| `transactions-list-page-1` | p50 525.1 / p95 562.7 / p99 605.0 ms, 2.00 route statements, 9,507.1 KB temp, 74.0 KB wire | p95 65.2 ms | FAIL: p95, p99 and temp bytes |
+| `transactions-list-page-deep` | p50 714.2 / p95 1016.3 / p99 1226.3 ms, 2.01 route statements, 142,974.1 KB temp | p95 75.0 ms, 3,538.2 KB temp | FAIL: p95, p99 and temp bytes. Pre-`a66273e6` |
+| `block-detail` | p50 168.3 / p95 191.8 / p99 272.1 ms, 10.04 route statements, 6.8 KB wire, 17.4 KB identity | p95 33.7 ms, 10.01 statements | FAIL: statements only, and inside every latency budget. Pre-`0bcc98d5` |
+| `transaction-detail` | p50 80.9 / p95 88.6 / p99 103.7 ms, 7.02 route statements, 4.8 KB wire | p95 20.2 ms | PASS |
+| `search-prefix` | p50 212.1 / p95 234.4 / p99 254.9 ms, 6.00 route statements, 66,765 shared blocks | p95 24.9 ms, 5,384 shared blocks | PASS |
+| `metrics` | p50 705.3 / p95 746.7 / p99 805.7 ms, 9.01 route statements, 185,544.0 KB temp | p95 66.4 ms, 14,920.0 KB temp | FAIL: p95 and statements |
+| `metrics-cached` | p50 0.5 / p95 0.8 / p99 1.8 ms, 0.00 route statements | p95 0.8 ms | PASS |
+| `asset-roster` | p50 669.2 / p95 726.9 / p99 798.5 ms, 2.01 route statements, 192,281.7 KB temp | p95 247.1 ms, 14,400.0 KB temp | FAIL: statements only, and inside every latency budget |
+| `address-history` | **0 of 1,000 requests succeeded.** 8.6 s of database time and 6,502,806.6 KB of temp files per request, 309,819 shared blocks | p95 236.7 ms, 96,700.7 KB temp | FAIL: 100% error rate |
+| `blocks-list-saturation` | **9 of 1,000 requests succeeded.** p50 6226.4 / p95 6795.9 ms, 12.0 req/s, 99.10% errors | 48.5 req/s, 0.00% errors | FAIL: p95, error rate and throughput |
+
+**`address-history` does not slow down at this scale, it stops working.** Each request spends 8.6 seconds in the database and writes 6.2 GB of temporary files, which passes `DB_STATEMENT_TIMEOUT_MS` (10,000), so the route answers an error and the page shows nothing. The note above says that if this row fails, the missing `block_end_time` index is not the diagnosis. That still holds: the cost here is the sort and the spill over a 1.29 million row history, not that ordering column.
+
+**Concurrency collapses before latency does.** At concurrency 32 the blocks list served 9 requests of 1,000 and failed the rest, at 12.0 requests per second against a floor of 20. At `target` the same workload served every request at 48.5 per second.
+
+**What passes says something too.** The three passing rows are the ones that read one keyed record (`transaction-detail`), a prefix index (`search-prefix`), or the cache (`metrics-cached`). Every row that scans and sorts a whole table fails. Peak resident memory was **517.2 MB** at this scale against 737.3 MB at `target`, so memory is not the limit here.
+
+**Named fallbacks, unchanged by this run.** Cursor pagination with a depth cap for the list rows, an upstream index for the ordering (UR-1), and for `address-history` a bounded page over one source rather than a sorted union of three. This run does not choose between them. It says the choice is no longer optional at ten times the current scale.
 
 ## Resource, delivery and payload budgets
 
