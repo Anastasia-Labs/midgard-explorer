@@ -535,7 +535,7 @@ test.describe("block detail", () => {
 
     await page.getByRole("tab", { name: "Data availability" }).click();
     await expect(page).toHaveURL(/tab=da/);
-    await expect(page.getByRole("tabpanel").filter({ hasText: "UTxOs root" })).toBeVisible();
+    await expect(page.getByRole("tabpanel").getByRole("link", { name: "Merkle roots" })).toBeVisible();
     await expect(page.getByText("Block start")).toBeVisible();
   });
 

@@ -25,6 +25,7 @@ import {
   TXS,
   WITHDRAWALS,
   addressResponse,
+  blockCommitments,
   blockDa,
   blockEvents,
   blockFinalization,
@@ -514,6 +515,7 @@ const handleBlock = (url, res) => {
     rows: blockRows(found.number).map((row) => ({ ...row, height: found.height })),
     da: blockDa(found.number),
     finalization: fin,
+    commitments: blockCommitments(found.number),
     events: blockEvents(found.number),
     neighbours: { prev: at(i + 1), next: at(i - 1) },
   });

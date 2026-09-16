@@ -35,23 +35,23 @@ Generated from `docs/coverage-manifest.json`, which is the source of truth for b
 
 | Status | Count | Meaning |
 |---|---:|---|
-| `rendered-presence-verified` | **95** | A field of this name or recorded alias exists at query, API, contract, render and test layers. **The path is not individually traced** |
+| `rendered-presence-verified` | **107** | A field of this name or recorded alias exists at query, API, contract, render and test layers. **The path is not individually traced** |
 | `transformed-rendered` | **3** | Consumed by a decoder and represented as a semantic value; the raw bytes are never emitted |
 | `referenced-only` | **6** | In `WHERE`/`JOIN`/`ORDER BY`, never returned |
-| `not-read` | **92** | No statement projects or references it |
+| `not-read` | **80** | No statement projects or references it |
 | | **200** | in-scope columns |
 
-Projected: **98**. Gaps: **98**. No column is `queried-only` or `contracted-not-rendered`.
+Projected: **110**. Gaps: **86**. No column is `queried-only` or `contracted-not-rendered`.
 
-### Decisions across the 98 gaps
+### Decisions across the 86 gaps
 
 | Decision | Count |
 |---|---:|
-| adopt | **77** |
+| adopt | **65** |
 | defer | **17** |
 | exclude | **4** |
 
-**77 adopted columns** is the number `DATASETS` must populate. Earlier revisions said 82; that came from a file-scoped detector and conflated gaps with adoptions.
+**65 adopted columns** remain gaps. `DATASETS` was built against the 77 adopted on 2026-09-04, which include the twelve Merkle roots exposed since. Earlier revisions said 82; that came from a file-scoped detector and conflated gaps with adoptions.
 
 ### The decoded set
 
@@ -207,28 +207,16 @@ Every row carries its `table.column` id in an HTML comment, so verification is t
 | `source_id` <!-- pending_block_finalization_withdrawals.source_id --> | bytea | not-read | not measured | **adopt** | detail |  |
 | `source_table` <!-- pending_block_finalization_withdrawals.source_table --> | text | not-read | not measured | **adopt** | detail |  |
 
-### `pending_block_finalizations` (20 unexposed)
+### `pending_block_finalizations` (8 unexposed)
 
 | Column | Type | SQL | Size | Decision | Delivery | Reason |
 |---|---|---|---|---|---|---|
-| `base_deposits_root` <!-- pending_block_finalizations.base_deposits_root --> | text | not-read | not measured | **adopt** | detail |  |
-| `base_forced_transactions_root` <!-- pending_block_finalizations.base_forced_transactions_root --> | text | not-read | not measured | **adopt** | detail |  |
 | `base_snapshot_id` <!-- pending_block_finalizations.base_snapshot_id --> | text | not-read | not measured | **adopt** | detail |  |
 | `base_tail_datum_cbor` <!-- pending_block_finalizations.base_tail_datum_cbor --> | text | not-read | 754 B (n=9) | **adopt** | opt-in-raw | largest field found; never in a list |
 | `base_tail_header_hash` <!-- pending_block_finalizations.base_tail_header_hash --> | bytea | not-read | not measured | **adopt** | detail |  |
 | `base_tail_out_ref` <!-- pending_block_finalizations.base_tail_out_ref --> | text | not-read | not measured | **adopt** | detail |  |
-| `base_transactions_root` <!-- pending_block_finalizations.base_transactions_root --> | text | not-read | not measured | **adopt** | detail |  |
-| `base_utxos_root` <!-- pending_block_finalizations.base_utxos_root --> | text | not-read | 64 ch (n=9) | **adopt** | detail |  |
-| `base_withdrawals_root` <!-- pending_block_finalizations.base_withdrawals_root --> | text | not-read | not measured | **adopt** | detail |  |
-| `expected_deposits_root` <!-- pending_block_finalizations.expected_deposits_root --> | text | not-read | not measured | **adopt** | detail |  |
-| `expected_event_to_step_root` <!-- pending_block_finalizations.expected_event_to_step_root --> | text | not-read | not measured | **adopt** | detail |  |
-| `expected_forced_transactions_root` <!-- pending_block_finalizations.expected_forced_transactions_root --> | text | not-read | not measured | **adopt** | detail |  |
 | `expected_total_event_count` <!-- pending_block_finalizations.expected_total_event_count --> | bigint | not-read | not measured | **adopt** | detail |  |
-| `expected_transactions_root` <!-- pending_block_finalizations.expected_transactions_root --> | text | not-read | not measured | **adopt** | detail |  |
 | `expected_transition_step_count` <!-- pending_block_finalizations.expected_transition_step_count --> | bigint | not-read | not measured | **adopt** | detail |  |
-| `expected_transition_trace_root` <!-- pending_block_finalizations.expected_transition_trace_root --> | text | not-read | not measured | **adopt** | detail |  |
-| `expected_utxos_root` <!-- pending_block_finalizations.expected_utxos_root --> | text | not-read | not measured | **adopt** | detail |  |
-| `expected_withdrawals_root` <!-- pending_block_finalizations.expected_withdrawals_root --> | text | not-read | not measured | **adopt** | detail |  |
 | `header_cbor` <!-- pending_block_finalizations.header_cbor --> | bytea | not-read | 361 B (n=9) | **adopt** | provisional | delivery decided at the `target` profile; never in a list |
 | `state_queue_lease_token` <!-- pending_block_finalizations.state_queue_lease_token --> | text | not-read | not measured | **exclude** | n/a | D6 operator lease |
 
@@ -268,7 +256,7 @@ Every row carries its `table.column` id in an HTML comment, so verification is t
 
 ## Known limits of this audit
 
-1. **Layer evidence is presence-based, not path-traced.** "Reaches the contract" means a contract field of that name (or its recorded alias) exists, not that a proof connects this column to that field. A column and an unrelated field sharing a name would pass. The eleven renames were resolved by reading the code; the other 91 were not individually traced.
+1. **Layer evidence is presence-based, not path-traced.** "Reaches the contract" means a contract field of that name (or its recorded alias) exists, not that a proof connects this column to that field. A column and an unrelated field sharing a name would pass. The eleven renames were resolved by reading the code and the twelve Merkle roots were traced when they were added; the other 91 were not individually traced.
 2. **Sizes come from 0 to 108 rows.** Maxima, not distributions. Every `provisional` delivery verdict must be re-measured at the `target` profile.
 3. **The detector is a scratch script.** Per the lint decision it does **not** go into CI as-is. The durable version lands during `SCHEMA-FIXTURE`, after the four missing tables are added, as a separate commit: keyed by `table.column`, reading the checked-in schema fixture as its deterministic source, emitting the manifest, and validating this Markdown rather than parsing prose as truth.
 
@@ -284,8 +272,8 @@ The earlier name-only check (`'`'+column+'`' in doc`) could not tell one table's
 ## Consequences for other plan items
 
 - **`SCHEMA-FIXTURE`:** the fixture already carries every adopted column. Only the four never-queried tables are missing.
-- **`DATASETS`:** must populate all **77 adopted columns** (generated from the manifest: 77 adopt, 17 defer, 4 exclude across 98 gaps), and must synthesize rows for `forced_transaction_utxos` (0 rows) and `mempool_tx_deltas` (0 rows), plus a settled withdrawal so `settlement_event_info` is non-null. Use known-valid protocol fixtures. **Synthetic sizes establish functional coverage and protocol bounds, never a production p99**, and the register must say so beside any budget derived from them.
-- **`CHEAP-COVERAGE`:** the `pending_block_finalizations` group plus the small bounded `withdrawal_utxos` and `forced_transaction_utxos` fields ride existing queries.
+- **`DATASETS`:** must populate all 77 columns adopted on 2026-09-04 (77 adopt, 17 defer, 4 exclude across 98 gaps, before the twelve Merkle roots were exposed), and must synthesize rows for `forced_transaction_utxos` (0 rows) and `mempool_tx_deltas` (0 rows), plus a settled withdrawal so `settlement_event_info` is non-null. Use known-valid protocol fixtures. **Synthetic sizes establish functional coverage and protocol bounds, never a production p99**, and the register must say so beside any budget derived from them.
+- **`CHEAP-COVERAGE`:** the twelve Merkle roots are exposed on the block page's Merkle roots tab. The rest of the `pending_block_finalizations` group plus the small bounded `withdrawal_utxos` and `forced_transaction_utxos` fields ride existing queries.
 - **`REMAINING-COVERAGE`:** the four new tables, the provenance triple, and every field whose delivery is provisional.
 
 ## Delivery rule

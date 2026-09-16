@@ -355,6 +355,9 @@ export const blockRows = (height) =>
     };
   });
 
+/** A header with nothing in one of its trees commits to the empty tree's root. */
+const EMPTY_TREE_ROOT = hex(0xe3b0, 64);
+
 export const blockDa = (height) =>
   height === 9
     ? null
@@ -363,7 +366,7 @@ export const blockDa = (height) =>
         transactions_root: hex(height * 11 + 2, 64),
         deposits_root: hex(height * 11 + 3, 64),
         withdrawals_root: hex(height * 11 + 4, 64),
-        forced_transactions_root: hex(height * 11 + 5, 64),
+        forced_transactions_root: height % 4 === 0 ? hex(height * 11 + 5, 64) : EMPTY_TREE_ROOT,
         transition_trace_root: hex(height * 11 + 6, 64),
         event_to_step_root: hex(height * 11 + 7, 64),
         l2_transaction_count: txCountForBlock(height),
@@ -426,6 +429,31 @@ export const blockFinalization = (height) => {
     createdAt: new Date(createdMs).toISOString(),
     updatedAt: new Date(updatedMs).toISOString(),
     observedConfirmedAt: observed,
+  };
+};
+
+/** The twelve journal roots. A header's `base` roots are the ones the header
+ * before it committed to, so each base here is the previous height's expected
+ * root. A block and its predecessor that both carry no forced transactions
+ * commit to the same empty-tree root, which gives the page its "same" case.
+ * No journal row, no commitments. */
+export const blockCommitments = (height) => {
+  if (blockFinalization(height) === null) return null;
+  const root = (h, k) => hex(h * 11 + k, 64);
+  const forced = (h) => (h % 4 === 0 ? root(h, 5) : EMPTY_TREE_ROOT);
+  const pair = (base, expected) => ({
+    base,
+    expected,
+    changed: base === null ? null : base !== expected,
+  });
+  return {
+    utxos: pair(root(height - 1, 1), root(height, 1)),
+    transactions: pair(root(height - 1, 2), root(height, 2)),
+    deposits: pair(root(height - 1, 3), root(height, 3)),
+    withdrawals: pair(root(height - 1, 4), root(height, 4)),
+    forced_transactions: pair(forced(height - 1), forced(height)),
+    transition_trace: pair(null, root(height, 6)),
+    event_to_step: pair(null, root(height, 7)),
   };
 };
 

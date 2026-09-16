@@ -1,5 +1,6 @@
 import type { BlockEventMember } from "@midgard-explorer/contracts";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { AdaAmount, ValueCell } from "../../components/ui/domain/amount";
 import { ApiExample } from "../../components/ui/domain/apiexample";
 import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
@@ -18,6 +19,7 @@ import { Tabs } from "../../components/ui/base/tabs";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { formatDuration, formatTimestamp, truncateId } from "../../lib/format";
 import { blockJourney } from "../../lib/journey";
+import { MerkleRoots } from "./MerkleRoots";
 import type { BlockResponse, L1BlockHeader } from "@midgard-explorer/contracts";
 
 /**
@@ -120,24 +122,16 @@ export function BlockView({
       <div className="p-4 pb-0">
         <Callout tone="neutral" title="Payload retained locally." />
       </div>
-      <div className="grid gap-x-8 gap-y-2 p-4 sm:grid-cols-2">
-        {(
-          [
-            ["UTxOs root", data.da.utxos_root],
-            ["Transactions root", data.da.transactions_root],
-            ["Deposits root", data.da.deposits_root],
-            ["Withdrawals root", data.da.withdrawals_root],
-            ["Forced txs root", data.da.forced_transactions_root],
-            ["Transition trace root", data.da.transition_trace_root],
-            ["Event-to-step root", data.da.event_to_step_root],
-          ] as const
-        ).map(([label, root]) => (
-          <div key={label} className="flex items-center justify-between gap-4">
-            <span className="text-sm text-text-3">{label}</span>
-            <Identifier value={root} head={6} tail={6} />
-          </div>
-        ))}
-      </div>
+      <p className="p-4 text-sm text-text-2">
+        The roots this payload carries are on the{" "}
+        <Link
+          className="text-link hover:text-link-hover hover:underline"
+          href={`/block/${hash}?tab=roots`}
+        >
+          Merkle roots
+        </Link>{" "}
+        tab, next to the previous header&apos;s.
+      </p>
       <div className="grid grid-cols-2 gap-x-8 gap-y-2 border-t border-border p-4 text-sm sm:grid-cols-3">
         <Field label="Block start" value={<Timestamp exact iso={data.da.block_start_time} />} />
         <Field label="Block end" value={<Timestamp exact iso={data.da.block_end_time} />} />
@@ -256,7 +250,11 @@ export function BlockView({
         <span>Total events: {l1Header.totalEventCount}</span>
         <span>Transition steps: {l1Header.transitionStepCount}</span>
       </div>
-      <div className="grid gap-x-8 gap-y-2 border-t border-border p-4 sm:grid-cols-2">
+      <details className="border-t border-border">
+        <summary className="cursor-pointer p-4 text-sm text-text-2">
+          Roots recorded on Cardano
+        </summary>
+        <div className="grid gap-x-8 gap-y-2 px-4 pb-4 sm:grid-cols-2">
         {(
           [
             ["Previous UTxOs root", l1Header.prevUtxosRoot],
@@ -274,7 +272,8 @@ export function BlockView({
             <Identifier value={root} head={6} tail={6} />
           </div>
         ))}
-      </div>
+        </div>
+      </details>
     </Card>
   ) : (
     <div className="p-4">
@@ -376,6 +375,15 @@ export function BlockView({
             content: <Card>{transactionsTab}</Card>,
           },
           { id: "da", label: "Data availability", content: <Card>{daTab}</Card> },
+          {
+            id: "roots",
+            label: "Merkle roots",
+            content: (
+              <Card>
+                <MerkleRoots commitments={data.commitments ?? null} />
+              </Card>
+            ),
+          },
           { id: "l1", label: "Cardano evidence", content: l1EvidenceTab },
           {
             id: "events",

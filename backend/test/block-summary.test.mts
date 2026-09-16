@@ -15,8 +15,8 @@ import {
 import { adminUrl, withThrowawayNodeDb } from "./helpers/throwawayDb.mjs";
 
 /**
- * The block page reads its header, DA metadata, finalization and events in two
- * statements where it used six. Fewer round trips are only worth having if
+ * The block page reads its header, DA metadata, finalization, roots and events
+ * in two statements where it used six. Fewer round trips are only worth having if
  * every block reads back exactly as before, so each merged read is compared
  * with the form it replaced, over a generated chain plus the three shapes the
  * generator never produces: a DA payload with no journal row, a journal row
@@ -50,6 +50,34 @@ const wholeTableHeader = (reader: PrismaClient, key: Buffer) =>
         ON b.header_hash = COALESCE(f.header_hash, d.header_hash)
      WHERE COALESCE(f.header_hash, d.header_hash, b.header_hash) = ${key};`;
 
+/** The twelve roots read on their own, paired without the route's helper. */
+const directCommitments = async (reader: PrismaClient, key: Buffer) => {
+  const rows = await reader.$queryRaw<Record<string, string>[]>`
+    SELECT base_utxos_root, expected_utxos_root,
+           base_transactions_root, expected_transactions_root,
+           base_deposits_root, expected_deposits_root,
+           base_withdrawals_root, expected_withdrawals_root,
+           base_forced_transactions_root, expected_forced_transactions_root,
+           expected_transition_trace_root, expected_event_to_step_root
+      FROM pending_block_finalizations WHERE header_hash = ${key};`;
+  const row = rows[0];
+  if (!row) return null;
+  const pair = (name: string) => ({
+    base: row[`base_${name}_root`],
+    expected: row[`expected_${name}_root`],
+    changed: row[`base_${name}_root`] !== row[`expected_${name}_root`],
+  });
+  return {
+    utxos: pair("utxos"),
+    transactions: pair("transactions"),
+    deposits: pair("deposits"),
+    withdrawals: pair("withdrawals"),
+    forced_transactions: pair("forced_transactions"),
+    transition_trace: { base: null, expected: row.expected_transition_trace_root, changed: null },
+    event_to_step: { base: null, expected: row.expected_event_to_step_root, changed: null },
+  };
+};
+
 /** The events as three statements, one per table. */
 const perTableEvents = async (reader: PrismaClient, key: Buffer) => {
   const [deposits, withdrawals, forcedTransactions] = await Promise.all([
@@ -81,6 +109,10 @@ db("the merged block reads", () => {
         SELECT (jsonb_populate_record(NULL::da_payloads, to_jsonb(d)
                  || jsonb_build_object('header_hash', '\\x' || repeat('d1', 28)))).*
           FROM da_payloads d LIMIT 1;
+        UPDATE pending_block_finalizations SET base_deposits_root = expected_deposits_root
+         WHERE header_hash = (
+           SELECT header_hash FROM pending_block_finalizations
+            ORDER BY block_end_time DESC LIMIT 1);
         INSERT INTO blocks (height, header_hash, tx_id, time_stamp_tz)
         SELECT COALESCE(max(height), 0) + 1, decode(repeat('b1', 28), 'hex'),
                decode(repeat('ee', 32), 'hex'), '2026-01-01 00:00:00'
@@ -103,6 +135,7 @@ db("the merged block reads", () => {
         expect(hashes).toContain("b1".repeat(28));
 
         const shapes = new Set<string>();
+        const compared = new Set<string>();
         let events = 0;
         for (const hash of hashes) {
           const key = Buffer.from(hash, "hex");
@@ -114,6 +147,9 @@ db("the merged block reads", () => {
           expect(summary.finalization, hash).toEqual(
             await getBlockFinalization(hash, reader),
           );
+          const commitments = await directCommitments(reader, key);
+          expect(summary.commitments, hash).toEqual(commitments);
+          if (commitments) compared.add(String(commitments.deposits.changed));
           const merged = await getBlockEvents(hash, reader);
           expect(merged, hash).toEqual(await perTableEvents(reader, key));
           events +=
@@ -130,6 +166,8 @@ db("the merged block reads", () => {
           ["false/false/false", "true/false/false", "true/false/true", "true/true/false", "true/true/true"],
         );
         expect(events).toBeGreaterThan(0);
+        // Both answers of the root comparison were produced, not only "differs".
+        expect([...compared].sort()).toEqual(["false", "true"]);
       } finally {
         await reader.$disconnect();
       }

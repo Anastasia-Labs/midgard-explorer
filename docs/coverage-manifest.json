@@ -5089,15 +5089,30 @@
    "table": "pending_block_finalizations",
    "column": "base_utxos_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.utxos.base",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {
@@ -5105,15 +5120,30 @@
    "table": "pending_block_finalizations",
    "column": "base_transactions_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.transactions.base",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {
@@ -5121,15 +5151,30 @@
    "table": "pending_block_finalizations",
    "column": "base_deposits_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.deposits.base",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {
@@ -5137,15 +5182,30 @@
    "table": "pending_block_finalizations",
    "column": "base_withdrawals_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.withdrawals.base",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {
@@ -5184,15 +5244,30 @@
    "table": "pending_block_finalizations",
    "column": "expected_utxos_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.utxos.expected",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {
@@ -5200,15 +5275,30 @@
    "table": "pending_block_finalizations",
    "column": "expected_transactions_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.transactions.expected",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {
@@ -5216,15 +5306,30 @@
    "table": "pending_block_finalizations",
    "column": "expected_deposits_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.deposits.expected",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {
@@ -5232,15 +5337,30 @@
    "table": "pending_block_finalizations",
    "column": "expected_withdrawals_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.withdrawals.expected",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {
@@ -5248,15 +5368,30 @@
    "table": "pending_block_finalizations",
    "column": "base_forced_transactions_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.forced_transactions.base",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {
@@ -5264,15 +5399,30 @@
    "table": "pending_block_finalizations",
    "column": "expected_forced_transactions_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.forced_transactions.expected",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {
@@ -5296,15 +5446,30 @@
    "table": "pending_block_finalizations",
    "column": "expected_transition_trace_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.transition_trace.expected",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {
@@ -5312,15 +5477,30 @@
    "table": "pending_block_finalizations",
    "column": "expected_event_to_step_root",
    "type": "text",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "status": "rendered-presence-verified",
+   "alias": "commitments.event_to_step.expected",
+   "decision": "already-exposed",
+   "delivery": "n/a",
    "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "query": [
+     "backend/src/db/block.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/block.ts"
+    ],
+    "contract": [
+     "frontend-new/contracts/src/block.ts"
+    ],
+    "render": [
+     "frontend-new/app/src/features/block/MerkleRoots.tsx"
+    ],
+    "test": [
+     "backend/test/block-summary.test.mts",
+     "backend/test/fixtures/schema/midgard-node.sql",
+     "frontend-new/app/e2e/block-roots.spec.ts",
+     "frontend-new/app/e2e/fixtures/data.mjs",
+     "frontend-new/app/test/merkle-roots.test.tsx"
+    ]
    }
   },
   {

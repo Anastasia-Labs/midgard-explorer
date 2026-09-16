@@ -60,7 +60,7 @@ export async function getBlockRoute(req: Request, res: Response) {
     ]),
   );
 
-  const [[{ header, da, finalization }, rows, neighbours, events], context, indexed] =
+  const [[{ header, da, finalization, commitments }, rows, neighbours, events], context, indexed] =
     await Promise.all([
       nodeReads,
       getDeploymentContext(),
@@ -142,6 +142,7 @@ export async function getBlockRoute(req: Request, res: Response) {
     rows: payload,
     da,
     finalization,
+    commitments,
     events: {
       deposits: events.deposits.map((row) => ({
         member_id: toHex(row.member_id),

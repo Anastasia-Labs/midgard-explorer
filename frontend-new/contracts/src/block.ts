@@ -72,6 +72,30 @@ export const BlockFinalization = Schema.Struct({
 });
 export type BlockFinalization = Schema.Schema.Type<typeof BlockFinalization>;
 
+/** One Merkle root as the header this block builds on recorded it (`base`) and
+ * as this block's header commits to it (`expected`). A root is a commitment,
+ * not a proof. `changed` is true when the two differ, false when they are
+ * equal, and null when either side is not reported. */
+export const RootPair = Schema.Struct({
+  base: Schema.NullOr(Schema.String),
+  expected: Schema.NullOr(Schema.String),
+  changed: Schema.NullOr(Schema.Boolean),
+});
+export type RootPair = Schema.Schema.Type<typeof RootPair>;
+
+/** The block's commitment set from its finalization journal row. The node
+ * records no base for the transition trace or event-to-step root. */
+export const BlockCommitments = Schema.Struct({
+  utxos: RootPair,
+  transactions: RootPair,
+  deposits: RootPair,
+  withdrawals: RootPair,
+  forced_transactions: RootPair,
+  transition_trace: RootPair,
+  event_to_step: RootPair,
+});
+export type BlockCommitments = Schema.Schema.Type<typeof BlockCommitments>;
+
 /** The header either side of this one. Null at each end of the chain, and null
  * for both when the chain holds a single header. `height` is only the nullable,
  * legacy `blocks` row identifier retained for backwards compatibility. */
@@ -102,6 +126,9 @@ export const BlockResponse = Schema.Struct({
   rows: Schema.Array(BlockTxRow),
   da: Schema.NullOr(BlockDa),
   finalization: Schema.NullOr(BlockFinalization),
+  /** Null when the block has no finalization journal row. Optional so a page
+   * deployed ahead of its backend still decodes. */
+  commitments: Schema.optional(Schema.NullOr(BlockCommitments)),
   neighbours: BlockNeighbours,
   events: BlockEvents,
 });

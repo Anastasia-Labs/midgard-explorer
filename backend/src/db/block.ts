@@ -118,6 +118,51 @@ const finalizationFrom = (row: FinalizationRow) => ({
       : new Date(Number(row.observed_confirmed_at_ms)),
 });
 
+/** The journal's twelve roots. `base_` roots are copied from the header this
+ * block builds on; `expected_` roots are the ones this block's header commits
+ * to. The node records no base for the transition trace or event-to-step root. */
+type CommitmentsRow = {
+  base_utxos_root: string;
+  base_transactions_root: string;
+  base_deposits_root: string;
+  base_withdrawals_root: string;
+  base_forced_transactions_root: string;
+  expected_utxos_root: string;
+  expected_transactions_root: string;
+  expected_deposits_root: string;
+  expected_withdrawals_root: string;
+  expected_forced_transactions_root: string;
+  expected_transition_trace_root: string;
+  expected_event_to_step_root: string;
+};
+
+type RootPair = {
+  base: string | null;
+  expected: string | null;
+  /** true: values differ. false: values are equal. null: comparison unavailable. */
+  changed: boolean | null;
+};
+
+const rootPair = (base: string | null, expected: string | null): RootPair => ({
+  base,
+  expected,
+  changed: base === null || expected === null ? null : base !== expected,
+});
+
+/** Roots are already 64-character hex text, so they pass through unchanged. */
+const commitmentsFrom = (row: CommitmentsRow) => ({
+  utxos: rootPair(row.base_utxos_root, row.expected_utxos_root),
+  transactions: rootPair(row.base_transactions_root, row.expected_transactions_root),
+  deposits: rootPair(row.base_deposits_root, row.expected_deposits_root),
+  withdrawals: rootPair(row.base_withdrawals_root, row.expected_withdrawals_root),
+  forced_transactions: rootPair(
+    row.base_forced_transactions_root,
+    row.expected_forced_transactions_root,
+  ),
+  transition_trace: rootPair(null, row.expected_transition_trace_root),
+  event_to_step: rootPair(null, row.expected_event_to_step_root),
+});
+
 /** Every column of one header query, prefixed where two tables share a name.
  * The `da_` and `fin_` columns are null whenever `has_da` or `has_finalization`
  * is false, and are read only when it is true. */
@@ -126,7 +171,7 @@ type BlockSummaryRow = BlockHeaderRecord & {
   has_finalization: boolean;
 } & { [K in keyof DaMetadataRow as `da_${K}`]: DaMetadataRow[K] } & {
   [K in keyof FinalizationRow as `fin_${K}`]: FinalizationRow[K];
-};
+} & { [K in keyof CommitmentsRow as `fin_${K}`]: CommitmentsRow[K] };
 
 /** The header, its DA metadata and its finalization from one statement.
  *
@@ -183,13 +228,25 @@ export async function getBlockSummary(headerHash: string, db: NodeReader = prism
            f.block_end_time AS fin_block_end_time,
            f.created_at AS fin_created_at,
            f.updated_at AS fin_updated_at,
-           f.observed_confirmed_at_ms AS fin_observed_confirmed_at_ms
+           f.observed_confirmed_at_ms AS fin_observed_confirmed_at_ms,
+           f.base_utxos_root AS fin_base_utxos_root,
+           f.base_transactions_root AS fin_base_transactions_root,
+           f.base_deposits_root AS fin_base_deposits_root,
+           f.base_withdrawals_root AS fin_base_withdrawals_root,
+           f.base_forced_transactions_root AS fin_base_forced_transactions_root,
+           f.expected_utxos_root AS fin_expected_utxos_root,
+           f.expected_transactions_root AS fin_expected_transactions_root,
+           f.expected_deposits_root AS fin_expected_deposits_root,
+           f.expected_withdrawals_root AS fin_expected_withdrawals_root,
+           f.expected_forced_transactions_root AS fin_expected_forced_transactions_root,
+           f.expected_transition_trace_root AS fin_expected_transition_trace_root,
+           f.expected_event_to_step_root AS fin_expected_event_to_step_root
       FROM f
       FULL OUTER JOIN d ON d.header_hash = f.header_hash
       FULL OUTER JOIN materialized AS b
         ON b.header_hash = COALESCE(f.header_hash, d.header_hash);`;
   const row = rows[0];
-  if (!row) return { header: null, da: null, finalization: null };
+  if (!row) return { header: null, da: null, finalization: null, commitments: null };
   const header: BlockHeaderRecord = {
     header_hash: row.header_hash,
     height: row.height,
@@ -231,7 +288,23 @@ export async function getBlockSummary(headerHash: string, db: NodeReader = prism
         observed_confirmed_at_ms: row.fin_observed_confirmed_at_ms,
       })
     : null;
-  return { header, da, finalization };
+  const commitments = row.has_finalization
+    ? commitmentsFrom({
+        base_utxos_root: row.fin_base_utxos_root,
+        base_transactions_root: row.fin_base_transactions_root,
+        base_deposits_root: row.fin_base_deposits_root,
+        base_withdrawals_root: row.fin_base_withdrawals_root,
+        base_forced_transactions_root: row.fin_base_forced_transactions_root,
+        expected_utxos_root: row.fin_expected_utxos_root,
+        expected_transactions_root: row.fin_expected_transactions_root,
+        expected_deposits_root: row.fin_expected_deposits_root,
+        expected_withdrawals_root: row.fin_expected_withdrawals_root,
+        expected_forced_transactions_root: row.fin_expected_forced_transactions_root,
+        expected_transition_trace_root: row.fin_expected_transition_trace_root,
+        expected_event_to_step_root: row.fin_expected_event_to_step_root,
+      })
+    : null;
+  return { header, da, finalization, commitments };
 }
 
 /** One header summary. See `getBlockSummary`, which this reads. */
