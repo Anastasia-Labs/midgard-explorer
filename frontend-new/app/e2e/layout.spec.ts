@@ -171,6 +171,28 @@ test.describe("summary band fills its rows", () => {
     ] as const;
   }
 
+  // The block page's tabs were never measured here: this gate opens a detail
+  // route on its default tab, so the payload tab's own fields went unchecked
+  // and its two exact timestamps overlapped at phone width for as long as they
+  // had been there.
+  for (const width of ["narrow", "phone"] as const) {
+    test(`block payload fields fit their columns at ${width}`, async ({ page }) => {
+      await page.setViewportSize(VIEWPORTS[width]);
+      const blocks = await page.request
+        .get(`${FIXTURE}/api/blocks/1`)
+        .then(async (r) => ((await r.json()) as { rows: Array<{ header_hash: string }> }).rows);
+      await page.goto(`/block/${blocks[0]!.header_hash}?tab=da`);
+      await settle(page);
+      const overflowing = await page.getByRole("tabpanel").evaluate((panel) =>
+        [...panel.querySelectorAll<HTMLElement>("p.mg-overline")]
+          .map((label) => label.parentElement as HTMLElement)
+          .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+          .map((cell) => cell.textContent?.trim() ?? ""),
+      );
+      expect(overflowing, "fields wider than their column").toEqual([]);
+    });
+  }
+
   for (const width of ["narrow", "phone", "tablet", "desktop"] as const) {
     test(`no exposed border and no clipped value at ${width}`, async ({ page }) => {
       await page.setViewportSize(VIEWPORTS[width]);

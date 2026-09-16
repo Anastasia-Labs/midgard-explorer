@@ -132,7 +132,7 @@ export function BlockView({
         </Link>{" "}
         tab, next to the previous header&apos;s.
       </p>
-      <div className="grid grid-cols-2 gap-x-8 gap-y-2 border-t border-border p-4 text-sm sm:grid-cols-3">
+      <div className="grid gap-x-8 gap-y-3 border-t border-border p-4 text-sm sm:grid-cols-3">
         <Field label="Block start" value={<Timestamp exact iso={data.da.block_start_time} />} />
         <Field label="Block end" value={<Timestamp exact iso={data.da.block_end_time} />} />
         <Field
