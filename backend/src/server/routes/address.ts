@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { getAddressHistory, getAddressUtxos } from "../../db/address";
+import { getAddressHistory, getAddressUtxos, pageUtxoRows, UTXO_PAGE_LIMIT } from "../../db/address";
 import { computeBalance, decodeTransactionSafe, decodeUtxos } from "../../decode/transaction";
 import type { ValueView } from "../../decode/types";
 import { toHex } from "../../utils";
@@ -31,14 +31,24 @@ export async function getAddressRoute(req: Request, res: Response) {
   if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
   const page = parsedPage.value;
 
+  const rawCursor = req.query.utxo_cursor;
+  if (rawCursor !== undefined && (typeof rawCursor !== "string" || !/^(?:[0-9a-fA-F]{2})*$/.test(rawCursor))) {
+    return res.status(400).json({ error: "utxo_cursor must be an even-length hex string." });
+  }
+  const utxoCursor = typeof rawCursor === "string" && rawCursor.length > 0 ? rawCursor : undefined;
+
   // One snapshot for the whole response. History and UTxOs were two, so a
   // balance could be computed from a ledger the history beside it never saw.
   const [history, utxos] = await readConsistently(async (db) =>
     Promise.all([getAddressHistory(address, page, db), getAddressUtxos(address, db)]),
   );
+  // The balance reads every UTxO; only a page of them is decoded into views
+  // and returned. Totalling the page instead would understate the balance, and
+  // an address page that quietly understates a balance is worse than a slow one.
+  const utxoPage = pageUtxoRows(utxos, utxoCursor);
   const [{ balance, undecodedOutputs }, utxoViews] = await Promise.all([
     computeBalance(utxos.map((row) => row.output)),
-    decodeUtxos(utxos),
+    decodeUtxos(utxoPage.page),
   ]);
   const payload = await Promise.all(
     history.rows.map(async (row) => {
@@ -85,8 +95,11 @@ export async function getAddressRoute(req: Request, res: Response) {
   return res.json({
     balance,
     undecodedOutputs,
-    utxoCount: utxos.length,
+    utxoCount: utxoPage.total,
     utxos: utxoViews,
+    utxoLimit: UTXO_PAGE_LIMIT,
+    utxoCursor: utxoPage.nextCursor,
+    hasMoreUtxos: utxoPage.nextCursor !== null,
     txCount: history.total,
     historyPage: page,
     hasNextPage: history.hasNextPage,

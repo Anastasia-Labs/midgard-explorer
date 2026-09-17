@@ -333,6 +333,13 @@ export const ENDPOINTS: readonly Endpoint[] = [
           minimum: 1,
           default: 1,
         }),
+        query(
+          "utxo_cursor",
+          "Last `outref` already held, as hex. Omit for the first UTxO page; " +
+            "pass the response's `utxoCursor` for the next. Balance and " +
+            "`utxoCount` always describe the whole address, not the page.",
+          { type: "string", pattern: "^(?:[0-9a-fA-F]{2})*$", default: "" },
+        ),
       ],
       notFound: true,
       rateLimited: true,

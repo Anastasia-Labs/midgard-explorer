@@ -9,14 +9,60 @@ const HISTORY_LIMIT = 25;
  * `mempool_ledger`; deposit-sourced rows only become spendable once their
  * deposit is projected (mirrors the node's spendable predicate).
  */
+export type UtxoRow = { output: Uint8Array; outref: Uint8Array };
+
+/** UTxOs returned in one page of an address response. */
+export const UTXO_PAGE_LIMIT = 50;
+
+/**
+ * Every UTxO at the address, unordered.
+ *
+ * The balance has to see all of them, so this cannot take a LIMIT: a total
+ * computed from one page would be wrong, and wrong quietly. What it can drop
+ * is the sort. `ORDER BY encode(ml.outref, 'hex')` sorted whole rows, `output`
+ * payload included, and spilled 98.8 MB to temp per request on the target
+ * profile. `pageUtxoRows` orders the 36-byte keys in memory instead, which is
+ * the same order: hex encoding preserves bytea ordering, checked against the
+ * server rather than assumed.
+ */
 export async function getAddressUtxos(address: string, db: NodeReader = prisma) {
-  return db.$queryRaw<Array<{ output: Uint8Array; outref: Uint8Array }>>`
+  return db.$queryRaw<UtxoRow[]>`
     SELECT ml.output, ml.outref
       FROM mempool_ledger AS ml
       LEFT JOIN deposits_utxos AS d ON d.event_id = ml.source_event_id
      WHERE ml.address = ${address}
-       AND (ml.source_event_id IS NULL OR d.projected_header_hash IS NOT NULL)
-     ORDER BY encode(ml.outref, 'hex') ASC;`;
+       AND (ml.source_event_id IS NULL OR d.projected_header_hash IS NOT NULL);`;
+}
+
+/**
+ * One keyset page of UTxOs, ordered by `outref`.
+ *
+ * Keyset rather than offset: the ledger changes under a paging reader, and an
+ * offset silently skips or repeats rows when it does. `cursor` is the last
+ * `outref` the caller already has, as hex.
+ */
+export function pageUtxoRows(
+  rows: readonly UtxoRow[],
+  cursor: string | undefined,
+  limit: number = UTXO_PAGE_LIMIT,
+): { page: UtxoRow[]; nextCursor: string | null; total: number } {
+  // Key once, not once per comparison: a comparator that allocated per call
+  // made N log N short-lived Buffers on the hottest path in this route.
+  const keyed = rows.map((row) => ({ row, key: Buffer.from(row.outref) }));
+  keyed.sort((a, b) => Buffer.compare(a.key, b.key));
+  const ordered = keyed.map((k) => k.row);
+  const after = cursor ? Buffer.from(cursor, "hex") : null;
+  const start = after ? keyed.findIndex((k) => Buffer.compare(k.key, after) > 0) : 0;
+  // A cursor past the last row leaves nothing, which is the end, not the start.
+  const from = start === -1 ? ordered.length : start;
+  const page = ordered.slice(from, from + limit);
+  const last = page[page.length - 1];
+  const more = from + page.length < ordered.length;
+  return {
+    page,
+    nextCursor: more && last ? Buffer.from(last.outref).toString("hex") : null,
+    total: ordered.length,
+  };
 }
 
 export type AddressHistoryRecord = {
@@ -60,20 +106,26 @@ export async function getAddressHistory(
   const [rows, summaryRows] = await inOwnTransaction(async (db) =>
     Promise.all([
     db.$queryRaw<AddressHistoryRecord[]>`
-      WITH tx_candidates AS (
+      WITH addr_txs AS (
+        SELECT tx_id FROM address_history WHERE address = ${address}
+      ), tx_candidates AS (
         SELECT tx_id, tx, time_stamp_tz, 'immutable'::text AS source, 1 AS priority
           FROM immutable
+         WHERE tx_id IN (SELECT tx_id FROM addr_txs)
         UNION ALL
         SELECT member_id AS tx_id, payload_cbor AS tx,
                source_time_stamp_tz AS time_stamp_tz,
                'journal'::text AS source, 2 AS priority
           FROM pending_block_finalization_txs
+         WHERE member_id IN (SELECT tx_id FROM addr_txs)
         UNION ALL
         SELECT tx_id, tx, time_stamp_tz, 'processed_mempool'::text AS source, 3 AS priority
           FROM processed_mempool
+         WHERE tx_id IN (SELECT tx_id FROM addr_txs)
         UNION ALL
         SELECT tx_id, tx, time_stamp_tz, 'mempool'::text AS source, 4 AS priority
           FROM mempool
+         WHERE tx_id IN (SELECT tx_id FROM addr_txs)
       ), tx_body AS (
         SELECT DISTINCT ON (tx_id) tx_id, tx, time_stamp_tz, source
           FROM tx_candidates
@@ -85,11 +137,13 @@ export async function getAddressHistory(
                f.block_end_time, f.status AS finalization_status
           FROM pending_block_finalization_txs AS j
           JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
+         WHERE j.member_id IN (SELECT tx_id FROM addr_txs)
          ORDER BY j.member_id, f.block_end_time DESC,
                   encode(j.header_hash, 'hex') DESC
       ), legacy_membership AS (
         SELECT b.tx_id, b.header_hash, b.time_stamp_tz
           FROM blocks AS b
+         WHERE b.tx_id IN (SELECT tx_id FROM addr_txs)
       ), legacy_height AS (
         SELECT header_hash, MIN(height)::int AS height
           FROM blocks GROUP BY header_hash

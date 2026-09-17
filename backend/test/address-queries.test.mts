@@ -44,6 +44,24 @@ describe("address history query", () => {
     expect(pageSql).toContain("jm.tx_id IS NULL");
   });
 
+  it("pushes the address into every transaction-tier scan", async () => {
+    mocks.queryRaw
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ total: 0n, first_activity: null, latest_activity: null }]);
+
+    await getAddressHistory("addr_test1example", 1);
+    const pageSql = sqlText(mocks.queryRaw.mock.calls[0]);
+
+    // Without this the planner sorted EVERY transaction body in the database to
+    // resolve DISTINCT ON, then hash-joined the result against ~25 rows: 98.8 MB
+    // of temp spill per request. Restricting each branch to the address's own
+    // tx_ids cannot change which row DISTINCT ON picks for a retained tx_id,
+    // because `activity` keeps only those ids anyway.
+    expect(pageSql).toContain("addr_txs");
+    const branches = pageSql.match(/IN \(SELECT tx_id FROM addr_txs\)/g) ?? [];
+    expect(branches.length).toBeGreaterThanOrEqual(5);
+  });
+
   it("bounds pages and reports totals and activity across all rows", async () => {
     mocks.queryRaw
       .mockResolvedValueOnce([{ tx_id: Buffer.from("ab", "hex") }])
