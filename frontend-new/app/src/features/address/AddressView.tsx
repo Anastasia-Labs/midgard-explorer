@@ -28,11 +28,20 @@ export function AddressView({
   address,
   page,
   data,
+  utxoCursor,
 }: {
   address: string;
   page: number;
   data: AddressResponse;
+  /** The UTxO page being shown. Absent means the first. */
+  utxoCursor?: string | undefined;
 }) {
+  // `tab=utxos` is carried deliberately: without it, paging the UTxO list
+  // navigates and the reader lands back on Activity, having pressed a control
+  // that was only reachable from the UTxOs tab.
+  const utxoPageHref = (cursor: string | undefined) =>
+    `/address/${encodeURIComponent(address)}?page=${page}&tab=utxos` +
+    (cursor ? `&utxo_cursor=${encodeURIComponent(cursor)}` : "");
   const assets = assetCount(data.balance.assets);
   const undecodableUtxos = data.utxos.filter((u) => u.decodeError !== null).length;
 
@@ -277,6 +286,28 @@ export function AddressView({
         emptyTitle="No spendable UTxOs at this address"
         emptyHint="Every UTxO this address received has since been spent."
       />
+      {/* The table shows one page of a larger set. Without a way forward the
+          count above would name UTxOs the reader cannot reach. The balance and
+          the count describe every UTxO, not this page. */}
+      {data.hasMoreUtxos || utxoCursor ? (
+        <nav className="mt-4 flex items-center justify-between gap-4 text-sm">
+          <span className="text-text-3">
+            Showing {data.utxos.length} of {data.utxoCount} UTxOs
+          </span>
+          <span className="flex gap-4">
+            {utxoCursor ? (
+              <Link className="text-accent hover:underline" href={utxoPageHref(undefined)}>
+                First 50
+              </Link>
+            ) : null}
+            {data.hasMoreUtxos && data.utxoCursor ? (
+              <Link className="text-accent hover:underline" href={utxoPageHref(data.utxoCursor)}>
+                Next 50
+              </Link>
+            ) : null}
+          </span>
+        </nav>
+      ) : null}
     </Card>
   );
 

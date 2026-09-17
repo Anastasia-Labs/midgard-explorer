@@ -33,15 +33,22 @@ export default async function AddressPage({
   searchParams,
 }: {
   params: Promise<{ address: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; utxo_cursor?: string }>;
 }) {
   const address = decodeURIComponent((await params).address);
-  const page = parsePage((await searchParams).page);
+  const query = await searchParams;
+  const page = parsePage(query.page);
+  // Hex only: the cursor reaches the node's query, so it is validated here
+  // as well as at the route.
+  const utxoCursor =
+    typeof query.utxo_cursor === "string" && /^(?:[0-9a-fA-F]{2})+$/.test(query.utxo_cursor)
+      ? query.utxo_cursor
+      : undefined;
   if (classify(address).kind !== "address") notFound();
 
   let data;
   try {
-    data = await orNotFound(api.address(address, page, await viewerInit()));
+    data = await orNotFound(api.address(address, page, await viewerInit(), utxoCursor));
   } catch (e) {
     return (
       <>
@@ -53,5 +60,5 @@ export default async function AddressPage({
     );
   }
 
-  return <AddressView address={address} page={page} data={data} />;
+  return <AddressView address={address} page={page} data={data} utxoCursor={utxoCursor} />;
 }

@@ -174,9 +174,10 @@ export const api = {
       decodeTransactionResponse,
       init,
     ),
-  address: (address: string, page: number = 1, init?: FetchInit) =>
+  address: (address: string, page: number = 1, init?: FetchInit, utxoCursor?: string) =>
     fetchJson(
-      `/api/address?address=${encodeURIComponent(address)}&page=${page}`,
+      `/api/address?address=${encodeURIComponent(address)}&page=${page}` +
+        (utxoCursor ? `&utxo_cursor=${encodeURIComponent(utxoCursor)}` : ""),
       decodeAddressResponse,
       init,
     ),
