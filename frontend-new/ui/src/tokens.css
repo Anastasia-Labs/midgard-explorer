@@ -88,18 +88,18 @@
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --mg-bg: #f4f6f7;
+    --mg-bg: #edf2ef;
     /* Foreground content is true, bright white. Secondary planes stay only a
      * few points away from white so controls and hover states remain visible
      * without making the interface read as grey. */
     --mg-surface: #ffffff;
-    --mg-surface-2: #f7f9fa;
-    --mg-surface-3: #f0f3f5;
-    --mg-border: rgb(31 55 72 / 16%);
-    --mg-border-strong: rgb(31 55 72 / 28%);
+    --mg-surface-2: #f3f7f4;
+    --mg-surface-3: #e7eee9;
+    --mg-border: #d6e0d9;
+    --mg-border-strong: #a4b5a9;
     --mg-text: #171b1e;
-    --mg-text-2: #454d53;
-    --mg-text-3: #626d74;
+    --mg-text-2: #3f5147;
+    --mg-text-3: #576b5e;
     --mg-page-title: #03654a;
     --mg-page-copy: #3e6682;
     --mg-canvas-texture:
@@ -125,10 +125,10 @@
     --mg-warning: #8a5d06;
     --mg-danger: #b42323;
     --mg-focus: #315f86;
-    --mg-shadow: 0 1px 3px rgb(31 55 72 / 12%);
+    --mg-shadow: 0 1px 2px rgb(20 45 30 / 5%), 0 8px 24px -16px rgb(20 45 30 / 22%);
     /* Inverted on purpose. Light arrives from above in both themes, but on
        a white card the lit edge is the one that reads darker, not lighter. */
-    --mg-bevel: rgb(31 55 72 / 30%);
+    --mg-bevel: #c4d2c8;
     --mg-type-l: 0.45;
     --mg-type-c: 0.13;
     color-scheme: light;
@@ -136,16 +136,16 @@
 }
 
 :root[data-theme="light"] {
-  --mg-bg: #f4f6f7;
+  --mg-bg: #edf2ef;
   /* Keep this explicit-theme branch identical to the system-light branch. */
   --mg-surface: #ffffff;
-  --mg-surface-2: #f7f9fa;
-  --mg-surface-3: #f0f3f5;
-  --mg-border: rgb(31 55 72 / 16%);
-  --mg-border-strong: rgb(31 55 72 / 28%);
+  --mg-surface-2: #f3f7f4;
+  --mg-surface-3: #e7eee9;
+  --mg-border: #d6e0d9;
+  --mg-border-strong: #a4b5a9;
   --mg-text: #171b1e;
-  --mg-text-2: #454d53;
-  --mg-text-3: #626d74;
+  --mg-text-2: #3f5147;
+  --mg-text-3: #576b5e;
   --mg-page-title: #03654a;
   --mg-page-copy: #3e6682;
   --mg-canvas-texture:
@@ -169,8 +169,8 @@
   --mg-warning: #8a5d06;
   --mg-danger: #b42323;
   --mg-focus: #315f86;
-  --mg-shadow: 0 1px 3px rgb(31 55 72 / 12%);
-  --mg-bevel: rgb(31 55 72 / 30%);
+  --mg-shadow: 0 1px 2px rgb(20 45 30 / 5%), 0 8px 24px -16px rgb(20 45 30 / 22%);
+  --mg-bevel: #c4d2c8;
   --mg-type-l: 0.45;
   --mg-type-c: 0.13;
   color-scheme: light;
