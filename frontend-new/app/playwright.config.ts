@@ -78,7 +78,11 @@ export default defineConfig({
       // the machine being small.
       timeout: 600_000,
       env: {
-        NEXT_PUBLIC_API_BASE: `http://127.0.0.1:${FIXTURE_PORT}`,
+        MG_STRICT_CONFIG: "1",
+        // Same-origin is a supported deployment shape; the browser does not
+        // need a public loopback URL. The server still reads the fixture below.
+        NEXT_PUBLIC_API_BASE: "",
+        NEXT_PUBLIC_SITE_URL: "https://explorer.invalid",
         // `.env.local` may point server components at a developer backend.
         // Override both contexts so the browser suite cannot combine fixture
         // client requests with real/stale server-rendered data.

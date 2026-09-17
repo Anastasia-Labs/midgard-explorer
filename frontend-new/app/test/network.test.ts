@@ -205,6 +205,32 @@ describe("L1_EXPLORER_NAME", () => {
 });
 
 describe("assertNetworkConfigured", () => {
+  it("accepts same-origin public requests with a separate fixture server in strict mode", async () => {
+    const { assertNetworkConfigured } = await loadNetwork({
+      ...DEPLOYMENT_URLS,
+      NEXT_PUBLIC_NETWORK_LABEL: "Fixture",
+      NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
+      NEXT_PUBLIC_API_BASE: "",
+      API_BASE_SERVER: "http://127.0.0.1:3211",
+      MG_STRICT_CONFIG: "1",
+    });
+    expect(() => assertNetworkConfigured()).not.toThrow();
+  });
+
+  it.each([undefined, "http://127.0.0.1:3211", "http://localhost:3211"])(
+    "rejects a missing or visitor-local public API base: %s",
+    async (publicBase) => {
+      const { assertNetworkConfigured } = await loadNetwork({
+        ...DEPLOYMENT_URLS,
+        NEXT_PUBLIC_NETWORK_LABEL: "Fixture",
+        NEXT_PUBLIC_L1_EXPLORER_TX_URL: CEXPLORER,
+        NEXT_PUBLIC_API_BASE: publicBase,
+        MG_STRICT_CONFIG: "1",
+      });
+      expect(() => assertNetworkConfigured()).toThrow(/NEXT_PUBLIC_API_BASE/);
+    },
+  );
+
   it("is a no-op when strict config is off", async () => {
     const { assertNetworkConfigured } = await loadNetwork({
       NEXT_PUBLIC_NETWORK_LABEL: undefined,

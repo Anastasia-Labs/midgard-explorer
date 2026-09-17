@@ -12,29 +12,46 @@ What this page adds is the five areas that register does not measure:
 correctness invariants, security, developer experience, usability and
 accessibility, and the state of the gates themselves.
 
-No application code was changed. The working tree is unchanged.
+The initial audit changed no application code. Follow-up remediation and its
+verification are recorded below; the initial snapshot is not the current tree.
 
 ## 1. Executive verdict
 
-**Ready.** The product is built. Correctness at the money layer is sound, every
-security control reviewed held, the accessibility result is the strongest
-evidence in this audit, and the developer surface is well built out. The backend passes its whole gate
-today: type check, documentation gate, coverage lint, 813 tests against a real
-database, 51 development-command tests, and the advisory gate.
+**What was found in good order.** The product is built. Every correctness
+invariant checked at the money layer held, in each path reviewed. Every security
+control reviewed held. The accessibility result is the strongest evidence this
+audit produced. The developer surface is well built out. The backend passed its
+whole gate on the day: type check, documentation gate, coverage lint, 813 tests
+against a real database, 51 development-command tests, and the advisory gate.
 
-**Not ready.** The branch does not pass the local gate that mirrors continuous
-integration, `frontend-new/scripts/ci-local.sh`, and has not since `0bf26a8c` on
-2026-09-16. That script stops at step three of eleven, so it never reaches the
+**What was not.** The branch did not pass the local gate that mirrors continuous
+integration, `frontend-new/scripts/ci-local.sh`, and had not since `0bf26a8c` on
+2026-09-16. That script stopped at step three of eleven, so it never reached the
 type check, the unit tests, the production build or the browser suite. Nothing
 is pushed and no workflow records were consulted, so this states nothing about
-hosted runs. Two list
-routes push the page sideways at the most common desktop width. The documented
-memory minimum is wrong for the most-visited page in the application, by a
-factor of about 2.5. Web Vitals cannot be collected at all in one of the two
-documented deployment shapes.
+hosted runs. Two list routes push the page sideways at the most common desktop
+width. The documented memory minimum is wrong for the most-visited page in the
+application, by a factor of about 2.5. Web Vitals cannot be collected in one of
+the two documented deployment shapes.
 
-**What prevents a defensible production-readiness claim.** Three things, in
-order.
+**Status since this audit was written.** The audit records the state at
+`86043a5d`. Two findings have been acted on since, and their results are in
+section 6 rather than here:
+
+- **B1** is fixed and committed. The ten files were formatted and the two unused
+  imports removed.
+- **M7** is implemented. The gate now runs one production build per full run,
+  with strict configuration enabled in Playwright’s build. The proposed
+  source-pattern wiring check was superseded; see section 3.3, M7.
+- **The full frontend gate now passes**, exit 0, after the final M7 change and
+  an authorized pause of Cardano node, Ogmios and Kupo. Browser results:
+  475 passed, 19 skipped, zero failures. This closes the current gate execution
+  gap; it does not settle the separate audit findings or prove the cause of
+  earlier intermittent failures. See section 6.
+
+**What prevented a defensible production-readiness claim at the audit
+snapshot.** The first item is now resolved for the tested working tree; the
+remaining items are still open.
 
 1. **The gate is red.** The repository's CI-equivalent script is the acceptance
    gate, and it exits at the formatting step, so one pass of the whole script
@@ -58,47 +75,86 @@ order.
    against that definition would be true and would not mean what a reader would
    take it to mean.
 
-**Distance to the stated definition of done, as a forecast.** The plan requires
-any rating stated before `FINAL-VERIFICATION` to be labelled a forecast, so this
-is one. The implementation is close: the remaining work is one small correction
-to restore the gate, one layout fix, three measurement reruns, and the depth cap
-that the register has already named as the fallback for four failing rows.
-The parts that cannot be closed from inside this repository are the upstream
-index (`UR-1`) and the continuous integration sample sizes, which need calendar
-time rather than work. The parts that are genuinely open are the backend memory
-mechanism, which is still unidentified, and the stress profile, which fails
-nine of twelve workloads and has not been rerun since the address fixes landed.
+**Distance to the stated definition of done.** The plan requires any rating
+stated before `FINAL-VERIFICATION` to be labelled a forecast, so no distance is
+stated here as a single figure. The remaining work sorts into three kinds, and
+they are not the same size.
 
-## 2. Six-area scorecard
+**Bounded and specified.** The gate repair, the two-route overflow, the page
+depth cap, the frontend advisory gate, the skip-link focus target and the
+fixture-conditional skips. Each has a named remedy and a named acceptance check.
+
+**Open, with the cost unknown until measured.** Backend peak resident memory has
+no identified mechanism, and identifying it is a measurement task whose result
+decides how large the fix is. Stress behaviour fails nine of twelve workloads on
+an artifact that predates three fixes, and nobody knows what a rerun reads. The
+security boundaries this audit did not exercise, the dependency tree beyond the
+advisory gate, the nginx edge in operation, and anything a penetration test
+would reach, are unassessed rather than assessed as sound. **None of these
+should be assumed small.** Each could turn out to be a line of configuration or
+a structural change, and the honest position is that the audit cannot yet tell.
+
+**Not closeable from inside this repository.** The upstream index (`UR-1`) and
+the continuous integration sample sizes, which need calendar time rather than
+work.
+
+## 2. Area scorecard
 
 ### Rubric
 
-No numeric scores are used. The programme's own rule is that a rating stated
-before final verification is a forecast, and a number invites being quoted
-without its caveats. Each area carries one of five verdicts.
+**No numeric scores.** An earlier draft of this work carried per-area numbers out
+of ten. They were withdrawn because they had no defined rubric, they merged
+claims of different kinds into one figure, and a number gets quoted without the
+caveat that produced it. "7 against 8" is not a decision anyone can act on. A
+verdict plus the next acceptance check is.
+
+Each area carries one of four verdicts.
 
 | Verdict | Meaning |
 |---|---|
-| **Measured pass** | An acceptance criterion exists, and a fresh run or a named artifact meets it |
+| **Verified** | An acceptance criterion exists, and a fresh run or a named artifact meets it |
 | **Partial** | A criterion exists, the checks that ran pass, and named gaps remain |
-| **Measured fail** | A criterion exists and a measurement does not meet it |
-| **Unmeasured** | No criterion, or a criterion with no measurement. This is not a pass |
-| **Blocked** | A criterion exists and cannot be met without work owned elsewhere |
+| **Failing** | A criterion exists and a measurement does not meet it |
+| **Unmeasured** | No criterion, or a criterion whose current state no available measurement establishes. This is not a pass |
 
-**Unmeasured is not a passing verdict.** Where an area is partly unmeasured the
-untested scope is stated, because an area is only as strong as the part of it
-that was actually exercised.
+**Unmeasured is not a passing verdict, and it is not a failing one.** It says the
+question is open. Where an area is partly unmeasured the untested scope is
+stated, because an area is only as strong as the part that was exercised.
+
+**Scope language matters.** Where this page says something was not found, it
+means not found in the surfaces reviewed, which are named. That is not the same
+as establishing absence across the system, and nothing here should be read as
+the stronger claim.
 
 ### Scorecard
 
-| Area | Verdict | Evidence | Confidence | Untested scope |
+| Area | Verdict | What the evidence shows | Confidence | Untested scope |
 |---|---|---|---|---|
-| Correctness and data integrity | **Partial** | Money is `bigint` in the backend, a branded decimal string on the wire, and `BigInt()` in the browser. No float arithmetic on any amount. Balance reads every UTxO while only a page is returned and decoded. The UTxO cursor is validated with an even-length hex pattern at the route. History and UTxOs share one snapshot. Backend suite 813 passed with `REQUIRE_DB=1` | High for what was read | Conflicting-source reconciliation was not exercised against live data. The L1 indexer ingest paths were read, not run. No property-based test of the decoder against malformed CBOR |
-| Security | **Partial** | No injection path found in the surfaces reviewed, which were every file in `db/` and `indexer/`: each `$queryRaw` is a tagged template, and the five `$queryRawUnsafe` sites bind `$n` placeholders with module constants. Nonce CSP with `strict-dynamic`, proved by a negative browser test that injects an unauthorised script. Read-only sessions set in code. CORS refuses `*` at boot in production. Rate limit keyed on the socket peer by default. Advisory gate passes fresh: three advisories, all with recorded dispositions | High for the surfaces read, which were all of `db/`, `indexer/` SQL, and `server/` | No live penetration test. No manual review of the transitive dependency tree beyond the advisory gate. The bundled nginx edge was read, not exercised |
-| Performance and resource efficiency | **Measured fail on historical evidence** | All figures are historical and none is current. From `target-efc9af69.json`, dated 2026-09-05: backend peak resident memory 737.3 MB against 512 MB, and two of twelve `target` workloads fail. From `stress-5ded259a.json`, dated 2026-09-16: nine of twelve `stress` workloads fail, with `address-history` answering an error for every request. Continuous integration median 10.68 minutes against 8, over a window ending 2026-09-03. Section 3.6 reconciles these against the later results | High that these artifacts say this. Low that they describe the current head | Every later result was measured on a branch and none was preserved as an artifact. Compression was re-enabled at the edge and has no baseline. Two rows remain `DISCOVERY` |
-| Maintainability and code quality | **Partial** | Type check clean across four packages. 813 backend, 497 frontend, 12 contracts, 3 tokens and 51 development-command tests pass. Duplication 0.90% against a 1.0% target. Dead weight inventoried and decided | High | Change complexity is a recorded `FAIL`. Five benchmark self-test files never run in CI. Five browser tests skip on fixture content rather than asserting it |
-| Developer experience and operations | **Partial** | The one-command demo works exactly as documented: no backend, no Docker, no database, no secrets, ready in 521 ms. Documentation gate passes on 35 pages. `pnpm doctor`, the four readiness probes and the rollout script each carry their own reasoning | High | A genuinely fresh clone and install was not performed. The full stack mode is documented as not measured and remains so |
-| Usability and accessibility | **Partial** | 76 page loads across 19 routes, two themes and two viewports: **zero axe violations** under `wcag2a`, `wcag2aa`, `wcag21a` and `wcag21aa`. Zero unnamed interactive elements. One `h1`, one `main` and a working skip link on every page. A visible 2 px focus outline on every one of fourteen keyboard stops. Correct `tablist` semantics. Real 404 status codes | High, and this is the best-evidenced area in the audit | Screen reader behaviour was not tested with a real assistive technology. Contrast ratios were not computed token by token; axe checked rendered contrast and found none failing |
+| Correctness and data integrity | **Partial** | Money is `bigint` in the backend, a branded decimal string on the wire, and `BigInt()` in the browser. No float arithmetic on any amount in the reviewed paths. Balance reads every UTxO while only a page is returned and decoded. The UTxO cursor is validated with an even-length hex pattern at the route. History and UTxOs share one snapshot. Backend suite 813 passed with `REQUIRE_DB=1` | High for what was read | Conflicting-source reconciliation was not exercised against live data. The L1 indexer ingest paths were read, not run. No property-based test of the decoder against malformed CBOR |
+| Security | **Partial** | No injection path found in the surfaces reviewed, which were every file in `db/` and `indexer/`: each `$queryRaw` is a tagged template, and the five `$queryRawUnsafe` sites bind `$n` placeholders with module constants. Nonce CSP with `strict-dynamic`, proved by a negative browser test that injects an unauthorised script. Read-only sessions set in code. CORS refuses `*` at boot in production. Rate limit keyed on the socket peer by default. Advisory gate passes fresh: three advisories, all with recorded dispositions | High for the surfaces read | No penetration test. No review of the transitive dependency tree beyond the advisory gate. The bundled nginx edge was read, not exercised. Nothing here establishes that no injection or exposure path exists elsewhere in the system |
+| Performance and resource efficiency | **Unmeasured** | Current target and scale readiness is unverified pending reproducible measurements. Two separate bodies of evidence exist and neither settles the present state. **Historical failures, from artifacts:** `target-efc9af69.json`, 2026-09-05, records peak resident memory 737.3 MB against 512 MB and two of twelve `target` workloads failing; `stress-5ded259a.json`, 2026-09-16, records nine of twelve `stress` workloads failing. **Reported improvements, artifacts unavailable:** 682.6 MB peak resident memory and passing target workloads. Section 3.6 keeps them apart | High that each body of evidence says what it says. The current state is open | No measurement available to this audit describes the head. Compression was re-enabled at the edge and has no baseline. Two register rows remain `DISCOVERY` |
+| Test coverage and quality | **Partial** | 163 test files and 1,361 passing tests: 813 backend with `REQUIRE_DB=1`, 497 app, 51 development-command, 12 contracts, 3 tokens. The corpus contains genuinely discriminating tests, including a CSP test that injects an unauthorised script and first asserts the injection happened, so "it did not run" cannot pass vacuously, and a global setup that names three false-green traps it exists to prevent | High | Five benchmark self-test files never run in CI. Five browser tests skip on fixture content rather than asserting it. Six indexer test files skip when the database is unreachable even with `REQUIRE_DB=1` |
+| Gate completeness and reliability | **Current full run passes; reliability limits remain** | Assessed separately from the corpus above, because the two have different remedies and were in opposite states. The gate rejected the branch for eleven commits on formatting and lint. Two scripts named `check` do different things, so a green in the inner package is not the gate. The gate compiled the application twice | High | Section 6 records a full passing run with L1 paused. M6 command mismatch and the resource-contention limit remain |
+| Maintainability and code quality | **Partial** | Type check clean across four packages. Duplication 0.90% against a 1.0% target. Dead weight inventoried and decided. 8 decision records, 3 release records | High | Change complexity is a recorded `FAIL`. Transaction status is derived in three places, one with an unreachable branch |
+| Developer experience and operations | **Partial** | The one-command demo works exactly as documented: no backend, no Docker, no database, no secrets, ready in 521 ms. Documentation gate passes. `pnpm doctor`, the four readiness probes and the rollout script each carry their own reasoning | High | A genuinely fresh clone and install was not performed. The full stack mode is documented as not measured and remains so. The documented memory minimum is wrong for the transaction route |
+| Usability and accessibility | **Partial** | 76 page loads across 19 routes, two themes and two viewports: **zero axe violations** under `wcag2a`, `wcag2aa`, `wcag21a` and `wcag21aa`. Zero unnamed interactive elements. One `h1`, one `main` and a working skip link on every page. A visible 2 px focus outline on every one of fourteen keyboard stops. Correct `tablist` semantics. Real 404 status codes | High for the automated and keyboard evidence | No testing with a real assistive technology. Automated checks do not cover WCAG 2.2 target size, which L2 records as failing. Contrast was checked as rendered by axe, not token by token |
+| Simplicity and clarity | **Not separately assessed** | This audit did not treat simplicity as its own dimension and collected no evidence against a simplicity criterion. Observations that touch it sit under maintainability and usability | n/a | All of it. No verdict is offered |
+
+### Next acceptance check per area
+
+One check per area. Each is the smallest thing that would move the verdict.
+
+| Area | Next acceptance check |
+|---|---|
+| Correctness and data integrity | A decoder test over malformed and unknown-variant CBOR that fails when the isolation is removed, plus one reconciliation case exercised against conflicting sources |
+| Security | An advisory gate covering `frontend-new` that fails on an undispositioned advisory, and a depth cap that answers 400 without issuing a database statement |
+| Performance and resource efficiency | The canonical target rerun at the current head, producing one artifact that carries `peakRssBytes` and a verdict per workload. Until that artifact exists the verdict stays `Unmeasured` |
+| Test coverage and quality | The five fixture-conditional skips assert their precondition, and the benchmark self-tests either run in a workflow or are recorded as a named pre-baseline checklist |
+| Gate completeness and reliability | One full run of `./scripts/ci-local.sh` from `frontend-new` completing every step, on a machine with the headroom to do it |
+| Maintainability and code quality | One exported status function with three callers, and the unreachable branch removed |
+| Developer experience and operations | The ceiling matrix and the peak sweep include the transaction route, and the per-mode minimum is restated from what they produce |
+| Usability and accessibility | Page width is not exceeded at 1280 px on `/deposits` and `/withdrawals`, with an assertion at that width that fails when the fix is reverted |
+| Simplicity and clarity | Decide whether this is a dimension worth a criterion. If it is, define one before assessing it |
 
 ## 3. Prioritized findings register
 
@@ -241,6 +297,12 @@ from a file already on disk), or **hypothesis**.
   that forwards to the backend, matching how health, overview and search already
   work. This needs no policy widening. Alternative: add the configured API
   origin to `connect-src`, which widens the policy for every request.
+- **The browser suite does not cover this, and now covers the opposite shape.**
+  Since M7 the suite builds with an empty public API base, which is what lets
+  that build be strict. It therefore exercises the same-origin deployment shape,
+  in which this finding does not occur, and no longer runs in the split-origin
+  shape where it does. No coverage was lost, because the split-origin path was
+  never asserted. A green suite is not evidence about this finding either way.
 - **Verification.** Build with an API base on a different origin, load several
   routes, and assert no policy violation naming `/api/vitals`. Add a unit case
   asserting the policy admits the configured origin if the alternative is taken.
@@ -409,15 +471,24 @@ from a file already on disk), or **hypothesis**.
   the second build is where the full gate stops. On a hosted runner it is
   wasted minutes against a continuous integration median that already fails its
   own 8 minute target at 10.68 minutes.
-- **Care needed.** The obvious fix, reusing the running server, is the one the
-  Playwright configuration deliberately refuses by default, and its comment
-  explains why: adopting a server someone else started has already produced a
-  green run against code that no longer existed. The safe shape is the reverse.
-  Let the browser stage own the single build, and have the gate skip its own
-  build step when it is about to run the browser suite, so there is still
-  exactly one build of exactly the code under test.
-- **Verification.** The full gate completes with one build in its log, and the
-  `--fast` path still builds.
+- **Preserve strict configuration validation.** The old standalone build used
+  `MG_STRICT_CONFIG=1`; the original browser build used a public loopback API
+  URL that strict mode rejects. However, the existing guard also supports an
+  empty public API base for same-origin requests. A loopback *server-side* API
+  URL is allowed. The earlier assertion that the fixture build could not be
+  strict was incorrect.
+- **Remedy applied.** Playwright now owns the full gate's only production build
+  with `MG_STRICT_CONFIG=1`, an empty public API base, a public-shaped site URL,
+  and the fixture's loopback server-side URL. The actual build evaluates the
+  existing root-layout assertion. The `--fast` path retains its standalone
+  strict build. Server reuse remains disabled by default.
+- **Superseded approach.** The proposed `strict-config-check.mjs` source-pattern
+  check was removed before commit. Its historical checks below do not validate
+  the final implementation; indentation is not a reliable test of JavaScript
+  execution scope.
+- **Verification.** Added strict-mode tests for the supported same-origin
+  configuration and rejection of missing or visitor-local public API URLs.
+  Final gate results are recorded in section 6.
 
 ### 3.4 Low
 
@@ -426,7 +497,7 @@ from a file already on disk), or **hypothesis**.
 | L1 | The skip link does not move focus. `<main id="main">` carries no `tabindex`, so after activating it `document.activeElement` is `body`. Chromium's sequential focus starting point still sends the next Tab into `main`, so Tab users are served; assistive technology and other engines are less certain | Reproduced | `tabIndex={-1}` on `main`. Assert `document.activeElement.id` is `main` after activation |
 | L2 | Information triggers measure 16 x 16 px, below the 24 x 24 px minimum in WCAG 2.2 success criterion 2.5.8. Up to 84 sub-24 px interactive elements were counted on one page at 375 px. axe ran with 2.0 and 2.1 tags, which do not include 2.5.8, so zero violations is consistent with this | Reproduced | Pad the trigger to 24 x 24 without changing the glyph |
 | L3 | The node migration hazard is real and undocumented here. The live node database records **12** rows in `schema_migrations` while the node checkout declares **one** SQL migration. The node's runner tracks checksum mismatches and has a `verification_failed` state, so a rebuild against the existing volume is expected to fail verification. This repository documents how to run the node and has a page for exactly this class of problem | Reproduced (counted both sides; the rebuild was not attempted) | A short section in `upstream-node-defects.md` |
-| L4 | `../frontend-new/app/e2e/utxo-flow.spec.ts` gives a 503-node layout a fixed 15 second budget. That is a wall-clock assertion on CPU-bound work, on a two-core machine, and is the most likely source of the single reported timeout | Source-confirmed | Raise the budget for the complementary projects, or assert on a worker completion signal rather than elapsed time |
+| L4 | `../frontend-new/app/e2e/utxo-flow.spec.ts` gives a 503-node layout a fixed 15 second budget, which is a wall-clock assertion on CPU-bound work. That this is what caused the single reported timeout is a **hypothesis and is not established**: no run reproduced it under observation, and scheduling pressure was never measured during the failing run. The wall-clock budget is a real property of the test either way | Source-confirmed for the budget. Hypothesis for the cause | Raise the budget for the complementary projects, or assert on a worker completion signal rather than elapsed time. Settling the cause needs the timeout reproduced with load recorded |
 | L5 | The documentation gate resolves links against the working tree rather than against tracked files, so a tracked page linking into a git-excluded path would pass locally and be dead in a fresh clone. No tracked page currently does this, so the weakness is latent | Source-confirmed | Resolve link targets against `git ls-files` |
 | L6 | Housekeeping. A worktree at `922f9845` is registered and clean, with nothing to preserve, and one entry is prunable. Two benchmark containers have been running for 20 hours and two days on a machine that kills processes for memory. Reported only; nothing was stopped or removed | Reproduced | Owner's call |
 
@@ -476,23 +547,31 @@ scorecard. The first two are older and neither records peak memory at all.
 **The later results, and why they are not here.** Two figures have been reported
 since, and neither is preserved as an artifact.
 
-- **682.6 MB.** This is a **test suite** peak recorded during the address paging
-  work on 2026-09-17. It is not a `target` profile benchmark peak, so it does not
-  replace 737.3 MB; the two measure different processes doing different work. No
-  file under `performance/baselines/` records it. Both figures are above the
-  512 MB target, so the verdict is the same either way and only the magnitude is
-  unsettled.
-- **Passing target workloads.** The two failures in `efc9af69` are `block-detail`
-  on route statements and `transactions-list-page-deep` on temporary I/O. The
-  register states that `0bcc98d5` and `a66273e6` target exactly those two, that
-  they were measured on their own branches, and that "these rows keep this run's
-  figures until a rerun records them". Those branch measurements were not
-  preserved, so there is no artifact showing the post-fix result.
+- **682.6 MB peak resident memory**, reported as a suite peak against the same
+  512 MB target.
+- **Passing target workloads**, reported after the fixes that followed
+  `efc9af69`. The two failures in that artifact are `block-detail` on route
+  statements and `transactions-list-page-deep` on temporary I/O, and the register
+  records that `0bcc98d5` and `a66273e6` target exactly those two.
+
+Both are **reported results whose artifacts are unavailable**. That is their
+status here, and it is not a downgrade. This audit searched
+`performance/baselines/`, the repository, and the benchmark reports left in
+earlier session directories, and found no file carrying either figure. It did
+**not** find evidence that they were produced by a different measurement method
+from `efc9af69`, so nothing here reclassifies them, contradicts them, or replaces
+737.3 MB with them. They are treated as unverified for the narrow reason that the
+file which would verify them could not be located.
+
+The register's own words for the workload rows are that they "keep this run's
+figures until a rerun records them", which is the same position: a later
+measurement exists and the recorded baseline has not moved.
 
 **What this means for the verdict.** The performance area is marked **measured
 fail on historical evidence** rather than measured fail. The failures are real in
-the artifacts that exist, later work has plausibly moved at least three of them,
-and no artifact settles it. This strengthens the case for the canonical target
+the artifacts that exist, later reported results indicate at least three of them
+have moved, and no artifact available to this audit settles which description is
+current. This strengthens the case for the canonical target
 rerun in section 5 rather than weakening it: that rerun is the only thing that
 converts this area from historical to current.
 
@@ -632,10 +711,63 @@ cannot be read. Every row names where it ran.
 | Check | Run in | Command | Result |
 |---|---|---|---|
 | The gate, without the browser suite | `frontend-new` | `./scripts/ci-local.sh --fast` | **Pass**, exit 0, 108.5 s, 1.12 GB peak. Ten of the eleven steps |
-| The gate, in full | `frontend-new` | `./scripts/ci-local.sh` | **Did not complete**, exit 1 at 290 s. Ten steps passed. The browser stage never started: its web server ran a second `next build` and the kernel killed it, exit 137 |
+| The gate, in full, before M7 | `frontend-new` | `./scripts/ci-local.sh` | **Did not complete**, exit 1 at 290 s. Ten steps passed. The browser stage never started: its web server ran a second `next build` and the kernel killed it, exit 137 |
 
-**The full gate's failure is a machine result, not a code result, and it is not a
-pass.** The browser suite did not run, so nothing here says it would have passed.
+**Initial M7 attempt (superseded)**, which made the full gate build once using
+a source-pattern check instead of strict configuration in the browser build:
+
+| Check | Run in | Command | Result |
+|---|---|---|---|
+| The wiring check, baseline | `frontend-new/app` | `node scripts/strict-config-check.mjs` | **Pass**, exit 0 |
+| The wiring check, mutation A | `frontend-new/app` | the same, with the call deleted from the root layout | **Fails**, exit 1, naming the missing call |
+| The wiring check, mutation B | `frontend-new/app` | the same, with the call indented so it would run per render | **Fails**, exit 1, naming the same property |
+| The gate, without the browser suite | `frontend-new` | `./scripts/ci-local.sh --fast` | **Pass**, exit 0, 85.6 s, 1.12 GB peak. The strict build stays on this path |
+| The gate, in full | `frontend-new` | `./scripts/ci-local.sh` | **Did not complete**, exit 1 at 1,360.6 s. It built once and the browser stage started, which it had not before. Desktop 249 passed and 3 failed. The kernel then killed the application server and the mobile project failed wholesale |
+
+**What the full run after M7 actually established.** M7 did what it was meant to
+do and did not make the gate pass.
+
+- **The browser stage started.** Before M7 the run died at a second `next build`
+  before any test ran. After M7 the desktop project ran to completion. That is
+  the change M7 was for.
+- **The application server was killed mid-run.** Kernel log, 18:39:56:
+  `Out of memory: Killed process 84046 (next-server)`, `anon-rss:486248kB`,
+  `oom_score_adj:1000`. The adjustment is this audit's own, set so the kernel
+  takes our job rather than the Cardano node, which held 5.4 GB.
+- **The mobile project then failed wholesale.** 223 failures, of which 221 are
+  `net::ERR_CONNECTION_REFUSED` on the application port. Those are the harness
+  losing its server, not tests finding defects. **The mobile half of the browser
+  suite is unverified by this run**, not passed and not failed.
+- **Three desktop tests failed before the kill, and their causes are
+  undetermined.** They ran at 18:30, 18:37 and 18:38, ahead of the 18:39:56
+  kill, so connection loss does not explain them. The machine was in heavy
+  memory pressure with swap near capacity throughout, which is a condition these
+  three assertions are each sensitive to, but that is a hypothesis and none of
+  them was re-run quiet.
+
+| Failing desktop test | Assertion | Measured |
+|---|---|---|
+| `help-affordances.spec.ts:61`, the portalled tip stays inside the viewport | `getByRole('tooltip')` visible within 5,000 ms | element not found |
+| `type-scale.spec.ts:39`, no rendered text sits below 12px | `page.waitForFunction` inside a 90,000 ms test timeout | timeout exceeded |
+| `utxo-flow.spec.ts:340`, positions all 503 stress nodes deterministically | layout completes in under 15,000 ms | **16,160 ms**, over by 7.7% |
+
+The third is the same fixed 15 second budget on the same 503-node layout that
+L4 describes, one test away from the line that produced the earlier reported
+timeout. A measured overshoot of 7.7% on a memory-starved two-core machine is
+**support for L4's hypothesis and not proof of it**: it is equally consistent
+with a budget that is too tight for this hardware and with one that is correct
+on hardware the gate should be run on.
+
+**Acceptance check identified after that failed attempt** (completed below):
+one full run on a machine with the headroom to hold a production build, two
+browser projects and the fixture server at once, with those three desktop specs
+re-run in isolation first to separate a defect from the machine.
+
+The wiring-check mutation results above belong only to the superseded
+approach. The final implementation uses the real strict production build.
+
+**The earlier, pre-M7 full gate failed before browser tests started.** That
+run cannot establish whether the browser suite would have passed.
 Two things caused it, and only one of them is the machine:
 
 - This box had about 1.8 GB available with the Cardano node resident at 4.3 GB,
@@ -645,6 +777,36 @@ Two things caused it, and only one of them is the machine:
   browser stage then starts Playwright, whose web server configuration is
   `pnpm build && pnpm start`, so it builds again from scratch. The second build
   is what was killed. See M7.
+
+### Final M7 verification — 2026-09-17
+
+Tested on `36d37d47` plus the uncommitted gate/configuration/test changes.
+The user authorized pausing only Cardano node, Ogmios and Kupo; Midgard and
+all databases remained running. An approval-service usage-limit interruption
+briefly blocked execution and restoration; services were restored when tool
+access returned, then paused again for the resumed full run. After the gate,
+all three L1 services were restarted; Docker health checks confirmed Cardano
+node, Ogmios, Kupo and Midgard node all running and healthy.
+
+| Check | Result |
+|---|---|
+| Isolated desktop help-affordances, type-scale and utxo-flow specs, fresh strict build | Exit 0; 32 passed, one viewport skip, 1.2 minutes |
+| Full `frontend-new/scripts/ci-local.sh` | **Exit 0, Gate green**; formatting, both lint configurations, all typechecks, unit suites, strict production build and both browser projects completed |
+| Unit suites within that gate | Contracts 12; UI 3; app 501 across 44 files; all passed |
+| Browser suite within that gate | **475 passed, 19 skipped, zero failures**, 7.7 minutes including its build/startup |
+| Production build ownership | One build, owned by Playwright, with `MG_STRICT_CONFIG=1`; no server-reuse opt-in |
+
+The three earlier desktop failures did not reproduce in isolation or the full
+run. Their assertions and time budgets were unchanged. The full run passed the
+503-node stress-layout test on desktop and mobile. This supports, but does not
+prove, resource contention as the earlier cause. A successful run with L1
+paused does not establish that the full gate fits alongside a syncing L1 node.
+The existing skips were not changed or newly audited in this remediation.
+
+Complete run output was retained locally at `/tmp/midgard-full-gate.log` and
+`/tmp/midgard-isolated-gate.log`; these temporary files are not durable repository
+artifacts. The results above are the durable summary. No benchmark, B2 overflow
+fix, page-depth cap or storage redesign was performed in this window.
 
 ### Failures, skips and environmental constraints
 
@@ -659,7 +821,7 @@ Two things caused it, and only one of them is the machine:
 - **Thirteen conditional skips** in the browser suite, five of them fixture
   dependent. M3.
 - **Six background reviews were cut off** by an account rate limit early in the
-  session and produced nothing. All six areas were then audited directly, so no
+  session and produced nothing. All areas were then audited directly, so no
   area rests on a partial agent result.
 - **Machine load** ran between 2.5 and 5.0 on two cores for most of the session,
   with swap near capacity at times. No wall time recorded here is a measurement
@@ -682,7 +844,7 @@ rerun.
 
 ### When this audit is complete
 
-It is complete now. It delivered a verified starting state, six area verdicts
+It is complete now. It delivered a verified starting state, area verdicts
 with the untested scope named, a findings register with evidence classes, an
 execution plan and this ledger. It does not stay open for the four measurements
 in section 5; those are tasks in the plan, not gaps in the audit. A finding that

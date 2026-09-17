@@ -53,32 +53,30 @@ pnpm --filter @midgard-explorer/ui test
 step "unit tests: app"
 pnpm --filter @midgard-explorer/app exec vitest run
 
-step "production build"
-# Strict mode requires the deployment's own URLs. The public API base used to
-# default to localhost, so a production build published documentation and
-# copyable examples pointing at each visitor's own machine. `.invalid` is the
-# reserved TLD: these are placeholders that are shaped like real public origins
-# and can never resolve.
-MG_STRICT_CONFIG=1 \
-NEXT_PUBLIC_API_BASE="${NEXT_PUBLIC_API_BASE:-https://api.explorer.invalid}" \
-API_BASE_SERVER="${API_BASE_SERVER:-http://backend:3101}" \
-NEXT_PUBLIC_SITE_URL="${NEXT_PUBLIC_SITE_URL:-https://explorer.invalid}" \
-NEXT_PUBLIC_NETWORK_LABEL="${NEXT_PUBLIC_NETWORK_LABEL:-Preprod}" \
-NEXT_PUBLIC_L1_EXPLORER_TX_URL="${NEXT_PUBLIC_L1_EXPLORER_TX_URL:-https://preprod.cexplorer.io/tx/{hash}}" \
-NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL="${NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL:-https://preprod.cexplorer.io/address/{address}}" \
-NEXT_PUBLIC_L1_EXPLORER_NAME="${NEXT_PUBLIC_L1_EXPLORER_NAME:-CExplorer}" \
-  pnpm --filter @midgard-explorer/app exec next build
-
 if [[ $FAST -eq 0 ]]; then
-  step "e2e (fixture backend)"
-  # Dedicated ports. `reuseExistingServer` is on outside CI, so on the default
-  # ports the gate will adopt a dev server, or a production build started by
-  # hand before the last edit, and report a pass for code it never loaded.
-  # That has already happened here. Ports nothing else uses mean the gate
-  # builds and starts exactly what it is about to test.
+  step "e2e (fixture backend), which owns the only strict production build"
+  # Playwright builds with same-origin public URLs and an explicit server-side
+  # fixture URL. This exercises the real strict assertion during next build.
+  # Dedicated ports and disabled reuse prevent adopting an unrelated server.
   E2E_PORT=3210 FIXTURE_PORT=3211 \
     pnpm --filter @midgard-explorer/app exec playwright test
 else
+  # Nothing builds the application on this path, so the strict build stays
+  # here. The public API base used to default to localhost, so a production
+  # build published documentation and copyable examples pointing at each
+  # visitor's own machine. `.invalid` is the reserved TLD: these are
+  # placeholders shaped like real public origins that can never resolve.
+  step "production build (strict configuration)"
+  MG_STRICT_CONFIG=1 \
+  NEXT_PUBLIC_API_BASE="${NEXT_PUBLIC_API_BASE:-https://api.explorer.invalid}" \
+  API_BASE_SERVER="${API_BASE_SERVER:-http://backend:3101}" \
+  NEXT_PUBLIC_SITE_URL="${NEXT_PUBLIC_SITE_URL:-https://explorer.invalid}" \
+  NEXT_PUBLIC_NETWORK_LABEL="${NEXT_PUBLIC_NETWORK_LABEL:-Preprod}" \
+  NEXT_PUBLIC_L1_EXPLORER_TX_URL="${NEXT_PUBLIC_L1_EXPLORER_TX_URL:-https://preprod.cexplorer.io/tx/{hash}}" \
+  NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL="${NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL:-https://preprod.cexplorer.io/address/{address}}" \
+  NEXT_PUBLIC_L1_EXPLORER_NAME="${NEXT_PUBLIC_L1_EXPLORER_NAME:-CExplorer}" \
+    pnpm --filter @midgard-explorer/app exec next build
+
   printf '\n(skipped e2e: --fast)\n'
 fi
 
