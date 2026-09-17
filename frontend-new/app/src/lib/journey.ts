@@ -69,6 +69,18 @@ const UNKNOWN_STAGE_EXPLANATION =
 /** The only finalization status that means settled on L1. */
 const L1_TERMINAL_SUCCESS = "finalized";
 
+/**
+ * The headline over a settled record, and the strongest claim either page
+ * makes.
+ *
+ * Every stage behind it comes from `pending_block_finalizations`, which is the
+ * node's own journal. "Final on Cardano" alone reads as this explorer having
+ * established finality, which it does where it observes Cardano and does not
+ * where it only reads the node. Naming the source is true in both, and the
+ * settlement panel below states which of the two this deployment is.
+ */
+const SETTLED_HEADLINE = "Final on Cardano, as the node records it";
+
 /** Finalization statuses that mean the node gave up. */
 const L1_TERMINAL_FAILURE = "abandoned";
 
@@ -342,7 +354,7 @@ export function transactionJourney(input: {
     : hasUnknownStage
       ? "Settlement stage not recognized"
       : settled
-        ? "Final on Cardano"
+        ? SETTLED_HEADLINE
         : abandoned
           ? "Finalization abandoned"
           : inclusion !== null
@@ -456,7 +468,7 @@ export function blockJourney(
   // The headline answers "is this block final?" rather than restating the
   // status code, which the badge beside the title already carries.
   const headline = settled
-    ? "Final on Cardano"
+    ? SETTLED_HEADLINE
     : abandoned
       ? "Finalization abandoned"
       : finalization === null

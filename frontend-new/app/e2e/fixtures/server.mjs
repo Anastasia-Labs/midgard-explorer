@@ -72,6 +72,29 @@ const reconciliationFor = (blockNumber, l1TxHash) => {
   return "matched";
 };
 
+/* Blocks whose verdict was reached without an independent source.
+ *
+ * Fixed block numbers, not a mode this server answers in. A mode would be the
+ * truer model of a deployment, and it cannot be tested through this app: the
+ * block route sets `revalidate: 30`, so Next serves a payload captured in the
+ * previous mode for half a minute and the result depends on which test ran
+ * first. A block that always answers the same way is cacheable and still
+ * exercises every wording.
+ *
+ * 31 is settled and 20 has no submitted hash, which is the pair the panel
+ * distinguishes: a hash is attributed to the node, and an empty record must not
+ * be. 31 is also the one settled block outside the newest that carries a
+ * decodable committed transaction, which the transaction page needs to reach
+ * its tabbed layout at all; 40 would do as well and is the block half the suite
+ * lands on first.
+ *
+ * `unavailable` is deliberately absent. The real API reaches it only when the
+ * L2 source is not current, so a fixture block claiming it beside a `synthetic`
+ * deployment context would be a payload no route can produce; its wording is
+ * covered in `test/association-panel.test.tsx`.
+ */
+const NO_INDEPENDENT_SOURCE_BLOCKS = new Set([31, 20]);
+
 /* The second observation, present only where the two sources actually differ. */
 const indexEvidence = (reconciliation, l1TxHash) =>
   reconciliation === "mismatch"
@@ -127,37 +150,51 @@ const settlementState = (raw) => (SETTLEMENT_STATES.has(raw) ? raw : "unknown");
  * sets and the fixture never sets leaves its decode and its rendering untested
  * end to end, which is how the panel's four `stale` sentences were reachable in
  * a component test and unreachable in a browser. */
-const comparabilityFor = (reconciliation) =>
-  reconciliation === "stale" ? "index_lagging" : "comparable";
+const comparabilityFor = (declared, reconciliation) =>
+  declared ? "no_independent_source" : reconciliation === "stale" ? "index_lagging" : "comparable";
 
-const blockAssociation = (headerHash, l1TxHash, status, blockNumber = 1) => ({
-  kind: "block_settlement",
-  deploymentId: midgardContext().deploymentId,
-  network: "preprod",
-  reconciliation: reconciliationFor(blockNumber, l1TxHash),
-  comparability: comparabilityFor(reconciliationFor(blockNumber, l1TxHash)),
-  l2ObservedAsOf: null,
-  l1ObservedAsOf: null,
-  evidence:
-    l1TxHash === null
-      ? []
-      : [
-          {
-            source: "midgard_finalization_journal",
-            transactionHash: l1TxHash,
-            outputIndex: null,
-            blockHeight: null,
-            observedAt: null,
-            rawState: status,
-          },
-          ...indexEvidence(reconciliationFor(blockNumber, l1TxHash), l1TxHash),
-        ],
-  l2BlockHeaderHash: headerHash,
-  // Null on a disagreement, matching the backend: two sources naming different
-  // transactions is not a question the API settles by preferring one.
-  l1TxHash: reconciliationFor(blockNumber, l1TxHash) === "mismatch" ? null : l1TxHash,
-  state: settlementState(status),
-});
+const blockAssociation = (headerHash, l1TxHash, status, blockNumber = 1) => {
+  // Resolved once. It was computed three times from the same arguments, and a
+  // fourth caller deriving it separately is how a payload starts disagreeing
+  // with itself.
+  const declared = NO_INDEPENDENT_SOURCE_BLOCKS.has(blockNumber);
+  const reconciliation = declared
+    ? // A hash is the node's report. Without one there is nothing to
+      // attribute, which is the distinction the panel has to keep.
+      l1TxHash !== null
+      ? "node_reported"
+      : "none"
+    : reconciliationFor(blockNumber, l1TxHash);
+  return {
+    kind: "block_settlement",
+    deploymentId: midgardContext().deploymentId,
+    network: "preprod",
+    reconciliation,
+    comparability: comparabilityFor(declared, reconciliation),
+    l2ObservedAsOf: null,
+    l1ObservedAsOf: null,
+    evidence:
+      l1TxHash === null
+        ? []
+        : [
+            {
+              source: "midgard_finalization_journal",
+              transactionHash: l1TxHash,
+              outputIndex: null,
+              blockHeight: null,
+              observedAt: null,
+              rawState: status,
+            },
+            // Nothing observed Cardano for these, so there is no second row.
+            ...(declared ? [] : indexEvidence(reconciliation, l1TxHash)),
+          ],
+    l2BlockHeaderHash: headerHash,
+    // Null on a disagreement, matching the backend: two sources naming different
+    // transactions is not a question the API settles by preferring one.
+    l1TxHash: reconciliation === "mismatch" ? null : l1TxHash,
+    state: settlementState(status),
+  };
+};
 
 const PORT = Number(process.env.FIXTURE_PORT ?? 3101);
 const LIMIT = 25;
@@ -553,10 +590,16 @@ const handleTransaction = (url, res) => {
     // reports the same hash here, which is the relationship the contract exists
     // to state and the fixture has to be able to exercise.
     cardano: {
+      // The inclusion block's number, not the default. Every transaction in
+      // one block reports that block's settlement, and passing no number made
+      // all 60 of them report block 1's verdict instead: a transaction could
+      // not disagree with its own block, so no browser test could reach a
+      // transaction page in any state but the happy one.
       ...blockAssociation(
         inclusion?.header_hash ?? null,
         txFin?.submitted_tx_hash ?? null,
         txFin?.status ?? "unknown",
+        inclusionBlock?.number,
       ),
       kind: "l2_transaction_settlement",
       l2TxId: found.tx_id,
@@ -681,6 +724,8 @@ const server = createServer(async (req, res) => {
     state.fail = url.searchParams.get("fail");
     state.slowMs = Number(url.searchParams.get("slow") ?? 0);
     state.health = url.searchParams.get("health") || null;
+    // Empty resets to the default rather than to an invalid mode, so the
+    // clean-up hook can clear it the same way it clears a fault.
     return json(res, { ok: true, ...state });
   }
 

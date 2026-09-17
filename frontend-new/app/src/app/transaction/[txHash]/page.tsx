@@ -12,7 +12,10 @@ import { Callout } from "../../../components/ui/base/layout";
 import { RawData } from "../../../components/ui/base/rawdata";
 import { DatumPanel, RawCbor, WitnessPanel } from "../../../components/ui/domain/scriptdata";
 import { Journey } from "../../../components/ui/domain/journey";
-import { CardanoAssociation } from "../../../components/ui/domain/association";
+import {
+  CardanoAssociation,
+  hasRecordedSettlement,
+} from "../../../components/ui/domain/association";
 import { StatusBadge, ToneBadge } from "../../../components/ui/domain/status";
 import { Tabs } from "../../../components/ui/base/tabs";
 import { Timestamp } from "../../../components/ui/base/timestamp";
@@ -217,9 +220,13 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
 
       {!terminal ? <LifecyclePoller /> : null}
       {journeyModel.outcome !== "complete" ? journey : null}
-      {data.cardano?.reconciliation !== "matched" ? (
+      {/* The prominent notice is for a record that needs one. A settled record
+          does not, in either deployment shape: reading `matched` alone put a
+          full-width panel above every settled transaction the moment the
+          second source went away. */}
+      {hasRecordedSettlement(data.cardano) ? null : (
         <CardanoAssociation association={data.cardano} context={data.midgard} />
-      ) : null}
+      )}
 
       <Tabs
         aliases={{ utxo: "summary", datums: "scripts", events: "scripts" }}
@@ -233,7 +240,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
                   <MintPanel mint={tx.mint} />
                 ) : null}
                 <StateTab tx={tx} />
-                {data.cardano?.reconciliation === "matched" ? (
+                {hasRecordedSettlement(data.cardano) ? (
                   <CardanoAssociation association={data.cardano} context={data.midgard} compact />
                 ) : null}
               </>
@@ -266,7 +273,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
                   </summary>
                   <div className="mt-4">
                     {journeyModel.outcome === "complete" ? journey : null}
-                    {data.cardano?.reconciliation === "matched" ? (
+                    {hasRecordedSettlement(data.cardano) ? (
                       <CardanoAssociation association={data.cardano} context={data.midgard} />
                     ) : (
                       <p className="text-sm text-text-2">

@@ -165,6 +165,24 @@ export function BlockView({
    * existed, which is the inversion of the rule that missing index data must be
    * described as lag rather than as absence. */
   const cardanoAbsence = ((): { tone: "neutral" | "warning"; title: string; detail: string } => {
+    // Before the switch, because these verdicts are reachable in both
+    // deployment shapes and mean something different in each. Every branch
+    // below describes an index; this deployment does not read one.
+    if (data.cardano?.comparability === "no_independent_source") {
+      return data.cardano.reconciliation === "none"
+        ? {
+            tone: "neutral",
+            title: "No settlement transaction recorded.",
+            detail:
+              "The node has recorded no Cardano transaction for this block. This explorer does not search Cardano itself, so this is the node's record rather than a result of looking.",
+          }
+        : {
+            tone: "neutral",
+            title: "This explorer holds no Cardano record for this block.",
+            detail:
+              "Settlement here is what the node reports, shown above with its transaction hash. Nothing on this page observes Cardano independently.",
+          };
+    }
     switch (data.cardano?.reconciliation) {
       case "unavailable":
         return {
@@ -205,7 +223,20 @@ export function BlockView({
   const l1EvidenceTab = l1Header ? (
     <Card>
       <div className="p-4">
-        <Callout tone="neutral" title="Observed on Cardano." />
+        {/* Whose observation, not just that there was one. This tab reads the
+            explorer's own Cardano index, which a deployment may or may not use
+            as a settlement source, and an unattributed "Observed on Cardano"
+            reads as this page having checked. */}
+        <Callout
+          tone="neutral"
+          title="Recorded by the explorer's Cardano index."
+          {...(data.cardano?.comparability === "no_independent_source"
+            ? {
+                children:
+                  "This deployment does not use the index as a settlement source, so the settlement shown above is the node's record and this is a separate observation.",
+              }
+            : {})}
+        />
       </div>
       <dl className="grid gap-x-8 gap-y-3 border-t border-border p-4 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Protocol version" value={l1Header.protocolVersion} />

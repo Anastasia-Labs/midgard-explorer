@@ -49,10 +49,53 @@ const PROVENANCE_NODE_ONLY = {
     "This is where the record came from on Cardano, as the node observed it. No second source is compared for this relationship.",
 } as const;
 
+/**
+ * What a verdict says where this deployment reads no independent source.
+ *
+ * Keyed separately from `VERDICT` rather than replacing entries in it, so the
+ * two-source wording is untouched for a deployment that still compares. Only
+ * three verdicts are reachable here, and each has to carry the same sentence:
+ * the node is the source, and nothing checked it.
+ */
+const NO_INDEPENDENT_SOURCE: Partial<
+  Record<Association["reconciliation"], { tone: Tone; title: string; detail: string }>
+> = {
+  node_reported: {
+    tone: "neutral",
+    title: "Settlement transaction reported by the node",
+    detail:
+      // No "open it in a Cardano explorer" here. The hash beside this panel
+      // still links to this explorer's own page for it, so promising an
+      // outward link describes a page that does not exist yet. The copy
+      // button is what a reader can act on today.
+      "This is the Cardano transaction the Midgard node recorded for this record. This explorer does not check Cardano itself, so the hash is the node's own report and not a confirmation. Copy it to check it on Cardano.",
+  },
+  none: {
+    tone: "neutral",
+    title: "No settlement transaction recorded",
+    detail:
+      "The node has recorded no Cardano transaction for this record. Nothing else is consulted here, so this is what the node reports rather than a search of the chain.",
+  },
+  unavailable: {
+    tone: "warning",
+    title: "Settlement could not be established",
+    detail:
+      "The Midgard data being read is a copy that is not known to be current, and it holds no settlement transaction for this record. A newer record may exist. This says nothing about whether settlement happened.",
+  },
+};
+
 const VERDICT: Record<
   Association["reconciliation"],
   { tone: Tone; title: string; detail: string }
 > = {
+  // Reached only by a backend that sent the state without saying why, which no
+  // current one does. The wording holds for both.
+  node_reported: {
+    tone: "neutral",
+    title: "Settlement transaction reported by the node",
+    detail:
+      "This is the Cardano transaction the Midgard node recorded. Nothing shown here corroborates it.",
+  },
   matched: {
     tone: "success",
     title: "Node and index records agree",
@@ -174,6 +217,36 @@ const NOT_COMPARABLE: Partial<Record<string, { title: string; detail: string }>>
   },
 };
 
+/**
+ * Whether a settlement transaction is recorded and nothing is in dispute about
+ * it.
+ *
+ * Pages use this to decide placement rather than testing for `matched`, which
+ * was the same question while comparison was the only way to answer it. A
+ * deployment that reads one source reaches `node_reported` instead, and the
+ * pages that tested the old value put a full-width notice above every settled
+ * transaction and dropped the evidence panel that used to sit in its tab.
+ *
+ * It says nothing about corroboration. The panel's own wording carries that,
+ * and a caller that needs the distinction reads `reconciliation` directly.
+ */
+export function hasRecordedSettlement(
+  association: Association | null | undefined,
+): association is Association {
+  return (
+    association?.reconciliation === "matched" || association?.reconciliation === "node_reported"
+  );
+}
+
+/** A state this build has no wording for. Never a verdict: it says only that
+ * the panel cannot speak for it, which is the one honest thing left. */
+const UNRECOGNIZED = {
+  tone: "warning" as Tone,
+  title: "This explorer does not recognise the state of this record",
+  detail:
+    "The backend reported a settlement state this page has no wording for, so nothing is stated about it here. The source records below are shown as they were returned.",
+};
+
 export function CardanoAssociation({
   association,
   context,
@@ -199,21 +272,41 @@ export function CardanoAssociation({
       ? NOT_COMPARABLE[association.comparability]
       : undefined;
 
+  // First, because it is the strongest claim in the panel. Where no second
+  // source exists, every verdict has to say so, and the two-source wording
+  // below would otherwise describe an index this deployment never reads.
+  const declared =
+    association.comparability === "no_independent_source"
+      ? NO_INDEPENDENT_SOURCE[association.reconciliation]
+      : undefined;
+
   const verdict =
-    association.reconciliation === "node_only" && PROVENANCE_KINDS.has(association.kind)
+    declared ??
+    (association.reconciliation === "node_only" && PROVENANCE_KINDS.has(association.kind)
       ? PROVENANCE_NODE_ONLY
       : notComparable !== undefined
         ? { tone: VERDICT.stale.tone, ...notComparable }
-        : VERDICT[association.reconciliation];
+        : // A verdict this build does not know is a backend newer than this
+          // bundle, which a rollout produces for as long as the two differ.
+          // Indexing the table blind rendered `undefined.tone` and took the
+          // whole page down; an unknown state is now shown as unknown.
+          (VERDICT[association.reconciliation] ?? UNRECOGNIZED));
   const settled = "l1TxHash" in association ? association.l1TxHash : null;
 
-  if (compact && association.reconciliation === "matched" && settled) {
+  // The strip is for a record whose settlement needs no explanation. What that
+  // means depends on the deployment: two sources agreeing, or one source
+  // reporting. The label says which, because "Cardano settlement" over a hash
+  // nothing checked is the claim this step exists to stop making.
+  if (compact && hasRecordedSettlement(association) && settled) {
+    const corroborated = association.reconciliation === "matched";
     return (
       <div
         data-region="association"
         className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-info/25 bg-info/5 px-4 py-3"
       >
-        <span className="text-sm font-medium text-info">Cardano settlement</span>
+        <span className="text-sm font-medium text-info">
+          {corroborated ? "Cardano settlement" : "Settlement reported by the node"}
+        </span>
         <L1TxLink hash={settled} destination="midgard" />
       </div>
     );

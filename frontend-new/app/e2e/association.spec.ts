@@ -21,6 +21,12 @@ import type { APIRequestContext } from "@playwright/test";
  * generator, got the block numbering wrong, and asserted "no settlement" against
  * a block the fixture had settled. Asking the fixture which block is in which
  * state cannot drift from the fixture, and survives it being renumbered.
+ *
+ * Discovery is scoped to blocks that HAD a second source. The fixture also
+ * serves blocks whose verdict was reached without one, where `none` means
+ * something different and is worded differently, and matching on the verdict
+ * alone would let this file drift onto one of those and assert the other
+ * shape's copy. `settlement-source.spec.ts` owns that family.
  */
 
 type State = "matched" | "mismatch" | "stale" | "unavailable" | "node_only" | "none";
@@ -37,7 +43,10 @@ async function blocksByState(request: APIRequestContext): Promise<Map<State, str
     for (const row of rows) {
       const detail = await request.get(`${FIXTURE}/api/block?header_hash=${row.header_hash}`);
       if (!detail.ok()) continue;
-      const body = (await detail.json()) as { cardano?: { reconciliation?: State } };
+      const body = (await detail.json()) as {
+        cardano?: { reconciliation?: State; comparability?: string };
+      };
+      if (body.cardano?.comparability === "no_independent_source") continue;
       const state = body.cardano?.reconciliation;
       if (state && !found.has(state)) found.set(state, row.header_hash);
     }

@@ -104,6 +104,10 @@ export type CardanoEvidence = Schema.Schema.Type<typeof CardanoEvidence>;
  * could not be read yields `unavailable`. Without that separation, ordinary
  * replication lag would raise a false integrity alarm and discredit the
  * mechanism that exists to report real ones.
+ *
+ * Half of these describe a comparison, so a deployment that reads one source
+ * reaches none of them. It answers `node_reported`, `none` or `unavailable`,
+ * and a consumer must not read the absence of `mismatch` there as agreement.
  */
 export const Reconciliation = Schema.Literal(
   "matched",
@@ -113,6 +117,16 @@ export const Reconciliation = Schema.Literal(
   "stale",
   "unavailable",
   "none",
+  /**
+   * The node named a settlement transaction and nothing checked it.
+   *
+   * Sent by a deployment that reads no independent source, where it is the
+   * ordinary answer for a settled block rather than a degraded one. It is not
+   * `matched`: nothing corroborated the hash, and no surface built on it may
+   * say confirmed. It requires a node hash, so a record without one stays
+   * `none`.
+   */
+  "node_reported",
 );
 export type Reconciliation = Schema.Schema.Type<typeof Reconciliation>;
 
@@ -131,6 +145,10 @@ export type Reconciliation = Schema.Schema.Type<typeof Reconciliation>;
  */
 export const Comparability = Schema.Literal(
   "comparable",
+  /** No second source exists in this deployment, so no comparison was
+   * attempted. Distinct from an index that was read and found silent, and
+   * from one that could not be read at all. */
+  "no_independent_source",
   "index_lagging",
   "index_freshness_unknown",
   "identity_unverified",

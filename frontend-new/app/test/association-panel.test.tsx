@@ -359,3 +359,96 @@ describe("provenance says something different from settlement", () => {
     expect(screen.getByText(/too far behind/i)).toBeTruthy();
   });
 });
+
+/**
+ * A deployment that reads no independent source.
+ *
+ * The panel is the only place a reader is told how much is known about a
+ * settlement, so it is the place a false claim of confirmation would live. The
+ * rule under test: where nothing checked Cardano, every wording says so, and
+ * none of the two-source sentences reaches the screen.
+ */
+describe("where nothing checks Cardano", () => {
+  const declared = (over: Record<string, unknown> = {}) =>
+    association({
+      reconciliation: "node_reported",
+      comparability: "no_independent_source",
+      ...over,
+    });
+
+  it("attributes the settlement transaction to the node", () => {
+    render(<CardanoAssociation association={declared()} context={context} />);
+    expect(screen.getByText(/reported by the node/i)).toBeTruthy();
+    // The hash is still there. Withholding a real record would lose
+    // information to make a point about it.
+    expect(screen.getAllByText(new RegExp(NODE_HASH.slice(0, 8))).length).toBeGreaterThan(0);
+  });
+
+  it("never says the sources agree, and never names an index", () => {
+    const { container } = render(<CardanoAssociation association={declared()} context={context} />);
+    const text = container.textContent ?? "";
+    expect(text).not.toMatch(/agree/i);
+    expect(text).not.toMatch(/index/i);
+    expect(text).not.toMatch(/confirmed/i);
+  });
+
+  /** An absence reported by a copy is not an established absence. */
+  it("does not present a copy's silence as a settled absence", () => {
+    render(
+      <CardanoAssociation
+        association={declared({ reconciliation: "unavailable", l1TxHash: null, evidence: [] })}
+        context={context}
+      />,
+    );
+    expect(screen.getByText(/could not be established/i)).toBeTruthy();
+    expect(screen.getByText(/says nothing about whether settlement happened/i)).toBeTruthy();
+  });
+
+  it("says a record with no settlement transaction has none", () => {
+    render(
+      <CardanoAssociation
+        association={declared({ reconciliation: "none", l1TxHash: null, evidence: [] })}
+        context={context}
+      />,
+    );
+    expect(screen.getByText(/No settlement transaction recorded/i)).toBeTruthy();
+  });
+
+  /** The compact strip is the one place a label stands alone, with no
+   * paragraph under it to qualify what it means. */
+  it("labels the compact strip as the node's report", () => {
+    render(<CardanoAssociation association={declared()} context={context} compact />);
+    expect(screen.getByText("Settlement reported by the node")).toBeTruthy();
+    expect(screen.queryByText("Cardano settlement")).toBeNull();
+  });
+
+  /** And the two-source deployment is untouched. */
+  it("still says the sources agree when they were compared", () => {
+    render(<CardanoAssociation association={association()} context={context} compact />);
+    expect(screen.getByText("Cardano settlement")).toBeTruthy();
+  });
+});
+
+/**
+ * A backend newer than this bundle.
+ *
+ * Nothing in this repository deploys the API and the interface together: the
+ * backend is a node process and the frontend is a separate build, so a restart
+ * between them serves states this bundle has never heard of. The verdict table
+ * was indexed blind, so an unknown state read `undefined.tone` and threw
+ * inside a server component, taking the whole page down rather than the panel.
+ */
+describe("a state this build does not recognise", () => {
+  it("says so instead of crashing the page", () => {
+    const { container } = render(
+      <CardanoAssociation
+        association={association({ reconciliation: "something_new_entirely" })}
+        context={context}
+      />,
+    );
+    expect(screen.getByText(/does not recognise the state/i)).toBeTruthy();
+    // The source records still render, because they are what the response
+    // actually carried.
+    expect((container.textContent ?? "").includes("Midgard node")).toBe(true);
+  });
+});

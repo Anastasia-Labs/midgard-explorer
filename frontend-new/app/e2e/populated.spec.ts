@@ -58,7 +58,12 @@ test.describe("populated lists", () => {
 
   test("shows the independently indexed Cardano header evidence", async ({ page }) => {
     await page.goto(`/block/${await firstBlockHash(page)}?tab=l1`);
-    await expect(page.getByText("Observed on Cardano.", { exact: true })).toBeVisible();
+    // Whose observation. An unattributed "Observed on Cardano" reads as this
+    // page having checked, which is true only where the index is a settlement
+    // source, and this tab renders the index whether or not it is one.
+    await expect(
+      page.getByText("Recorded by the explorer's Cardano index.", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("Protocol version", { exact: true })).toBeVisible();
     await expect(page.getByText("Operator key hash", { exact: true })).toBeVisible();
     await expect(page.getByText(/published|attested|DA-network available/i)).toHaveCount(0);
