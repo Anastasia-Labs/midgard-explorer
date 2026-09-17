@@ -8,11 +8,12 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { GLOSSARY, glossaryText, type GlossaryTerm } from "../../../lib/glossary";
 import { cn } from "../../../lib/format";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 
 const VIEWPORT_MARGIN = 8;
 const GAP = 8;
@@ -29,6 +30,9 @@ type TipProps = {
   /** What the tip is about, used to name the trigger for screen readers. */
   subject?: string | undefined;
   className?: string | undefined;
+  content?: ReactNode;
+  icon?: IconName;
+  triggerLabel?: string;
 };
 
 /** Collision-safe help for mouse, keyboard, touch, and screen readers.
@@ -38,7 +42,15 @@ type TipProps = {
  * pass places it above the trigger, flips it below only when there is no room,
  * and clamps both axes to the viewport.
  */
-export function InfoTip({ explain, term, subject, className }: TipProps) {
+export function InfoTip({
+  explain,
+  term,
+  subject,
+  className,
+  content,
+  icon = "info",
+  triggerLabel,
+}: TipProps) {
   const id = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLSpanElement>(null);
@@ -141,14 +153,53 @@ export function InfoTip({ explain, term, subject, className }: TipProps) {
 
   useEffect(() => clearTimers, [clearTimers]);
 
-  if (!text) return null;
+  if (!text && !content) return null;
 
   const panel = open
     ? createPortal(
         <span
           ref={panelRef}
           id={id}
-          role="tooltip"
+          role={content ? "dialog" : "tooltip"}
+          aria-label={content ? label : undefined}
+          onFocus={() => {
+            clearTimers();
+            setReason("focus");
+          }}
+          onBlur={(event) => {
+            if (
+              !panelRef.current?.contains(event.relatedTarget) &&
+              !triggerRef.current?.contains(event.relatedTarget)
+            ) {
+              clearTimers();
+              setReason(null);
+            }
+          }}
+          onKeyDown={(event) => {
+            if (!content || event.key !== "Tab") return;
+            const buttons = panelRef.current?.querySelectorAll<HTMLElement>(
+              'button, a[href], [tabindex="0"]',
+            );
+            if (!buttons?.length) return;
+            if (event.shiftKey && event.target === buttons[0]) {
+              event.preventDefault();
+              triggerRef.current?.focus();
+            } else if (!event.shiftKey && event.target === buttons[buttons.length - 1]) {
+              const targets = [
+                ...document.querySelectorAll<HTMLElement>(
+                  'button:not([disabled]), a[href], [tabindex="0"]',
+                ),
+              ].filter((el) => el.getClientRects().length > 0 && !panelRef.current?.contains(el));
+              const index = targets.indexOf(triggerRef.current!);
+              const next = targets[index + 1];
+              if (next) {
+                event.preventDefault();
+                next.focus();
+              }
+              clearTimers();
+              setReason(null);
+            }
+          }}
           onPointerEnter={keepOpen}
           onPointerLeave={hideAfterDelay}
           style={{
@@ -163,22 +214,23 @@ export function InfoTip({ explain, term, subject, className }: TipProps) {
             "text-xs leading-relaxed font-normal text-text-2 shadow-lg",
           )}
         >
-          {entry ? (
-            <>
-              <span className="font-semibold text-text">{entry.meaning}</span>{" "}
-              <span>{entry.consequence}</span>
-              {/* The rule separates the record-specific note from the shared
+          {content ??
+            (entry ? (
+              <>
+                <span className="font-semibold text-text">{entry.meaning}</span>{" "}
+                <span>{entry.consequence}</span>
+                {/* The rule separates the record-specific note from the shared
                   definition, so it carries no "Context:" label: a word naming
                   the kind of information is not information. */}
-              {explain ? (
-                <span className="mt-1.5 block border-t border-border pt-1.5 text-text-3">
-                  {explain}
-                </span>
-              ) : null}
-            </>
-          ) : (
-            text
-          )}
+                {explain ? (
+                  <span className="mt-1.5 block border-t border-border pt-1.5 text-text-3">
+                    {explain}
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              text
+            ))}
         </span>,
         document.body,
       )
@@ -191,6 +243,11 @@ export function InfoTip({ explain, term, subject, className }: TipProps) {
         if (event.key === "Escape" && open) {
           event.stopPropagation();
           clearTimers();
+          if (content && panelRef.current?.contains(document.activeElement)) {
+            pointerPressed.current = true;
+            triggerRef.current?.focus();
+            pointerPressed.current = false;
+          }
           setReason(null);
         }
       }}
@@ -199,8 +256,21 @@ export function InfoTip({ explain, term, subject, className }: TipProps) {
         ref={triggerRef}
         type="button"
         aria-expanded={open}
-        aria-describedby={open ? id : undefined}
-        aria-label={`About ${label}`}
+        aria-describedby={!content && open ? id : undefined}
+        aria-controls={content && open ? id : undefined}
+        aria-haspopup={content ? "dialog" : undefined}
+        aria-label={triggerLabel ?? `About ${label}`}
+        onKeyDown={(event) => {
+          if (content && open && event.key === "Tab" && !event.shiftKey) {
+            const first = panelRef.current?.querySelector<HTMLElement>(
+              'button, a[href], [tabindex="0"]',
+            );
+            if (first) {
+              event.preventDefault();
+              first.focus();
+            }
+          }
+        }}
         onPointerEnter={showAfterDelay}
         onPointerLeave={hideAfterDelay}
         onPointerDown={() => {
@@ -212,8 +282,9 @@ export function InfoTip({ explain, term, subject, className }: TipProps) {
             setReason("focus");
           }
         }}
-        onBlur={() => {
+        onBlur={(event) => {
           pointerPressed.current = false;
+          if (panelRef.current?.contains(event.relatedTarget)) return;
           if (reason === "focus") setReason(null);
         }}
         onClick={() => {
@@ -222,13 +293,14 @@ export function InfoTip({ explain, term, subject, className }: TipProps) {
           setReason((was) => (was === "pinned" ? null : "pinned"));
         }}
         className={cn(
-          "relative inline-flex size-4 shrink-0 items-center justify-center rounded-full",
+          "relative inline-flex shrink-0 items-center justify-center rounded-full",
+          content ? "size-9" : "size-4",
           "text-text-3 transition-colors hover:text-text-2",
-          "after:absolute after:-inset-3.5 after:content-['']",
+          !content && "after:absolute after:-inset-3.5 after:content-['']",
           open && "text-text",
         )}
       >
-        <Icon name="info" size={14} />
+        <Icon name={icon} size={content ? 16 : 14} />
       </button>
       {panel}
     </span>
