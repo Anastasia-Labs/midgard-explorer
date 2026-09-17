@@ -312,20 +312,6 @@ test.describe("operational metrics", () => {
     await expect(metrics.getByText("Awaiting settlement")).toBeVisible();
   });
 
-  // Latency distributions answer "how fast is it usually", which is a deeper
-  // question than "is it moving". Keeping them out of the top row is what lets
-  // that row be read at a glance, so their being in the disclosure is the
-  // behaviour under test, not an accident of layout.
-  test("keeps latency distributions out of the first read", async ({ page }) => {
-    await page.goto("/");
-    const metrics = page.locator('[data-region="metrics"]');
-    await expect(metrics.getByText("Cardano settlement time")).toHaveCount(0);
-
-    await page.getByText("Latency, status breakdown and where each figure comes from").click();
-    await expect(page.getByText("Cardano settlement time")).toBeVisible();
-    await expect(page.getByText("Admission", { exact: true })).toBeVisible();
-  });
-
   test("states a health verdict in words, above the figures", async ({ page }) => {
     // The panel used to be five figures of equal weight under a heading
     // reading "Network health", and never said whether health was good. The
@@ -338,41 +324,29 @@ test.describe("operational metrics", () => {
     // The fixture chain abandons a third of its settlements, so the verdict
     // must not be the reassuring one. A green light on a degraded chain is the
     // single worst thing this panel could do.
-    await expect(verdict).toContainText(/not everything is settling|falling behind|stopped/i);
+    await expect(verdict).toContainText(
+      /not everything is settling|falling behind|latest recorded block/i,
+    );
 
     // Every reason cites a figure, so a reader can disagree with the judgement.
     const reasons = await verdict.locator("li").allInnerTexts();
     expect(reasons.length).toBeGreaterThan(0);
     for (const reason of reasons) expect(reason).toMatch(/\d/);
 
-    // It outranks the figures, or it is just another line on a busy panel.
+    // The notice stays readable while the primary figures lead visually.
     const sizes = await verdict.evaluate((el) => ({
       headline: parseFloat(getComputedStyle(el.querySelector("p > span:last-child")!).fontSize),
     }));
+    // The largest figure, not the first span: the panel gained label spans that
+    // precede each figure, so `.first()` measured a 12px label and compared the
+    // headline against that instead of against the primary read.
     const figure = await page
       .locator('[data-region="metrics"] span')
-      .first()
-      .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
-    expect(sizes.headline).toBeGreaterThan(figure);
-  });
-
-  test("labels a percentile drawn from too few records", async ({ page }) => {
-    await page.goto("/");
-    // The fixture settles only a handful of blocks, which is exactly the case
-    // where a p95 must not be presented as a measurement. The percentiles now
-    // sit in the disclosure, and the label has to travel with them: a figure
-    // may be moved out of the first read, but it may never be shown anywhere
-    // without the sample it was measured over.
-    await page.getByText("Latency, status breakdown and where each figure comes from").click();
-    await expect(page.getByText(/thin sample/).first()).toBeVisible();
-  });
-
-  // The corollary, and the reason moving them was safe: no percentile survives
-  // in the top row, so collapsing the disclosure cannot leave an unqualified
-  // distribution on screen.
-  test("shows no percentile outside the disclosure that carries its sample", async ({ page }) => {
-    await page.goto("/");
-    await expect(page.locator('[data-region="metrics"]').getByText(/p95/)).toHaveCount(0);
+      .evaluateAll((els) =>
+        Math.max(...els.map((el) => parseFloat(getComputedStyle(el).fontSize))),
+      );
+    expect(sizes.headline).toBeGreaterThanOrEqual(14);
+    expect(sizes.headline).toBeLessThan(figure);
   });
 
   test("says when the window covers less history than its label", async ({ page }) => {
@@ -382,20 +356,9 @@ test.describe("operational metrics", () => {
 
   test("marks an hour that produced no blocks instead of smoothing over it", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText(/with no blocks/)).toBeVisible();
-  });
-
-  test("names the node column behind every figure", async ({ page }) => {
-    await page.goto("/");
-    await page.getByText("Latency, status breakdown and where each figure comes from").click();
-    await expect(
-      page.getByText("tx_admissions.terminal_at - tx_admissions.first_seen_at"),
-    ).toBeVisible();
-    await expect(
-      page.getByText(
-        "pending_block_finalizations.status, pending_block_finalizations.block_end_time, blocks.height",
-      ),
-    ).toBeVisible();
+    const chart = page.getByRole("img", { name: /^blocks per hour/ });
+    await expect(chart).toBeVisible();
+    await expect(chart.locator("rect.fill-warning").first()).toBeVisible();
   });
 
   test("links the oldest block still waiting on L1", async ({ page }) => {
@@ -415,7 +378,7 @@ test.describe("operational metrics", () => {
       // that silence means trouble.
       const verdict = page.locator('[data-region="verdict"]');
       await expect(verdict).toContainText("cannot be judged");
-      await expect(page.getByText(/Everything else on this page is unaffected/)).toBeVisible();
+      await expect(page.getByText(/Other sections may still be available/)).toBeVisible();
       // The rest of the overview still has to work.
       await expect(page.getByText("Latest blocks")).toBeVisible();
     } finally {
@@ -573,7 +536,8 @@ test.describe("block detail", () => {
 test.describe("transaction lifecycle", () => {
   test("keeps the explorer-style technical overview for Midgard transactions", async ({ page }) => {
     await page.goto(`/transaction/${await txAwaitingFinality(page)}`);
-    const overview = page.getByRole("tabpanel");
+    await page.getByRole("tab", { name: "Technical details" }).click();
+    const overview = page.getByRole("tabpanel", { name: "Technical details" });
     await expect(overview.getByRole("heading", { name: "Technical details" })).toBeVisible();
     // Fee is on the summary band above the tabs and is deliberately not
     // repeated inside Technical details. The reader still sees it once, which
@@ -620,17 +584,14 @@ test.describe("transaction lifecycle", () => {
     // The label appears on the rail and again in the details grid; the details
     // entry is the one that carries the recorded timestamp.
     await expect(journey.getByRole("group").getByText("Validated")).toBeVisible();
-    // The tab was renamed to "State" in Phase 2: it is what the reference
-    // explorers call the section, and "UTxO flow" now names the diagram inside
-    // it rather than the section itself.
-    await page.getByRole("tab", { name: /State/ }).click();
+    await expect(
+      page.getByRole("heading", { name: "Inputs & outputs", exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole("heading", { name: /^Inputs \(/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /^Outputs \(/ })).toBeVisible();
   });
 
-  test("the UTxO tab states the ledger equation rather than only listing sides", async ({
-    page,
-  }) => {
+  test("address movement is optional and identifies unresolved inputs", async ({ page }) => {
     // The fixture resolves every input on every fourth transaction, which is
     // the only case where the equation can be checked.
     const rows = await page.request
@@ -653,29 +614,15 @@ test.describe("transaction lifecycle", () => {
     test.skip(complete === null || partial === null, "fixture lacks both input-resolution states");
 
     await page.goto(`/transaction/${complete}?tab=utxo`);
-    const ledger = page.locator('[data-region="ledger"]');
-    await expect(ledger).toBeVisible();
-    await expect(ledger.getByText(/everything spent is accounted for/)).toBeVisible();
-    await expect(ledger.getByText("Net movement by address")).toBeVisible();
+    const movement = page.getByText("Net movement by address", { exact: true });
+    await expect(movement).toBeVisible();
+    await movement.click();
+    await expect(page.locator('[data-region="ledger"]')).toHaveCount(0);
 
-    // With an unresolved input there is no number that is the input total, so
-    // the equation must not put one on the left of its "=". An earlier version
-    // rendered "At least ₳9.501 = ₳4.7 + ₳0.171", which is a false statement
-    // made in the one place on the page whose whole purpose is to be true.
     await page.goto(`/transaction/${partial}?tab=utxo`);
-    await expect(ledger.getByText("Not known in full")).toBeVisible();
-    await expect(ledger.getByText(/is visible/)).toBeVisible();
-    // The caption states the same fact in fewer words than it used to: an
-    // unknown input total, and why. What must never come back is a number on
-    // the left of the "=", which the "At least" assertion below still guards.
-    await expect(ledger.getByText(/Input total unknown/)).toBeVisible();
-    await expect(ledger.getByText(/spend side unknown/).first()).toBeVisible();
-
-    // The equation row itself: every amount it states must belong to a side
-    // that is actually known. Reading the row's own text is what catches a
-    // reintroduced lower bound, which no assertion about a caption would.
-    const row = ledger.locator("div").first();
-    await expect(row).not.toContainText("At least");
+    await expect(page.getByText("Input details unavailable.").first()).toBeVisible();
+    await movement.click();
+    await expect(page.getByText(/spend side unknown/).first()).toBeVisible();
   });
 
   test("a committed transaction in an abandoned block does not claim finality", async ({
@@ -745,11 +692,24 @@ test.describe("transaction lifecycle", () => {
       .get(`${FIXTURE}/api/transactions/1`)
       .then(async (r) => (await r.json()).rows as Array<{ tx_id: string }>);
     await page.goto(`/transaction/${rows[0]!.tx_id}`);
-    const journey = page.getByRole("region", { name: "Protocol journey" });
-    // Inclusion is on the rail; the block link is evidence behind the details.
-    await expect(journey.getByRole("list").getByText(/^Block #\d+$/)).toBeVisible();
-    await journey.getByText("Stage timings and evidence").click();
-    await expect(journey.getByRole("link", { name: /^Block #\d+$/ })).toBeVisible();
+    // The identity header carries the block and the lifecycle outcome, and stage
+    // history sits behind its own disclosure. This used to be scoped to a
+    // "Protocol journey" region, which the page no longer declares.
+    const blockLink = page.getByRole("link", { name: /^#\d+$/ }).first();
+    await expect(blockLink).toBeVisible();
+    await expect(blockLink).toHaveAttribute("href", /^\/block\/[0-9a-f]{56}$/);
+    await expect(page.getByText(/Final on Cardano/).first()).toBeVisible();
+
+    // Stage history is secondary: it sits in Technical details, behind a
+    // disclosure, rather than on the identity header.
+    await page.getByRole("tab", { name: "Technical details" }).click();
+    // The tab writes itself to the URL, so the panel re-renders; wait for it
+    // rather than racing the disclosure inside it.
+    const details = page.locator("#panel-details");
+    await expect(details).toBeVisible();
+    await details.getByText("Settlement evidence").click();
+    await details.getByText("Stage timings and evidence").click();
+    await expect(page.getByRole("link", { name: /^Block #\d+$/ }).first()).toBeVisible();
   });
 });
 

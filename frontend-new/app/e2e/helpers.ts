@@ -128,7 +128,7 @@ export async function hydrated(page: Page) {
   await page.getByRole("button", { name: /^Theme:/ }).waitFor({ state: "attached" });
   await page.waitForFunction(() => {
     const b = document.querySelector<HTMLButtonElement>('button[aria-label^="Theme:"]');
-    return b !== null && typeof (b as unknown as { onclick: unknown }).onclick !== "undefined";
+    return b !== null && typeof b.onclick === "function";
   });
   await settle(page);
 }

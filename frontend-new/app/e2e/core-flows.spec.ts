@@ -51,11 +51,17 @@ test.describe("shell and navigation", () => {
   test("theme toggle flips the effective theme and persists it", async ({ page }) => {
     await page.goto("/");
     await hydrated(page);
-    await page.getByRole("button", { name: /^Theme:/ }).click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", /light|dark/);
-    const chosen = await page.locator("html").getAttribute("data-theme");
+    const background = () => page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);
+    const original = await background();
+    const toggle = page.getByRole("button", { name: /^Theme:/ });
+    await toggle.click();
+    await expect.poll(background).not.toBe(original);
+    const chosen = await background();
     await page.reload();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", chosen!);
+    await hydrated(page);
+    await expect.poll(background).toBe(chosen);
+    await toggle.click();
+    await expect.poll(background).toBe(original);
   });
 });
 

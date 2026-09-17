@@ -11,7 +11,7 @@ import {
 /**
  * Phase 3: the UTxO flow.
  *
- * Shipped as a `Table | Flow` toggle over the State tab rather than as a tab of
+ * Shipped as a `Table | Flow` toggle in the default transaction view rather than as a tab of
  * its own, because both are renderings of the same inputs and outputs and a
  * separate tab would imply they hold different data. Table is the default: it
  * is the complete view, and the flow is the summary.
@@ -19,7 +19,7 @@ import {
 
 const openState = async (page: import("@playwright/test").Page) => {
   const hash = await txWithStatus(page, "committed");
-  await page.goto(`/transaction/${hash}?tab=utxo`);
+  await page.goto(`/transaction/${hash}`);
   await settle(page);
   return hash;
 };
@@ -31,8 +31,19 @@ const readyFlow = async (page: import("@playwright/test").Page) => {
 };
 
 test.describe("the view toggle", () => {
+  test("preserves legacy State links to Flow", async ({ page }) => {
+    const hash = await txWithStatus(page, "committed");
+    await page.goto(`/transaction/${hash}?tab=utxo&view=flow`);
+    await settle(page);
+    await expect(page.getByRole("radio", { name: "Flow" })).toHaveAttribute("aria-checked", "true");
+    await expect(await readyFlow(page)).toBeVisible();
+  });
+
   test("offers Table and Flow, with Table selected", async ({ page }) => {
     await openState(page);
+    await expect(
+      page.getByRole("heading", { name: "Inputs & outputs", exact: true }),
+    ).toBeVisible();
     const group = page.getByRole("radiogroup", { name: /view/i });
     await expect(group.getByRole("radio")).toHaveText([/Table/, /Flow/]);
     await expect(group.getByRole("radio", { name: "Table" })).toHaveAttribute(
@@ -57,11 +68,11 @@ test.describe("the view toggle", () => {
     await expect(page.getByRole("radio", { name: "Flow" })).toHaveAttribute("aria-checked", "true");
   });
 
-  test("keeps the ledger equation visible in both views", async ({ page }) => {
+  test("keeps address movement available in both views", async ({ page }) => {
     await openState(page);
-    await expect(page.getByText(/inputs/i).first()).toBeVisible();
+    await expect(page.getByText("Net movement by address", { exact: true })).toBeVisible();
     await page.getByRole("radio", { name: "Flow" }).click();
-    await expect(page.getByText(/inputs/i).first()).toBeVisible();
+    await expect(page.getByText("Net movement by address", { exact: true })).toBeVisible();
   });
 });
 

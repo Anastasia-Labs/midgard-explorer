@@ -11,9 +11,8 @@ import {
 /**
  * Phase 2: what a developer opens a transaction to find out.
  *
- * Tab names follow the captured convention rather than our own vocabulary:
- * Etherscan, Blockscout and cexplorer all call "what this transaction changed"
- * the State, so that is what it is called here.
+ * Inputs and outputs are visible on the page; secondary transaction data
+ * remains in linkable tabs.
  */
 
 const openTx = async (page: import("@playwright/test").Page) => {
@@ -27,16 +26,16 @@ test.describe("transaction tabs", () => {
   test("offers the convention's sections", async ({ page }) => {
     await openTx(page);
     const tabs = page.getByRole("tab");
-    await expect(tabs).toHaveText([/Overview/, /State/, /Datums & redeemers/, /Events/, /Raw/]);
+    await expect(tabs).toHaveText([/Overview/, /Scripts/, /Technical details/, /Raw/]);
   });
 
   test("a section is linkable and survives a reload", async ({ page }) => {
     await openTx(page);
-    await page.getByRole("tab", { name: /Datums & redeemers/ }).click();
-    await expect(page).toHaveURL(/[?&]tab=datums/);
+    await page.getByRole("tab", { name: /Scripts/ }).click();
+    await expect(page).toHaveURL(/[?&]tab=scripts/);
     await page.reload();
     await settle(page);
-    await expect(page.getByRole("tab", { name: /Datums & redeemers/ })).toHaveAttribute(
+    await expect(page.getByRole("tab", { name: /Scripts/ })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -46,8 +45,8 @@ test.describe("transaction tabs", () => {
 test.describe("events", () => {
   test("shows authoritative invocations without claiming emitted logs", async ({ page }) => {
     await openTx(page);
-    await page.getByRole("tab", { name: /Events/ }).click();
-    const events = page.getByRole("tabpanel", { name: /Events/ });
+    await page.getByRole("tab", { name: /Scripts/ }).click();
+    const events = page.getByRole("tabpanel", { name: /Scripts/ });
     await expect(events.getByRole("heading", { name: /Script invocations/ })).toBeVisible();
     await expect(events.getByRole("heading", { name: "Spend", exact: true })).toBeVisible();
     await expect(events.getByText(/spend #0/i).first()).toBeVisible();
@@ -57,18 +56,18 @@ test.describe("events", () => {
     await expect(events.getByRole("region", { name: /redeemer CBOR/i }).first()).toBeVisible();
   });
 
-  test("omits the events tab when no script ran", async ({ page }) => {
+  test("omits script invocations when no script ran", async ({ page }) => {
     const hash = await txWithoutInvocations(page);
     await page.goto(`/transaction/${hash}?tab=events`);
     await settle(page);
-    await expect(page.getByRole("tab", { name: /Events/ })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /Script invocations/ })).toHaveCount(0);
   });
 });
 
 test.describe("datums and redeemers", () => {
   test("shows a datum's bytes and its decoded reading", async ({ page }) => {
     await openTx(page);
-    await page.getByRole("tab", { name: /Datums & redeemers/ }).click();
+    await page.getByRole("tab", { name: /Scripts/ }).click();
 
     const datum = page.getByText("Inline datum").first();
     await expect(datum).toBeVisible();
@@ -106,7 +105,7 @@ test.describe("datums and redeemers", () => {
 
   test("shows script bytes with recomputed-hash provenance", async ({ page }) => {
     await openTx(page);
-    await page.getByRole("tab", { name: /Datums & redeemers/ }).click();
+    await page.getByRole("tab", { name: /Scripts/ }).click();
     const disclosure = page.getByText("Script bytes and provenance").first();
     await disclosure.click();
     await expect(page.getByText(/Source: transaction witness set/).first()).toBeVisible();
@@ -119,8 +118,7 @@ test.describe("protocol details", () => {
     page,
   }) => {
     await openTx(page);
-    // Overview, not a Details tab of its own: four hashes behind a tab a
-    // reader has to open is a tab that hides them.
+    await page.getByRole("tab", { name: "Technical details" }).click();
     await expect(page.getByText("Authorization and commitments")).toBeVisible();
     await expect(page.getByText("Required signers")).toBeVisible();
     await expect(page.getByText("Protocol availability")).toHaveCount(0);
@@ -148,8 +146,8 @@ test.describe("state", () => {
     await page.goto(`/transaction/${hash}?tab=utxo`);
     await settle(page);
     await expect(page.getByText(/Unspent|Not in current ledger/).first()).toBeVisible();
-    await page.getByText("Credentials").first().click();
-    await expect(page.getByText("Payment credential").first()).toBeVisible();
+    await page.getByRole("button", { name: "Payment credential", exact: true }).first().click();
+    await expect(page.getByRole("dialog", { name: "Payment credential", exact: true })).toBeVisible();
   });
 
   test("resolves reference-input values without calling them spent", async ({ page }) => {
@@ -162,7 +160,7 @@ test.describe("state", () => {
     );
     const row = rows.find((candidate) => candidate.transaction?.referenceInputs.length);
     expect(row, "no fixture transaction carries a reference input").toBeDefined();
-    await page.goto(`/transaction/${row!.tx_id}`);
+    await page.goto(`/transaction/${row!.tx_id}?tab=details`);
     await expect(page.getByText(/Reference inputs \(1\)/)).toBeVisible();
     await expect(page.getByText(/Read by scripts without being spent/)).toBeVisible();
   });
@@ -182,7 +180,7 @@ test.describe("state", () => {
 
     await page.goto(`/transaction/${withAsset!.tx_id}?tab=utxo`);
     await settle(page);
-    await expect(page.getByRole("heading", { name: /Net movement by address/ })).toBeVisible();
+    await page.getByText("Net movement by address", { exact: true }).click();
     // The asset name renders beside its policy, which ada-only movement never showed.
     await expect(page.getByText(/^[0-9a-f]{6}…[0-9a-f]{4}$/).first()).toBeVisible();
   });

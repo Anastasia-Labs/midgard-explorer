@@ -65,7 +65,7 @@ test("the fixture can produce every verdict the panel renders", async ({ page })
 
 test("a settled block reports agreement between two sources", async ({ page }) => {
   await gotoState(page, "matched");
-  await expect(page.getByText("Confirmed by two independent sources")).toBeVisible();
+  await expect(page.getByText("Node and index records agree")).toBeVisible();
   await expect(page.getByText("Block settlement").first()).toBeVisible();
 });
 
@@ -128,7 +128,13 @@ test("a transaction reports the settlement of the block that carries it", async 
   await expect(first).toBeVisible();
   await first.click();
   await expect(page).toHaveURL(/\/transaction\/[0-9a-f]{64}$/);
-  await expect(page.getByText("Settled through its block")).toBeVisible();
+  // Settlement evidence is secondary in the page's structure: Technical
+  // details, behind a disclosure. The claim it makes is what matters here.
+  await page.getByRole("tab", { name: "Technical details" }).click();
+  const details = page.locator("#panel-details");
+  await expect(details).toBeVisible();
+  await details.getByText("Settlement evidence").click();
+  await expect(details.getByText("Settled through its block")).toBeVisible();
 });
 
 /**
