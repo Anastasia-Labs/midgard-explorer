@@ -14,6 +14,7 @@
 import { createServer } from "node:http";
 import {
   ADDRESSES,
+  PAGED_ADDRESS,
   BLOCKS,
   DEPOSITS,
   FORCED,
@@ -617,8 +618,14 @@ const handleAddress = (url, res) => {
   const page = rawPage === null ? 1 : Number(rawPage);
   if (!address) return fail(res, 400, "bad_request", "address");
   if (!Number.isInteger(page) || page < 1) return fail(res, 400, "bad_request", "page");
-  if (!ADDRESSES.includes(address)) return fail(res, 404, "not_found");
-  return json(res, addressResponse(address, page));
+  if (!ADDRESSES.includes(address) && address !== PAGED_ADDRESS) {
+    return fail(res, 404, "not_found");
+  }
+  const utxoCursor = url.searchParams.get("utxo_cursor");
+  if (utxoCursor !== null && !/^(?:[0-9a-fA-F]{2})*$/.test(utxoCursor)) {
+    return fail(res, 400, "bad_request", "utxo_cursor");
+  }
+  return json(res, addressResponse(address, page, utxoCursor || null));
 };
 
 const handleL1Transaction = (url, res) => {

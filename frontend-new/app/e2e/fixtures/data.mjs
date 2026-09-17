@@ -68,6 +68,17 @@ export const ADDRESSES = [
   bech32Encode("addr_test", addrBytes(3)),
 ];
 
+/**
+ * An address holding more UTxOs than one page, for reviewing the paging
+ * controls. Kept out of ADDRESSES because transactions pick their addresses
+ * with `n % ADDRESSES.length`, so a fourth entry would reshuffle which address
+ * appears where across the whole fixture.
+ */
+export const PAGED_ADDRESS = bech32Encode("addr_test", addrBytes(4));
+
+/** Mirrors UTXO_PAGE_LIMIT in the backend. */
+export const UTXO_PAGE_LIMIT = 50;
+
 const value = (lovelace, assets = {}) => ({ lovelace: String(lovelace), assets });
 
 const sumValues = (values) => {
@@ -924,7 +935,7 @@ export const L1_TXS = Array.from({ length: 31 }, (_, i) => {
   };
 });
 
-export const addressResponse = (address, page = 1) => {
+export const addressResponse = (address, page = 1, utxoCursor = null) => {
   const history = TXS.filter((t) => t.transaction).slice(0, 9);
   const undecodedOutputs = address === ADDRESSES[1] ? 3 : 0;
   const rows = history.map((t, i) => {
@@ -962,7 +973,8 @@ export const addressResponse = (address, page = 1) => {
   // The UTxOs behind the balance, including one the codec cannot read: an
   // address holding six entries of which one is unreadable must show six rows
   // and a warning, not five rows and a quietly smaller total.
-  const utxos = Array.from({ length: 6 }, (_, i) => {
+  const utxoTotal = address === PAGED_ADDRESS ? 60 : 6;
+  const utxos = Array.from({ length: utxoTotal }, (_, i) => {
     const broken = undecodedOutputs > 0 && i === 4;
     return {
       txId: broken ? null : txId(700 + i),
@@ -977,11 +989,22 @@ export const addressResponse = (address, page = 1) => {
 
   const limit = 25;
   const start = (Math.max(1, page) - 1) * limit;
+
+  // The balance and utxoCount describe every UTxO; `utxos` carries one page.
+  const ordered = [...utxos].sort((a, b) => (a.outRefHex < b.outRefHex ? -1 : a.outRefHex > b.outRefHex ? 1 : 0));
+  const at = utxoCursor ? ordered.findIndex((u) => u.outRefHex > utxoCursor) : 0;
+  const utxoFrom = at === -1 ? ordered.length : at;
+  const utxoPage = ordered.slice(utxoFrom, utxoFrom + UTXO_PAGE_LIMIT);
+  const moreUtxos = utxoFrom + utxoPage.length < ordered.length;
+
   return {
     balance: value(184_250_000, MULTI_ASSET),
     undecodedOutputs,
-    utxoCount: utxos.length,
-    utxos,
+    utxoCount: ordered.length,
+    utxos: utxoPage,
+    utxoLimit: UTXO_PAGE_LIMIT,
+    utxoCursor: moreUtxos ? utxoPage[utxoPage.length - 1].outRefHex : null,
+    hasMoreUtxos: moreUtxos,
     txCount: rows.length,
     historyPage: page,
     hasNextPage: start + limit < rows.length,
