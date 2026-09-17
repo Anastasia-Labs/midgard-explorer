@@ -32,6 +32,9 @@ const identity = {
 };
 
 const inputs = (over: Partial<SettlementInputs> = {}): SettlementInputs => ({
+  // The index is read by default, so every case below states the two-source
+  // rules it was written for. `declared()` is the other deployment shape.
+  confirmationSource: "index",
   nodeHash: NODE_HASH,
   nodeStatus: "finalized",
   nodeObservedAt: "2026-09-02T00:00:00Z",
@@ -350,5 +353,138 @@ describe("identity is part of what makes a difference meaningful", () => {
 
   it("still reports a mismatch when identity and freshness are both established", () => {
     expect(reconcile(inputs({ indexHash: INDEX_HASH }))).toBe("mismatch");
+  });
+});
+
+/**
+ * A deployment that declares no independent source.
+ *
+ * The rule these cases exist to hold: nothing this explorer shows may claim a
+ * check it does not perform. `matched` and `mismatch` are statements about two
+ * observations, `index_only` and `stale` describe an index that was consulted,
+ * and a deployment reading one source is entitled to none of them.
+ */
+describe("settlement where nothing checks Cardano", () => {
+  const declared = (over: Partial<SettlementInputs> = {}): SettlementInputs =>
+    inputs({ confirmationSource: "none", indexHash: null, indexObservedAt: null, ...over });
+
+  it("reports the node's record as the node's record", () => {
+    const one = declared();
+    expect(reconcile(one)).toBe("node_reported");
+    expect(comparability(one)).toBe("no_independent_source");
+    // The hash is still actionable: it is the node's, and it is labelled as
+    // the node's. Withholding it would lose a real record to make a point.
+    expect(resolvedHash(reconcile(one), one)).toBe(NODE_HASH);
+  });
+
+  /** A record with no hash is not settlement evidence, and `node_reported`
+   * would present it as if it were. */
+  it("does not report a record with no hash as recorded by the node", () => {
+    expect(reconcile(declared({ nodeHash: null, nodeStatus: "pending_submission" }))).toBe("none");
+    expect(reconcile(declared({ nodeHash: null, nodeStatus: null }))).toBe("none");
+  });
+
+  /** With one source, an absence is only as good as that source's currency. */
+  it("does not turn a copy's silence into a settled absence", () => {
+    expect(reconcile(declared({ nodeHash: null, nodeFreshness: "fixed" }))).toBe("unavailable");
+    expect(reconcile(declared({ nodeHash: null, nodeFreshness: "live" }))).toBe("none");
+  });
+
+  /** The index is not read here, so a row that reached these inputs anyway
+   * (a caller passing a stale read, a mode changed under a running process)
+   * must not reach the answer. */
+  it("never compares against an index hash it was handed", () => {
+    const withIndexRow = declared({ indexHash: INDEX_HASH, indexObservedAt: "2026-09-02T00:00:01Z" });
+    expect(reconcile(withIndexRow)).toBe("node_reported");
+    expect(resolvedHash(reconcile(withIndexRow), withIndexRow)).toBe(NODE_HASH);
+    const association = blockSettlement(identity, HEADER, withIndexRow);
+    expect(association.evidence.map((e) => e.source)).toEqual(["midgard_finalization_journal"]);
+    // "Cardano data as of" describes an observation of Cardano. Nothing here
+    // made one.
+    expect(association.l1ObservedAsOf).toBeNull();
+  });
+
+  /**
+   * The property, over the whole input space rather than the cases above.
+   *
+   * Every combination of the fields a verdict reads, asserted to produce none
+   * of the four two-source answers. A case-by-case test proves the branches
+   * someone thought of; this one fails if a later branch reintroduces a
+   * comparison anywhere.
+   */
+  it("cannot reach a two-source verdict on any input", () => {
+    const hashes = [null, NODE_HASH, INDEX_HASH];
+    const freshness = ["live", "synthetic", "fixed", "lagging", "unknown"] as const;
+    const lags = [null, 0, COMPARABLE_WITHIN_SECONDS * 2];
+    const forbidden = new Set(["matched", "mismatch", "index_only", "stale"]);
+    let checked = 0;
+    for (const nodeHash of hashes) {
+      for (const indexHash of hashes) {
+        for (const nodeFreshness of freshness) {
+          for (const indexLagSeconds of lags) {
+            for (const identityVerified of [true, false]) {
+              for (const indexAvailable of [true, false]) {
+                const verdict = reconcile(
+                  declared({
+                    nodeHash,
+                    indexHash,
+                    nodeFreshness,
+                    indexLagSeconds,
+                    identityVerified,
+                    indexAvailable,
+                  }),
+                );
+                expect(forbidden.has(verdict), `${verdict} from a single source`).toBe(false);
+                checked += 1;
+              }
+            }
+          }
+        }
+      }
+    }
+    // The loop ran. A sweep that silently iterated nothing would pass every
+    // assertion in it.
+    expect(checked).toBe(3 * 3 * 5 * 3 * 2 * 2);
+
+    // And the same sweep in index mode DOES reach them, so the assertion above
+    // is a property of the declared source and not of these inputs.
+    const reachable = new Set(
+      hashes.flatMap((nodeHash) =>
+        hashes.map((indexHash) =>
+          reconcile(inputs({ nodeHash, indexHash, indexLagSeconds: 0, nodeFreshness: "live" })),
+        ),
+      ),
+    );
+    expect([...reachable].some((verdict) => forbidden.has(verdict))).toBe(true);
+  });
+
+  /** A transaction in no block took a separate path that answered `stale`,
+   * which names an index this deployment does not read. */
+  it("answers for an unincluded transaction without naming an index", () => {
+    const association = transactionSettlement(
+      identity,
+      "1".repeat(64),
+      null,
+      declared({ nodeHash: null }),
+    );
+    expect(association.reconciliation).toBe("none");
+    expect(association.comparability).toBe("no_independent_source");
+
+    const fromCopy = transactionSettlement(
+      identity,
+      "1".repeat(64),
+      null,
+      declared({ nodeHash: null, nodeFreshness: "fixed" }),
+    );
+    expect(fromCopy.reconciliation).toBe("unavailable");
+  });
+
+  /** The node's own status is preserved. This step changes who is credited
+   * with the observation, not what the node said. */
+  it("keeps the node's settlement state", () => {
+    const association = blockSettlement(identity, HEADER, declared());
+    expect(association.kind === "block_settlement" && association.state).toBe("finalized");
+    expect(association.evidence[0]?.rawState).toBe("finalized");
+    expect(association.evidence[0]?.transactionHash).toBe(NODE_HASH);
   });
 });

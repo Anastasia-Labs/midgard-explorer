@@ -1,6 +1,6 @@
 # 8. Explorer-owned durable history for finalized L2 data
 
-Proposed 2026-09-04. Supersedes ADR 0007 in part.
+Proposed 2026-09-04. **Deferred 2026-09-17 by ADR 0009: nothing here is built, and none of it may be built without a stated requirement.** Supersedes ADR 0007 in part.
 
 ## Decision
 

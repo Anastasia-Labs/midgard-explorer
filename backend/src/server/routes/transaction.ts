@@ -11,7 +11,11 @@ import {
 } from "../../db/transaction";
 import { findOutRef, findOutRefs } from "../../db/ledger";
 import { readConsistently } from "../../db/consistent";
-import { getDeploymentContext, getIndexSettlement } from "../../db/deployment";
+import {
+  getDeploymentContext,
+  getIndexSettlement,
+  unconsultedIndexSettlement,
+} from "../../db/deployment";
 import { transactionSettlement } from "../../db/association";
 import {
   decodeTransaction,
@@ -116,13 +120,7 @@ export async function getTransactionRoute(req: Request, res: Response) {
   const [context, indexed] = await Promise.all([
     getDeploymentContext(),
     headerHash === null
-      ? Promise.resolve({
-          indexHash: null,
-          indexObservedAt: null,
-          indexBlockHeight: null,
-          indexAvailable: true,
-          indexLagSeconds: null,
-        })
+      ? Promise.resolve(unconsultedIndexSettlement())
       : getIndexSettlement(headerHash),
   ]);
 

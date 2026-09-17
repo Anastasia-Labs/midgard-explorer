@@ -12,7 +12,7 @@ import { loadManifest } from "../indexer/manifest";
 import { checkBinding } from "../indexer/binding";
 import { logger } from "../logger";
 import { readL2Source, type L2FreshnessState, type L2SourceKind } from "./source";
-import type { DeploymentContext } from "./association";
+import type { ConfirmationSource, DeploymentContext } from "./association";
 
 /**
  * Which deployment a response describes, and how current its source is.
@@ -169,21 +169,58 @@ export async function getDeploymentContext(): Promise<DeploymentContext> {
   };
 }
 
+/** What a settlement verdict knows about the Cardano side. */
+export type IndexSettlement = {
+  confirmationSource: ConfirmationSource;
+  indexHash: string | null;
+  indexObservedAt: string | null;
+  indexBlockHeight: number | null;
+  indexAvailable: boolean;
+  indexLagSeconds: number | null;
+};
+
+/**
+ * The Cardano side of a verdict where nothing was read.
+ *
+ * Two callers reach it: a deployment that declares no independent source, and
+ * a transaction that is in no block, where there is no header to look up. They
+ * differ in what `indexAvailable` may claim, so the source decides it rather
+ * than a literal spelled out at the call site.
+ */
+export function unconsultedIndexSettlement(
+  source: ConfirmationSource = config.L1_CONFIRMATION_SOURCE,
+): IndexSettlement {
+  return {
+    confirmationSource: source,
+    indexHash: null,
+    indexObservedAt: null,
+    indexBlockHeight: null,
+    // Not "unreadable": in index mode nothing here was asked, and the caller
+    // that reaches this has no question the index could answer.
+    indexAvailable: source === "index",
+    indexLagSeconds: null,
+  };
+}
+
 /**
  * What the Cardano index observed for one block, and how far behind it is.
+ *
+ * Reads nothing when the deployment declares no independent source. That is
+ * the whole mechanism: no query is issued, so no row can reach a verdict, and
+ * a stale or half-built index cannot become evidence by accident.
  *
  * Never throws. An index that cannot be read is silence, not a denial, and the
  * resolver turns that into `unavailable` or `node_only` rather than into a
  * failed request: an L1 outage must not make an L2 page unavailable, which is
  * the same rule the readiness split enforces.
  */
-export async function getIndexSettlement(headerHash: string): Promise<{
-  indexHash: string | null;
-  indexObservedAt: string | null;
-  indexBlockHeight: number | null;
-  indexAvailable: boolean;
-  indexLagSeconds: number | null;
-}> {
+export async function getIndexSettlement(
+  headerHash: string,
+  // Taken rather than read, so a test can prove the read is skipped without
+  // rewriting the process environment.
+  source: ConfirmationSource = config.L1_CONFIRMATION_SOURCE,
+): Promise<IndexSettlement> {
+  if (source === "none") return unconsultedIndexSettlement(source);
   try {
     // One snapshot of the index, not three reads of it. A pass committing
     // between the header read and the cursor read used to produce "no header,
@@ -218,6 +255,7 @@ export async function getIndexSettlement(headerHash: string): Promise<{
         : null;
 
     return {
+      confirmationSource: source,
       indexHash: header?.l1TxHash ?? null,
       indexObservedAt: observedAt,
       indexBlockHeight: header?.blockHeight ?? null,
@@ -227,6 +265,7 @@ export async function getIndexSettlement(headerHash: string): Promise<{
   } catch (error) {
     logger.warn(`Cardano index unavailable for header ${headerHash}: ${String(error)}`);
     return {
+      confirmationSource: source,
       indexHash: null,
       indexObservedAt: null,
       indexBlockHeight: null,

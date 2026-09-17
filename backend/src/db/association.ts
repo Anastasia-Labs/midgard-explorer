@@ -22,7 +22,30 @@ import type { L2FreshnessState, L2SourceKind } from "./source";
  */
 
 export type Reconciliation =
-  "matched" | "node_only" | "index_only" | "mismatch" | "stale" | "unavailable" | "none";
+  | "matched"
+  | "node_only"
+  | "index_only"
+  | "mismatch"
+  | "stale"
+  | "unavailable"
+  | "none"
+  /** The node named a settlement transaction and nothing checked it.
+   *
+   * Reachable only where the deployment declares no independent source, and it
+   * is never a synonym for `matched`: nothing corroborated this hash. It
+   * requires an actual node record, so a record with no hash stays `none`.
+   */
+  | "node_reported";
+
+/**
+ * Whether this deployment observes Cardano itself.
+ *
+ * `none` means the explorer holds no second observation, so settlement is the
+ * node's record, said to be the node's record. `index` means the
+ * explorer-owned Cardano index is read as an independent source, which is what
+ * makes `matched`, `mismatch` and `stale` possible.
+ */
+export type ConfirmationSource = "none" | "index";
 
 /** The node's own six, plus two the explorer can observe that it cannot. */
 export type SettlementState =
@@ -132,6 +155,14 @@ export type Association =
 export const COMPARABLE_WITHIN_SECONDS = 900;
 
 export type SettlementInputs = {
+  /**
+   * Whether an independent observation was available to this verdict at all.
+   *
+   * Required rather than defaulted, so every caller states it. A default would
+   * silently claim the stronger of the two, which is the one claim this type
+   * exists to keep honest.
+   */
+  confirmationSource: ConfirmationSource;
   /** What the node says it submitted. Null when it has recorded no attempt. */
   nodeHash: string | null;
   nodeStatus: string | null;
@@ -179,6 +210,10 @@ export type SettlementInputs = {
  */
 export type Comparability =
   | "comparable"
+  /** No second source exists in this deployment, so no comparison was
+   * attempted. This is a statement about the deployment, not about an index
+   * that was read and found wanting or unreadable. */
+  | "no_independent_source"
   | "index_lagging"
   | "index_freshness_unknown"
   | "identity_unverified"
@@ -192,6 +227,12 @@ export const nodeSilenceIsAboutMidgard = (freshness: L2FreshnessState): boolean 
   freshness === "live" || freshness === "synthetic";
 
 export function comparability(inputs: SettlementInputs): Comparability {
+  // First, because it is the complete reason. The others say why two sources
+  // could not be compared; this says there was never a second one. Index
+  // freshness and the index binding cannot qualify a comparison that does not
+  // happen, and naming them here would describe a source this deployment does
+  // not read.
+  if (inputs.confirmationSource === "none") return "no_independent_source";
   if (!inputs.identityVerified) return "identity_unverified";
   if (inputs.indexLagSeconds === null) return "index_freshness_unknown";
   if (inputs.indexLagSeconds > COMPARABLE_WITHIN_SECONDS) return "index_lagging";
@@ -209,6 +250,21 @@ export function comparability(inputs: SettlementInputs): Comparability {
  * hour and teach a reader to ignore the one that matters.
  */
 export function reconcile(inputs: SettlementInputs): Reconciliation {
+  // A deployment with no independent source can reach exactly three verdicts,
+  // and none of them is a comparison. `matched`, `mismatch`, `index_only` and
+  // `stale` all describe two observations, so returning any of them here would
+  // report a check that this deployment does not perform.
+  if (inputs.confirmationSource === "none") {
+    // `node_reported` is a statement about a hash. Without one there is no
+    // settlement evidence to attribute, and saying "recorded by the node"
+    // about an empty record would invent one.
+    if (inputs.nodeHash !== null) return "node_reported";
+    // No hash, and the node's own currency decides what that absence is worth.
+    // From a snapshot or a standby of unestablished currency it is a fact
+    // about the copy, so nothing here establishes that no settlement exists.
+    return nodeSilenceIsAboutMidgard(inputs.nodeFreshness) ? "none" : "unavailable";
+  }
+
   // An unreadable index is silence, whatever the node says. This used to return
   // `node_only` when a node hash was present, which claims the index was read
   // and held nothing; it was not read at all. The node's evidence is still
@@ -292,7 +348,7 @@ export function settlementEvidence(inputs: SettlementInputs): CardanoEvidence[] 
       rawState: inputs.nodeStatus,
     });
   }
-  if (inputs.indexHash !== null) {
+  if (inputs.confirmationSource === "index" && inputs.indexHash !== null) {
     evidence.push({
       source: "cardano_l1_index",
       transactionHash: inputs.indexHash,
@@ -321,6 +377,10 @@ export function resolvedHash(
   // as the single actionable answer whenever freshness was unverified, which is
   // the case the resolver is least entitled to an opinion on.
   if (DISAGREEMENTS.has(reconciliation)) return null;
+  // The node's, explicitly. A caller that passed an index hash into a
+  // deployment that declares no independent source would otherwise have it
+  // preferred here, which is the one place the preference is invisible.
+  if (inputs.confirmationSource === "none") return inputs.nodeHash;
   return inputs.indexHash ?? inputs.nodeHash;
 }
 
@@ -338,7 +398,9 @@ const common = (
   network: identity.network,
   reconciliation,
   l2ObservedAsOf: identity.l2ObservedAsOf,
-  l1ObservedAsOf: inputs.indexObservedAt,
+  // Null where nothing observed Cardano. A timestamp here reads as "the
+  // explorer saw Cardano at this moment", which is the claim being withdrawn.
+  l1ObservedAsOf: inputs.confirmationSource === "none" ? null : inputs.indexObservedAt,
   evidence: settlementEvidence(inputs),
   // Carried, not inferred downstream. The interface cannot work this out: it
   // has the L2 deployment context and not the index's freshness or the
@@ -382,7 +444,11 @@ export function transactionSettlement(
   // alone, and a copy cannot support it: the live node may have included the
   // transaction after the snapshot was taken.
   const { reconciliation, reason } =
-    headerHash !== null
+    // `reconcile` already answers this for a deployment with no independent
+    // source: with no header there is no node hash either, so it returns
+    // `none` or `unavailable` on the node's own currency, which is the same
+    // rule the branch below applies and the only one that fits one source.
+    headerHash !== null || inputs.confirmationSource === "none"
       ? { reconciliation: reconcile(inputs), reason: comparability(inputs) }
       : nodeSilenceIsAboutMidgard(inputs.nodeFreshness)
         ? { reconciliation: "none" as const, reason: "comparable" as const }

@@ -153,6 +153,23 @@ const shape = {
   // because two loops against one index duplicate every Koios request and
   // race each other's writes.
   L1_SYNC_ENABLED: boolean.default(true),
+  /**
+   * Whether this deployment checks Cardano settlement for itself.
+   *
+   * `none`, the default, means it does not: a block's settlement is the hash
+   * the node recorded, presented as the node's record. `index` reads the
+   * explorer-owned Cardano index as a second observation, which is what makes
+   * `matched`, `mismatch` and `stale` reachable.
+   *
+   * Independent of `L1_SYNC_ENABLED`, which says whether THIS process runs the
+   * indexing loop. A read-only API instance sets that false and still read the
+   * index. This says whether any settlement verdict may rest on it.
+   *
+   * TRANSITIONAL. It exists so the move to node-reported settlement can be
+   * reversed while it is under review, and it is removed with the index lane
+   * itself once that is settled. It is not a permanent deployment choice.
+   */
+  L1_CONFIRMATION_SOURCE: z.enum(["none", "index"]).default("none"),
   // Zero is meaningful here: it means every pass is a full rescan from genesis.
   L1_REORG_LOOKBACK_BLOCKS: z.coerce.number().int().nonnegative(),
 } as const;
