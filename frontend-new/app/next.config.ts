@@ -4,6 +4,8 @@ import type { NextConfig } from "next";
 const workspaceRoot = path.join(import.meta.dirname, "..");
 
 const nextConfig: NextConfig = {
+  // The documented local URL uses this loopback host, including dev WebSockets.
+  allowedDevOrigins: ["127.0.0.1"],
   // The workspace packages ship TypeScript source, not build output.
   transpilePackages: ["@midgard-explorer/contracts", "@midgard-explorer/ui"],
   turbopack: { root: workspaceRoot },
