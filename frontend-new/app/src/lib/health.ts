@@ -1,4 +1,5 @@
 import type { MetricsResponse } from "@midgard-explorer/contracts";
+import { formatDuration } from "./format";
 
 /** One stated judgement about the network, so the overview answers rather than
  * displays.
@@ -25,7 +26,7 @@ export type HealthState = "healthy" | "degraded" | "stalled" | "unknown";
 
 export type NetworkHealth = {
   state: HealthState;
-  /** The sentence. This is the largest thing on the panel. */
+  /** Summary of the observed activity. */
   headline: string;
   /** Supporting facts, each naming the figure behind it, worst first. */
   reasons: string[];
@@ -94,7 +95,7 @@ export function networkHealth(metrics: MetricsResponse | null): NetworkHealth {
       // being pre-announced here.
       return {
         state: "stalled",
-        headline: "This Midgard node has stopped producing blocks.",
+        headline: `Latest recorded block: ${formatDuration(tip.ageSeconds * 1000)} ago. No blocks recorded in the last ${metrics.window.hours} hours.`,
         reasons: [],
       };
     }
@@ -114,7 +115,7 @@ export function networkHealth(metrics: MetricsResponse | null): NetworkHealth {
   if (ratio > STALLED_RATIO) {
     return {
       state: "stalled",
-      headline: "Block production has stopped.",
+      headline: `Latest recorded block: ${formatDuration(tip.ageSeconds * 1000)} ago, beyond the usual interval.`,
       reasons: [
         `The last block arrived ${seconds(tip.ageSeconds)} ago, ${ratio.toFixed(1)} times this node's usual ${Math.round(p50)}s interval.`,
         ...settlementReasons(finality),

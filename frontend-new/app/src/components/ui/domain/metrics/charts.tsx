@@ -1,6 +1,5 @@
 import type { MetricsResponse } from "@midgard-explorer/contracts";
-import { cn, formatTimestamp, groupThousands } from "../../../../lib/format";
-import { StatusBadge } from "../../domain/status";
+import { formatTimestamp } from "../../../../lib/format";
 import { ViewToggle } from "../../base/viewtoggle";
 
 /**
@@ -35,11 +34,11 @@ export function Bars({
   measure: "blocks" | "transactions";
 }) {
   const values = series.map((s) => s[measure]);
-  const peak = Math.max(...values, 1);
+  const peak = Math.max(...values, 0);
   const width = 100;
   const height = 34;
   const gap = 0.35;
-  const barWidth = width / series.length - gap;
+  const barWidth = width / Math.max(series.length, 1) - gap;
   const empty = values.filter((v) => v === 0).length;
   const noun = measure === "blocks" ? "blocks" : "transactions";
 
@@ -49,27 +48,20 @@ export function Bars({
           and the toggle puts a wrapper in between. */}
       <p className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="mg-overline">{noun} per hour</span>
-        <span className="mg-micro text-text-3">
-          peak {peak}
-          {empty > 0 ? (
-            <span className="ml-1.5 text-warning">
-              · {empty} {empty === 1 ? "hour" : "hours"} with no {noun}
-            </span>
-          ) : null}
-        </span>
+        <span className="mg-micro text-text-3">peak {peak}</span>
       </p>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="none"
         className="mt-2 h-16 w-full"
         role="img"
-        aria-label={`${noun} per hour across ${series.length} hours. Peak ${peak}. ${
-          empty === 0 ? `No empty hours.` : `${empty} hours produced no ${noun}.`
+        aria-label={`${noun} per hour across ${series.length} hourly intervals. Peak ${peak}. ${
+          empty === 0 ? `No empty hours.` : `${empty} hourly intervals contain no ${noun}.`
         } Every hour's figure is in the table that follows.`}
       >
         {series.map((s, i) => {
           const v = s[measure];
-          const h = (v / peak) * height;
+          const h = (v / Math.max(peak, 1)) * height;
           const x = i * (barWidth + gap);
           return v === 0 ? (
             // An empty hour gets a floor mark rather than nothing, so a gap in
@@ -94,10 +86,6 @@ export function Bars({
           );
         })}
       </svg>
-      <p className="mt-1 flex justify-between text-micro text-text-3">
-        <span>{formatTimestamp(series[0]!.hour)}</span>
-        <span>{formatTimestamp(series[series.length - 1]!.hour)}</span>
-      </p>
     </>
   );
 }
@@ -111,8 +99,11 @@ export function ProductionChart({ series }: { series: MetricsResponse["series"] 
     );
   }
 
+  const start = series[0]!.hour;
+  const end = new Date(Date.parse(series[series.length - 1]!.hour) + 3_600_000).toISOString();
+
   return (
-    <figure className="px-4 pt-3 pb-2">
+    <figure className="px-4 py-3">
       <ViewToggle
         label="Chart measure"
         param="chart"
@@ -125,6 +116,10 @@ export function ProductionChart({ series }: { series: MetricsResponse["series"] 
           },
         ]}
       />
+      <p className="mt-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-micro text-text-3">
+        <span>{formatTimestamp(start)}</span>
+        <span>{formatTimestamp(end)}</span>
+      </p>
       {/* The wrapper carries `sr-only`, not the table. A table box takes its
           min-content width whatever width is set on it, so `sr-only` on the
           table itself left a 359px element on a 320px page. */}
@@ -150,40 +145,5 @@ export function ProductionChart({ series }: { series: MetricsResponse["series"] 
         </table>
       </div>
     </figure>
-  );
-}
-
-/** Proportional bar for a set of statuses, so an unrecognized code is visible
- * as its own share rather than folded into a bucket the explorer invented. */
-export function StatusBar({ counts }: { counts: readonly { status: string; count: number }[] }) {
-  const total = counts.reduce((n, c) => n + c.count, 0);
-  if (total === 0) return null;
-  return (
-    <div className="px-4 py-3">
-      <div className="flex h-1.5 overflow-hidden rounded-full bg-surface-2">
-        {counts.map((c) => (
-          <span
-            key={c.status}
-            className={cn(
-              "h-full",
-              c.status === "finalized" || c.status === "accepted" || c.status === "consumed"
-                ? "bg-success"
-                : c.status === "abandoned" || c.status === "rejected"
-                  ? "bg-danger"
-                  : "bg-info/70",
-            )}
-            style={{ width: `${(c.count / total) * 100}%` }}
-          />
-        ))}
-      </div>
-      <ul className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5">
-        {counts.map((c) => (
-          <li key={c.status} className="flex items-center gap-1.5 mg-micro">
-            <StatusBadge status={c.status} />
-            <span className="tabular-nums text-text-2">{groupThousands(String(c.count))}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }

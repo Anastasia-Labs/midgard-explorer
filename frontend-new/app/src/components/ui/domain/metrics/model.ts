@@ -7,10 +7,6 @@
  * so they can be read, changed and tested without opening a chart.
  */
 
-/** Below this, a percentile is a description of a handful of records rather
- * than a distribution, and the UI says so instead of implying otherwise. */
-export const THIN_SAMPLE = 20;
-
 export const VERDICT_TONE = {
   healthy: { text: "text-success", dot: "bg-success" },
   degraded: { text: "text-warning", dot: "bg-warning" },

@@ -72,7 +72,7 @@ describe("networkHealth", () => {
       } as Partial<MetricsResponse>),
     );
     expect(h.state).toBe("stalled");
-    expect(h.headline).toMatch(/stopped/i);
+    expect(h.headline).toMatch(/Latest recorded block: .* ago, beyond the usual interval/);
   });
 
   it("judges lateness against this node's own interval, not a constant", () => {
@@ -215,7 +215,7 @@ describe("networkHealth when no interval can be measured", () => {
   it("calls a node that produced blocks and then went quiet stalled, not unjudgeable", () => {
     const h = networkHealth(noInterval());
     expect(h.state).toBe("stalled");
-    expect(h.headline).toContain("stopped producing blocks");
+    expect(h.headline).toBe(`Latest recorded block: 3d 6h ago. No blocks recorded in the last ${noInterval().window.hours} hours.`);
   });
 
   // The headline already says what happened, the chain tip figure the panel

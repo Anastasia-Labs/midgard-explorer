@@ -1,10 +1,10 @@
-import type { MetricsResponse, Percentile } from "@midgard-explorer/contracts";
+import type { MetricsResponse } from "@midgard-explorer/contracts";
 import { cn, formatDuration, groupThousands } from "../../../../lib/format";
 import type { NetworkHealth } from "../../../../lib/health";
 import type { GlossaryTerm } from "../../../../lib/glossary";
 import { FieldLabel } from "../../base/infotip";
 import { LiveValue } from "../../base/livevalue";
-import { THIN_SAMPLE, VERDICT_TONE, tipTone } from "./model";
+import { VERDICT_TONE, tipTone } from "./model";
 
 /**
  * One reading each, in the grammar every record page uses.
@@ -15,72 +15,24 @@ import { THIN_SAMPLE, VERDICT_TONE, tipTone } from "./model";
  * who discovers that once will never trust the panel again.
  */
 
-/** The panel's answer, and the largest thing on it.
- *
- * The figures below are evidence. Five of them at equal weight left the reader
- * to decide whether 43s of settlement latency and a 33% abandonment rate add up
- * to a working chain, which is precisely the judgement someone arriving at an
- * explorer has no basis to make. So the panel states its conclusion first and
- * shows its working underneath, in the same grammar every record page uses.
- *
- * The reasons are not decoration: each one names the figure it came from, so
- * disagreeing with the verdict costs a reader nothing. A judgement that cannot
- * be checked would be worth less than the numbers it sits above. */
+/** Compact activity notice. Supporting evidence stays visible for problems. */
 export function Verdict({ health }: { health: NetworkHealth }) {
   const tone = VERDICT_TONE[health.state];
   return (
     <div
       data-region="verdict"
       data-verdict-state={health.state}
-      className="border-b border-border px-4 py-3.5"
+      className="border-b border-border bg-surface-2 px-4 py-3"
     >
-      <p className="flex items-start gap-2.5">
+      <p className="flex items-start gap-2.5 text-sm leading-6">
         <span aria-hidden className={cn("mt-2 size-2 shrink-0 rounded-full", tone.dot)} />
-        {/* Larger than the 19px figures at every width, including the phone.
-            An earlier version was 19px at base and only outgrew them at `sm`,
-            which left the panel with no focal point on exactly the viewport
-            where having one matters most. */}
-        <span
-          className={cn(
-            /* Stays ahead of the figures below it at both breakpoints. The
-               conclusion is what a reader should take from this panel; the
-               figures are the evidence for it, and evidence does not outrank
-               the finding. Asserted in test/components.test.tsx and again in
-               e2e/populated.spec.ts, which measures both and compares them.
-
-               The last two arbitrary sizes in the app, and they are here on
-               purpose. Tailwind has no step between 2xl (24) and 3xl (30), and
-               `Figure` below is 24. Naming this pair `text-2xl sm:text-3xl`
-               would tie the headline with the figures at base width and fail
-               that comparison; dropping `Figure` to `text-xl` would put it at
-               20px, which is the size its own comment records as too small to
-               be a focal point. Flattening this to `text-3xl` would hold the
-               invariant, but the headlines are sentences ("The network's
-               health cannot be judged right now.") and 30px costs two extra
-               lines on a phone.
-
-               So the third tier is real here, and 26 is the number that makes
-               it work. `scripts/type-scale-check.mjs` carries a baseline of 2
-               to hold exactly this, rather than 0 with an exception nobody
-               can see. */
-            "text-[26px] leading-snug font-semibold text-balance sm:text-[30px]",
-            tone.text,
-          )}
-        >
-          {health.headline}
-        </span>
+        <span className="font-medium text-text">{health.headline}</span>
       </p>
       {health.reasons.length > 0 ? (
-        /* Severity decides density. A healthy verdict's reasons restate the
-           interval and the pending count, both of which are tiles a thumb
-           away, so a phone drops them and keeps the sentence. Every other
-           state's reasons are the only place its evidence appears, and a
-           stopped chain is the one thing a reader must not have to scroll
-           for. */
         <ul
           data-region="verdict-reasons"
           data-density={health.state === "healthy" ? "collapsible" : "always"}
-          className={cn("mt-2 space-y-1 pl-4.5", health.state === "healthy" && "max-sm:hidden")}
+          className={cn("mt-1 space-y-1 pl-4.5", health.state === "healthy" && "max-sm:hidden")}
         >
           {health.reasons.map((reason) => (
             <li key={reason} className="mg-caption leading-relaxed text-text-2">
@@ -138,49 +90,6 @@ export function Figure({
       </p>
       {sub ? <p className="mt-0.5 mg-micro text-text-3">{sub}</p> : null}
     </div>
-  );
-}
-
-/** A percentile pair, presented with the sample that produced it.
- *
- * `emptyNote` exists because an empty sample has more than one cause. A figure
- * that reports no duration next to a count of settled blocks has to say which
- * of the two it means, or the panel contradicts itself. */
-export function Latency({
-  label,
-  p,
-  hint,
-  term,
-  emptyNote = "Nothing completed in this window",
-}: {
-  label: string;
-  p: Percentile;
-  hint?: string;
-  term?: GlossaryTerm | undefined;
-  emptyNote?: string;
-}) {
-  const thin = p.sampleCount > 0 && p.sampleCount < THIN_SAMPLE;
-  return (
-    <Figure
-      label={label}
-      value={p.p50Ms === null ? "No data" : formatDuration(p.p50Ms)}
-      tone={p.p50Ms === null ? "neutral" : "neutral"}
-      hint={hint ?? p.source}
-      term={term}
-      sub={
-        p.sampleCount === 0 ? (
-          emptyNote
-        ) : (
-          <>
-            p95 {p.p95Ms === null ? "unknown" : formatDuration(p.p95Ms)}
-            <span className={cn("block", thin && "text-warning")}>
-              {thin ? "thin sample: " : "over "}
-              {p.sampleCount} {p.sampleCount === 1 ? "record" : "records"}
-            </span>
-          </>
-        )
-      }
-    />
   );
 }
 
