@@ -215,7 +215,9 @@ describe("networkHealth when no interval can be measured", () => {
   it("calls a node that produced blocks and then went quiet stalled, not unjudgeable", () => {
     const h = networkHealth(noInterval());
     expect(h.state).toBe("stalled");
-    expect(h.headline).toBe(`Latest recorded block: 3d 6h ago. No blocks recorded in the last ${noInterval().window.hours} hours.`);
+    expect(h.headline).toBe(
+      `Latest recorded block: 3d 6h ago. No blocks recorded in the last ${noInterval().window.hours} hours.`,
+    );
   });
 
   // The headline already says what happened, the chain tip figure the panel

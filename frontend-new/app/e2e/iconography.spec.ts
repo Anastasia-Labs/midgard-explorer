@@ -66,7 +66,9 @@ test.describe("transaction concepts keep one semantic glyph", () => {
     // Every address this fixture builds is a 29-byte enterprise address, which
     // has none, so the glyph must be absent rather than shown as an empty slot.
     await expect(page.locator('[data-semantic-icon="stakeCredential"]')).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Stake credential", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Stake credential", exact: true })).toHaveCount(
+      0,
+    );
 
     await page.getByRole("tab", { name: "Technical details" }).click();
     for (const kind of ["requiredSigner", "requiredObserver", "script", "metadata"]) {

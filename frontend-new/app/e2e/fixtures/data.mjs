@@ -991,7 +991,9 @@ export const addressResponse = (address, page = 1, utxoCursor = null) => {
   const start = (Math.max(1, page) - 1) * limit;
 
   // The balance and utxoCount describe every UTxO; `utxos` carries one page.
-  const ordered = [...utxos].sort((a, b) => (a.outRefHex < b.outRefHex ? -1 : a.outRefHex > b.outRefHex ? 1 : 0));
+  const ordered = [...utxos].sort((a, b) =>
+    a.outRefHex < b.outRefHex ? -1 : a.outRefHex > b.outRefHex ? 1 : 0,
+  );
   const at = utxoCursor ? ordered.findIndex((u) => u.outRefHex > utxoCursor) : 0;
   const utxoFrom = at === -1 ? ordered.length : at;
   const utxoPage = ordered.slice(utxoFrom, utxoFrom + UTXO_PAGE_LIMIT);

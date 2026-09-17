@@ -51,7 +51,8 @@ test.describe("shell and navigation", () => {
   test("theme toggle flips the effective theme and persists it", async ({ page }) => {
     await page.goto("/");
     await hydrated(page);
-    const background = () => page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);
+    const background = () =>
+      page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor);
     const original = await background();
     const toggle = page.getByRole("button", { name: /^Theme:/ });
     await toggle.click();

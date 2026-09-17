@@ -255,23 +255,23 @@ export function BlockView({
           Roots recorded on Cardano
         </summary>
         <div className="grid gap-x-8 gap-y-2 px-4 pb-4 sm:grid-cols-2">
-        {(
-          [
-            ["Previous UTxOs root", l1Header.prevUtxosRoot],
-            ["UTxOs root", l1Header.utxosRoot],
-            ["Transactions root", l1Header.transactionsRoot],
-            ["Deposits root", l1Header.depositsRoot],
-            ["Withdrawals root", l1Header.withdrawalsRoot],
-            ["Forced transactions root", l1Header.forcedTransactionsRoot],
-            ["Transition trace root", l1Header.transitionTraceRoot],
-            ["Event-to-step root", l1Header.eventToStepRoot],
-          ] as const
-        ).map(([label, root]) => (
-          <div key={label} className="flex items-center justify-between gap-4">
-            <span className="text-sm text-text-3">{label}</span>
-            <Identifier value={root} head={6} tail={6} />
-          </div>
-        ))}
+          {(
+            [
+              ["Previous UTxOs root", l1Header.prevUtxosRoot],
+              ["UTxOs root", l1Header.utxosRoot],
+              ["Transactions root", l1Header.transactionsRoot],
+              ["Deposits root", l1Header.depositsRoot],
+              ["Withdrawals root", l1Header.withdrawalsRoot],
+              ["Forced transactions root", l1Header.forcedTransactionsRoot],
+              ["Transition trace root", l1Header.transitionTraceRoot],
+              ["Event-to-step root", l1Header.eventToStepRoot],
+            ] as const
+          ).map(([label, root]) => (
+            <div key={label} className="flex items-center justify-between gap-4">
+              <span className="text-sm text-text-3">{label}</span>
+              <Identifier value={root} head={6} tail={6} />
+            </div>
+          ))}
         </div>
       </details>
     </Card>

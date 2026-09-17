@@ -27,7 +27,11 @@ afterEach(cleanup);
 
 // Indexed access is `string | undefined` under noUncheckedIndexedAccess, and a
 // missing fixture address should fail loudly here rather than render "undefined".
-const ADDRESS = ADDRESSES[1] ?? (() => { throw new Error("fixture has no second address"); })();
+const ADDRESS =
+  ADDRESSES[1] ??
+  (() => {
+    throw new Error("fixture has no second address");
+  })();
 
 /**
  * The backend returns one page of UTxOs while `utxoCount` and the balance keep

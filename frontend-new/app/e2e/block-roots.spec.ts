@@ -35,9 +35,7 @@ test.describe("block Merkle roots", () => {
     await expect(panel).not.toContainText(/proof|verif/i);
   });
 
-  test("says the node reports no roots when it holds no finalization record", async ({
-    page,
-  }) => {
+  test("says the node reports no roots when it holds no finalization record", async ({ page }) => {
     await page.goto(`/block/${await hashAt(page, 11)}?tab=roots`);
     await settle(page);
     const panel = page.getByRole("tabpanel");

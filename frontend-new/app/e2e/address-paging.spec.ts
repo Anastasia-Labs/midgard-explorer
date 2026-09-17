@@ -13,8 +13,7 @@ import { ADDRESSES, PAGED_ADDRESS } from "./fixtures/data.mjs";
  * review against them would pass without paging anything.
  */
 const PAGED = PAGED_ADDRESS;
-const at = (address: string, query = "") =>
-  `/address/${encodeURIComponent(address)}${query}`;
+const at = (address: string, query = "") => `/address/${encodeURIComponent(address)}${query}`;
 
 const openUtxos = async (page: import("@playwright/test").Page, url: string) => {
   await page.goto(url);
@@ -40,7 +39,8 @@ test.describe("address UTxO paging", () => {
     // Scope to the UTxO table: the Activity table is in the DOM too, and its
     // rows legitimately repeat because the history page did not change.
     const utxoRows = () =>
-      page.locator("table", { has: page.locator("caption", { hasText: /Spendable UTxOs/i }) })
+      page
+        .locator("table", { has: page.locator("caption", { hasText: /Spendable UTxOs/i }) })
         .locator("tbody tr");
 
     const firstRowIds = await utxoRows().allInnerTexts();

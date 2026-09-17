@@ -1,7 +1,5 @@
 import type { OutputView, TransactionView } from "@midgard-explorer/contracts";
-import { Chip } from "../../../components/ui/base/layout";
 import { Identifier } from "../../../components/ui/domain/identifier";
-import { Detail } from "../../../components/ui/base/detail";
 import { SemanticLabel, SemanticValue } from "../../../components/ui/base/semantic";
 import type { SemanticIconKind } from "../../../lib/semantic-icons";
 

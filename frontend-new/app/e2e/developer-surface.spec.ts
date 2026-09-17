@@ -147,7 +147,9 @@ test.describe("state", () => {
     await settle(page);
     await expect(page.getByText(/Unspent|Not in current ledger/).first()).toBeVisible();
     await page.getByRole("button", { name: "Payment credential", exact: true }).first().click();
-    await expect(page.getByRole("dialog", { name: "Payment credential", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("dialog", { name: "Payment credential", exact: true }),
+    ).toBeVisible();
   });
 
   test("resolves reference-input values without calling them spent", async ({ page }) => {
