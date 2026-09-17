@@ -28,10 +28,14 @@ export function ViewToggle({
   views,
   label,
   param = "view",
+  heading,
+  children,
 }: {
   views: View[];
   label: string;
   param?: string;
+  heading?: ReactNode;
+  children?: ReactNode;
 }) {
   const params = useSearchParams();
   const router = useRouter();
@@ -64,37 +68,41 @@ export function ViewToggle({
 
   return (
     <>
-      <div
-        role="radiogroup"
-        aria-label={label}
-        className="mb-3 inline-flex rounded-lg border border-border bg-surface-2/60 p-0.5"
-      >
-        {views.map((v, i) => {
-          const on = v.id === current.id;
-          return (
-            <button
-              key={v.id}
-              ref={(el) => {
-                refs.current[i] = el;
-              }}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              tabIndex={on ? 0 : -1}
-              onClick={() => select(v.id)}
-              onKeyDown={(e) => onKey(e, i)}
-              className={cn(
-                "rounded-[7px] px-3 py-1.5 text-caption font-medium transition-colors",
-                on
-                  ? "bg-surface text-text shadow-sm ring-1 ring-border"
-                  : "text-text-2 hover:text-text",
-              )}
-            >
-              {v.label}
-            </button>
-          );
-        })}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        {heading}
+        <div
+          role="radiogroup"
+          aria-label={label}
+          className="inline-flex rounded-lg border border-border bg-surface-2/60 p-0.5"
+        >
+          {views.map((v, i) => {
+            const on = v.id === current.id;
+            return (
+              <button
+                key={v.id}
+                ref={(el) => {
+                  refs.current[i] = el;
+                }}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                tabIndex={on ? 0 : -1}
+                onClick={() => select(v.id)}
+                onKeyDown={(e) => onKey(e, i)}
+                className={cn(
+                  "rounded-[7px] px-3 py-1.5 text-caption font-medium transition-colors",
+                  on
+                    ? "bg-surface text-text shadow-sm ring-1 ring-border"
+                    : "text-text-2 hover:text-text",
+                )}
+              >
+                {v.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
+      {children}
       {views.map((v) => (
         <div key={v.id} hidden={v.id !== current.id}>
           {v.content}

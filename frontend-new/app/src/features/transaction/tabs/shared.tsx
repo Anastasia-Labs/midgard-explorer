@@ -1,53 +1,9 @@
-import type { AddressIdentityView, OutputView, TransactionView } from "@midgard-explorer/contracts";
+import type { OutputView, TransactionView } from "@midgard-explorer/contracts";
 import { Chip } from "../../../components/ui/base/layout";
 import { Identifier } from "../../../components/ui/domain/identifier";
 import { Detail } from "../../../components/ui/base/detail";
 import { SemanticLabel, SemanticValue } from "../../../components/ui/base/semantic";
 import type { SemanticIconKind } from "../../../lib/semantic-icons";
-
-/** Presentational pieces shared by the transaction tabs.
- *
- * `CredentialDetails` and `OutputState` are used by both State and Details, so
- * neither tab can own them; the rest live here for the same reason the tabs do,
- * which is that the route file should compose tabs rather than contain them. */
-
-export function CredentialDetails({ identity }: { identity: AddressIdentityView }) {
-  return (
-    <details className="mt-2 border-t border-border pt-2">
-      <summary className="cursor-pointer mg-caption text-link">Credentials</summary>
-      <dl className="mt-2 grid gap-x-5 gap-y-2 sm:grid-cols-2">
-        <Detail
-          label="Payment credential"
-          semantic="paymentCredential"
-          value={
-            <span className="inline-flex flex-wrap items-center gap-1.5">
-              <Identifier value={identity.payment.hash} head={10} tail={8} />
-              <Chip>{identity.payment.kind === "Script" ? "script" : "key"}</Chip>
-            </span>
-          }
-        />
-        <Detail
-          label="Stake credential"
-          semantic="stakeCredential"
-          value={
-            identity.stake ? (
-              <span className="inline-flex flex-wrap items-center gap-1.5">
-                <Identifier value={identity.stake.hash} head={10} tail={8} />
-                <Chip>{identity.stake.kind === "Script" ? "script" : "key"}</Chip>
-              </span>
-            ) : (
-              "None"
-            )
-          }
-        />
-      </dl>
-      <p className="mt-1 mg-micro text-text-3">
-        Network {identity.networkId}
-        {identity.protected ? " · protected address" : ""}
-      </p>
-    </details>
-  );
-}
 
 export function OutputState({ output }: { output: OutputView }) {
   if (output.state.consumedBy) {

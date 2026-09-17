@@ -27,10 +27,7 @@ export function TransactionEvents({ tx }: { tx: TransactionView }) {
           <h2 className="text-body font-semibold text-text">
             {/* The SemanticLabel carries what a protocol event is on hover, so
                 the section no longer restates it in a callout and a subtitle. */}
-            <SemanticLabel
-              kind="protocolEvent"
-              label={`Script invocations (${invocations.length})`}
-            />
+            <SemanticLabel kind="script" label={`Script invocations (${invocations.length})`} />
           </h2>
         </div>
 
@@ -57,7 +54,7 @@ export function TransactionEvents({ tx }: { tx: TransactionView }) {
 
                 <dl className="mt-3 grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
                   <div className="min-w-0">
-                    <dt className="mg-overline">Emitter</dt>
+                    <dt className="mg-overline">Script / policy</dt>
                     <dd className="mt-1 text-sm text-text">
                       {invocation.emitter.hash === null ? (
                         <span className="text-text-3">Not provable from this transaction</span>
@@ -93,14 +90,19 @@ export function TransactionEvents({ tx }: { tx: TransactionView }) {
                         The redeemer payload did not decode to a readable structure.
                       </p>
                     ) : (
-                      <pre
-                        tabIndex={0}
-                        role="region"
-                        aria-label={`Invocation ${invocation.ordinal + 1} decoded redeemer`}
-                        className="max-h-64 overflow-auto p-3 font-mono text-xs leading-relaxed"
-                      >
-                        {JSON.stringify(invocation.redeemer.data, null, 2)}
-                      </pre>
+                      <>
+                        <div className="flex justify-end p-2">
+                          <CopyButton value={JSON.stringify(invocation.redeemer.data, null, 2)} />
+                        </div>
+                        <pre
+                          tabIndex={0}
+                          role="region"
+                          aria-label={`Invocation ${invocation.ordinal + 1} decoded redeemer`}
+                          className="max-h-64 overflow-auto p-3 font-mono text-xs leading-relaxed"
+                        >
+                          {JSON.stringify(invocation.redeemer.data, null, 2)}
+                        </pre>
+                      </>
                     )}
                     <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2">
                       <span className="mg-overline">Redeemer CBOR</span>

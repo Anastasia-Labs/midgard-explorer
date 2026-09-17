@@ -55,7 +55,7 @@ const VERDICT: Record<
 > = {
   matched: {
     tone: "success",
-    title: "Confirmed by two independent sources",
+    title: "Node and index records agree",
     detail: "The node's record and the explorer's own Cardano index name the same transaction.",
   },
   node_only: {
@@ -177,7 +177,9 @@ const NOT_COMPARABLE: Partial<Record<string, { title: string; detail: string }>>
 export function CardanoAssociation({
   association,
   context,
+  compact = false,
 }: {
+  compact?: boolean;
   association: Association | null | undefined;
   context: DeploymentContext | null | undefined;
 }) {
@@ -204,6 +206,18 @@ export function CardanoAssociation({
         ? { tone: VERDICT.stale.tone, ...notComparable }
         : VERDICT[association.reconciliation];
   const settled = "l1TxHash" in association ? association.l1TxHash : null;
+
+  if (compact && association.reconciliation === "matched" && settled) {
+    return (
+      <div
+        data-region="association"
+        className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-info/25 bg-info/5 px-4 py-3"
+      >
+        <span className="text-sm font-medium text-info">Cardano settlement</span>
+        <L1TxLink hash={settled} destination="midgard" />
+      </div>
+    );
+  }
 
   return (
     <Card className="mb-4" region="association">

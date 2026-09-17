@@ -1,17 +1,18 @@
 import type { TransactionView } from "@midgard-explorer/contracts";
 import { AssetHierarchy, ValueCell } from "../../../components/ui/domain/amount";
-import { AddressLink } from "../../../components/ui/domain/address";
+import { AddressRecord } from "../../../components/ui/domain/addressrecord";
 import { Icon } from "../../../components/ui/base/icons";
 import { Identifier } from "../../../components/ui/domain/identifier";
-import { LedgerEquation } from "../../../components/ui/domain/ledger";
-import { Card, Chip } from "../../../components/ui/base/layout";
+import { NetMovement } from "../../../components/ui/domain/ledger";
+import { Card, Chip, Callout } from "../../../components/ui/base/layout";
 import { ReferenceScript } from "../../../components/ui/domain/scriptdata";
 import { SemanticLabel, SemanticValue } from "../../../components/ui/base/semantic";
-import { CredentialDetails, OutputState } from "./shared";
+import { OutputState } from "./shared";
 import { UtxoFlow } from "../../../components/ui/domain/utxoflow";
+import { ledgerEquation } from "../../../lib/ledger";
 import { ViewToggle } from "../../../components/ui/base/viewtoggle";
 
-/** What the transaction changed: the ledger equation, then the same inputs and
+/** What the transaction changed: the same inputs and
  * outputs as either a complete table or a summarising diagram.
  *
  * Extracted from the route so the page resolves data and composes tabs while
@@ -37,19 +38,23 @@ export function StateTab({ tx }: { tx: TransactionView }) {
                 />
                 {input.resolved ? (
                   <>
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
-                      <AddressLink
+                    <div className="mt-2">
+                      <AddressRecord
                         address={input.resolved.address}
-                        kind={input.resolved.addressKind}
-                      />
-                      <ValueCell value={input.resolved.value} />
+                        identity={input.resolved.identity}
+                        utxo={{
+                          txId: input.txId,
+                          index: input.index,
+                          value: input.resolved.value,
+                          context: "Input",
+                        }}
+                      >
+                        <ValueCell value={input.resolved.value} />
+                      </AddressRecord>
                     </div>
-                    <CredentialDetails identity={input.resolved.identity} />
                   </>
                 ) : (
-                  <p className="mt-2 text-sm text-text-3">
-                    Spend side not resolvable (already spent or pruned).
-                  </p>
+                  <p className="mt-2 text-sm text-text-3">Input details unavailable.</p>
                 )}
               </li>
             ))}
@@ -73,15 +78,23 @@ export function StateTab({ tx }: { tx: TransactionView }) {
                 // viewed address, carries a mint, holds a datum or script ref).
                 className="rounded-lg border border-border bg-surface-2/40 p-3"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                  <AddressLink address={output.address} kind={output.addressKind} />
+                <AddressRecord
+                  address={output.address}
+                  identity={output.identity}
+                  utxo={{
+                    txId: tx.txId,
+                    index: output.index,
+                    value: output.value,
+                    context: "Output",
+                    status: <OutputState output={output} />,
+                  }}
+                >
                   <ValueCell value={output.value} />
-                </div>
+                </AddressRecord>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                   <Identifier value={`${tx.txId}#${output.index}`} head={10} tail={6} />
                   <OutputState output={output} />
                 </div>
-                <CredentialDetails identity={output.identity} />
                 {output.hasDatum ? (
                   <div className="mt-1.5 flex gap-1.5">
                     <Chip>
@@ -92,7 +105,14 @@ export function StateTab({ tx }: { tx: TransactionView }) {
                 {/* The reference script was a chip reading "script ref". Its
                     hash, language and bytes were all in the payload and none of
                     them reached the page. */}
-                {output.scriptRef ? <ReferenceScript script={output.scriptRef} /> : null}
+                {output.scriptRef ? (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer mg-caption text-link">
+                      Reference script
+                    </summary>
+                    <ReferenceScript script={output.scriptRef} />
+                  </details>
+                ) : null}
                 {Object.keys(output.value.assets).length > 0 ? (
                   <div className="mt-2 border-t border-border pt-2">
                     <AssetHierarchy assets={output.value.assets} />
@@ -106,24 +126,32 @@ export function StateTab({ tx }: { tx: TransactionView }) {
     </>
   );
 
-  const utxoTab = (
-    <>
-      {/* The equation leads the tab and stays put across both views: two lists
-          or a diagram show what the transaction contains, and
-          inputs = outputs + fee shows what it did. */}
-      <LedgerEquation tx={tx} />
-      {/* Table first, and it is the default. It is the complete view: every
-          input, every output, every asset. The flow is the summary, and it is
-          also what a reader falls back from when the diagram cannot help. */}
+  return (
+    <section aria-labelledby="transaction-movement" className="mb-6">
+      {ledgerEquation(tx).kind === "unbalanced" ? (
+        <Callout tone="warning" title="Amounts do not balance">
+          A value may not have decoded correctly. Check the raw response before relying on these
+          amounts.
+        </Callout>
+      ) : null}
       <ViewToggle
+        heading={
+          <h2 id="transaction-movement" className="text-lg font-semibold tracking-tight">
+            Inputs &amp; outputs
+          </h2>
+        }
         label="UTxO view"
         views={[
           { id: "table", label: "Table", content: utxoTable },
           { id: "flow", label: "Flow", content: <UtxoFlow tx={tx} /> },
         ]}
       />
-    </>
+      <details className="mt-4">
+        <summary className="cursor-pointer text-sm text-link">Net movement by address</summary>
+        <div className="mt-3">
+          <NetMovement tx={tx} />
+        </div>
+      </details>
+    </section>
   );
-
-  return utxoTab;
 }

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Icon } from "../base/icons";
 import { CopyButton } from "./identifier";
 import { Identicon } from "../base/identicon";
+import { cn } from "../../../lib/format";
 import { SummaryBand, type SummaryItem } from "./summary";
 
 /** The page's subject identity: what this page is about, stated once, in full,
@@ -12,6 +13,8 @@ import { SummaryBand, type SummaryItem } from "./summary";
  * answering the same question. */
 export function IdentityBar({
   overline,
+  title,
+  children,
   value,
   badges,
   externalHref,
@@ -20,6 +23,9 @@ export function IdentityBar({
   mark = false,
 }: {
   overline: string;
+  /** Optional page heading and contextual summary within the identity surface. */
+  title?: string;
+  children?: ReactNode;
   value: string;
   /** Show the generated mark for `value`. Set on the address page, where the
    * subject is an address and every list that linked here showed its mark: a
@@ -36,11 +42,22 @@ export function IdentityBar({
   return (
     <div
       data-region="identity"
-      className="mb-4 overflow-hidden rounded-xl border border-border bg-surface px-4 py-3.5 shadow-(--mg-shadow)"
+      className={cn(
+        "mb-4 overflow-hidden rounded-xl border border-border bg-surface px-4 py-3.5 shadow-(--mg-shadow)",
+        title && "border-t-2 border-t-accent/50",
+      )}
     >
+      {title ? (
+        <div className="mb-5 mt-1 flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight text-text sm:text-3xl">{title}</h1>
+          {badges ? <div className="flex flex-wrap items-center gap-2">{badges}</div> : null}
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="mg-overline">{overline}</p>
-        {badges ? <div className="flex flex-wrap items-center gap-2">{badges}</div> : null}
+        {!title && badges ? (
+          <div className="flex flex-wrap items-center gap-2">{badges}</div>
+        ) : null}
       </div>
       {/* A 64-character hash wraps to three lines on a phone and costs more
           height than the answer below it. Small viewports get a single
@@ -70,6 +87,7 @@ export function IdentityBar({
           ) : null}
         </span>
       </div>
+      {children}
       {summary && summary.length > 0 ? <SummaryBand items={summary} variant="attached" /> : null}
     </div>
   );

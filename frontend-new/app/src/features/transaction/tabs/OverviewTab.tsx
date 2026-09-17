@@ -1,109 +1,20 @@
-import Link from "next/link";
-import type { MintView, TransactionWithMeta } from "@midgard-explorer/contracts";
-import { AddressLink } from "../../../components/ui/domain/address";
+import type { TransactionWithMeta } from "@midgard-explorer/contracts";
+import { AddressRecord } from "../../../components/ui/domain/addressrecord";
 import { ValueCell } from "../../../components/ui/domain/amount";
-import { AssetName, AssetQuantity } from "../../../components/ui/domain/asset";
 import { Detail } from "../../../components/ui/base/detail";
 import { Identifier } from "../../../components/ui/domain/identifier";
-import { Card, Chip } from "../../../components/ui/base/layout";
+import { Card } from "../../../components/ui/base/layout";
 import { SemanticLabel } from "../../../components/ui/base/semantic";
 import { StatusBadge } from "../../../components/ui/domain/status";
-import { assetUnit } from "../../../lib/asset";
-import { formatTimestamp } from "../../../lib/format";
-import { CredentialDetails, EvidenceHash, EvidenceList, validityIntervalText } from "./shared";
+import { EvidenceHash, EvidenceList, validityIntervalText } from "./shared";
 
-/** The default tab: what the ledger recorded about this transaction that is not
- * the movement itself.
- *
- * It absorbed the former Details tab. That tab held one card with four fields,
- * and a tab a reader has to open to find four hashes is a tab that hides them.
- */
+/** Ledger metadata and script evidence, separate from the movement overview. */
 
 function networkText(networkId: number | null): string {
   if (networkId === null) return "Not declared";
   if (networkId === 0) return "0 (testnet)";
   if (networkId === 1) return "1 (mainnet)";
   return String(networkId);
-}
-
-/** Supply change, with the sign that says which direction.
- *
- * The quantities were indexed, carried in the payload, and then reduced to a
- * list of policy IDs under a caption promising the numbers appeared on the
- * outputs in the flow. They do not. A burn removes supply and reaches no
- * output at all, and for a mint an output carries the resulting total rather
- * than the change, so a reader following that caption found a different number.
- */
-function MintPanel({ mint }: { mint: MintView }) {
-  const assets = [...mint.assets].sort(
-    (a, b) => a.policyId.localeCompare(b.policyId) || a.assetName.localeCompare(b.assetName),
-  );
-  const burns = assets.filter((asset) => BigInt(asset.quantity) < 0n).length;
-  const mints = assets.length - burns;
-
-  return (
-    <Card>
-      <h2 className="mg-overline px-4 pt-4">
-        <SemanticLabel
-          kind="mintBurn"
-          label={
-            burns === 0
-              ? `Minted (${mints})`
-              : mints === 0
-                ? `Burned (${burns})`
-                : `Minted and burned (${assets.length})`
-          }
-        />
-      </h2>
-      {assets.length === 0 ? (
-        <div className="p-4">
-          <p className="mg-caption text-text-3">
-            Quantities could not be decoded. The policies below are what the transaction declared.
-          </p>
-          <ul className="mt-2 space-y-1">
-            {mint.policyIds.map((policyId) => (
-              <li key={policyId}>
-                <Identifier value={policyId} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <ul className="divide-y divide-border">
-          {assets.map((asset) => {
-            const quantity = BigInt(asset.quantity);
-            const burned = quantity < 0n;
-            return (
-              <li
-                key={`${asset.policyId}-${asset.assetName}`}
-                className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <Link
-                    href={`/asset/${assetUnit(asset.policyId, asset.assetName)}`}
-                    className="min-w-0 text-link hover:text-link-hover hover:underline"
-                  >
-                    <AssetName nameHex={asset.assetName} />
-                  </Link>
-                  <div className="mt-1">
-                    <Identifier value={asset.policyId} head={12} tail={8} />
-                  </div>
-                </div>
-                <span className="flex shrink-0 items-center gap-2 text-sm">
-                  <Chip on="surface-2" emphasis="strong">
-                    {burned ? "Burn" : "Mint"}
-                  </Chip>
-                  {/* The sign is the fact. A burn written as an unsigned number
-                      reads as new supply. */}
-                  <AssetQuantity quantity={burned ? asset.quantity : `+${asset.quantity}`} />
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </Card>
-  );
 }
 
 export function OverviewTab({ tx }: { tx: TransactionWithMeta }) {
@@ -119,7 +30,6 @@ export function OverviewTab({ tx }: { tx: TransactionWithMeta }) {
               here rather than as a second badge beside the lifecycle status,
               where two badges answered one question with two words. */}
           <Detail label="Validity" value={<StatusBadge status={tx.validity} />} />
-          <Detail label="Time" value={formatTimestamp(tx.timestamp)} />
           <Detail
             label="Validity interval"
             term="validityInterval"
@@ -142,10 +52,6 @@ export function OverviewTab({ tx }: { tx: TransactionWithMeta }) {
         </dl>
       </Card>
 
-      {tx.mint && (tx.mint.assets.length > 0 || tx.mint.policyIds.length > 0) ? (
-        <MintPanel mint={tx.mint} />
-      ) : null}
-
       {tx.referenceInputs.length > 0 ? (
         <Card>
           <h2 className="mg-overline px-4 pt-4">
@@ -164,11 +70,20 @@ export function OverviewTab({ tx }: { tx: TransactionWithMeta }) {
                 <Identifier value={`${r.txId}#${r.index}`} href={`/transaction/${r.txId}`} />
                 {r.resolved ? (
                   <>
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm">
-                      <AddressLink address={r.resolved.address} kind={r.resolved.addressKind} />
-                      <ValueCell value={r.resolved.value} />
+                    <div className="mt-2">
+                      <AddressRecord
+                        address={r.resolved.address}
+                        identity={r.resolved.identity}
+                        utxo={{
+                          txId: r.txId,
+                          index: r.index,
+                          value: r.resolved.value,
+                          context: "Reference input",
+                        }}
+                      >
+                        <ValueCell value={r.resolved.value} />
+                      </AddressRecord>
                     </div>
-                    <CredentialDetails identity={r.resolved.identity} />
                   </>
                 ) : (
                   <p className="mt-2 mg-caption text-text-3">
@@ -181,10 +96,18 @@ export function OverviewTab({ tx }: { tx: TransactionWithMeta }) {
         </Card>
       ) : null}
 
-      <Card>
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="text-body font-semibold text-text">Authorization and commitments</h2>
-        </div>
+      <details
+        className="rounded-xl border border-border bg-surface"
+        open={
+          tx.requiredSigners.length > 0 ||
+          tx.requiredObservers.length > 0 ||
+          tx.scriptIntegrityHash !== null ||
+          tx.auxiliaryDataHash !== null
+        }
+      >
+        <summary className="cursor-pointer px-4 py-3 text-body font-semibold text-text">
+          Authorization and commitments
+        </summary>
         <dl className="grid gap-x-8 gap-y-4 p-4 sm:grid-cols-2">
           <EvidenceList
             label="Required signers"
@@ -205,7 +128,7 @@ export function OverviewTab({ tx }: { tx: TransactionWithMeta }) {
           />
           <EvidenceHash label="Auxiliary-data hash" kind="metadata" value={tx.auxiliaryDataHash} />
         </dl>
-      </Card>
+      </details>
     </div>
   );
 }

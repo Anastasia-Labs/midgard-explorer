@@ -29,6 +29,7 @@ const getServerNow = () => 0;
 export function Timestamp({
   iso,
   exact: showExact = false,
+  wrap = false,
   className,
 }: {
   iso: string;
@@ -36,6 +37,8 @@ export function Timestamp({
    * explorer does this on detail pages, where there is room for it and where a
    * reader wants the moment rather than the distance. Lists stay relative. */
   exact?: boolean;
+  /** Allow long absolute timestamps to wrap in compact rows before hydration. */
+  wrap?: boolean;
   className?: string;
 }) {
   const nowMs = useSyncExternalStore(subscribe, getNow, getServerNow);
@@ -47,8 +50,9 @@ export function Timestamp({
     <time
       dateTime={iso}
       className={cn(
-        "inline-block whitespace-nowrap mg-caption text-text-3 tabular-nums",
-        showExact ? "min-w-0" : "min-w-[7.5ch]",
+        "inline-block mg-caption text-text-3 tabular-nums",
+        wrap ? "max-w-full whitespace-normal break-words" : "whitespace-nowrap",
+        showExact || wrap ? "min-w-0" : "min-w-[7.5ch]",
         className,
       )}
     >

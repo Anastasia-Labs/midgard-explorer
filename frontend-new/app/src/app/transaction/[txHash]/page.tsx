@@ -8,7 +8,7 @@ import { AdaAmount, ValueCell } from "../../../components/ui/domain/amount";
 import { Breadcrumbs } from "../../../components/ui/base/breadcrumbs";
 import { IdentityBar } from "../../../components/ui/domain/identitybar";
 import { PageError } from "../../../components/ui/base/pageerror";
-import { Callout, PageHeader } from "../../../components/ui/base/layout";
+import { Callout } from "../../../components/ui/base/layout";
 import { RawData } from "../../../components/ui/base/rawdata";
 import { DatumPanel, RawCbor, WitnessPanel } from "../../../components/ui/domain/scriptdata";
 import { Journey } from "../../../components/ui/domain/journey";
@@ -25,6 +25,7 @@ import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
 import { statusOf } from "../../../lib/status-registry";
 import { viewerInit } from "../../../lib/viewerInit";
 import { OverviewTab } from "../../../features/transaction/tabs/OverviewTab";
+import { MintPanel } from "../../../features/transaction/MintPanel";
 import { StateTab } from "../../../features/transaction/tabs/StateTab";
 import { ActionSummary, totalOutputValue } from "../../../features/transaction/ActionSummary";
 
@@ -60,8 +61,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="transaction" title="Midgard transaction" />
-        <IdentityBar overline="Transaction hash" value={hash} />
+        <IdentityBar title="Midgard transaction" overline="Transaction hash" value={hash} />
         <PageError message={listErrorMessage(e)} />
       </>
     );
@@ -102,7 +102,6 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
           </p>
         ) : null}
       </Journey>
-      <CardanoAssociation association={data.cardano} context={data.midgard} />
     </>
   );
 
@@ -110,12 +109,17 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="transaction" title="Midgard transaction" />
         {/* The same one lifecycle answer this page states when the body decodes.
             A body that could not be decoded changes what can be shown below, not
             where the transaction is in its life. */}
-        <IdentityBar overline="Transaction hash" value={hash} badges={lifecycle} />
+        <IdentityBar
+          title="Midgard transaction"
+          overline="Transaction hash"
+          value={hash}
+          badges={lifecycle}
+        />
         {journey}
+        <CardanoAssociation association={data.cardano} context={data.midgard} />
         {data.decodeError ? (
           <Callout tone="warning" title="This transaction's body could not be decoded.">
             <p>
@@ -175,8 +179,8 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
   return (
     <>
       <Breadcrumbs items={CRUMBS} />
-      <PageHeader entity="transaction" title="Midgard transaction" />
       <IdentityBar
+        title="Midgard transaction"
         overline="Transaction hash"
         value={tx.txId}
         badges={lifecycle}
@@ -194,7 +198,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
               "Pending"
             ),
           },
-          { label: "Time", value: <Timestamp exact iso={tx.timestamp} /> },
+          { label: "Time", value: <Timestamp exact wrap iso={tx.timestamp} /> },
           { label: "Total output", value: <ValueCell value={totalOutputValue(tx)} /> },
           { label: "Fee", term: "fee", value: <AdaAmount lovelace={tx.fee} /> },
           {
@@ -207,55 +211,73 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
             ),
           },
         ]}
-      />
+      >
+        <ActionSummary tx={tx} />
+      </IdentityBar>
 
-      <ActionSummary tx={tx} />
-
-      {journey}
       {!terminal ? <LifecyclePoller /> : null}
+      {journeyModel.outcome !== "complete" ? journey : null}
+      {data.cardano?.reconciliation !== "matched" ? (
+        <CardanoAssociation association={data.cardano} context={data.midgard} />
+      ) : null}
 
       <Tabs
+        aliases={{ utxo: "summary", datums: "scripts", events: "scripts" }}
         tabs={[
-          // Named from what the reference explorers call these sections rather
-          // than from our own vocabulary: "State" is what Etherscan, Blockscout
-          // and cexplorer all call "what this transaction changed", which is
-          // exactly what the ledger equation and per-address movement answer.
-          { id: "summary", label: "Overview", content: <OverviewTab tx={tx} /> },
           {
-            id: "utxo",
-            label: "State",
-            count: tx.inputs.length + tx.outputs.length,
-            content: <StateTab tx={tx} />,
+            id: "summary",
+            label: "Overview",
+            content: (
+              <>
+                {tx.mint && (tx.mint.assets.length > 0 || tx.mint.policyIds.length > 0) ? (
+                  <MintPanel mint={tx.mint} />
+                ) : null}
+                <StateTab tx={tx} />
+                {data.cardano?.reconciliation === "matched" ? (
+                  <CardanoAssociation association={data.cardano} context={data.midgard} compact />
+                ) : null}
+              </>
+            ),
           },
           ...(datums.length + tx.witnesses.scripts.length + tx.witnesses.redeemers.length > 0
             ? [
                 {
-                  id: "datums",
-                  label: "Datums & redeemers",
-                  count:
-                    datums.length + tx.witnesses.scripts.length + tx.witnesses.redeemers.length,
+                  id: "scripts",
+                  label: "Scripts",
                   content: (
                     <div className="space-y-5">
+                      {tx.witnesses.redeemers.length > 0 ? <TransactionEvents tx={tx} /> : null}
+                      <WitnessPanel scripts={tx.witnesses.scripts} redeemers={[]} />
                       <DatumPanel datums={datums} />
-                      <WitnessPanel
-                        scripts={tx.witnesses.scripts}
-                        redeemers={tx.witnesses.redeemers}
-                      />
                     </div>
                   ),
                 },
               ]
             : []),
-          ...(tx.witnesses.redeemers.length > 0
-            ? [
-                {
-                  id: "events",
-                  label: "Events",
-                  count: tx.witnesses.redeemers.length,
-                  content: <TransactionEvents tx={tx} />,
-                },
-              ]
-            : []),
+          {
+            id: "details",
+            label: "Technical details",
+            content: (
+              <div className="space-y-4">
+                <OverviewTab tx={tx} />
+                <details className="rounded-xl border border-border bg-surface p-4">
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Settlement evidence
+                  </summary>
+                  <div className="mt-4">
+                    {journeyModel.outcome === "complete" ? journey : null}
+                    {data.cardano?.reconciliation === "matched" ? (
+                      <CardanoAssociation association={data.cardano} context={data.midgard} />
+                    ) : (
+                      <p className="text-sm text-text-2">
+                        See the settlement notice above for the available source records.
+                      </p>
+                    )}
+                  </div>
+                </details>
+              </div>
+            ),
+          },
           {
             id: "raw",
             label: "Raw",

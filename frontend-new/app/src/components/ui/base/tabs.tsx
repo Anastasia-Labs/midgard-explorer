@@ -20,7 +20,15 @@ export type Tab = {
 
 /** Tab state lives in the URL so a section is linkable and survives reload.
  * The first tab is the default and is represented by the absence of `?tab`. */
-export function Tabs({ tabs, label = "Sections" }: { tabs: Tab[]; label?: string }) {
+export function Tabs({
+  tabs,
+  label = "Sections",
+  aliases = {},
+}: {
+  tabs: Tab[];
+  label?: string;
+  aliases?: Record<string, string>;
+}) {
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -40,7 +48,9 @@ export function Tabs({ tabs, label = "Sections" }: { tabs: Tab[]; label?: string
   // the indicator must run on every render and cannot sit after an early
   // return. With no tabs the index is simply -1 and the effects find no button.
   const requested = params.get("tab");
-  const current = tabs.find((t) => t.id === requested) ?? tabs[0];
+  const current =
+    tabs.find((t) => t.id === (requested ? (aliases[requested] ?? requested) : requested)) ??
+    tabs[0];
   const activeIndex = current ? tabs.findIndex((t) => t.id === current.id) : -1;
 
   const select = (id: string) => {

@@ -57,9 +57,18 @@ const association = (over: Record<string, unknown> = {}): Association =>
   }) as unknown as Association;
 
 describe("a matched association", () => {
-  it("says two independent sources agree", () => {
+  it("offers a compact settlement link without repeating evidence", () => {
+    const { container } = render(
+      <CardanoAssociation association={association()} context={context} compact />,
+    );
+    expect(container.textContent).toContain("Cardano settlement");
+    expect(container.querySelector(`a[href="/l1/transaction/${NODE_HASH}"]`)).toBeTruthy();
+    expect(container.textContent).not.toContain("Midgard data as of");
+  });
+
+  it("says node and index records agree", () => {
     render(<CardanoAssociation association={association()} context={context} />);
-    expect(screen.getByText(/two independent sources/i)).toBeTruthy();
+    expect(screen.getByText(/Node and index records agree/i)).toBeTruthy();
   });
 
   it("names the relationship rather than leaving it to be inferred", () => {
@@ -94,8 +103,10 @@ describe("a disagreement", () => {
 
   /** Neither is dropped. A response that kept one would hide the finding, and a
    * reader handed a single hash would never know a second existed. */
-  it("shows both hashes", () => {
-    const { container } = render(<CardanoAssociation association={contested} context={context} />);
+  it.each([false, true])("shows both hashes with compact=%s", (compact) => {
+    const { container } = render(
+      <CardanoAssociation association={contested} context={context} compact={compact} />,
+    );
     const text = container.textContent ?? "";
     expect(text).toContain(NODE_HASH.slice(0, 10));
     expect(text).toContain(INDEX_HASH.slice(0, 10));

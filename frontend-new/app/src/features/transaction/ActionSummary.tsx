@@ -1,7 +1,6 @@
 import type { DecimalString, TransactionView, ValueView } from "@midgard-explorer/contracts";
 import { AddressLink } from "../../components/ui/domain/address";
 import { ValueCell } from "../../components/ui/domain/amount";
-import { Card } from "../../components/ui/base/layout";
 import { addressDeltas } from "../../lib/ledger";
 
 function addAsset(
@@ -51,12 +50,12 @@ export function ActionSummary({ tx }: { tx: TransactionView }) {
   const recipient = positiveNet(tx);
   if (!recipient) return null;
   return (
-    <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
       <p className="text-body font-medium text-text">
         Transferred value to <AddressLink address={recipient.address} />
       </p>
       <ValueCell value={recipient.value} />
-    </Card>
+    </div>
   );
 }
 
