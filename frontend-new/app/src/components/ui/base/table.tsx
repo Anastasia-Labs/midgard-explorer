@@ -90,7 +90,14 @@ export function DataTable<T>({
         </ul>
       )}
 
-      <div className="hidden overflow-x-auto sm:block">
+      {/* `relative` is load-bearing, not decoration. Without a positioned
+          ancestor inside this scroller, an absolutely positioned descendant
+          (every `sr-only` label is one) resolves its containing block to the
+          initial one, so its offset counts towards the DOCUMENT's scroll area
+          even though the table itself is clipped here. That is what pushed
+          /deposits 106 px and /withdrawals 195 px sideways at 1280: the table
+          scrolled correctly inside this box and the page scrolled too. */}
+      <div className="relative hidden overflow-x-auto sm:block">
         <table className="w-full text-sm">
           <caption className="sr-only">{caption}</caption>
           <thead>
