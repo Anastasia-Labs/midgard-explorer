@@ -143,7 +143,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main id="main" className="mx-auto min-w-0 w-full max-w-[96rem] flex-1 px-4 py-6 lg:px-6">
+      {/* `tabIndex={-1}` so the skip link actually moves focus here. Without
+          it, activating the link set `document.activeElement` back to `body`:
+          Chromium's sequential focus starting point still sent the next Tab
+          into the main region, so a Tab user was served and anything that
+          reads the focused element, an assistive technology or another engine,
+          was told nothing had happened. */}
+      <main
+        id="main"
+        tabIndex={-1}
+        className="mx-auto min-w-0 w-full max-w-[96rem] flex-1 px-4 py-6 focus-visible:outline-none lg:px-6"
+      >
         {children}
       </main>
 

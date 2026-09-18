@@ -95,7 +95,11 @@ test.describe("layout gates", () => {
         const errors = watchForErrors(page);
         await page.setViewportSize(VIEWPORTS[width]);
         const hash = await txFor(page, status);
-        test.skip(hash === null, `no fixture transaction with status ${status}`);
+        // Asserted, not skipped. `data.mjs` deals every status in TX_STATUSES
+        // round-robin across 60 transactions, so each one is on page 1 by
+        // construction. A missing status means the fixture changed and took
+        // this coverage with it, which is a failure rather than a skip.
+        expect(hash, `the fixture has no transaction with status ${status}`).not.toBeNull();
         await page.goto(`/transaction/${hash}`);
         await page.getByRole("heading", { level: 1 }).first().waitFor();
 

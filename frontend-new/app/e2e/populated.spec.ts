@@ -419,7 +419,10 @@ test.describe("native assets", () => {
   test("an asset page names the asset, its policy and its holders", async ({ page }) => {
     const rows = await roster(page);
     const row = rows.find((r) => r.assetName === "504154415445");
-    test.skip(!row, "no PATATE asset in the fixture roster");
+    // Asserted, not skipped. The fixture is committed and ours: a roster
+    // without this asset is a fixture defect, and skipping would retire the
+    // coverage silently the moment somebody edited the data.
+    expect(row, "the fixture roster has no PATATE asset").toBeTruthy();
     await page.goto(`/asset/${row!.policyId}${row!.assetName}`);
     await expect(page.getByRole("heading", { level: 1, name: "PATATE" })).toBeVisible();
     await expect(page.getByText("Fingerprint (CIP-14)")).toBeVisible();
@@ -443,7 +446,7 @@ test.describe("native assets", () => {
   test("a quantity past the safe integer range is not rounded", async ({ page }) => {
     const rows = await roster(page);
     const row = rows.find((r) => r.assetName === "fffe0102");
-    test.skip(!row, "no large-supply asset in the fixture roster");
+    expect(row, "the fixture roster has no large-supply asset").toBeTruthy();
     await page.goto(`/asset/${row!.policyId}${row!.assetName}`);
     // Number("18446744073709551615") is 18446744073709552000.
     await expect(page.getByText("18,446,744,073,709,551,615").first()).toBeVisible();
@@ -600,7 +603,10 @@ test.describe("transaction lifecycle", () => {
       if (complete && partial) break;
     }
 
-    test.skip(complete === null || partial === null, "fixture lacks both input-resolution states");
+    expect(
+      complete !== null && partial !== null,
+      "the fixture lacks a transaction with fully resolved inputs, one with partially resolved inputs, or both",
+    ).toBe(true);
 
     await page.goto(`/transaction/${complete}?tab=utxo`);
     const movement = page.getByText("Net movement by address", { exact: true });
@@ -663,7 +669,7 @@ test.describe("transaction lifecycle", () => {
         async (r) => (await r.json()).rows as Array<{ tx_id: string; decodeError: string | null }>,
       );
     const undecodable = rows.find((r) => r.decodeError);
-    test.skip(!undecodable, "no undecodable fixture on page 1");
+    expect(undecodable, "page 1 of the fixture carries no undecodable transaction").toBeTruthy();
     await page.goto(`/transaction/${undecodable!.tx_id}`);
     await expect(page.getByText("This transaction's body could not be decoded.")).toBeVisible();
     // The failure is scoped to the body: the journey comes from the node's own
