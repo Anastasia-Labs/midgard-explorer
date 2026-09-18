@@ -34,8 +34,6 @@ import {
   readAdoption,
   recordAdoption,
   servicesToStop,
-  START_WAIT_SECONDS,
-  waitArgs,
 } from "./lib/compose.mjs";
 import { expand, parseEnvFile, redact, urlTarget } from "./lib/env.mjs";
 import { descendants } from "./lib/proc.mjs";
@@ -306,7 +304,7 @@ switch (command) {
   default:
     process.stderr.write(
       `Unknown command: ${command ?? "(none)"}\n` +
-        "  Use: setup, doctor, dev [--with-l1-sync], status, services:down\n",
+        "  Use: setup, doctor, dev, status, services:down\n",
     );
     process.exit(2);
 }

@@ -42,8 +42,9 @@ let container = "";
 let out = "";
 let archive = "";
 
-/** Same host and credentials as the guarded indexer test database, a different
- * database name. Nothing here ever touches the configured live databases. */
+/** Same server as the other throwaway-database tests, a database name that ends
+ * in `_test` and is dropped again. Nothing here ever touches the configured
+ * live databases. */
 const urlFor = (database: string) => {
   const url = new URL(adminUrl);
   url.pathname = `/${database}`;
@@ -154,13 +155,21 @@ const startThrowawayServer = (major: number): string => {
 };
 
 beforeAll(() => {
-  const configured = process.env.TEST_INDEXER_POSTGRES_URL ?? process.env.INDEXER_POSTGRES_URL;
+  // `POSTGRES_URL`, the same server `test/helpers/throwawayDb.mts` creates its
+  // databases on. This suite used to borrow the explorer index's server, which
+  // was a reasonable place for a scratch database while that server existed.
+  // The index is decommissioned, so pointing here is what keeps the suite
+  // running on a node-only machine.
+  const configured = process.env.POSTGRES_URL;
   if (!configured) {
-    if (process.env.REQUIRE_DB === "1") throw new Error("No indexer Postgres URL configured.");
+    if (process.env.REQUIRE_DB === "1") throw new Error("No PostgreSQL URL configured.");
     return;
   }
   const probe = new URL(configured);
   probe.pathname = "/postgres";
+  // `POSTGRES_URL` carries `?schema=public` for Prisma, and psql refuses a URI
+  // with a query parameter it does not know.
+  probe.search = "";
   const configuredAdmin = probe.toString();
 
   try {

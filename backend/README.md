@@ -88,15 +88,16 @@ pnpm docs:check     # every documented command exists, every link resolves
 pnpm audit:gate     # the dependency policy
 ```
 
-The database-backed tests need `REQUIRE_DB=1` and a prepared test database:
+The database-backed tests need `REQUIRE_DB=1` and a PostgreSQL server they may
+create databases on, which is the one `POSTGRES_URL` names:
 
 ```sh
-pnpm setup:test
 REQUIRE_DB=1 pnpm test
 ```
 
-That database is truncated by the suite. `pnpm setup:test` refuses any target
-whose name does not end in `_test` or whose host is not this machine.
+Each such test creates its own throwaway database, applies the node schema
+fixture to it, and drops it afterwards. Nothing is truncated, and no database
+that is not marked as a throwaway is ever dropped.
 
 ## Build for production
 
@@ -112,7 +113,6 @@ Production runs compiled JavaScript, not `ts-node`.
 | Command | What it does |
 |---|---|
 | `pnpm setup` | Writes `backend/.env`. Starts nothing. |
-| `pnpm setup:test` | Creates and migrates the disposable test database. Refuses any target not named `_test`. |
 | `pnpm doctor` | Reports what is wrong and the command that fixes it. |
 | `pnpm dev` | The API, in the foreground, against an existing Midgard database. |
 | `pnpm status` | Whether the API answers, and which database it is configured to read. |

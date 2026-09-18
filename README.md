@@ -177,9 +177,9 @@ cd frontend-new  && ./scripts/ci-local.sh          # add --fast to skip the e2e 
 `pnpm check` in `backend/` is the type check, the documentation gate, the Vitest
 suite and the development-command tests.
 
-`pnpm setup:test` creates the disposable database those tests need and applies
-the index migrations to it. It refuses any target not named `_test` or not on
-this machine.
+The database-backed tests need no preparation: each one creates a throwaway
+database on the server `POSTGRES_URL` names, applies the node schema fixture to
+it, and drops it again. A throwaway is refused unless its name marks it as one.
 
 `REQUIRE_DB=1` makes the database-backed backend tests fail rather than skip.
 Set it anywhere the result is being used as a gate; without it a run with no

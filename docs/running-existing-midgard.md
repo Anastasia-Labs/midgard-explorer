@@ -54,15 +54,10 @@ POSTGRES_PASSWORD=...
 POSTGRES_DB=midgard
 ```
 
-Then create the disposable database the test suite uses:
-
-```sh
-pnpm setup:test
-```
-
-This creates the database and applies the index migrations to it. It refuses any
-target whose name does not end in `_test` or whose host is not this machine,
-because the suite truncates whatever it names.
+The test suite needs no database prepared for it. Each database-backed test
+creates a throwaway on the server `POSTGRES_URL` names, applies the node schema
+fixture, and drops it again. Only a database marked as a throwaway is ever
+dropped.
 
 ## Start it
 

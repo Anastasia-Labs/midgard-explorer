@@ -552,7 +552,7 @@ jobs:
             })();
           '
 
-      - name: SIGTERM stops the API and leaves PostgreSQL running
+      - name: SIGTERM stops the API
         # The signal a container sends, to the process a container runs.
         # `pnpm dev` is the development wrapper around it; production runs the
         # compiled server, and this is the shutdown a deployment depends on.
@@ -589,9 +589,9 @@ jobs:
             echo "the API kept answering after it exited"
             exit 1
           fi
-          echo "exited 0, port closed, PostgreSQL still running"
+          echo "exited 0, port closed"
 
-      - name: Ctrl-C stops the API, and the containers keep running
+      - name: Ctrl-C stops the API
         # The signal a terminal sends: to the process group, not to the process
         # it happens to have a pid for. Signalling the recorded pid alone
         # reached pnpm, which passes nothing on, so the server kept the port and
@@ -609,9 +609,7 @@ jobs:
             cat ../backend.log
             exit 1
           fi
-          docker ps --filter name=midgard-explorer-postgres --format '{{.Names}}' | grep -q . || {
-            echo "stopping the API stopped a container"; exit 1; }
-          echo "API stopped, container still running"
+          echo "API stopped"
 
       - name: Starting again is a restart, not a conflict
         # The container the first run started is still up, and the second run
@@ -631,9 +629,9 @@ jobs:
             sleep 2
           done
           curl -sf http://127.0.0.1:3101/healthz >/dev/null || { cat ../backend2.log; exit 1; }
-          grep -q "explorer-postgres is up" ../backend2.log || {
-            echo "the second run did not report the container"
-            cat ../backend2.log; exit 1; }
+          # `pnpm dev` starts no container of its own: the explorer owns no
+          # database any more. What must still hold is that a second run is a
+          # restart rather than a conflict, and that it adopts nothing.
           if grep -q "adopted from a session already running" ../backend2.log; then
             echo "the second run adopted a container this package had started"
             cat ../backend2.log; exit 1

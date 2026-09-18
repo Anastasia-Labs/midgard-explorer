@@ -17,34 +17,20 @@
  * is present.
  *
  * It never deletes. A file replaced under --force is copied to <name>.backup
- * first. It never migrates a database it does not own: `setup test` refuses any
- * target whose name does not end in _test or whose host is not this machine.
+ * first. It migrates nothing: the test suite creates and drops its own
+ * throwaway databases, so there is no test database for setup to provision.
  *
- * Usage: setup.mjs <repoRoot> <existing|test> [--force] [--allow-remote]
+ * Usage: setup.mjs <repoRoot> existing [--force]
  */
-import { execFile } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
-import {
-  RUNTIME_LINKS,
-  backendSettings,
-  expand,
-  parseEnvFile,
-  redact,
-  urlTarget,
-} from "./lib/env.mjs";
-
-const run = promisify(execFile);
+import { RUNTIME_LINKS, backendSettings, expand, parseEnvFile } from "./lib/env.mjs";
 
 const args = process.argv.slice(2);
 const repoRoot = args.shift();
 const mode = args.find((a) => !a.startsWith("-"));
 const force = args.includes("--force");
-const allowRemote = args.includes("--allow-remote");
 
 const die = (message, hint) => {
   process.stderr.write(`${message}\n`);
@@ -53,8 +39,8 @@ const die = (message, hint) => {
 };
 
 if (!repoRoot) die("setup.mjs needs the repository root");
-if (!["existing", "test"].includes(mode ?? "")) {
-  die(`Unknown setup target: ${mode ?? "(none)"}`, "Use: pnpm setup, or pnpm setup:test");
+if ((mode ?? "") !== "existing") {
+  die(`Unknown setup target: ${mode ?? "(none)"}`, "Use: pnpm setup");
 }
 
 const say = (text) => process.stdout.write(`${text}\n`);
@@ -66,16 +52,10 @@ const runtimePath = join(devDir, "runtime.env");
 /* Local by default. A development command that binds a database to every
  * interface has published it to the network the machine is on. */
 const DEFAULTS = {
-  EXPLORER_POSTGRES_USER: "explorer",
-  EXPLORER_POSTGRES_PORT: "5435",
-  EXPLORER_POSTGRES_DB: "midgard_explorer",
   BACKEND_PORT: "3101",
   API_CACHE_PORT: "3102",
   FRONTEND_PORT: "3011",
   BIND_HOST: "127.0.0.1",
-  KOIOS_BASE_URL: "https://preprod.koios.rest/api/v1",
-  L1_SYNC_INTERVAL_MS: "60000",
-  L1_REORG_LOOKBACK_BLOCKS: "20",
 };
 
 const readEnv = (path) => {
@@ -89,43 +69,28 @@ const writeSecret = (path, body) => {
   chmodSync(path, 0o600);
 };
 
-/* An index that already works is described, not redefined.
+/* The retained explorer database's settings are carried, never regenerated.
  *
- * Regenerating a password that an existing PostgreSQL volume was initialised
- * with locks the database out of every client, and the volume is the thing that
- * cannot be regenerated. The host is carried for the same reason in a smaller
- * way: rewriting a working `localhost` as `127.0.0.1` names the same machine
- * but reads as configuration drift on every later run. */
-const carriedIndex = () => {
-  for (const [source, path] of [
-    [".dev/runtime.env", runtimePath],
-    ["backend/.env", join(repoRoot, "backend", ".env")],
-  ]) {
-    const url = readEnv(path)?.get("INDEXER_POSTGRES_URL");
-    if (!url) continue;
-    try {
-      const parsed = new URL(url);
-      const password = decodeURIComponent(parsed.password);
-      if (!password) continue;
-      return {
-        from: source,
-        password,
-        user: decodeURIComponent(parsed.username) || undefined,
-        host: parsed.hostname || undefined,
-        port: parsed.port || undefined,
-        database: parsed.pathname.slice(1) || undefined,
-      };
-    } catch {
-      // Not a URL. Try the next source, then generate.
-    }
-  }
-  return { from: "generated", password: randomBytes(24).toString("base64url") };
-};
+ * Nothing this repository runs reads that database: the Cardano index is
+ * decommissioned and it is kept stopped, with its volume, so the decision can
+ * be reversed. Reversing it needs the password the volume was initialised with,
+ * and regenerating that locks the volume out of every client. So setup copies
+ * forward whatever is already there and invents nothing.
+ *
+ * Absent, these are simply not written. A machine that never provisioned the
+ * index has nothing to roll back to, and a generated password would only be a
+ * credential for a database that does not exist. */
+const RETAINED_KEYS = [
+  "EXPLORER_POSTGRES_HOST",
+  "EXPLORER_POSTGRES_PORT",
+  "EXPLORER_POSTGRES_USER",
+  "EXPLORER_POSTGRES_DB",
+  "EXPLORER_POSTGRES_PASSWORD",
+];
 
 const buildRuntime = () => {
   const previous = readEnv(runtimePath) ?? new Map();
   const backend = readEnv(join(repoRoot, "backend", ".env"));
-  const index = carriedIndex();
 
   // Settings a person set stay set. Setup fills what is missing rather than
   // asserting its own answer over one that is already working.
@@ -142,23 +107,11 @@ const buildRuntime = () => {
   const values = new Map();
   values.set("DEV_MODE", mode === "test" ? keep("DEV_MODE", "existing") : mode);
   for (const [key, fallback] of Object.entries(DEFAULTS)) values.set(key, keep(key, fallback));
-  values.set("EXPLORER_POSTGRES_PASSWORD", index.password);
-  if (index.user) values.set("EXPLORER_POSTGRES_USER", keep("EXPLORER_POSTGRES_USER", index.user));
-  if (index.port) values.set("EXPLORER_POSTGRES_PORT", keep("EXPLORER_POSTGRES_PORT", index.port));
-  if (index.database) {
-    values.set("EXPLORER_POSTGRES_DB", keep("EXPLORER_POSTGRES_DB", index.database));
+  for (const key of RETAINED_KEYS) {
+    const held = previous.get(key);
+    if (held !== undefined && held !== "") values.set(key, held);
   }
-  const indexHost = keep("EXPLORER_POSTGRES_HOST", index.host ?? values.get("BIND_HOST"));
-  values.set("EXPLORER_POSTGRES_HOST", indexHost);
 
-  const user = values.get("EXPLORER_POSTGRES_USER");
-  const port = values.get("EXPLORER_POSTGRES_PORT");
-  const db = values.get("EXPLORER_POSTGRES_DB");
-  const host = indexHost;
-  const encoded = encodeURIComponent(index.password);
-
-  values.set("INDEXER_POSTGRES_URL", `postgresql://${user}:${encoded}@${host}:${port}/${db}`);
-  values.set("TEST_INDEXER_POSTGRES_URL", `postgresql://${user}:${encoded}@${host}:${port}/${db}_test`);
   const bind = values.get("BIND_HOST");
   values.set("API_CACHE_URL", `http://${bind}:${values.get("API_CACHE_PORT")}`);
   values.set("BACKEND_URL", `http://${bind}:${values.get("BACKEND_PORT")}`);
@@ -176,7 +129,7 @@ const buildRuntime = () => {
   for (const key of ["POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"]) {
     values.set(key, keep(key, backend?.get(key) ?? ""));
   }
-  return { values, passwordFrom: index.from };
+  return { values, retained: RETAINED_KEYS.some((key) => values.has(key)) };
 };
 
 const serialise = (values, header) => {
@@ -187,8 +140,8 @@ const serialise = (values, header) => {
 
 /* The settings `dev` owns, and the only ones it reports drift on.
  *
- * Pagination limits, log locations and whether the indexer runs are a person's
- * tuning of their own machine. Reporting those as drift trains the reader to
+ * Pagination limits and log locations are a person's tuning of their own
+ * machine. Reporting those as drift trains the reader to
  * ignore the report, and the settings that matter are the ones that decide
  * which database and which origin a service talks to. */
 const OWNED = Object.fromEntries(
@@ -235,142 +188,45 @@ const emit = (path, body, label) => {
   return "written";
 };
 
-// --- setup test -------------------------------------------------------------
-
-/** The guard on every write `setup test` makes.
- *
- * Two independent conditions, because either alone has a plausible way to be
- * satisfied by a database nobody meant to hand over: a local host can still
- * hold the real index, and a name ending in _test can still live on a server. */
-const assertDisposable = (url) => {
-  const target = urlTarget(url);
-  if (target === null) die("TEST_INDEXER_POSTGRES_URL is not a URL", "Check .dev/runtime.env");
-  if (!target.database.endsWith("_test")) {
-    die(
-      `Refusing to touch "${target.database}": the name does not end in _test.`,
-      "The suite truncates this database. Only a database named for that is acceptable.",
-    );
-  }
-  const local = ["127.0.0.1", "localhost", "::1"].includes(target.host);
-  if (!local && !allowRemote) {
-    die(
-      `Refusing to touch ${target.host}: it is not this machine.`,
-      "Pass --allow-remote only if you are certain the target is disposable.",
-    );
-  }
-  return target;
-};
-
-const pgClient = () => {
-  const require = createRequire(join(repoRoot, "backend", "package.json"));
-  try {
-    return require("pg");
-  } catch {
-    die(
-      "The backend's PostgreSQL client is not installed.",
-      "Run: cd backend && pnpm install",
-    );
-  }
-};
-
-const setupTest = async () => {
-  const runtime = readEnv(runtimePath);
-  if (runtime === null) die("No .dev/runtime.env.", "Run: pnpm setup");
-  const url = runtime.get("TEST_INDEXER_POSTGRES_URL") ?? "";
-  const target = assertDisposable(url);
-
-  step(`Preparing the test index database: ${target.database}`);
-  const { Client } = pgClient();
-  const admin = new Client({ connectionString: url.replace(/\/[^/]+$/, "/postgres") });
-  try {
-    await admin.connect();
-  } catch (error) {
-    die(
-      `Could not reach ${target.host}:${target.port}: ${redact(String(error?.message ?? error))}`,
-      "Start it: docker compose --env-file .dev/runtime.env up -d explorer-postgres",
-    );
-  }
-  const { rows } = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [
-    target.database,
-  ]);
-  if (rows.length === 0) {
-    // Identifier, not a value, so it cannot be parameterised. The name reached
-    // here only through assertDisposable, and is quoted on the way in.
-    await admin.query(`CREATE DATABASE "${target.database.replace(/"/g, '""')}"`);
-    say(`  created ${target.database}`);
-  } else {
-    say(`  ${target.database} already exists`);
-  }
-  await admin.end();
-
-  step("Applying the index migrations to it");
-  const { stdout } = await run("pnpm", ["indexer:deploy"], {
-    cwd: join(repoRoot, "backend"),
-    timeout: 300_000,
-    env: { ...process.env, INDEXER_POSTGRES_URL: url },
-  });
-  const applied = stdout.match(/(\d+) migrations? (?:found|applied)/g) ?? [];
-  say(`  ${applied.length > 0 ? applied.join("; ") : "migrations up to date"}`);
-  say("");
-  say("The backend test suite truncates this database and no other.");
-};
-
 // --- main -------------------------------------------------------------------
 
 mkdirSync(devDir, { recursive: true });
 
-if (mode === "test") {
-  await setupTest();
-} else {
-  step("Writing .dev/runtime.env");
-  const { values, passwordFrom } = buildRuntime();
-  writeSecret(
-    runtimePath,
-    serialise(
-      values,
-      "# Generated by `pnpm setup`. The one place ports, origins, database URLs\n" +
-        "# and the local database password are written. Edit here, then re-run\n" +
-        "# `pnpm setup --force` to regenerate the files below it.",
-    ),
-  );
-  say(`  written, mode 0600, explorer password ${passwordFrom}`);
+step("Writing .dev/runtime.env");
+const { values, retained } = buildRuntime();
+writeSecret(
+  runtimePath,
+  serialise(
+    values,
+    "# Generated by `pnpm setup`. The one place ports, origins and database URLs\n" +
+      "# are written. Edit here, then re-run\n" +
+      "# `pnpm setup --force` to regenerate the files below it.",
+  ),
+);
+say(`  written, mode 0600${retained ? ", retained explorer database settings carried" : ""}`);
 
-  step("Generating the file this package reads");
-  const backendBody = serialise(
-    backendSettings(values),
-    "# Generated from .dev/runtime.env by `pnpm setup`. Change values there.",
-  );
-  emit(join(repoRoot, "backend", ".env"), backendBody, "backend/.env");
+step("Generating the file this package reads");
+const backendBody = serialise(
+  backendSettings(values),
+  "# Generated from .dev/runtime.env by `pnpm setup`. Change values there.",
+);
+emit(join(repoRoot, "backend", ".env"), backendBody, "backend/.env");
 
+say("");
+say(`Backend will serve on   ${values.get("BACKEND_URL")}`);
+if ((values.get("POSTGRES_HOST") ?? "") === "") {
   say("");
-  say(`Backend will serve on   ${values.get("BACKEND_URL")}`);
-  say(`Explorer index          ${redact(values.get("INDEXER_POSTGRES_URL"))}`);
-  // Carrying a URL forward is not the same as owning what it names. `pnpm dev`
-  // migrates only the database this repository's Compose file provisions, and
-  // says so there; saying it here too means the reader learns it while
-  // configuring rather than while being refused.
-  const carried = urlTarget(values.get("INDEXER_POSTGRES_URL") ?? "");
-  const ownHost = ["127.0.0.1", "localhost", "::1"].includes(carried?.host ?? "");
-  const ownName = carried?.database === values.get("EXPLORER_POSTGRES_DB");
-  if (carried !== null && !(ownHost && ownName)) {
-    say("");
-    say("That index is not one this repository provisions, so `pnpm dev` will not");
-    say("migrate it. Apply migrations through: ./scripts/rollout.sh --apply");
-  }
-  if ((values.get("POSTGRES_HOST") ?? "") === "") {
-    say("");
-    say("Still needed: the Midgard node's own database. Nothing here can invent it.");
-    // backend/.env is what this package reads, so that is the file to edit.
-    // Running setup again carries the values into .dev/runtime.env, which is
-    // internal state rather than somewhere to type.
-    say("  1. Fill POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD");
-    say("     and POSTGRES_DB in backend/.env");
-    say("  2. Run: pnpm setup");
-    say("  3. Run: pnpm dev");
-  } else {
-    say("");
-    say("Start it with: pnpm dev");
-  }
+  say("Still needed: the Midgard node's own database. Nothing here can invent it.");
+  // backend/.env is what this package reads, so that is the file to edit.
+  // Running setup again carries the values into .dev/runtime.env, which is
+  // internal state rather than somewhere to type.
+  say("  1. Fill POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USER, POSTGRES_PASSWORD");
+  say("     and POSTGRES_DB in backend/.env");
+  say("  2. Run: pnpm setup");
+  say("  3. Run: pnpm dev");
+} else {
+  say("");
+  say("Start it with: pnpm dev");
 }
 
 const mode0600 = (path) => {

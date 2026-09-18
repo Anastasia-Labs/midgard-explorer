@@ -6,7 +6,6 @@
   "scripts": {
     "postinstall": "prisma generate",
     "setup": "node scripts/lifecycle.mjs setup",
-    "setup:test": "node scripts/setup.mjs .. test",
     "doctor": "node scripts/lifecycle.mjs doctor",
     "dev": "node scripts/lifecycle.mjs dev",
     "snapshot:export": "node scripts/snapshot.mjs export",

@@ -191,8 +191,17 @@ const SCRIPT_DIRS = [
   "scripts/",
 ];
 
+/* A release record marked superseded may name a command that has since been
+ * removed. Recording what was run, and what it produced, is the whole purpose
+ * of the record, and rewriting it to name something else would make it a
+ * different claim about history. The marker is what earns the exemption: an
+ * unmarked record still tells a reader what to run, and is still checked. */
+const isSupersededRecord = (page, text) =>
+  page.startsWith("docs/release/") && /^>\s*\*\*Superseded/m.test(text);
+
 for (const page of PAGES) {
   const text = readFileSync(join(repoRoot, page), "utf8");
+  if (isSupersededRecord(page, text)) continue;
   for (const [, inline] of text.matchAll(/`([^`\n]+)`/g)) {
     const match = INVOCATION.exec(inline.trim());
     if (!match) continue;

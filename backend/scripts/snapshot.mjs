@@ -413,7 +413,7 @@ async function exportSnapshot(args) {
       sourceDatabase: databaseName(url),
       sourceWasReplica: inRecovery,
       deploymentId: manifest.manifestId ?? null,
-      // Lowercased, as `src/indexer/manifest.ts` does when it parses the same
+      // Lowercased, as `src/db/manifest.ts` does when it parses the same
       // document. The manifest spells the network "Preprod"; the reader below
       // requires lowercase, so writing it verbatim made every archive captured
       // from a real manifest unreadable by this tool's own verify and restore.

@@ -99,8 +99,7 @@ export const isPlaceholder = (value) =>
  * question of what "in sync" means.
  */
 export const RUNTIME_LINKS = [
-  { file: "backend/.env", key: "INDEXER_POSTGRES_URL", runtime: "INDEXER_POSTGRES_URL" },
-  { file: "backend/.env", key: "TEST_INDEXER_POSTGRES_URL", runtime: "TEST_INDEXER_POSTGRES_URL" },
+  { file: "backend/.env", key: "POSTGRES_URL", runtime: "POSTGRES_URL" },
   { file: "backend/.env", key: "MIDGARD_MANIFEST_PATH", runtime: "MIDGARD_MANIFEST_PATH" },
   { file: "backend/.env", key: "BACKEND_PORT", runtime: "BACKEND_PORT" },
 ];
@@ -112,9 +111,10 @@ export const GENERATED_FILES = [...new Set(RUNTIME_LINKS.map((l) => l.file))];
  *
  * Exported so the doctor check that names the required settings can be tested
  * against it. The two lists went out of step once already: the backend declared
- * L1_SYNC_INTERVAL_MS and L1_REORG_LOOKBACK_BLOCKS with no default, setup wrote
- * neither, and doctor asked for neither, so a clean setup produced a
- * configuration that reported Ready and then refused to boot. */
+ * two settings with no default, setup wrote neither, and doctor asked for
+ * neither, so a clean setup produced a configuration that reported Ready and
+ * then refused to boot. Both of those settings belonged to the decommissioned
+ * Cardano index and are gone; the lesson is why this list is exported. */
 export const backendSettings = (values) =>
   new Map([
     ["LOG_LOCATION", "./logs/midgard-explorer-backend"],
@@ -128,17 +128,11 @@ export const backendSettings = (values) =>
       "POSTGRES_URL",
       "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}?schema=public",
     ],
-    ["INDEXER_POSTGRES_URL", values.get("INDEXER_POSTGRES_URL")],
-    ["TEST_INDEXER_POSTGRES_URL", values.get("TEST_INDEXER_POSTGRES_URL")],
     ["MIDGARD_MANIFEST_PATH", values.get("MIDGARD_MANIFEST_PATH")],
-    ["KOIOS_BASE_URL", values.get("KOIOS_BASE_URL")],
     ["RECENT_BLOCKS_LIMIT", "10"],
     ["RECENT_TRANSACTIONS_LIMIT", "10"],
     ["TRANSACTIONS_PER_PAGE", "25"],
     ["BLOCKS_PER_PAGE", "25"],
-    ["L1_SYNC_ENABLED", "false"],
-    ["L1_SYNC_INTERVAL_MS", values.get("L1_SYNC_INTERVAL_MS")],
-    ["L1_REORG_LOOKBACK_BLOCKS", values.get("L1_REORG_LOOKBACK_BLOCKS")],
   ]);
 
 /**
@@ -166,43 +160,7 @@ export const RUNTIME_SHELL_KEYS = [
   { key: "EXPLORER_POSTGRES_USER", kind: "text", required: false },
   { key: "EXPLORER_POSTGRES_DB", kind: "text", required: false },
   { key: "MIDGARD_MANIFEST_PATH", kind: "text", required: false },
-  { key: "KOIOS_BASE_URL", kind: "text", required: false },
 ];
-
-/** Where the index URL points, without the credential that reaches it.
- *
- * Emitted as four separate values so the shell compares strings rather than
- * parsing a URL, and so the password never enters a process environment that
- * only needed to know which database was about to be migrated. */
-export const INDEX_TARGET_KEYS = [
-  "INDEX_URL_HOST",
-  "INDEX_URL_PORT",
-  "INDEX_URL_USER",
-  "INDEX_URL_DB",
-];
-
-/**
- * The index URL the backend and `prisma migrate deploy` will actually use.
- *
- * Not .dev/runtime.env. `prisma.indexer.config.ts` runs `dotenv.config()` from
- * the backend directory and reads INDEXER_POSTGRES_URL, and dotenv leaves an
- * existing non-empty process variable alone, so the effective target is the
- * process environment first and backend/.env second. A guard that read
- * runtime.env instead was checking a value nothing migrates against: a local
- * runtime.env beside a remote backend/.env passed it, and the remote database
- * was the one that got migrated.
- */
-export const effectiveIndexUrl = ({ processEnv = {}, backendEnv, runtime }) => {
-  const fromProcess = processEnv.INDEXER_POSTGRES_URL ?? "";
-  if (fromProcess !== "") {
-    return { url: fromProcess, source: "the INDEXER_POSTGRES_URL in this environment" };
-  }
-  const fromBackend = backendEnv?.get("INDEXER_POSTGRES_URL") ?? "";
-  if (fromBackend !== "") return { url: fromBackend, source: "backend/.env" };
-  const fromRuntime = runtime?.get("INDEXER_POSTGRES_URL") ?? "";
-  if (fromRuntime !== "") return { url: fromRuntime, source: ".dev/runtime.env" };
-  return { url: "", source: "nowhere" };
-};
 
 /** A host name or an address, IPv6 included: `::1` is where a local database
  * lives on plenty of machines, and rejecting it made a working configuration
@@ -223,7 +181,7 @@ const shellQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`;
  * a port that is not a number is a configuration mistake, and continuing with
  * it produces a service listening somewhere nobody asked for.
  */
-export const runtimeShellValues = (runtime, { backendEnv, processEnv } = {}) => {
+export const runtimeShellValues = (runtime) => {
   const errors = [];
   const out = new Map();
 
@@ -244,25 +202,6 @@ export const runtimeShellValues = (runtime, { backendEnv, processEnv } = {}) => 
     out.set(key, value);
   }
 
-  const { url, source } = effectiveIndexUrl({ processEnv, backendEnv, runtime });
-  if (url === "") {
-    errors.push("INDEXER_POSTGRES_URL is set nowhere the backend reads");
-  } else {
-    let parsed = null;
-    try {
-      parsed = new URL(url);
-    } catch {
-      errors.push(`INDEXER_POSTGRES_URL in ${source} is not a URL`);
-    }
-    if (parsed) {
-      out.set("INDEX_URL_HOST", parsed.hostname);
-      out.set("INDEX_URL_PORT", parsed.port || "5432");
-      out.set("INDEX_URL_USER", decodeURIComponent(parsed.username));
-      out.set("INDEX_URL_DB", parsed.pathname.slice(1));
-      out.set("INDEX_URL_SOURCE", source);
-    }
-  }
-
   return {
     errors,
     lines: [...out].map(([key, value]) => `${key}=${shellQuote(value)}`),
@@ -279,9 +218,7 @@ const isEntryPoint =
 if (isEntryPoint) {
   const [, , command, path] = process.argv;
   if (command !== "shell" || path === undefined) {
-    process.stderr.write(
-      "Usage: env.mjs shell <path to .dev/runtime.env> [path to backend/.env]\n",
-    );
+    process.stderr.write("Usage: env.mjs shell <path to .dev/runtime.env>\n");
     process.exit(2);
   }
   const parsed = parseEnvFile(path);
@@ -289,14 +226,7 @@ if (isEntryPoint) {
     process.stderr.write(`No file at ${path}\n`);
     process.exit(1);
   }
-  // backend/.env sits beside it in the argument list, because the index the
-  // backend connects to and the migration applies is the one named there.
-  const backendPath = process.argv[4];
-  const backendParsed = backendPath === undefined ? null : parseEnvFile(backendPath);
-  const { errors, lines } = runtimeShellValues(expand(parsed), {
-    backendEnv: backendParsed === null ? null : expand(backendParsed),
-    processEnv: process.env,
-  });
+  const { errors, lines } = runtimeShellValues(expand(parsed));
   if (errors.length > 0) {
     for (const error of errors) process.stderr.write(`${error}\n`);
     process.exit(1);

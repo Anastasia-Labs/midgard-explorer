@@ -188,17 +188,17 @@ const blocks = transactions.map((tx, i) => ({
 }));
 
 /**
- * One block both sides of the explorer know about.
+ * One block carrying a real settlement transaction.
  *
- * Every header above is a synthetic hash, and the L1 ingest fixture describes a
- * real preprod commit transaction. The two therefore had no block in common, so
- * a cross-source test running against this seed compared an empty node against
- * a populated index and passed by comparing nothing.
+ * Every header above is a synthetic hash. These are the real values the node
+ * recorded for one preprod commitment: the header that transaction committed,
+ * and the transaction that committed it. They stay real so that a seeded
+ * settlement hash is one a reader can look up on Cardano, rather than a
+ * plausible-looking 64 characters that resolves to nothing.
  *
- * These are the real values from `fixtures/koios/tx-info-state-queue.json`: the
- * header that transaction committed, and the transaction that committed it. The
- * node claims to have settled it here; the indexer observes the same block from
- * the Koios fixture; the cross-source suite has something to disagree about.
+ * They were introduced for the cross-source suite, which compared the node's
+ * record against the explorer's own Cardano index. That index is
+ * decommissioned; the block remains because the reason above outlives it.
  */
 blocks.push({
   height: blocks.length + 1,

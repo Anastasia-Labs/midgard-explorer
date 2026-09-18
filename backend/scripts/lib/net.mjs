@@ -16,7 +16,6 @@
  *   net.mjs check-app <base>               one shot, for status
  *   net.mjs wait-health <base> <ms>        wait until the backend answers /healthz
  *   net.mjs check-health <base>            one shot, for status
- *   net.mjs sync-state <apiBase>           the L1 index state and every cursor
  *   net.mjs ready-check <backendBase>      strict /readyz, naming what failed
  *   net.mjs dev-lock <appDir>              report a live `next dev` for that app
  */
@@ -124,20 +123,9 @@ const probeHealth = async (base) => {
   return true;
 };
 
-/* The index's own account of how much of the chain it holds, read from the same
- * summary the L1 page reads. Reported as every cursor rather than a verdict,
- * because three heights that disagree name the source that is behind. */
-const syncState = async (base) => {
-  const res = await get(`${base}/api/l1/summary`, 10_000);
-  if (!res.ok) throw new Error(`/api/l1/summary answered ${res.status}`);
-  const body = await res.json();
-  return body?.sync ?? { state: "unknown", cursors: [] };
-};
-
 /* Strict readiness, the question `/readyz` answers and a deployment gates on.
  * The failing check is named; why it failed goes to the backend log and never
- * to the response, so the reason comes from
- * `pnpm doctor --with-l1-sync`, which is the scope that covers it. */
+ * to the response, so the reason comes from `pnpm doctor`. */
 const readyCheck = async (base) => {
   const res = await get(`${base}/readyz`, 20_000);
   const body = await res.json().catch(() => null);
@@ -172,7 +160,7 @@ const fail = (message) => {
 /* `doctor` imports these rather than shelling out to this file once per check.
  * The command line below runs only when this file is the entry point, so an
  * import does not fall through to the unknown-command branch and exit. */
-export { portFree, freePort, devLock, probeFixture, probeApp, probeHealth, syncState, poll };
+export { portFree, freePort, devLock, probeFixture, probeApp, probeHealth, poll };
 
 const [, , command, ...args] = process.argv;
 const isEntryPoint =
@@ -213,16 +201,6 @@ switch (command) {
       command === "check-fixture" ? probeFixture : command === "check-app" ? probeApp : probeHealth;
     const result = await probe(base).catch((error) => String(error?.message ?? error));
     if (result !== true) fail(String(result));
-    break;
-  }
-  case "sync-state": {
-    const [base] = args;
-    if (!base) fail("sync-state needs the API base URL");
-    const sync = await syncState(base).catch((error) => {
-      fail(String(error?.message ?? error));
-    });
-    const cursors = sync.cursors.map((c) => `${c.source}=${c.height ?? 0}`).join(" ");
-    process.stdout.write(`${sync.state} ${cursors}\n`);
     break;
   }
   case "ready-check": {

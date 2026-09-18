@@ -25,9 +25,9 @@ import { after, describe, it } from "node:test";
 
 import {
   adoption,
+  COMPOSE_SERVICES,
   composeArgs,
   clearAdoption,
-  ownershipProblems,
   readAdoption,
   servicesToStop,
   START_WAIT_SECONDS,
@@ -236,18 +236,8 @@ describe("runtime.env reaches the shell as data", () => {
         BIND_HOST: "127.0.0.1",
         EXPLORER_POSTGRES_USER: "explorer",
         EXPLORER_POSTGRES_DB: "midgard_explorer",
-        INDEXER_POSTGRES_URL: "postgresql://explorer:pw@127.0.0.1:5435/midgard_explorer",
       }),
     );
-
-  it("emits the index target without the password that reaches it", () => {
-    const { errors, lines } = runtimeShellValues(complete());
-    assert.deepEqual(errors, []);
-    assert.ok(lines.includes("INDEX_URL_HOST='127.0.0.1'"));
-    assert.ok(lines.includes("INDEX_URL_PORT='5435'"));
-    assert.ok(lines.includes("INDEX_URL_DB='midgard_explorer'"));
-    assert.ok(!lines.join("\n").includes("pw"), "the index password reached the shell");
-  });
 
   it("quotes a value that would otherwise be shell code", () => {
     const values = complete();
@@ -257,8 +247,7 @@ describe("runtime.env reaches the shell as data", () => {
     assert.equal(line, "MIDGARD_MANIFEST_PATH='/tmp/a b/$(touch /tmp/pwned).json'");
 
     // And the quoting survives the shell that eventually reads it. The line is
-    // passed as an argument, which is how existing.sh reaches `eval`: through a
-    // variable, never spliced into the text of a command.
+    // passed as an argument, never spliced into the text of a command.
     assert.equal(evalled(line, "MIDGARD_MANIFEST_PATH"), "/tmp/a b/$(touch /tmp/pwned).json");
   });
 
@@ -268,33 +257,6 @@ describe("runtime.env reaches the shell as data", () => {
     const { lines } = runtimeShellValues(values);
     const line = lines.find((l) => l.startsWith("EXPLORER_POSTGRES_DB="));
     assert.equal(evalled(line, "EXPLORER_POSTGRES_DB"), "a'; touch /tmp/pwned; '");
-  });
-
-  /* The target is whatever the backend and `prisma migrate deploy` will read,
-   * which is the process environment first and backend/.env second. Reading
-   * .dev/runtime.env instead let a safe-looking runtime file stand in front of
-   * a remote backend/.env, and the remote database was the one migrated. */
-  it("takes the index target from backend/.env, not from runtime.env", () => {
-    const backendEnv = new Map([
-      ["INDEXER_POSTGRES_URL", "postgresql://admin:pw@db.internal.example:6543/production_index"],
-    ]);
-    const { lines } = runtimeShellValues(complete(), { backendEnv });
-    assert.ok(lines.includes("INDEX_URL_HOST='db.internal.example'"));
-    assert.ok(lines.includes("INDEX_URL_PORT='6543'"));
-    assert.ok(lines.includes("INDEX_URL_DB='production_index'"));
-    assert.ok(lines.includes("INDEX_URL_SOURCE='backend/.env'"));
-  });
-
-  it("lets the process environment win, because dotenv does", () => {
-    const backendEnv = new Map([
-      ["INDEXER_POSTGRES_URL", "postgresql://explorer:pw@127.0.0.1:5435/midgard_explorer"],
-    ]);
-    const processEnv = {
-      INDEXER_POSTGRES_URL: "postgresql://admin:pw@db.internal.example:6543/production_index",
-    };
-    const { lines } = runtimeShellValues(complete(), { backendEnv, processEnv });
-    assert.ok(lines.includes("INDEX_URL_HOST='db.internal.example'"));
-    assert.ok(lines.includes("INDEX_URL_SOURCE='the INDEXER_POSTGRES_URL in this environment'"));
   });
 
   it("accepts a local IPv6 host and refuses a port that does not exist", () => {
@@ -310,14 +272,15 @@ describe("runtime.env reaches the shell as data", () => {
     const values = complete();
     values.set("BACKEND_PORT", "not-a-port");
     values.delete("FRONTEND_PORT");
-    values.delete("INDEXER_POSTGRES_URL");
-    const { errors } = runtimeShellValues(values, { processEnv: {} });
-    assert.equal(errors.length, 3);
+    const { errors } = runtimeShellValues(values);
+    assert.equal(errors.length, 2);
     assert.ok(errors.some((e) => e.includes("BACKEND_PORT")));
     assert.ok(errors.some((e) => e.includes("FRONTEND_PORT")));
-    assert.ok(errors.some((e) => e.includes("INDEXER_POSTGRES_URL")));
   });
 
+  /* The retained explorer database's password is read by Compose through
+   * --env-file, and by nothing else. A `dev` shell that only needs a port has
+   * no reason to hold a credential, so the whitelist does not carry it. */
   it("does not carry the explorer password into the shell at all", () => {
     const values = complete();
     values.set("EXPLORER_POSTGRES_PASSWORD", "must-not-appear-4c1f");
@@ -368,32 +331,35 @@ describe("a check that cannot run", () => {
 });
 
 describe("what starting a service waits for", () => {
-  /* The hosted run failed one line after "explorer-postgres is up": `up -d`
+  /* A hosted run failed one line after "explorer-postgres is up": `up -d`
    * returns once the container has been CREATED, and the next step connected to
    * a Postgres that was still starting. P1001, can't reach the database server.
    * Locally the race is won nearly every time, which is what kept it invisible
-   * through every green run before it. */
+   * through every green run before it. That database is decommissioned; the
+   * rule it taught applies to whatever a caller starts next. */
   it("waits for the healthcheck, not for docker to accept the request", () => {
-    assert.ok(waitArgs().includes("--wait"), "dev starts the database without waiting for health");
+    assert.ok(
+      waitArgs("explorer-api-cache").includes("--wait"),
+      "a start does not wait for health",
+    );
   });
 
   /* Compose waits forever without one, so the process timeout would kill it
    * with no word about which service never came up. */
   it("bounds the wait, so a container that never comes up is named", () => {
-    const args = waitArgs();
+    const args = waitArgs("explorer-api-cache");
     const at = args.indexOf("--wait-timeout");
     assert.notEqual(at, -1, "the wait has no timeout");
     assert.equal(args[at + 1], String(START_WAIT_SECONDS));
   });
 
-  /* `--wait` waits for every service named in the command. The response cache
-   * has a healthcheck of its own and nothing after the start reads it, so
-   * including it would turn an unhealthy cache into a refusal to start at all.
-   * One is running unhealthy on the machine this was written on. */
-  it("waits for the database alone, not for everything a start brings up", () => {
-    const args = waitArgs();
-    assert.equal(args.at(-1), "explorer-postgres");
-    assert.ok(!args.includes("explorer-api-cache"), "the start is gated on the response cache");
+  /* `--wait` waits for every service named in the command, so a caller that
+   * listed two would turn one unhealthy service into a refusal to start at
+   * all. One is running unhealthy on the machine this was written on. */
+  it("waits for the one service it was given", () => {
+    const args = waitArgs("explorer-api-cache");
+    assert.equal(args.at(-1), "explorer-api-cache");
+    assert.equal(args.filter((a) => a.startsWith("explorer-")).length, 1);
   });
 });
 
@@ -401,11 +367,13 @@ describe("which containers a stop may touch", () => {
   /* The rule lives in backend/scripts/lib/compose.mjs. What it must never do
    * is call a container this command started adopted, because a stop then
    * leaves running exactly what the start had started. */
-  const both = ["explorer-postgres", "explorer-api-cache"];
+  // Two names, because the rule is about a set. `adoption` is a pure function
+  // over whatever it is handed; the repository's own set is COMPOSE_SERVICES.
+  const both = ["service-a", "service-b"];
 
   it("adopts what was already running the first time", () => {
     assert.deepEqual(adoption(false, [], both), both);
-    assert.deepEqual(adoption(false, [], ["explorer-api-cache"]), ["explorer-api-cache"]);
+    assert.deepEqual(adoption(false, [], ["service-b"]), ["service-b"]);
     assert.deepEqual(adoption(false, [], []), []);
   });
 
@@ -414,13 +382,21 @@ describe("which containers a stop may touch", () => {
   });
 
   it("keeps an adopted container adopted after a restart", () => {
-    assert.deepEqual(adoption(true, ["explorer-api-cache"], both), ["explorer-api-cache"]);
+    assert.deepEqual(adoption(true, ["service-b"], both), ["service-b"]);
   });
 
   it("stops everything it is not leaving alone, and nothing else", () => {
-    assert.deepEqual(servicesToStop([]), both);
-    assert.deepEqual(servicesToStop(["explorer-api-cache"]), ["explorer-postgres"]);
-    assert.deepEqual(servicesToStop(both), []);
+    assert.deepEqual(servicesToStop([], both), both);
+    assert.deepEqual(servicesToStop(["service-b"], both), ["service-a"]);
+    assert.deepEqual(servicesToStop(both, both), []);
+  });
+
+  /* The retained explorer database is not in the set, so no development
+   * command can start it and no stop can touch it. It is kept, stopped, for a
+   * rollback that a person performs deliberately. */
+  it("does not manage the decommissioned explorer database", () => {
+    assert.ok(!COMPOSE_SERVICES.includes("explorer-postgres"));
+    assert.deepEqual(servicesToStop([]), [...COMPOSE_SERVICES]);
   });
 
   /* The project is named by the root that was asked about. Passing only
@@ -450,34 +426,6 @@ describe("which containers a stop may touch", () => {
     assert.deepEqual(readAdoption(root), ["explorer-api-cache"]);
     clearAdoption(root);
     assert.equal(readAdoption(root), null);
-  });
-});
-
-describe("which index a migration may be applied to", () => {
-  const provisioned = { database: "midgard_explorer", user: "explorer" };
-  const owned = { host: "127.0.0.1", port: 5435, database: "midgard_explorer", user: "explorer" };
-
-  it("accepts the database this repository publishes", () => {
-    assert.deepEqual(ownershipProblems({ index: owned, provisioned, published: 5435 }), []);
-  });
-
-  it("refuses another host, port, database or user, and says which", () => {
-    const cases = [
-      [{ ...owned, host: "db.internal.example" }, /not this machine/],
-      [{ ...owned, port: 6543 }, /publishes 5435/],
-      [{ ...owned, database: "production_index" }, /production_index/],
-      [{ ...owned, user: "admin" }, /admin/],
-    ];
-    for (const [index, expected] of cases) {
-      const problems = ownershipProblems({ index, provisioned, published: 5435 });
-      assert.equal(problems.length, 1, JSON.stringify(problems));
-      assert.match(problems[0], expected);
-    }
-  });
-
-  it("refuses when nothing publishes the port at all", () => {
-    const problems = ownershipProblems({ index: owned, provisioned, published: null });
-    assert.match(problems[0], /publishes no port/);
   });
 });
 
@@ -518,7 +466,6 @@ describe("properties of the decisions that can lose data", () => {
           BACKEND_PORT: "3101",
           API_CACHE_PORT: "3102",
           FRONTEND_PORT: "3011",
-          INDEXER_POSTGRES_URL: "postgresql://explorer:pw@127.0.0.1:5435/midgard_explorer",
           MIDGARD_MANIFEST_PATH: value,
         }),
       );
@@ -550,7 +497,6 @@ describe("properties of the decisions that can lose data", () => {
           API_CACHE_PORT: "3102",
           FRONTEND_PORT: "3011",
           EXPLORER_POSTGRES_PASSWORD: secret,
-          INDEXER_POSTGRES_URL: `postgresql://explorer:${encodeURIComponent(secret)}@127.0.0.1:5435/db`,
         }),
       );
       const { lines } = runtimeShellValues(values);
@@ -563,12 +509,12 @@ describe("properties of the decisions that can lose data", () => {
 
   it("adopted and stopped never overlap, and together cover what it manages", () => {
     const random = seeded(99);
-    const universe = ["explorer-postgres", "explorer-api-cache"];
+    const universe = ["service-a", "service-b"];
     for (let run = 0; run < 300; run += 1) {
       const running = universe.filter(() => random() < 0.5);
       const previous = universe.filter(() => random() < 0.5);
       const had = random() < 0.5;
-      const managed = random() < 0.5 ? universe : ["explorer-postgres"];
+      const managed = random() < 0.5 ? universe : ["service-b"];
 
       const adopted = adoption(had, previous, running.filter((s) => managed.includes(s)));
       const stopped = servicesToStop(adopted, managed);
@@ -588,31 +534,6 @@ describe("properties of the decisions that can lose data", () => {
     }
   });
 
-  it("says a target is owned only when every part matches", () => {
-    const random = seeded(4242);
-    const provisioned = { database: "midgard_explorer", user: "explorer" };
-    const owned = { host: "127.0.0.1", port: 5435, database: "midgard_explorer", user: "explorer" };
-    for (let run = 0; run < 300; run += 1) {
-      const index = { ...owned };
-      const published = random() < 0.8 ? 5435 : Math.floor(random() * 60000) + 1;
-      if (random() < 0.4) index.host = randomString(random).replace(/[^\w.-]/g, "") || "elsewhere";
-      if (random() < 0.4) index.port = Math.floor(random() * 60000) + 1;
-      if (random() < 0.4) index.database = randomString(random) || "other";
-      if (random() < 0.4) index.user = randomString(random) || "other";
-
-      const problems = ownershipProblems({ index, provisioned, published });
-      const identical =
-        ["127.0.0.1", "localhost", "::1"].includes(index.host) &&
-        index.port === published &&
-        index.database === provisioned.database &&
-        index.user === provisioned.user;
-      assert.equal(
-        problems.length === 0,
-        identical,
-        `ownership disagreed with the parts for ${JSON.stringify({ index, published })}`,
-      );
-    }
-  });
 });
 
 describe("stopping the API stops what it started", () => {
@@ -741,16 +662,11 @@ describe("doctor", () => {
         "POSTGRES_PORT=5433",
         "POSTGRES_DB=",
         "POSTGRES_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}",
-        "INDEXER_POSTGRES_URL=postgresql://explorer:CHANGEME@localhost:5435/midgard_explorer",
-        "TEST_INDEXER_POSTGRES_URL=postgresql://explorer:CHANGEME@localhost:5435/midgard_explorer_test",
         "MIDGARD_MANIFEST_PATH=/abs/path/to/contract-deployment-info.json",
-        "KOIOS_BASE_URL=https://preprod.koios.rest/api/v1",
         "RECENT_BLOCKS_LIMIT=10",
         "RECENT_TRANSACTIONS_LIMIT=10",
         "TRANSACTIONS_PER_PAGE=25",
         "BLOCKS_PER_PAGE=25",
-        "L1_SYNC_INTERVAL_MS=60000",
-        "L1_REORG_LOOKBACK_BLOCKS=20",
       ].join("\n"),
     });
     const { report } = doctor(root, "existing");
@@ -764,8 +680,7 @@ describe("doctor", () => {
     assert.equal(check(report, "backend.env-placeholders").status, "fail");
     assert.match(check(report, "backend.env-placeholders").detail, /MIDGARD_MANIFEST_PATH/);
 
-    // A failure, because this .env names no L1_SYNC_ENABLED and the backend's
-    // default is to index. The placeholder path is non-empty, so only the
+    // A failure, because the placeholder path is non-empty, so only the
     // does-the-file-exist check catches it.
     assert.equal(check(report, "existing.manifest-file").status, "fail");
   });
@@ -777,16 +692,11 @@ describe("doctor", () => {
         "BACKEND_PORT=3101",
         "LOG_LOCATION=./logs/x",
         `POSTGRES_URL=postgresql://u:${secret}@127.0.0.1:59999/midgard`,
-        `INDEXER_POSTGRES_URL=postgresql://explorer:${secret}@127.0.0.1:59998/midgard_explorer`,
-        `TEST_INDEXER_POSTGRES_URL=postgresql://explorer:${secret}@127.0.0.1:59998/midgard_explorer_test`,
         "MIDGARD_MANIFEST_PATH=/tmp/none.json",
-        "KOIOS_BASE_URL=https://preprod.koios.rest/api/v1",
         "RECENT_BLOCKS_LIMIT=10",
         "RECENT_TRANSACTIONS_LIMIT=10",
         "TRANSACTIONS_PER_PAGE=25",
         "BLOCKS_PER_PAGE=25",
-        "L1_SYNC_INTERVAL_MS=60000",
-        "L1_REORG_LOOKBACK_BLOCKS=20",
       ].join("\n"),
     });
     const { report } = doctor(root, "existing");

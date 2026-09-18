@@ -445,7 +445,7 @@ export const CHECKS = [
       // check that only asks whether a value is present, while naming no user
       // and no database.
       const broken = [];
-      for (const key of ["POSTGRES_URL", "INDEXER_POSTGRES_URL"]) {
+      for (const key of ["POSTGRES_URL"]) {
         const value = env.get(key) ?? "";
         if (value === "") continue;
         const target = urlTarget(value);
@@ -705,7 +705,7 @@ export const CHECKS = [
         ? pass(`${version}, which this build supports`)
         : fail(
             `${version ?? "(none declared)"} is outside ${supported.join(", ")}`,
-            "The indexer refuses an unknown layout rather than reading it on a guess",
+            "The backend refuses an unknown layout rather than reading it on a guess",
           );
     },
   },

@@ -153,12 +153,7 @@ POSTGRES_DB=midgard
 MIDGARD_MANIFEST_PATH=/abs/path/to/midgard/demo/midgard-node/deploymentInfo/contract-deployment-info.json
 ```
 
-Run `pnpm setup` again to carry those values into `.dev/runtime.env`, then
-create the disposable test database:
-
-```sh
-pnpm setup:test
-```
+Run `pnpm setup` again to carry those values into `.dev/runtime.env`.
 
 Check the machine before starting anything:
 
