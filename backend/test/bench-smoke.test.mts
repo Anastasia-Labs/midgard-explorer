@@ -12,11 +12,10 @@ import { runHarness } from "../bench/harness.mjs";
  */
 
 const BENCH_URL = process.env.BENCH_POSTGRES_URL;
-// BENCH_SOURCE_INDEX_URL, not INDEXER_POSTGRES_URL: the latter is overridden
-// to the `_test` database by test/setup-indexer-db.mts, so the harness would
-// clone an empty index and every real-data workload would measure nothing.
-const INDEX_URL = process.env.BENCH_SOURCE_INDEX_URL;
-const enabled = process.env.BENCH_SMOKE === "1" && BENCH_URL && INDEX_URL;
+// A Midgard node database, for the real settled header hashes the generated
+// dataset carries. Read only, and never the thing being measured.
+const NODE_URL = process.env.BENCH_SOURCE_NODE_URL;
+const enabled = process.env.BENCH_SMOKE === "1" && BENCH_URL && NODE_URL;
 const smoke = enabled ? describe : describe.skip;
 
 smoke("harness smoke run", () => {
@@ -24,7 +23,7 @@ smoke("harness smoke run", () => {
     const report = await runHarness({
       profileName: "small",
       benchUrl: BENCH_URL!,
-      liveIndexUrl: INDEX_URL!,
+      sourceNodeUrl: NODE_URL!,
       port: 43_117,
       mode: "smoke",
       // A handful of the catalogue, one per cache mode, so every path through
@@ -54,7 +53,8 @@ smoke("harness smoke run", () => {
     // can say whether it measured the same data.
     expect(report.datasetChecksum.digest).toMatch(/^[0-9a-f]{64}$/);
     expect(report.datasetChecksum.rows).toBeGreaterThan(0);
-    expect(report.indexChecksum.rows).toBeGreaterThan(0);
+    expect(report.settledHashCount).toBeGreaterThan(0);
+    expect(report.settledHashSource).not.toMatch(/:[^@/]*@/);
 
     // Cold workloads bypassed both caches, so they did real database work.
     const cold = report.results.find((r) => r.workload === "blocks-list-page-1")!;

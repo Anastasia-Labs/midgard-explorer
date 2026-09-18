@@ -28,9 +28,9 @@ const arg = (name: string, fallback: string): string => {
 const requests = Number(arg("requests", "20"));
 const outFile = arg("out", "attribution.json");
 const benchUrl = process.env.BENCH_POSTGRES_URL;
-const liveIndexUrl = process.env.BENCH_SOURCE_INDEX_URL;
-if (!benchUrl || !liveIndexUrl) {
-  throw new Error("set BENCH_POSTGRES_URL and BENCH_SOURCE_INDEX_URL");
+const sourceNodeUrl = process.env.BENCH_SOURCE_NODE_URL;
+if (!benchUrl || !sourceNodeUrl) {
+  throw new Error("set BENCH_POSTGRES_URL and BENCH_SOURCE_NODE_URL");
 }
 
 const control = new Client({ connectionString: benchUrl });
@@ -41,7 +41,7 @@ if (!probe.available) throw new Error("pg_stat_statements unavailable: nothing t
 const setup = await setupBench({
   profile: PROFILES.target,
   benchUrl,
-  liveIndexUrl,
+  sourceNodeUrl,
   poolSize: requests,
 });
 

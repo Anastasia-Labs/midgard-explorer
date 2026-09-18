@@ -25,10 +25,13 @@ import { WORKLOADS } from "./workloads.mjs";
  * baseline taken with it has scope `full` and must account for all of them.
  *
  * Requires:
- *   BENCH_POSTGRES_URL       the dedicated benchmark server
- *   BENCH_SOURCE_INDEX_URL   the LIVE explorer index, read-only. Not
- *                            INDEXER_POSTGRES_URL, which the test setup
- *                            overrides to the empty `_test` database.
+ *   BENCH_POSTGRES_URL       the dedicated benchmark server, which this run
+ *                            creates and drops databases on
+ *   BENCH_SOURCE_NODE_URL    a Midgard node database, read only. Its settled
+ *                            header hashes are copied into the generated
+ *                            dataset so a settled block carries a hash a node
+ *                            really committed. Nothing is measured against it
+ *                            and nothing writes to it.
  */
 
 const arg = (name: string, fallback?: string): string => {
@@ -57,11 +60,11 @@ if (onlyWorkload !== undefined && !WORKLOADS.some((w) => w.name === onlyWorkload
 }
 
 const benchUrl = process.env.BENCH_POSTGRES_URL;
-const liveIndexUrl = process.env.BENCH_SOURCE_INDEX_URL;
-if (!benchUrl || !liveIndexUrl) {
+const sourceNodeUrl = process.env.BENCH_SOURCE_NODE_URL;
+if (!benchUrl || !sourceNodeUrl) {
   throw new Error(
-    "set BENCH_POSTGRES_URL and BENCH_SOURCE_INDEX_URL; see the note above on " +
-      "why the index source is named separately",
+    "set BENCH_POSTGRES_URL and BENCH_SOURCE_NODE_URL; see the note above on " +
+      "what each one is for",
   );
 }
 
@@ -69,7 +72,7 @@ const report = await runHarness({
   profileName,
   only: onlyWorkload ? [onlyWorkload] : undefined,
   benchUrl,
-  liveIndexUrl,
+  sourceNodeUrl,
   port: Number(arg("port", "43200")),
   mode,
   outFile: arg("out", `bench-${mode}-${profileName}.json`),

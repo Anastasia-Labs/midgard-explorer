@@ -21,7 +21,7 @@ describe("the bench CLI as a program", () => {
   it("loads every module and reaches its argument validation", async () => {
     const env = { ...process.env };
     delete env.BENCH_POSTGRES_URL;
-    delete env.BENCH_SOURCE_INDEX_URL;
+    delete env.BENCH_SOURCE_NODE_URL;
 
     const failure = await run(
       "node",
@@ -33,7 +33,7 @@ describe("the bench CLI as a program", () => {
     // The env error proves the whole import graph loaded. ERR_MODULE_NOT_FOUND
     // is the regression this test exists to catch.
     expect(stderr).not.toMatch(/ERR_MODULE_NOT_FOUND/);
-    expect(stderr).toMatch(/set BENCH_POSTGRES_URL and BENCH_SOURCE_INDEX_URL/);
+    expect(stderr).toMatch(/set BENCH_POSTGRES_URL and BENCH_SOURCE_NODE_URL/);
   }, 60_000);
 
   it("rejects an unknown workload, so --only cannot silently measure nothing", async () => {

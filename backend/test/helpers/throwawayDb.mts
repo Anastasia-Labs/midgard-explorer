@@ -22,9 +22,10 @@ import { Client } from "pg";
  *   - **creation never destroys.** `createDatabase` fails if the name is
  *     already taken rather than clearing the way.
  *
- * The live explorer index is never written to and never benchmarked against.
- * `cloneIndex` reads it and writes a frozen copy, and the copy carries a
- * checksum so a later baseline can name the exact data that produced it.
+ * A live Midgard node database is never written to and never benchmarked
+ * against. `bench/settledHashes.mts` reads one column from it, and the
+ * generated dataset carries a checksum so a later baseline can name the exact
+ * data that produced it.
  *
  * The node schema comes from the checked-in fixture rather than the live node,
  * so this is deterministic and needs no running Midgard.

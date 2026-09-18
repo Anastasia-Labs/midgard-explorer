@@ -170,11 +170,12 @@ export type Profile = {
   processedMempoolTransactions: number;
   searchMix: SearchMix;
   /**
-   * I6: blocks that also exist in the real L1 index snapshot.
+   * I6: blocks carrying a header hash the source node really committed.
    *
-   * The snapshot holds 9 real `l1_block_header` rows, so at most 9 generated
-   * blocks can carry a real settlement counterpart. Every other block is
-   * legitimately unsettled, which is a state the routes must render as such.
+   * A node that has submitted 9 commitments supplies 9 real header hashes, so
+   * at most 9 generated blocks can carry one. Every other block is legitimately
+   * unsettled, which is a state the routes must render as such. The harness
+   * refuses a source with fewer than this rather than generating the shortfall.
    */
   settledBlocks: number;
   /**
@@ -215,7 +216,9 @@ export type Profile = {
 const MEASURED_TX_BODY_P50 = 383; // live `immutable`, n=2
 const MEASURED_HEADER_CBOR_P50 = 361; // live `pending_block_finalizations`, n=9
 
-/** `l1_block_header` rows in the real explorer index, measured 2026-09-04. */
+/** Submitted commitments in the live node's finalization journal, measured
+ * 2026-09-18. It was the same number in the decommissioned Cardano index,
+ * which indexed the transactions this journal records. */
 export const REAL_SETTLED_BLOCKS = 9;
 
 /** Mirrors `SCAN_LIMIT` in `src/db/asset.ts`. */

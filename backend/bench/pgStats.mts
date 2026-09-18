@@ -16,9 +16,10 @@ import { classifyStatement, normalizeQuery } from "./attribution.mjs";
  *     `work_mem`, and it does not show up in latency until it is severe.
  *
  * `pg_stat_statements` is cluster-wide, so one probe covers every database on
- * the instance. That is why the harness puts the seeded node database and the
- * index snapshot on the same dedicated benchmark server: one reset, one read,
- * and the totals genuinely span both.
+ * the instance. That mattered when a route read two databases, the seeded node
+ * schema and a copy of the explorer's Cardano index, and a "statements per
+ * request" figure had to span them. The index is decommissioned and a run now
+ * seeds one database, so the totals describe it alone.
  */
 
 export type DbWork = {

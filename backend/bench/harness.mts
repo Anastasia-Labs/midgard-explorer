@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { readFileSync, readdirSync } from "node:fs";
 import { Client } from "pg";
-import { cloneIndex, type IndexSnapshot } from "./cloneIndex.mjs";
+import { assertEnoughHashes, readSettledHashes, type SettledHashes } from "./settledHashes.mjs";
 import { startEdge, type EdgeHandle } from "./edge.mjs";
 import { buildFrontend, startFrontend, type FrontendHandle } from "./frontend.mjs";
 import { createServer as createNetServer } from "node:net";
@@ -32,21 +32,20 @@ import { readFile } from "node:fs/promises";
  * server, and judges each result. Everything it produces is JSON, so a run can
  * be compared with a later one rather than remembered.
  *
- * Two databases, both on the dedicated benchmark server: the seeded node
- * schema and a frozen copy of the real L1 index. They live on one instance so a
- * single `pg_stat_statements` reset covers both, which is what makes a
- * "statements per request" figure span the dual-database routes honestly.
+ * One database, on the dedicated benchmark server: the seeded node schema. It
+ * used to be two, the second a frozen copy of the explorer's Cardano index,
+ * because routes then read both and a "statements per request" figure had to
+ * span them. The index is decommissioned and no route reads it, so the second
+ * database would be a database nothing under measurement connects to.
  */
 
 const FIXTURE = "test/fixtures/schema/midgard-node.sql";
 
 export type BenchSetup = {
   nodeDb: string;
-  indexDb: string;
   nodeUrl: string;
-  indexUrl: string;
   datasetChecksum: Checksum;
-  indexSnapshot: IndexSnapshot;
+  settled: SettledHashes;
   /** A pool, not one row: unique-key workloads rotate through it. */
   ids: SeededIds[];
   cleanup: () => Promise<void>;
@@ -104,30 +103,27 @@ export type SetupOptions = {
   profile: Profile;
   /** Distinct ids to resolve. A `unique-key` run needs one per request. */
   poolSize?: number;
-  /** The dedicated benchmark server. Never the live node or index. */
+  /** The dedicated benchmark server. Never the live node. */
   benchUrl: string;
-  /** The live explorer index, read-only, cloned into the benchmark server. */
-  liveIndexUrl: string;
+  /** A Midgard node database, read-only, for its real settled header hashes. */
+  sourceNodeUrl: string;
 };
 
 export async function setupBench(options: SetupOptions): Promise<BenchSetup> {
-  const { profile, benchUrl, liveIndexUrl } = options;
+  const { profile, benchUrl, sourceNodeUrl } = options;
 
-  const indexDb = await createDatabase(benchUrl);
-  const indexClient = new Client({ connectionString: adminUrl(indexDb, benchUrl) });
-  await indexClient.connect();
-  const source = new Client({ connectionString: liveIndexUrl });
+  const source = new Client({ connectionString: sourceNodeUrl });
   await source.connect();
-  const indexSnapshot = await cloneIndex(source, indexClient);
-  await source.end();
+  const settled = await readSettledHashes(source, sourceNodeUrl).finally(() => source.end());
+  assertEnoughHashes(settled, profile.settledBlocks);
 
   const nodeDb = await createDatabase(benchUrl);
   const nodeClient = new Client({ connectionString: adminUrl(nodeDb, benchUrl) });
   await nodeClient.connect();
   await nodeClient.query(stripPsqlMeta(await readFile(FIXTURE, "utf8")));
 
-  // The real L2 header hashes from the snapshot settle the generated blocks,
-  // so the cross-source routes agree with real data rather than a re-derivation.
+  // The node's own header hashes settle the generated blocks, so a settled
+  // block in the dataset carries a hash a Midgard node really committed.
   // Above this size the dataset does not fit in memory: `stress` is 50,000
   // blocks carrying about 370,000 transactions, and holding every CBOR body at
   // once exhausted the machine. The streaming path writes each batch and drops
@@ -138,7 +134,7 @@ export async function setupBench(options: SetupOptions): Promise<BenchSetup> {
   if (profile.blocks > STREAM_ABOVE_BLOCKS) {
     await streamDataset(
       profile,
-      { settledHashes: indexSnapshot.settledHashes },
+      { settledHashes: settled.hashes },
       async (tables) => {
         await seedBatch(nodeClient, tables);
       },
@@ -146,7 +142,7 @@ export async function setupBench(options: SetupOptions): Promise<BenchSetup> {
     await analyzeTables(nodeClient);
   } else {
     const dataset = generateDataset(profile, {
-      settledHashes: indexSnapshot.settledHashes,
+      settledHashes: settled.hashes,
     });
     await seedDataset(nodeClient, dataset);
   }
@@ -155,17 +151,13 @@ export async function setupBench(options: SetupOptions): Promise<BenchSetup> {
 
   return {
     nodeDb,
-    indexDb,
     nodeUrl: adminUrl(nodeDb, benchUrl),
-    indexUrl: adminUrl(indexDb, benchUrl),
     datasetChecksum,
-    indexSnapshot,
+    settled,
     ids,
     cleanup: async () => {
       await nodeClient.end().catch(() => {});
-      await indexClient.end().catch(() => {});
       await dropDatabase(nodeDb, benchUrl);
-      await dropDatabase(indexDb, benchUrl);
     },
   };
 }
@@ -263,7 +255,6 @@ export async function startServer(
     env: {
       ...process.env,
       POSTGRES_URL: setup.nodeUrl,
-      INDEXER_POSTGRES_URL: setup.indexUrl,
       BACKEND_PORT: String(port),
       BENCH_CACHE_BYPASS_TOKEN: bypassToken,
       // Production mode on purpose: logging verbosity and error handling
@@ -540,7 +531,12 @@ export type HarnessReport = {
   environment: EnvironmentReport;
   warnings: string[];
   datasetChecksum: Checksum;
-  indexChecksum: Checksum;
+  /** Which node database the dataset's real settled header hashes came from,
+   * and how many it took. Earlier artifacts carry `indexChecksum` instead: a
+   * digest over nine tables of the decommissioned Cardano index, which was
+   * cloned into a second database no route reads any more. */
+  settledHashSource: string;
+  settledHashCount: number;
   iterations: number;
   /** What the measured server was configured with, so a number can be read. */
   serverConfig: {
@@ -747,7 +743,7 @@ async function freePort(): Promise<number> {
 export async function runHarness(options: {
   profileName: keyof typeof PROFILES;
   benchUrl: string;
-  liveIndexUrl: string;
+  sourceNodeUrl: string;
   port: number;
   mode: "smoke" | "baseline";
   only?: readonly string[];
@@ -775,7 +771,7 @@ export async function runHarness(options: {
   const setup = await setupBench({
     profile,
     benchUrl: options.benchUrl,
-    liveIndexUrl: options.liveIndexUrl,
+    sourceNodeUrl: options.sourceNodeUrl,
     // One distinct key per request, so a `unique-key` workload measures the
     // route rather than the response cache serving a repeated key.
     poolSize: options.run?.iterations ?? 40,
@@ -864,7 +860,8 @@ export async function runHarness(options: {
           : []),
       ],
       datasetChecksum: setup.datasetChecksum,
-      indexChecksum: setup.indexSnapshot.checksum,
+      settledHashSource: setup.settled.source,
+      settledHashCount: setup.settled.hashes.length,
       iterations: options.run?.iterations ?? 0,
       serverConfig: {
         apiRateLimitMax: BENCH_RATE_LIMIT_MAX,
