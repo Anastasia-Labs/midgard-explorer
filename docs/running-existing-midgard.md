@@ -18,8 +18,8 @@ full; this page covers the mode.
 - A reachable Midgard PostgreSQL, and the credentials for it.
 - 3 GB of free memory, measured. See [Resource requirements](resource-requirements.md).
 
-Indexing Cardano additionally needs a deployment manifest and a Koios URL. That
-is the second half of this page.
+A deployment manifest, which says which Midgard this is and which validators it
+declares. The backend refuses to boot when it is set and cannot be parsed.
 
 ## Set it up
 
@@ -78,9 +78,9 @@ Mode:      serving L2 reads
 Frontend:  cd ../frontend-new && pnpm dev
 ```
 
-`pnpm dev` starts the explorer's own PostgreSQL, applies the index migrations,
-checks that it can serve L2 reads, and then runs the API in the foreground with
-the Cardano indexer off. In the second terminal:
+`pnpm dev` checks that it can serve, then runs the API in the foreground. It
+starts no container: the explorer reads Midgard's database and owns none of its
+own. In the second terminal:
 
 ```sh
 cd frontend-new
@@ -122,79 +122,42 @@ this mode, and an index that has never indexed answers 503.
 The L2 scope is narrower and exists on the command line only:
 
 ```sh
-cd backend && pnpm readiness -- --scope=l2
+cd backend && pnpm readiness
 ```
 
-It asks whether L2 blocks, transactions, addresses and UTxOs can be served. It
-skips the Cardano reconciliation, which is a network-dependent pass against
-Koios, and it skips the manifest, which describes the L1 contracts. This is what
-`pnpm dev` waits for, and it is not a deployment gate.
+It asks whether the node's database can answer the queries the read path makes
+and whether the deployment manifest parses. This is what `pnpm dev` waits for,
+and it is the same answer a deployment gates on.
 
 ## What the Cardano pages show
 
-With the indexer off, the L1 list routes still answer, with whatever the index
-already holds. The pages say which case they are in rather than guessing:
+The Cardano pages are built from what the Midgard node recorded: the commitment
+transaction it submitted for each block, and the deposits, withdrawals and
+forced-transaction orders it read. `/api/l1/activity/1` is that list and
+`/api/l1/activity/summary` counts it by kind.
 
-| Index state | The page says |
-|---|---|
-| `unbuilt` | The Cardano index has not been built |
-| `indexing` | The index is still being built, and names every cursor height |
-| `reconciled` | No Cardano activity in this range, the chain being quiet |
+Nothing here observes Cardano. A transaction no Midgard record names does not
+appear, no hash is presented as confirmed, and each page says so rather than
+implying otherwise. The explorer kept its own Cardano index until 2026-09-18;
+[ADR 0009](decisions/0009-node-reported-settlement.md) records why it was
+decommissioned and what was given up with it.
 
-`/api/l1/summary` carries that state and all three cursor heights.
-
-## Indexing Cardano as well
-
-```sh
-cd backend && pnpm dev:l1
-```
-
-This needs two more settings, checked before anything starts:
-
-- `MIDGARD_MANIFEST_PATH` must name a file that exists. A Midgard deployment has
-  no on-chain identifier, so the manifest is the only thing that says which
-  contracts to follow. Indexing without it produces rows attributed to nothing,
-  which no query reaches. This is also the only command that needs it: `pnpm dev`
-  reads L2 records and never opens the manifest, so the setting may be left
-  blank.
-- `KOIOS_BASE_URL` must be set.
-
-The path this run checked is the one the backend reads, so a `.dev/runtime.env`
-and a `backend/.env` that disagree fail here, naming the file, rather than at
-boot.
-
-Exactly one indexer runs. The index is written by one process and read by all of
-them, and the writer takes an advisory lock, so a second would not index while
-appearing to.
-
-The command then prints the cursors as they move, and says when strict readiness
-is met. `pnpm status` answers the same question for a run in another terminal.
-
-No cursor value is ever written by these commands. A cursor is written only
-inside a pass where every source completed, which is what makes the three
-heights a record of a finished reconciliation rather than a progress bar.
-
-If reconciliation doesn't finish, diagnose it with the same flag:
+When a check fails, diagnose it with:
 
 ```sh
-cd backend && pnpm doctor --with-l1-sync
+cd backend && pnpm doctor
 ```
 
-Without the flag, doctor asks whether the explorer can serve L2 records, which
-it can while the Cardano index is still behind. See
-[Troubleshooting](troubleshooting.md).
-
-How long the wait is depends on the gap between the index and the chain tip, and
-on the network. It is not bounded by anything in this repository.
+See [Troubleshooting](troubleshooting.md).
 
 ## Stopping
 
-Ctrl-C in each terminal stops that process. The containers keep running, because
-they hold the index and the next `pnpm dev` adopts them:
+Ctrl-C in each terminal stops that process. `pnpm dev` starts no container, so
+there is usually nothing left to stop:
 
 ```sh
 cd backend && pnpm services:down
 ```
 
-That stops only what `pnpm dev` started. It removes no volume, no database and
-no Midgard state. The index survives every run.
+That stops only what this package started. It removes no volume, no database and
+no Midgard state.

@@ -1,5 +1,11 @@
 # Rollout: canonical block key and deployment binding
 
+> **Superseded, 2026-09-18.** This records the canonical block key migration for the explorer-owned Cardano
+> index, which is decommissioned: see
+> [ADR 0009](../decisions/0009-node-reported-settlement.md). The commands below
+> no longer exist, and the database it migrated is retained, stopped, for
+> rollback. Kept as the record of what was done and why.
+
 The migration `20260902190000_canonical_header_and_binding` changes what
 `l1_block_header.header_hash` MEANS. It held `utxosRoot`, a 32-byte Merkle
 commitment; it now holds the 28-byte Midgard block header hash that every route
@@ -120,7 +126,7 @@ next pass rebuilds them.
 ## 4. Apply the migration
 
 ```bash
-cd backend && pnpm indexer:deploy
+# (removed 2026-09-18) pnpm indexer:deploy
 ```
 
 The migration repairs every header whose committing transaction this index
@@ -175,7 +181,7 @@ In this order. The new ingest keys headers from the `MBLC` token on the exact
 output; the old one writes roots and will now be refused by the constraint.
 
 ```bash
-cd backend && pnpm dev:l1        # or the production indexer unit
+# (removed 2026-09-18) pnpm dev:l1        # or the production indexer unit
 ```
 
 ## 7. Claim the index for its deployment
@@ -191,8 +197,8 @@ say they belong to and refuses if any of them name a deployment the manifest
 does not.
 
 ```bash
-cd backend && pnpm adopt-index            # report, write nothing
-cd backend && pnpm adopt-index --confirm  # write the binding
+# (removed 2026-09-18) pnpm adopt-index            # report, write nothing
+# (removed 2026-09-18) pnpm adopt-index --confirm  # write the binding
 cd backend && pnpm readiness --scope=l1   # confirm it reads back
 ```
 

@@ -10,10 +10,10 @@ Nginx API cache :3102
       |
       v
 explorer backend :3101
-      |                         |
-      v                         v
-Midgard PostgreSQL replica      midgard_explorer PostgreSQL
-(read-only L2 and DA rows)      (explorer-owned L1 index)
+      |
+      v
+Midgard PostgreSQL replica
+(read-only, every page)
 ```
 
 The backend must not be publicly reachable around the proxy. Permit traffic to
@@ -33,7 +33,6 @@ Production settings:
 MIDGARD_READ_REPLICA_URL=postgresql://explorer_reader:REDACTED@127.0.0.1:5436/midgard?schema=public
 REQUIRE_MIDGARD_READ_REPLICA=true
 NODE_DB_POOL_MAX=8
-INDEXER_DB_POOL_MAX=5
 DB_CONNECTION_TIMEOUT_MS=5000
 DB_IDLE_TIMEOUT_MS=30000
 DB_STATEMENT_TIMEOUT_MS=10000
@@ -48,11 +47,16 @@ silently directing explorer reads to the node primary.
 
 ## Origin cache and CDN
 
-Start the explorer-owned database and API cache:
+Start the API cache:
 
 ```bash
-docker compose up -d explorer-postgres explorer-api-cache
+docker compose up -d explorer-api-cache
 ```
+
+The Compose file also carries `explorer-postgres`, which held the explorer's own
+Cardano index. That index is decommissioned and nothing reads the database; it
+is kept, stopped, so the decision can be reversed. See
+[ADR 0009](decisions/0009-node-reported-settlement.md).
 
 The proxy forwards to `host.docker.internal:3101` by default and listens on
 `127.0.0.1:3102`. Override these with `BACKEND_ORIGIN` and `API_CACHE_PORT`.
@@ -91,9 +95,8 @@ publish this port: it describes the process, not the chain.
 |---|---|---|
 | `explorer_http_request_duration_seconds` | `route`, `method`, `status_class` | Route latency, per route template |
 | `explorer_route_statements_per_request` | `route` | The statement count the route budgets judge, per request |
-| `explorer_db_statement_duration_seconds` | `database` (`node`, `index`), `class` | Time per statement; `class` separates route work from index bookkeeping |
+| `explorer_db_statement_duration_seconds` | `database` (`node`), `class` | Time per statement, by the work it belongs to |
 | `explorer_response_cache_total` | `route`, `result` (`hit`, `miss`, `bypass`) | How often the in-process cache answers |
-| `explorer_indexer_pass_duration_seconds` | `outcome` | How long each L1 sync pass takes, and whether it failed |
 | `explorer_web_vitals_lcp_seconds`, `_inp_seconds`, `explorer_web_vitals_cls` | `route_class`, `device_class` | Web Vitals the explorer's pages report through `POST /api/vitals` |
 | `process_resident_memory_bytes`, `nodejs_*` | none | Memory, heap, event-loop lag and garbage collection |
 
@@ -134,34 +137,29 @@ scrape_configs:
 | Route | Answers | Gates |
 |---|---|---|
 | `/healthz` | the process is alive | restarts |
-| `/readyz` | the Midgard explorer can serve | L2 routing |
-| `/readyz/l1` | the Cardano surface can serve | L1 routing |
-| `/readyz/full` | both | a deployment |
+| `/readyz` | the explorer can serve | routing, and a deployment |
 
-Route L2 traffic on `/readyz` and L1 traffic on `/readyz/l1`. A failure on either
-side leaves the other side's routes in service, which is the point: an index
-behind the tip degrades the Cardano surface and must never make a Midgard page
-unavailable.
+One scope. There were three while the explorer kept its own Cardano index, so
+that an index behind the tip could degrade the Cardano surface without making a
+Midgard page unavailable. The index is decommissioned, every page reads the node,
+and `/readyz/l1` and `/readyz/full` answer `404` rather than answering this
+question under an L1 name.
 
-`backend/scripts/probe-readiness.ts` answers the same three without starting a
-server, as `--scope=l2`, `--scope=l1` and `--scope=full`. The scope names mirror
-the routes exactly so the same word cannot mean two things.
+`backend/scripts/probe-readiness.ts` answers the same question without starting
+a server. It takes no `--scope` flag and refuses one, rather than accepting the
+name of a scope it no longer honours.
 
-## Deployment binding
+## Deployment identity
 
-The index records which deployment it belongs to on first sight, and refuses a
-manifest that disagrees about the deployment, the network or the L2 database.
-Only `l1_event` carries a deployment column, so the other five L1 tables cannot
-be filtered even in principle, and a second manifest pointed at one database
-merges two deployments where nothing can separate them again.
-
-Recovering from a refusal is deliberate, and there are two ways: point the
-process at that deployment's own index, or rebuild this one by clearing the
-derived L1 tables and its binding and re-indexing from the intended manifest.
+A response says which deployment it describes, and says how much of that is
+known: `configured` means the manifest names it and nothing checked the claim.
+There is no stronger state. The explorer-owned index used to record a binding on
+first sight and refuse a manifest that disagreed, which is what `verified` meant;
+the index is decommissioned and that check went with it.
 
 The L2 database persists no protocol deployment identity of its own, only a
-migration-bundle hash, so the binding records an operator's assertion rather than
-something the explorer can derive.
+migration-bundle hash, so the manifest records an operator's assertion rather
+than something the explorer can derive. No surface may present it as verified.
 
 ## PostgreSQL streaming replica
 

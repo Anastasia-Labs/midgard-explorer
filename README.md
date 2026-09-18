@@ -78,7 +78,7 @@ so there is one way to start the explorer rather than two that must agree.
 
 | Path | What it is |
 |---|---|
-| `backend/` | The API. Reads the Midgard node's Postgres and the explorer's own L1 index, and runs the Cardano L1 indexer. |
+| `backend/` | The API. Reads the Midgard node's PostgreSQL, and nothing else. |
 | `frontend-new/` | The current explorer web app: a pnpm workspace of `app` (Next.js), `contracts` (response schemas) and `ui` (design tokens and primitives). |
 | `frontend/` | The previous Vite client. Kept and still buildable; no longer the app being developed. |
 | `docs/` | Production data path, data-coverage audit, design audits, and the feedback implementation plan. |
@@ -116,18 +116,17 @@ pnpm build
 pnpm start
 ```
 
-Four probes answer separate questions, and a deployment should use them
+Two probes answer separate questions, and a deployment should use them
 according to what it is routing:
 
 - `GET /healthz` reports that the process is alive. It touches no database, so
   it is safe to restart on.
-- `GET /readyz` reports whether the Midgard explorer can serve: the node
-  database, and nothing else. Every L2 page reads it and none of them touch the
-  Cardano index.
-- `GET /readyz/l1` reports whether the Cardano surface can serve: the index's
-  relations, its migrations, a completed reconciliation, and the deployment
-  manifest every indexed row is attributed to.
-- `GET /readyz/full` reports both, for a deployment gate that wants one call.
+- `GET /readyz` reports whether the explorer can serve: the Midgard node's
+  database, which every page reads, and the deployment manifest, which is how a
+  response says which Midgard it describes.
+  There were two more, `/readyz/l1` and `/readyz/full`, for the explorer-owned
+  Cardano index. That index is decommissioned and they answer `404` rather than
+  answering the L2 question under an L1 name.
 
   Each answers `503` naming the check that failed, and the failing driver
   message goes to the log, never to the response.
@@ -154,64 +153,19 @@ server, which is what to use before sending traffic:
 cd backend && pnpm readiness
 ```
 
-### Rolling out an indexer change
+### What the explorer reads
 
-The index is written by exactly one process and read by all of them, so the
-order matters. Applying the migration on its own is not a rollout: the old
-binary keeps writing under the old rules against the new schema.
+One database: the Midgard node's, read-only. The explorer kept a Cardano index
+of its own until 2026-09-18, written by exactly one process and rolled out in a
+fixed order; [ADR 0009](docs/decisions/0009-node-reported-settlement.md) records
+why it was decommissioned and what the explorer gave up with it. Its database,
+schema and migrations are retained, stopped, so the decision can be reversed.
 
-`backend/scripts/rollout.sh --check` prints the current state and readiness
-without changing anything, and exits with readiness's own exit code, so it can
-be gated on. `--apply` performs step 2. Both read their target from
-`INDEXER_POSTGRES_URL`, the same variable `pnpm indexer:deploy` migrates
-through, so the database being inspected and the database being migrated cannot
-be two different databases. `--apply` TAKES the indexer's advisory leadership
-lock and holds it across the migration, on a session that is idle rather than
-sleeping, so it is released the instant the script ends or is killed. Checking
-that the lock was free and then migrating would only have proved it was free at
-one instant: the checking connection closes, releases, and a supervised writer
-can restart into the gap. A writer that restarts now finds the lock held and
-does not index. Stopping the supervisor is still a precondition, because the
-lock stops a restarted writer from indexing, not from starting.
-
-It asks for the full `host:port/database` rather than the database name, which
-on its own cannot tell two hosts apart. It does not start or stop writers,
-because it cannot know what supervises them.
-
-1. **Stop the current writer.** Set `L1_SYNC_ENABLED=false` and restart it, or
-   stop the process. The advisory lock refuses a second writer, so a new
-   instance started first will simply not index.
-2. **Deploy the new binary and its migration together.** `pnpm build`, then
-   `pnpm indexer:deploy`. Readiness fails until both have happened, which is the
-   point: an instance holding one without the other reports `503` rather than
-   serving.
-3. **Start exactly one indexer.** Every other instance runs with
-   `L1_SYNC_ENABLED=false` and serves reads.
-4. **Wait for the reindex to finish and every source to complete.** A pass that
-   reconciles logs the counts it wrote; a pass that could not logs
-   `additive only: a source did not complete`. Do not open traffic on those:
-   the reorg window has not been reconciled. The three cursors (`l1`,
-   `l1:mints`, `l1:rewards`) sit at the same height once a pass has reconciled.
-
-   Readiness answers this for you and keeps the instance out of rotation until
-   it is true. It refuses an index holding rows under `default`, and cursors
-   that are not all past zero AND equal. Each half is needed. The migration
-   leaves all three reading zero, so equality alone passes the worst moment;
-   and three different non-zero heights mean three different passes covering
-   three different windows, so every mint between the mint cursor and the
-   primary one is missing while the row counts look healthy. A cursor is
-   written only inside a pass where every source completed, which is what makes
-   the pair a record of a completed reconciliation rather than a progress bar.
-5. **Validate the queries before opening traffic.** Every event must carry the
-   manifest's identity and never a shared constant:
-
-   ```sql
-   SELECT deployment, count(*) FROM l1_event GROUP BY deployment;
-   ```
-
-   One row, whose deployment is the manifest's `manifestId`. A `default` row
-   means rows were written before the attribution repair and are unreachable by
-   any query the UI makes.
+The Cardano pages are built from what the node itself recorded: the commitment
+transaction it submitted for each block, and the deposits, withdrawals and
+forced-transaction orders it read. Nothing observes Cardano, so no page presents
+a hash as confirmed, and a Cardano transaction no Midgard record names does not
+appear at all.
 
 ## Checks
 
@@ -283,8 +237,7 @@ time against a single production build, and reports per file.
 
 Production deployments should put the bundled Nginx cache (and optionally a
 CDN) in front of the backend and point Midgard reads at a PostgreSQL streaming
-replica. The explorer-owned L1 index remains in its separate database. Pool
-limits, statement timeouts, shared-cache headers, and one aggregate `/api`
+replica. Pool limits, statement timeouts, shared-cache headers, and one aggregate `/api`
 request budget are configured by the backend.
 
 See [Production explorer data path](docs/production-data-path.md) for the exact

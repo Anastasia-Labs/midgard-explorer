@@ -31,6 +31,12 @@ services:
         limits:
           memory: 128M
 
+  # RETAINED, NOT USED.
+  #
+  # This held the explorer's own Cardano index, which was decommissioned on
+  # 2026-09-18: see docs/decisions/0009-node-reported-settlement.md. Nothing
+  # reads it, `pnpm dev` no longer starts it, and it is kept with its volume so
+  # the decision can be reversed. Removing it, or its volume, deletes the index.
   explorer-postgres:
     image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
     container_name: midgard-explorer-postgres

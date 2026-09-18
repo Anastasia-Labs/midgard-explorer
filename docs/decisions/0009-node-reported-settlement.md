@@ -1,6 +1,7 @@
 # 9. Settlement is what the node reports
 
-Accepted 2026-09-17. Narrows ADR 0006 and ADR 0007 on one point, and defers ADR 0008.
+Accepted 2026-09-17, carried out 2026-09-18. Narrows ADR 0006 and ADR 0007 on one
+point, and defers ADR 0008.
 
 ## Decision
 
@@ -108,12 +109,55 @@ operator instruction, not something a deployment tool enforces.
 so changing the variable requires restarting or redeploying the backend. There
 is no dynamic reload.
 
-## What this step did not do
+## What the first step did not do
 
 No route was retired, no page was removed, no link was redirected, the indexing
 loop still runs where it is enabled, and no schema, migration or row changed.
 `/api/l1/*` and the Cardano pages answer exactly as before. The block page's
 Cardano evidence tab still renders the index and now names it as the source.
+
+## Carried out, 2026-09-18
+
+The index is decommissioned. What that meant, in the order it was done:
+
+**The Cardano pages read the node.** `/l1` lists what the node recorded: the
+commitment transaction it submitted for each block, and the deposits,
+withdrawals and forced-transaction orders it read, from four columns of the
+node's own tables. `/l1/transaction/:hash` says what Midgard records about one
+transaction and links out for the transaction itself. `/l1/validator/:hash`
+describes what the manifest declares and links its address out.
+`/l1/commitments` listed headers the index had observed and now redirects to
+`/blocks`, which answers the same question from the node's records.
+
+**Four surfaces that still read explorer-owned storage were fixed**, each
+verified against a stopped index on 2026-09-17:
+
+| Surface | What it did | What it does |
+|---|---|---|
+| `/api/search` | One of six lookups read the index inside a `Promise.all`, so a hex query of six or more characters returned 500 with the other five | Reads the node only. A settlement hash resolves through the finalization journal to its block |
+| `SourceBanner` | Read the index's summary, so every page announced "the backend could not be reached" | Reads `/api/source`, which is the node's own answer |
+| Deployment identity | `checkBinding` read `index_binding`, so every response said `degraded` | `configured` or `unconfigured`, from the manifest |
+| Block page's Cardano tab | Rendered the index | Removed with it |
+
+**Identity says what it is.** `identityState` was `verified` or `degraded`,
+where `verified` meant the index confirmed a binding. It is now `configured` or
+`unconfigured`: a manifest that parses says what an operator intended, and
+nothing checks that claim. No surface may present it as verified, and the
+validator label's "manifest" badge, whose tooltip said "verified against", went
+with the pages that used it.
+
+**The indexer is gone, and its data is not.** `backend/src/indexer/` and its
+scripts, tests, configuration (`INDEXER_POSTGRES_URL`, `KOIOS_BASE_URL`,
+`L1_SYNC_*`, `L1_CONFIRMATION_SOURCE`) and readiness scopes (`/readyz/l1`,
+`/readyz/full`) are removed. `prisma-indexer/` keeps the schema and its
+migrations, and the `explorer-postgres` service keeps its volume, both stopped
+and unread, so reverting this commit and starting them restores the lane. No
+migration was run, no table dropped and no row deleted.
+
+**What the explorer gave up is unchanged from what this record said before it
+was carried out**, and is the reason to read the section above: a hash the node
+never recorded cannot be found here, and a hash it recorded that never confirmed
+cannot be detected here.
 
 ## Consequences
 

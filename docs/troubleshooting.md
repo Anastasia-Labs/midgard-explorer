@@ -6,8 +6,7 @@ what you search for here.
 
 ```sh
 cd backend
-pnpm doctor                  # can this serve L2 records?
-pnpm doctor --with-l1-sync   # and could it take traffic?
+pnpm doctor                  # can this serve, and could it take traffic?
 pnpm doctor --json           # for a script
 ```
 
@@ -99,42 +98,18 @@ node's PostgreSQL. Start it; see
 [Running the full Midgard stack](running-full-midgard.md). Its host port is
 5433, not 5432.
 
-**`existing.index-db-reachable`** The explorer's own PostgreSQL is not running.
-Run `docker compose --env-file .dev/runtime.env up -d explorer-postgres`, or let
-`pnpm dev` start it.
+**`readiness.node-database`** The Midgard node's database is missing relations
+the read path queries. This comes from the backend's own readiness probe rather
+than from a second list, so the answer is the same one `/readyz` gives.
 
-**`existing.test-db-distinct`** The test database is not named `_test`, or it is
-the same database as the index. The backend suite truncates whatever
-`TEST_INDEXER_POSTGRES_URL` names, and refuses any name that does not end in
-`_test`. Run `pnpm setup:test`, which creates and migrates it and refuses any
-target that is not disposable.
-
-**`readiness.node-database`** and **`readiness.explorer-index`** A database is
-missing relations the read path queries, or the index is missing a migration
-this build ships. These come from the backend's own readiness probe rather than
-from a second list, so the answer is the same one `/readyz` gives. Run
-`cd backend && pnpm indexer:deploy` for a missing migration.
-
-**`readiness.index-reconciled`** and **`readiness.manifest`** In `existing` mode
-with the indexer off, these read `not checked`: doctor runs the L2 scope, which
-covers neither. In `full` mode, and in `existing` mode with
-`L1_SYNC_ENABLED=true`, doctor runs the full scope and both are failures. Either
-way `/readyz` still refuses, which is what keeps such an instance out of
-rotation.
+**`readiness.manifest`** The deployment manifest could not be read. Every
+response is attributed to the deployment it names, so `/readyz` refuses the
+process rather than serving figures that belong to nothing.
 
 **`existing.manifest-file`** `MIDGARD_MANIFEST_PATH` is unset or names no file.
-A warning while the indexer is off, because an explorer serving L2 records never
-opens the manifest, and a failure once it is on, because rows indexed without it
-are attributed to nothing.
-
-**Migrations were not applied, and the message says the index is not one this
-package owns.** `pnpm dev` migrates exactly one database: the one this
-repository's Compose file publishes and this command started. Ownership is
-checked against what `docker compose port explorer-postgres 5432` answers, plus
-the user and database name in `.dev/runtime.env`, and the message names which of
-them did not match. Every other index is migrated through
-`cd backend && ./scripts/rollout.sh --apply`, which holds the indexer's advisory
-lock across the migration.
+Unset is a warning: the backend boots, and every response is attributed to no
+deployment, which readiness refuses. Set and absent is a failure, because the
+backend refuses to boot on a manifest it cannot read.
 
 ## Compatibility
 
@@ -151,8 +126,8 @@ Regenerate the pin from the committed schema fixture with
 `pnpm compat write --fixture` after a deliberate upgrade.
 
 **`compat.manifest-version`** The manifest declares a schema version outside
-what this build supports. The list comes from the indexer, which refuses an
-unknown layout rather than reading it on a guess.
+what this build supports. The loader refuses an unknown layout rather than
+reading it on a guess.
 
 **`compat.deployment`** The manifest identifies the deployment, so it is
 compared against `midgard.verifiedAgainst.manifestId`. A different id is not a
@@ -182,17 +157,15 @@ the page says so:
 
 | State | Meaning |
 |---|---|
-| `unbuilt` | Nothing has been indexed. The page cannot show activity even if the chain has some. |
-| `indexing` | A pass in which every source completed has not finished. The page names every cursor height. |
-| `reconciled` | The index is current and the chain is quiet here. |
-
-Index Cardano with `pnpm dev:l1`, which needs a deployment manifest and a Koios
-URL.
+The Cardano pages read what the Midgard node recorded. An empty list means the
+node has recorded nothing on Cardano, which is a different statement from "the
+chain has nothing": this explorer does not read Cardano. See
+[ADR 0009](decisions/0009-node-reported-settlement.md).
 
 ## Stopping things
 
-Ctrl-C stops the process in that terminal. The containers keep running, because
-they hold the index and the next `pnpm dev` adopts them.
+Ctrl-C stops the process in that terminal. `pnpm dev` starts no container, so
+there is usually nothing left running.
 
 `pnpm services:down` stops them. It removes no volume, no database and no
 Midgard state; no command in this repository deletes state as a side effect of

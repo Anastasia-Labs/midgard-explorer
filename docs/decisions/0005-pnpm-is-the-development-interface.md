@@ -11,7 +11,6 @@ starts. The repository root carries no command of its own.
 | To do this | Run |
 |---|---|
 | the explorer against a Midgard database | `cd backend && pnpm dev`, then `cd frontend-new && pnpm dev` |
-| the same, and index Cardano | `cd backend && pnpm dev:l1` |
 | the explorer with no backend at all | `cd frontend-new && pnpm dev:demo` |
 | find out what is wrong | `cd backend && pnpm doctor` |
 | stop the containers | `cd backend && pnpm services:down` |
@@ -66,3 +65,11 @@ documents against a seeded node database.
 
 The documentation gate refuses a page that names `./dev`, so the command cannot
 return to the guides without returning to the repository.
+
+## Amendment, 2026-09-18
+
+There was a sixth command, `dev:l1`, which ran the explorer's own Cardano
+indexer. That index is decommissioned; see
+[ADR 0009](0009-node-reported-settlement.md). The decision this record makes,
+that a contributor drives development through package scripts rather than
+docker or prisma, is unchanged.

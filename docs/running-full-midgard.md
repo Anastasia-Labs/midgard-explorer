@@ -20,8 +20,7 @@ dominate the total and no figure is offered for them here.
 |---|---|---|
 | Midgard node HTTP API | Docker (`midgard-node`) | 3000 |
 | Midgard PostgreSQL | Docker (`postgres`) | host 5433, container 5432 |
-| Explorer PostgreSQL | Docker (`explorer-postgres`) | host 5435, container 5432 |
-| Explorer backend | `cd backend && pnpm dev:l1` | 3101 |
+| Explorer backend | `cd backend && pnpm dev` | 3101 |
 | Explorer web app | `cd frontend-new && pnpm dev` | 3011 |
 
 The web app is `frontend-new/`. The explorer's ports avoid 3000, which the
@@ -164,19 +163,17 @@ pnpm setup:test
 Check the machine before starting anything:
 
 ```sh
-pnpm doctor --with-l1-sync
+pnpm doctor
 ```
 
-Every failure names the command that fixes it. Then start the explorer,
-indexing Cardano as well since the node is live:
+Every failure names the command that fixes it. Then start the explorer:
 
 ```sh
-pnpm dev:l1
+pnpm dev
 ```
 
-This starts the explorer's PostgreSQL, applies the index migrations, starts the
-API in the foreground, and prints the cursors as they move until strict
-readiness is met. In a second terminal:
+This checks that the node's database can answer the queries the read path makes,
+then runs the API in the foreground. In a second terminal:
 
 ```sh
 cd frontend-new

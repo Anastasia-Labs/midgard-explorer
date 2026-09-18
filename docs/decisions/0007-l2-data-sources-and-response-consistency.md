@@ -1,6 +1,9 @@
 # 7. L2 data sources and response consistency
 
-Accepted 2026-09-02.
+Accepted 2026-09-02. **Amended 2026-09-18 by [ADR 0009](0009-node-reported-settlement.md):**
+the Cardano index this record's readiness split existed for is decommissioned,
+so `/readyz` is the only scope. Everything this record decides about L2 sources,
+one snapshot per response and sources identifying themselves still holds.
 
 ## Decision
 
