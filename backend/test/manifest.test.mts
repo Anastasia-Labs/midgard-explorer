@@ -6,7 +6,7 @@ import {
   computeDeploymentId,
   contractFamily,
   loadManifest,
-} from "../src/indexer/manifest.js";
+} from "../src/db/manifest.js";
 
 const FIXTURE = new URL(
   "./fixtures/manifest-sample.json",

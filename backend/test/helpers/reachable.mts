@@ -1,5 +1,4 @@
 import { prisma } from "../../src/db.js";
-import { indexerPrisma } from "../../src/indexer/db.js";
 
 /**
  * Is the database this file needs actually there?
@@ -20,11 +19,15 @@ import { indexerPrisma } from "../../src/indexer/db.js";
  * green for having done nothing.
  */
 export async function reachable(
-  which: "node" | "index",
+  which: "node",
   label: string,
   timeoutMs = 3000,
 ): Promise<boolean> {
-  const db = which === "node" ? prisma : indexerPrisma;
+  // One database. The explorer owned a second one for the Cardano index and
+  // this helper took its name as an argument; the index is decommissioned and
+  // the argument is kept so every call site still reads as a question about a
+  // named database rather than about "the" database.
+  const db = prisma;
   try {
     await Promise.race([
       db.$queryRaw`SELECT 1;`,

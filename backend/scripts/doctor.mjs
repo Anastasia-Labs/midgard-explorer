@@ -11,7 +11,7 @@
  *   1  at least one check failed, or one could not be run
  *   2  the command was used wrongly
  *
- * Usage: doctor.mjs <repoRoot> [demo|existing|full] [--json] [--with-l1-sync]
+ * Usage: doctor.mjs <repoRoot> [demo|existing|full] [--json]
  */
 import { pathToFileURL } from "node:url";
 
@@ -81,9 +81,6 @@ if (!isEntryPoint) {
 const args = process.argv.slice(2);
 const repoRoot = args.shift();
 const json = args.includes("--json");
-// The same flag `up existing` takes, so the question asked here is the one the
-// mode was started with rather than the one backend/.env describes.
-const withL1Sync = args.includes("--with-l1-sync");
 const mode = args.find((a) => !a.startsWith("-")) ?? "demo";
 
 if (repoRoot === undefined) {
@@ -95,7 +92,7 @@ if (!MODES.includes(mode)) {
   process.exit(2);
 }
 
-const ctx = { repoRoot, mode, withL1Sync };
+const ctx = { repoRoot, mode };
 const selected = CHECKS.filter((check) => check.modes.includes(mode));
 
 const results = await runChecks(ctx, selected);
@@ -149,11 +146,7 @@ if (json) {
     );
   }
   if (failed) {
-    // The flag is repeated back. Dropping it would send the reader to a run
-    // that asks the narrower question, and answers Ready to the wider one.
-    const again = `pnpm doctor${mode === "existing" ? "" : ` ${mode}`}${
-      withL1Sync ? " --with-l1-sync" : ""
-    }`;
+    const again = `pnpm doctor${mode === "existing" ? "" : ` ${mode}`}`;
     process.stdout.write(`\nFix the failures above, then run: ${again}\n`);
   } else if (!UNBUILT.has(mode)) {
     process.stdout.write(

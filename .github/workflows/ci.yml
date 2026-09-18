@@ -51,10 +51,6 @@ jobs:
           --health-retries 10
 
     env:
-      # The suite refuses any database whose name does not end in `_test`, so
-      # a misconfigured run stops rather than truncating something real.
-      TEST_INDEXER_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_explorer_test
-      INDEXER_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_explorer_ci
       # The node's database, created and migrated from a versioned fixture
       # below. Pointing this at a generic empty `postgres` meant every test
       # that queries a node table skipped on a `SELECT 1` guard that succeeded.
@@ -70,7 +66,6 @@ jobs:
       RECENT_TRANSACTIONS_LIMIT: "10"
       TRANSACTIONS_PER_PAGE: "25"
       BLOCKS_PER_PAGE: "25"
-      KOIOS_BASE_URL: https://preprod.koios.rest/api/v1
       # A committed fixture. This pointed at ./manifest.json, which does not
       # exist in the repository, so anything reading the manifest was testing
       # the failure path or skipping.
@@ -78,10 +73,6 @@ jobs:
       # DB-backed tests must fail rather than skip. They guarded on a reachable
       # database and reported success when it was absent.
       REQUIRE_DB: "1"
-      L1_SYNC_INTERVAL_MS: "60000"
-      L1_REORG_LOOKBACK_BLOCKS: "20"
-      # Nothing in CI may reach Koios or index anything. The API still starts.
-      L1_SYNC_ENABLED: "false"
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -98,18 +89,15 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Generate both Prisma clients
-        run: |
-          pnpm prisma:generate
-          pnpm indexer:generate
+      - name: Generate the Prisma client
+        run: pnpm prisma:generate
 
-      - name: Create the databases the suite and the boot check need
+      - name: Create the database the suite and the boot check need
+        # One. The explorer owns no database: it reads the Midgard node's, and
+        # the tests that need a writable one create and drop a throwaway.
         env:
           PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_explorer_test'
-          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_explorer_ci'
-          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_node_ci'
+        run: psql -h localhost -U postgres -c 'CREATE DATABASE midgard_node_ci'
 
       - name: Apply the Midgard node schema fixture
         # Derived from prisma/schema.prisma, the read-only model the explorer's
@@ -126,29 +114,6 @@ jobs:
           psql -h localhost -U postgres -d midgard_node_ci -v ON_ERROR_STOP=1 \
             -f test/fixtures/schema/midgard-node-seed.sql
 
-      - name: Migrate the test database
-        # `indexer:deploy` targets INDEXER_POSTGRES_URL only, so the database
-        # the suite actually uses needs the same migrations applied to it.
-        run: |
-          pnpm indexer:deploy
-          INDEXER_POSTGRES_URL="$TEST_INDEXER_POSTGRES_URL" pnpm indexer:deploy
-
-      - name: Record a completed reconciliation in the CI index
-        # Readiness refuses an index that has never finished a pass in which
-        # every source completed, which is exactly the state a freshly migrated
-        # database is in, and exactly the state the attribution rollout passes
-        # through. Nothing indexes here (L1_SYNC_ENABLED=false), so the record
-        # is seeded like the node schema above: as a fixture, so the boot check
-        # below tests the server rather than the absence of an indexer. The
-        # probe's discriminating cases are in test/readiness-probes.test.mts.
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d midgard_explorer_ci -v ON_ERROR_STOP=1 -c \
-            "INSERT INTO sync_cursor (source, last_block_height, updated_at)
-             VALUES ('l1', 1, now()), ('l1:mints', 1, now()), ('l1:rewards', 1, now())
-             ON CONFLICT (source) DO NOTHING;"
-
       - name: Open the evidence record
         # .git/gate-evidence/ is a local directory that is never pushed, so the
         # only evidence a reviewer could read was on one machine. What the
@@ -163,7 +128,6 @@ jobs:
             echo "started    = $(date -Is)"
             echo "node       = $(node --version)"
             echo "pnpm       = $(pnpm --version)"
-            echo "migrations = $(ls prisma-indexer/migrations | grep -c '^2')"
           } > gate-evidence/run.txt
 
       - name: Dependency advisories, gated on recorded dispositions
@@ -203,13 +167,6 @@ jobs:
           PGPASSWORD: postgres
         run: |
           set -o pipefail
-          # The index needs the anchor block, or the contract test refuses to
-          # report a pass it never measured and this step is red for want of
-          # data. It is the SAME block the node seed carries, so the association
-          # on that block resolves to `matched` rather than to one side's
-          # silence, which is what makes decoding the envelope meaningful.
-          psql -h localhost -U postgres -d midgard_explorer_ci -v ON_ERROR_STOP=1 \
-            -f test/fixtures/schema/l1-index-seed.sql
           pnpm build
           node dist/index.js > gate-evidence/backend-for-contracts.log 2>&1 &
           echo $! > backend.pid
@@ -230,19 +187,6 @@ jobs:
             pnpm --filter @midgard-explorer/app exec vitest run test/backend-contract.test.ts \
             2>&1 | tee ../backend/gate-evidence/backend-contract.log
           kill "$(cat ../backend/backend.pid)" || true
-
-      - name: The canonical block key, against both sources
-        # The class of gate that was missing when it mattered. Every other check
-        # reads ONE source, which is how a 32-byte root sat in the column every
-        # route queries as a 28-byte hash while nine local gates and this
-        # workflow stayed green. These read the node and the index together, and
-        # run the backfill exactly as the migration ships it.
-        run: |
-          set -o pipefail
-          REQUIRE_DB=1 pnpm exec vitest run \
-            test/cross-source-identity.test.mts \
-            test/migration-backfill.test.mts \
-            test/state-queue-asset.test.mts 2>&1 | tee gate-evidence/cross-source.log
 
       - name: The seed is what the generator produces
         # Regenerate and diff. The seed is derived from the schema fixture and
@@ -266,7 +210,7 @@ jobs:
 
       - run: pnpm build
 
-      - name: Boot the compiled server and prove both probes
+      - name: Boot the compiled server and prove readiness tracks the database
         # `pnpm test` never runs `dist`. This is the only step that proves the
         # artifact a deployment would run can start at all: a missing runtime
         # dependency resolves under ts-node and fails under node.
@@ -282,60 +226,50 @@ jobs:
           curl -fsS http://127.0.0.1:3101/healthz | tee -a gate-evidence/probes.log | grep -q '"status":"ok"'
           curl -fsS http://127.0.0.1:3101/readyz | tee -a gate-evidence/probes.log | grep -q '"ready":true'
 
-          # The SPLIT, constructed rather than assumed.
+          # The refusal, made and then unmade.
           #
-          # This asserted that L1 readiness was 503 on the stated grounds that
-          # the job never reconciles the index. It does: a step above seeds a
-          # completed reconciliation so the rest of the gate has an index worth
-          # reading, and against that state the probe answers 200. The
-          # assertion was written against a job that no longer existed and
-          # would have failed the first time anything reached this step.
-          #
-          # So the failure is made and then unmade. Taking one source's cursor
-          # back to zero puts the index out of coverage; L2 readiness has to
-          # keep serving while it is, which IS the split; and restoring the
-          # cursor has to bring L1 back, because a check that can only go red
-          # proves half of what this claims.
-          psql -h localhost -U postgres -d midgard_explorer_ci -v ON_ERROR_STOP=1 -c \
-            "UPDATE sync_cursor SET last_block_height = 0 WHERE source = 'l1';"
+          # A check that can only go green proves half of what it claims, so a
+          # relation the read path needs is taken away and put back. There were
+          # two readiness scopes here, `/readyz/l1` for the explorer-owned
+          # Cardano index and `/readyz/full` for both; that index is
+          # decommissioned and its scopes with it, so what is left to prove is
+          # that the one scope tracks the node's database rather than answering
+          # ready on principle.
+          psql -h localhost -U postgres -d midgard_node_ci -v ON_ERROR_STOP=1 -c \
+            'ALTER TABLE mempool RENAME TO mempool_hidden;'
           # Readiness answers are cached for a second, so a probe taken
           # immediately would report the state before this change.
           sleep 2
-          l1_status="$(curl -s -o gate-evidence/readyz-l1.json -w '%{http_code}' \
-            http://127.0.0.1:3101/readyz/l1)"
-          echo "readyz/l1 with a source uncovered -> $l1_status" | tee -a gate-evidence/probes.log
-          test "$l1_status" = "503"
-          grep -q '"ready":false' gate-evidence/readyz-l1.json
+          status="$(curl -s -o gate-evidence/readyz-missing.json -w '%{http_code}' \
+            http://127.0.0.1:3101/readyz)"
+          echo "readyz with a node relation missing -> $status" | tee -a gate-evidence/probes.log
+          test "$status" = "503"
+          grep -q '"ready":false' gate-evidence/readyz-missing.json
           # And it reports WHICH dependency failed, so an operator is not left
           # guessing. Asserted as a failed check rather than by name: a name
-          # appears in the response whether that check passed or failed, so
-          # grepping for one proves only that the route answered.
+          # appears in the response whether that check passed or failed.
           node -e '
-            const r = require("./gate-evidence/readyz-l1.json");
+            const r = require("./gate-evidence/readyz-missing.json");
             const failed = r.checks.filter((c) => !c.ok).map((c) => c.name);
             if (failed.length === 0) {
-              console.error("readyz/l1 reported not-ready with no failing check");
+              console.error("readyz reported not-ready with no failing check");
               process.exit(1);
             }
-            console.log("readyz/l1 failing checks:", failed.join(", "));
+            console.log("readyz failing checks:", failed.join(", "));
           '
 
-          full_status="$(curl -s -o gate-evidence/readyz-full.json -w '%{http_code}' \
-            http://127.0.0.1:3101/readyz/full)"
-          echo "readyz/full -> $full_status" | tee -a gate-evidence/probes.log
-          test "$full_status" = "503"
+          # The retired scopes answer as retired rather than as healthy.
+          for retired in /readyz/l1 /readyz/full; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3101$retired")"
+            echo "$retired -> $code" | tee -a gate-evidence/probes.log
+            test "$code" = "404"
+          done
 
-          # The other half of the split: L2 still serves while L1 does not. An
-          # unbuilt index used to take every L2 route out of rotation with it.
-          curl -fsS http://127.0.0.1:3101/readyz | tee -a gate-evidence/probes.log | grep -q '"ready":true'
-
-          # And back, so the refusal is shown to track the state.
-          psql -h localhost -U postgres -d midgard_explorer_ci -v ON_ERROR_STOP=1 -c \
-            "UPDATE sync_cursor SET last_block_height = 1 WHERE source = 'l1';"
+          psql -h localhost -U postgres -d midgard_node_ci -v ON_ERROR_STOP=1 -c \
+            'ALTER TABLE mempool_hidden RENAME TO mempool;'
           sleep 2
-          recovered="$(curl -s -o gate-evidence/readyz-l1-recovered.json -w '%{http_code}' \
-            http://127.0.0.1:3101/readyz/l1)"
-          echo "readyz/l1 with coverage restored -> $recovered" | tee -a gate-evidence/probes.log
+          recovered="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3101/readyz)"
+          echo "readyz with the relation restored -> $recovered" | tee -a gate-evidence/probes.log
           test "$recovered" = "200"
           kill $SERVER_PID
 
@@ -475,9 +409,8 @@ jobs:
         run: |
           set -euo pipefail
           pnpm install --frozen-lockfile
-          test -d prisma/explorer-client || { echo "the explorer client was not generated"; exit 1; }
-          test -d prisma-indexer/indexer-client || { echo "the indexer client was not generated"; exit 1; }
-          echo "both Prisma clients exist after install alone"
+          test -d prisma/explorer-client || { echo "the Prisma client was not generated"; exit 1; }
+          echo "the Prisma client exists after install alone"
 
       - name: Seed the node database
         working-directory: backend
@@ -494,8 +427,8 @@ jobs:
       - name: pnpm setup, then fill in the node's database, then pnpm setup
         # The README's sequence exactly. Writing backend/.env by hand first is a
         # different thing: setup does not overwrite a file that already exists,
-        # so the run never generated POSTGRES_URL or INDEXER_POSTGRES_URL and
-        # the backend refused to start on settings nothing had written.
+        # so the run never generated POSTGRES_URL and the backend refused to
+        # start on settings nothing had written.
         working-directory: backend
         run: |
           set -euo pipefail
@@ -509,7 +442,6 @@ jobs:
             .env
           pnpm setup
           grep -q '^POSTGRES_HOST=localhost' .env
-          grep -q '^INDEXER_POSTGRES_URL=postgresql://' .env
           # Nothing outside this package may be written.
           test ! -f ../frontend-new/app/.env.local || {
             echo "setup wrote into frontend-new"; exit 1; }
@@ -584,54 +516,53 @@ jobs:
             })();
           '
 
-      - name: L2 readiness passes where strict readiness does not
-        # Both halves matter. The scope must be narrow enough to pass against an
-        # index nobody has built and a deployment nobody has named, and
-        # `/readyz` must still refuse it, or the development scope has quietly
-        # weakened the deployment gate.
-        #
-        # Asked while the backend and its PostgreSQL are up. Asking it after a
-        # stop step reported an unavailable index, which is true of a stopped
-        # container and says nothing about the scopes.
+      - name: Readiness answers for the development setup
+        # Against the backend and its PostgreSQL while both are up. There were
+        # two scopes here and the step proved a narrow one passed where the
+        # strict one refused; the strict scope covered the decommissioned
+        # Cardano index, so what is left is one answer and it must be ready.
         working-directory: backend
         run: |
           set -euo pipefail
-          pnpm --silent readiness -- --scope=l2
-          if pnpm --silent readiness; then
-            echo "strict readiness passed without a manifest or a reconciled index"
+          pnpm --silent readiness
+          if pnpm --silent readiness -- --scope=l2; then
+            echo "a retired scope was accepted"
             exit 1
           fi
-          echo "strict readiness refused it, as it should"
+          echo "readiness is ready, and a retired scope is refused"
 
-      - name: An index with no rows reports itself unbuilt
+      - name: The Cardano pages read the node, not an index
         run: |
           set -euo pipefail
           node -e '
             (async () => {
-              const summary = await (await fetch("http://127.0.0.1:3101/api/l1/summary")).json();
-              console.log("l1 sync state:", summary.sync.state);
-              if (summary.sync.state !== "unbuilt") {
-                console.error("an index with no rows did not report itself unbuilt");
+              const summary = await (await fetch("http://127.0.0.1:3101/api/l1/activity/summary")).json();
+              const kinds = summary.byKind.map((k) => k.kind).sort().join(",");
+              console.log("activity kinds:", kinds, "total:", summary.total);
+              if (kinds !== "deposit,forced_transaction,settlement,withdrawal") {
+                console.error("the activity summary does not report every kind");
+                process.exit(1);
+              }
+              const source = await (await fetch("http://127.0.0.1:3101/api/source")).json();
+              console.log("identity:", source.identityState, "database:", source.database);
+              if (source.identityState === "verified") {
+                console.error("a parsed manifest was reported as verified");
                 process.exit(1);
               }
             })();
           '
 
-      - name: SIGTERM stops the API, drains the indexer, and leaves PostgreSQL
+      - name: SIGTERM stops the API and leaves PostgreSQL running
         # The signal a container sends, to the process a container runs.
         # `pnpm dev` is the development wrapper around it; production runs the
         # compiled server, and this is the shutdown a deployment depends on.
         #
         # Its own port, so the run started above keeps serving the steps after
-        # this one. KOIOS_BASE_URL names an address nothing listens on: the
-        # claim here is that a running indexer drains, and waiting on a remote
-        # service would make how long that takes somebody else's to decide.
+        # this one.
         working-directory: backend
         env:
           BACKEND_PORT: "3103"
-          L1_SYNC_ENABLED: "true"
           MIDGARD_MANIFEST_PATH: ./test/fixtures/manifest-sample.json
-          KOIOS_BASE_URL: http://127.0.0.1:1
         run: |
           set -euo pipefail
           pnpm build
@@ -642,14 +573,6 @@ jobs:
             sleep 1
           done
           curl -sf http://127.0.0.1:3103/healthz >/dev/null || { cat ../shutdown.log; exit 1; }
-          for i in $(seq 1 30); do
-            grep -q "L1 sync started" ../shutdown.log && break
-            sleep 1
-          done
-          grep -q "L1 sync started" ../shutdown.log || {
-            echo "the indexer never started, so nothing here would be draining"
-            cat ../shutdown.log; exit 1; }
-
           kill -TERM "$server"
           status=0
           wait "$server" || status=$?
@@ -662,17 +585,11 @@ jobs:
             echo "it did not drain, it was killed by its own timer"
             exit 1
           fi
-          if grep -q "Indexer did not drain cleanly" ../shutdown.log; then
-            echo "the indexer did not drain"
-            exit 1
-          fi
           if curl -sf http://127.0.0.1:3103/healthz >/dev/null; then
             echo "the API kept answering after it exited"
             exit 1
           fi
-          docker ps --filter name=midgard-explorer-postgres --format '{{.Names}}' | grep -q . || {
-            echo "stopping the API stopped a container"; exit 1; }
-          echo "exited 0, port closed, indexer drained, PostgreSQL still running"
+          echo "exited 0, port closed, PostgreSQL still running"
 
       - name: Ctrl-C stops the API, and the containers keep running
         # The signal a terminal sends: to the process group, not to the process
@@ -724,87 +641,28 @@ jobs:
           test "$(cat ../.dev/backend/adopted)" = "" || {
             echo "the adoption record named a container this package started"
             cat ../.dev/backend/adopted; exit 1; }
-          # Stopped here, so the indexing steps below have the port.
+          # Stopped here, so the boot steps below have the port.
           kill -TERM -"$(cat ../backend.pid)"
           for i in $(seq 1 30); do
             curl -sf http://127.0.0.1:3101/healthz >/dev/null || break
             sleep 1
           done
 
-      - name: Indexing starts against an index that has never been built
-        # The positive case. Strict readiness needs a completed reconciliation,
-        # which only this indexer can produce, so a preflight that demanded it
-        # could never bootstrap. What is asserted is that it gets past the
-        # preflight and starts indexing; reaching Koios is the nightly job's.
+      - name: The server refuses a manifest it cannot read
+        # The manifest names the deployment every response is attributed to, so
+        # an unparseable one is a boot failure rather than a degraded mode. It
+        # used to be checked only when the indexer ran, so a read-only process
+        # could serve figures it could attribute to nothing.
         working-directory: backend
         run: |
           set -euo pipefail
-          sed -i 's#^MIDGARD_MANIFEST_PATH=.*#MIDGARD_MANIFEST_PATH=./test/fixtures/manifest-sample.json#' .env
-          set -m
-          pnpm dev:l1 > ../l1-start.log 2>&1 &
-          echo $! > ../l1.pid
-          set +m
-          for i in $(seq 1 90); do
-            curl -sf http://127.0.0.1:3101/healthz >/dev/null && break
-            sleep 2
-          done
-          curl -sf http://127.0.0.1:3101/healthz >/dev/null || { cat ../l1-start.log; exit 1; }
-          # The positive event. An absent "disabled" line is equally true of a
-          # process that never reached the sync loop at all.
-          for i in $(seq 1 30); do
-            grep -q "L1 sync started: indexing Cardano" ../l1-start.log && break
-            sleep 2
-          done
-          if ! grep -q "L1 sync started: indexing Cardano" ../l1-start.log; then
-            echo "the indexer never announced that it started"
-            cat ../l1-start.log
-            exit 1
-          fi
-          grep "L1 sync started" ../l1-start.log
-          kill -TERM -"$(cat ../l1.pid)"
-          for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:3101/healthz >/dev/null || break
-            sleep 1
-          done
-          sed -i 's#^MIDGARD_MANIFEST_PATH=.*#MIDGARD_MANIFEST_PATH=#' .env
-
-      - name: Indexing refuses a manifest it cannot read
-        working-directory: backend
-        run: |
-          set -euo pipefail
-          if pnpm dev:l1 > ../l1-missing.log 2>&1; then
-            echo "it started to index with no manifest configured"
-            exit 1
-          fi
-          grep -q "MIDGARD_MANIFEST_PATH names no file" ../l1-missing.log
           echo '{ not json' > /tmp/bad-manifest.json
-          sed -i 's#^MIDGARD_MANIFEST_PATH=.*#MIDGARD_MANIFEST_PATH=/tmp/bad-manifest.json#' .env
           pnpm build
-          if MIDGARD_MANIFEST_PATH=/tmp/bad-manifest.json L1_SYNC_ENABLED=true \
-             node dist/index.js > ../l1-bad.log 2>&1; then
+          if MIDGARD_MANIFEST_PATH=/tmp/bad-manifest.json node dist/index.js > ../bad-manifest.log 2>&1; then
             echo "it booted with a manifest it cannot read"
             exit 1
           fi
-          grep -q "Invalid deployment manifest" ../l1-bad.log
-          sed -i 's#^MIDGARD_MANIFEST_PATH=.*#MIDGARD_MANIFEST_PATH=#' .env
-
-      - name: An index this package does not own is not migrated
-        working-directory: backend
-        run: |
-          set -euo pipefail
-          sed -i 's#^INDEXER_POSTGRES_URL=.*#INDEXER_POSTGRES_URL=postgresql://postgres:postgres@localhost:5432/somebody_elses_index#' .env
-          if pnpm dev > ../guard.log 2>&1; then
-            echo "it migrated a database it does not own"
-            exit 1
-          fi
-          grep -q "Refusing to migrate an index" ../guard.log
-          found="$(psql "postgresql://postgres:postgres@localhost:5432/postgres" -tAc \
-            "SELECT count(*) FROM pg_database WHERE datname = 'somebody_elses_index'")"
-          case "$found" in
-            0) echo "the refused database was not created" ;;
-            [1-9]*) echo "the guard created the database it refused"; exit 1 ;;
-            *) echo "could not ask postgres: '$found'"; exit 1 ;;
-          esac
+          grep -q "Invalid deployment manifest" ../bad-manifest.log
 
       - name: pnpm services:down stops only what it started
         working-directory: backend

@@ -11,12 +11,15 @@
  *   cd frontend-new && pnpm dev
  *
  * Commands, each behind a pnpm script of the same name:
- *   setup [--force]      write backend/.env and the local index credentials
+ *   setup [--force]      write backend/.env
  *   doctor [mode]        what is wrong, and the command that fixes it
  *   dev                  the API, against an existing Midgard database
- *   dev --with-l1-sync   the same, and index Cardano as well
  *   status               what is running
  *   services:down        stop the containers this package started
+ *
+ * The explorer owns no database any more: it reads Midgard's. Development
+ * therefore starts no container of its own, and `dev --with-l1-sync`, which
+ * indexed Cardano into an explorer-owned store, is gone with the indexer.
  *
  * Nothing here deletes a volume, a database or any Midgard state.
  */
@@ -26,7 +29,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  checkOwnership,
   clearAdoption,
   compose,
   readAdoption,
@@ -35,19 +37,19 @@ import {
   START_WAIT_SECONDS,
   waitArgs,
 } from "./lib/compose.mjs";
-import { effectiveIndexUrl, expand, parseEnvFile, redact, urlTarget } from "./lib/env.mjs";
+import { expand, parseEnvFile, redact, urlTarget } from "./lib/env.mjs";
 import { descendants } from "./lib/proc.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(packageRoot, "..");
 
-/** The one container normal development needs.
+/** Containers normal development needs: none.
  *
- * The API cache is not started. It is an Nginx in front of this process, and
- * nothing about the API's meaning changes when it is absent: the frontend talks
- * to this server directly. Deployment runs it, and verifying the cached shape
- * belongs there rather than in a development command. */
-const DEV_SERVICES = ["explorer-postgres"];
+ * The explorer reads the Midgard node's database, which this repository does
+ * not provision, and it no longer keeps a store of its own. The API cache is
+ * not started either: it is an Nginx in front of this process, and nothing
+ * about the API's meaning changes when it is absent. */
+const DEV_SERVICES = [];
 
 /** This package's own adoption record, so a stop can tell a container it
  * started from one it found already running. */
@@ -103,10 +105,7 @@ const readBackendEnv = () => {
 };
 
 /** The settings a person has to supply, because nothing can invent them. */
-const MUST_BE_SUPPLIED = [
-  ["POSTGRES_URL", "the Midgard node's own database"],
-  ["INDEXER_POSTGRES_URL", "the explorer's index"],
-];
+const MUST_BE_SUPPLIED = [["POSTGRES_URL", "the Midgard node's own database"]];
 
 const requireConfiguration = (env) => {
   const missing = MUST_BE_SUPPLIED.filter(([key]) => (env.get(key) ?? "") === "");
@@ -123,83 +122,19 @@ const requireConfiguration = (env) => {
   return node;
 };
 
-// --- containers --------------------------------------------------------------
-
-const startServices = async () => {
-  step("Starting the explorer's own PostgreSQL");
-  // Recorded before anything starts, so a run that fails later still leaves the
-  // stop path able to tell a container it found from one it started.
-  const adopted = await recordAdoption(repoRoot, { scope: SCOPE, services: DEV_SERVICES });
-  if (adopted === null) {
-    die("Could not ask Docker what is already running.", "Start Docker, then run this again.");
-  }
-  const up = await compose(repoRoot, ["up", "-d", ...DEV_SERVICES]).then(
-    () => ({ code: 0 }),
-    (error) => ({ code: 1, error }),
-  );
-  if (up.code !== 0) {
-    die(
-      "docker compose could not start explorer-postgres.",
-      `Run it directly to see why: docker compose --env-file ${join(repoRoot, ".dev", "runtime.env")} up explorer-postgres`,
-    );
-  }
-  // And then wait for it to be READY. `up -d` returns when the container has
-  // been created; the very next step connects to this database.
-  const healthy = await compose(repoRoot, waitArgs(), {
-    timeout: (START_WAIT_SECONDS + 30) * 1000,
-  }).then(
-    () => ({ code: 0 }),
-    (error) => ({ code: 1, error }),
-  );
-  if (healthy.code !== 0) {
-    die(
-      `explorer-postgres did not become healthy within ${START_WAIT_SECONDS}s.`,
-      `See what it is doing: docker compose --env-file ${join(repoRoot, ".dev", "runtime.env")} logs explorer-postgres`,
-    );
-  }
-  say(`  explorer-postgres is up${adopted.length > 0 ? `, adopted from a session already running` : ""}`);
-  return adopted;
-};
-
-const migrate = async () => {
-  step("Applying the index migrations");
-  const { problems, source } = await checkOwnership(repoRoot);
-  if (problems.length > 0) {
-    process.stderr.write(
-      `${red(`INDEXER_POSTGRES_URL, from ${source}, does not name the database this repository provisions:`)}\n`,
-    );
-    for (const problem of problems) process.stderr.write(`  ${problem}\n`);
-    die(
-      "Refusing to migrate an index this package does not own.",
-      "Migrate it through the rollout instead: ./scripts/rollout.sh --apply",
-    );
-  }
-  const result = await run("pnpm", ["--silent", "indexer:deploy"], { cwd: packageRoot });
-  if (result.code !== 0) {
-    process.stderr.write(`${result.output}\n`);
-    die("The index migrations did not apply.", "Run: pnpm indexer:deploy");
-  }
-  say("  index schema is current");
-};
-
-const probeReadiness = async (scope) => {
-  step(scope === "l2" ? "Checking it can serve L2 reads" : "Checking strict readiness");
-  const args = scope === "l2"
-    ? ["--silent", "readiness", "--", "--scope=l2"]
-    : ["--silent", "readiness"];
-  const result = await run("pnpm", args, { cwd: packageRoot });
+const probeReadiness = async () => {
+  step("Checking it can serve");
+  const result = await run("pnpm", ["--silent", "readiness"], { cwd: packageRoot });
   if (result.code !== 0) {
     for (const line of result.output.split("\n")) {
       if (line.startsWith("NOT READY")) process.stderr.write(`  ${line}\n`);
     }
     die(
-      scope === "l2"
-        ? "The explorer cannot serve L2 reads yet."
-        : "Strict readiness is not met.",
+      "The explorer cannot serve yet.",
       "The lines above name the probe that failed. Run: pnpm doctor",
     );
   }
-  say("  node database and index are ready");
+  say("  node database and manifest are ready");
 };
 
 // --- the server, in the foreground -------------------------------------------
@@ -216,8 +151,8 @@ const probeReadiness = async (scope) => {
  * `pnpm dev` adopts, and stopping them here would make Ctrl-C a data-lifecycle
  * command. `pnpm services:down` is the verb that stops them.
  */
-const serve = async (withL1Sync, manifestPath) => {
-  step(withL1Sync ? "Starting the API and the L1 indexer" : "Starting the API");
+const serve = async () => {
+  step("Starting the API");
   say("");
   // The same process group, deliberately.
   //
@@ -228,11 +163,7 @@ const serve = async (withL1Sync, manifestPath) => {
   const child = spawn("pnpm", ["--silent", "dev:server"], {
     cwd: packageRoot,
     stdio: "inherit",
-    env: {
-      ...process.env,
-      L1_SYNC_ENABLED: withL1Sync ? "true" : "false",
-      ...(withL1Sync && manifestPath ? { MIDGARD_MANIFEST_PATH: manifestPath } : {}),
-    },
+    env: process.env,
   });
 
   let stopping = false;
@@ -260,48 +191,6 @@ const serve = async (withL1Sync, manifestPath) => {
 
   const code = await new Promise((resolveServe) => child.on("close", resolveServe));
   process.exit(code ?? 0);
-};
-
-/**
- * Reports the cursors while the indexer moves them, and says when strict
- * readiness is met.
- *
- * Strict readiness is what this run is working towards rather than a
- * precondition for it, so it is watched rather than demanded. Nothing here
- * writes a cursor: one is written only inside a pass where every source
- * completed, which is what makes the three heights a record of a finished
- * reconciliation rather than a progress bar.
- */
-const watchReconciliation = (port) => {
-  const base = `http://127.0.0.1:${port}`;
-  let last = "";
-  let timer;
-  const tick = async () => {
-    const ready = await fetch(`${base}/readyz`, { signal: AbortSignal.timeout(5000) })
-      .then((res) => res.ok)
-      .catch(() => false);
-    if (ready) {
-      say("");
-      say("Strict readiness met: every source completed a pass and the cursors agree.");
-      return;
-    }
-    const summary = await fetch(`${base}/api/l1/summary`, { signal: AbortSignal.timeout(5000) })
-      .then((res) => (res.ok ? res.json() : null))
-      .catch(() => null);
-    if (summary?.sync) {
-      const line = `${summary.sync.state}: ${summary.sync.cursors
-        .map((cursor) => `${cursor.source}=${cursor.height ?? 0}`)
-        .join(" ")}`;
-      if (line !== last) {
-        say(`  ${line}`);
-        last = line;
-      }
-    }
-    timer = setTimeout(tick, 15_000);
-    timer.unref();
-  };
-  timer = setTimeout(tick, 5_000);
-  timer.unref();
 };
 
 // --- commands ----------------------------------------------------------------
@@ -332,47 +221,20 @@ const commandDoctor = async (extra) => {
   process.exit(code ?? 0);
 };
 
-const commandDev = async (withL1Sync) => {
+const commandDev = async () => {
   await requireToolchain();
   const env = readBackendEnv();
   requireConfiguration(env);
-
-  let manifestPath = null;
-  if (withL1Sync) {
-    manifestPath = env.get("MIDGARD_MANIFEST_PATH") ?? "";
-    if (manifestPath === "" || !existsSync(manifestPath)) {
-      die(
-        "Indexing needs a deployment manifest, and MIDGARD_MANIFEST_PATH names no file.",
-        "A Midgard deployment has no on-chain identifier: the manifest says which contracts to follow.",
-      );
-    }
-    if ((env.get("KOIOS_BASE_URL") ?? "") === "") {
-      die("Indexing needs KOIOS_BASE_URL.", "Set it in backend/.env");
-    }
-  }
-
-  await startServices();
-  await migrate();
-  // The L2 scope, whether or not this run indexes.
-  //
-  // Strict readiness requires a completed reconciliation, and only the indexer
-  // this command is about to start can produce one. Demanding it first meant
-  // `pnpm dev:l1` could never bootstrap an index that had never been built:
-  // the check failed on the very state it was being run to fix.
-  await probeReadiness("l2");
+  await probeReadiness();
 
   // The port the server will actually bind: dotenv leaves a non-empty process
   // variable alone, so an override on the command line wins over the file.
   const port = process.env.BACKEND_PORT || env.get("BACKEND_PORT") || "3101";
   say("");
   say(`API:       http://127.0.0.1:${port}`);
-  say(`Mode:      ${withL1Sync ? "serving L2 reads and indexing Cardano" : "serving L2 reads"}`);
-  if (!withL1Sync) {
-    say("           L1 pages show what the index already holds. Add pnpm dev:l1 to index.");
-  }
+  say(`Mode:      serving reads from the Midgard node's database`);
   say(`Frontend:  cd ../frontend-new && pnpm dev`);
-  if (withL1Sync) watchReconciliation(port);
-  await serve(withL1Sync, manifestPath);
+  await serve();
 };
 
 const commandStatus = async () => {
@@ -386,10 +248,8 @@ const commandStatus = async () => {
   }).then((res) => res.ok, () => false);
   say(`API:        ${health ? `answering on http://127.0.0.1:${port}` : "not answering"}`);
 
-  const containers = await run("docker", [
-    "ps", "--filter", "name=midgard-explorer-postgres", "--format", "{{.Status}}",
-  ]);
-  say(`PostgreSQL: ${containers.output.trim() || "not running"}`);
+  const node = values.get("POSTGRES_URL") ?? "";
+  say(`Node DB:    ${node === "" ? "not configured" : redact(node)}`);
   say(
     `Containers: ${
       adopted === null
@@ -397,13 +257,8 @@ const commandStatus = async () => {
         : `started here, leaving ${adopted.length > 0 ? adopted.join(", ") : "none"} alone on stop`
     }`,
   );
-
-  const { url } = effectiveIndexUrl({
-    processEnv: process.env,
-    backendEnv: values,
-    runtime: null,
-  });
-  say(`Index:      ${url === "" ? "not configured" : redact(url)}`);
+  // The explorer's own PostgreSQL is deliberately absent from this report. It
+  // is retained, stopped, for rollback, and nothing this package runs reads it.
 };
 
 const commandServicesDown = async () => {
@@ -416,8 +271,8 @@ const commandServicesDown = async () => {
   // stop that defaulted to every Compose service stopped one it did not own.
   const stopping = servicesToStop(adopted, DEV_SERVICES);
   if (stopping.length > 0) {
-    // `stop`, never `down`. `down` removes containers and `down -v` removes the
-    // volume holding the index.
+    // `stop`, never `down`. `down` removes containers and `down -v` removes a
+    // volume, including the one still holding the decommissioned index.
     await compose(repoRoot, ["stop", ...stopping]).catch(() => {});
     say(`Stopped: ${stopping.join(", ")}`);
   }
@@ -431,7 +286,6 @@ const commandServicesDown = async () => {
 // --- dispatch ----------------------------------------------------------------
 
 const [, , command, ...args] = process.argv;
-const withL1Sync = args.includes("--with-l1-sync");
 
 switch (command) {
   case "setup":
@@ -441,7 +295,7 @@ switch (command) {
     await commandDoctor(args);
     break;
   case "dev":
-    await commandDev(withL1Sync);
+    await commandDev();
     break;
   case "status":
     await commandStatus();

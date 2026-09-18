@@ -1,6 +1,5 @@
 import { prisma } from "../db";
 import { readConsistently } from "./consistent";
-import { indexerPrisma } from "../indexer/db";
 import { getManifestValidators } from "./l1";
 
 /** Prefix search over identifiers.
@@ -27,7 +26,6 @@ export type SearchHit =
       headerHash: string | null;
     }
   | { kind: "block"; headerHash: string; height: number | null }
-  | { kind: "l1Transaction"; txHash: string; blockHeight: number }
   | { kind: "validator"; scriptHash: string; family: string }
   | { kind: "address"; address: string }
   | { kind: "deposit"; eventId: string; txHash: string }
@@ -50,10 +48,18 @@ export async function searchByPrefix(prefix: string): Promise<SearchHit[]> {
   if (lower.length < MIN_PREFIX || !/^[0-9a-f]+$/.test(lower)) return [];
   const pattern = `${lower}%`;
 
-  // One snapshot across all six lookups, so a prefix cannot match a record in
+  // One snapshot across all five lookups, so a prefix cannot match a record in
   // one category and miss the same record in another because it moved between
   // statements.
-  const [txs, blocks, l1Txs, deposits, withdrawals, forced] = await readConsistently(async (db) =>
+  //
+  // A Cardano transaction hash is searchable through the records that NAME it:
+  // a block's settlement hash, and the three bridge tables' own L1 hashes. The
+  // sixth lookup here used to read the explorer's chain index, which could also
+  // find a transaction no Midgard record mentions. That is the coverage this
+  // deployment gives up, and it is why the index hash is matched here against
+  // the finalization journal instead: a settlement hash still resolves to its
+  // block rather than to nothing.
+  const [txs, blocks, deposits, withdrawals, forced] = await readConsistently(async (db) =>
     Promise.all([
     db.$queryRaw<
       Array<{ tx_id: string; height: number | null; header_hash: string }>
@@ -91,14 +97,9 @@ export async function searchByPrefix(prefix: string): Promise<SearchHit[]> {
         FROM pending_block_finalizations AS f
         LEFT JOIN legacy AS l ON l.header_hash = f.header_hash
        WHERE encode(f.header_hash, 'hex') LIKE ${pattern}
+          OR encode(f.submitted_tx_hash, 'hex') LIKE ${pattern}
        ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC
        LIMIT ${MAX_RESULTS};`,
-    indexerPrisma.l1Tx.findMany({
-      where: { txHash: { startsWith: lower } },
-      orderBy: [{ txTime: "desc" }, { txHash: "desc" }],
-      take: MAX_RESULTS,
-      select: { txHash: true, blockHeight: true },
-    }),
     db.$queryRaw<Array<{ event_id: string; tx_hash: string }>>`
       SELECT encode(event_id, 'hex') AS event_id,
              encode(deposit_l1_tx_hash, 'hex') AS tx_hash
@@ -137,11 +138,6 @@ export async function searchByPrefix(prefix: string): Promise<SearchHit[]> {
       txId: t.tx_id,
       height: t.height,
       headerHash: t.header_hash,
-    })),
-    ...l1Txs.map((row): SearchHit => ({
-      kind: "l1Transaction",
-      txHash: row.txHash,
-      blockHeight: row.blockHeight,
     })),
     ...getManifestValidators()
       .filter((row) => row.scriptHash.startsWith(lower))

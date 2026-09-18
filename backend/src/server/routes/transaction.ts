@@ -11,11 +11,7 @@ import {
 } from "../../db/transaction";
 import { findOutRef, findOutRefs } from "../../db/ledger";
 import { readConsistently } from "../../db/consistent";
-import {
-  getDeploymentContext,
-  getIndexSettlement,
-  unconsultedIndexSettlement,
-} from "../../db/deployment";
+import { getDeploymentContext } from "../../db/deployment";
 import { transactionSettlement } from "../../db/association";
 import {
   decodeTransaction,
@@ -114,15 +110,7 @@ export async function getTransactionRoute(req: Request, res: Response) {
       }
     : null;
   const headerHash = inclusionRow ? toHex(inclusionRow.header_hash) : null;
-  // The index and the deployment context are a DIFFERENT database, so they
-  // cannot join the node's snapshot and are read alongside it. That separation
-  // is the whole reason an association carries an `asOf` for each side.
-  const [context, indexed] = await Promise.all([
-    getDeploymentContext(),
-    headerHash === null
-      ? Promise.resolve(unconsultedIndexSettlement())
-      : getIndexSettlement(headerHash),
-  ]);
+  const context = await getDeploymentContext();
 
   // Settlement travels through the block, never directly. The hash below is the
   // block's commitment transaction, which many transactions share; there is no
@@ -139,8 +127,6 @@ export async function getTransactionRoute(req: Request, res: Response) {
       nodeHash: finalization?.submitted_tx_hash ?? null,
       nodeStatus: finalization?.status ?? null,
       nodeObservedAt: finalization?.updatedAt?.toISOString() ?? null,
-      ...indexed,
-      identityVerified: context.identityState === "verified",
       // What the node's silence is worth. A snapshot cannot settle whether the
       // live node holds a finalization record it does not.
       nodeFreshness: context.freshness.state,

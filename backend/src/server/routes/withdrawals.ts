@@ -5,7 +5,7 @@ import {
   decodeWithdrawalValue,
 } from "../../decode/withdrawal";
 import { getWithdrawalsPage } from "../../db/withdrawals";
-import { loadManifest } from "../../indexer/manifest";
+import { loadManifest } from "../../db/manifest";
 import { logger } from "../../logger";
 import { toHex } from "../../utils";
 import { parseOptionalHexQuery, parsePageParam } from "../validate";

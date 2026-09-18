@@ -136,7 +136,7 @@ describe("catalogue registration", () => {
   /** Mounting, not behaviour. A database-backed route may fail without a
    * database; what must never happen is the router not knowing the path. */
   it("mounts the database-backed routes on the paths it declares", async () => {
-    for (const path of ["/api/blocks/1", "/api/metrics", "/api/l1/summary"]) {
+    for (const path of ["/api/blocks/1", "/api/metrics", "/api/l1/activity/1", "/api/source"]) {
       const res = await fetch(`http://127.0.0.1:${port()}${path}`);
       expect(res.status, path).not.toBe(404);
     }

@@ -38,32 +38,22 @@ step with it.
 pnpm dev
 ```
 
-It checks the toolchain and the configuration, starts the explorer's own
-PostgreSQL, refuses to migrate anything that is not that database, applies the
-index migrations, checks that both databases can answer the queries the read
-path makes, and then runs the API in the foreground on
-<http://127.0.0.1:3101>.
+It checks the toolchain and the configuration, checks that the Midgard node's
+database can answer the queries the read path makes, and then runs the API in
+the foreground on <http://127.0.0.1:3101>.
 
-Ctrl-C stops the API. The containers keep running, because they hold the index
-and the next `pnpm dev` adopts them.
+It starts no container. The explorer owns no database: it reads Midgard's,
+which this repository does not provision.
 
-## Index Cardano as well
+Ctrl-C stops the API.
 
-```sh
-pnpm dev:l1
-```
+## Indexing Cardano
 
-The same lifecycle, plus the L1 indexer. It needs two more things, checked
-before anything starts:
-
-- `MIDGARD_MANIFEST_PATH` must name a readable file. A Midgard deployment has
-  no on-chain identifier, so the manifest is the only thing that says which
-  contracts to follow. Indexing without it produces rows attributed to nothing,
-  which no query reaches.
-- `KOIOS_BASE_URL` must be set.
-
-Reconciliation reaches Koios over the network and takes as long as the gap is
-wide. `pnpm status` reports where the cursors are.
+Not any more. The explorer kept its own Cardano index until 2026-09-18, started
+with a `dev:l1` command; [ADR 0009](../docs/decisions/0009-node-reported-settlement.md)
+records why it was decommissioned and what the explorer gave up with it. The
+Cardano pages are built from what the Midgard node itself recorded, so there is
+nothing to index and nothing to reach Koios for.
 
 ## Check what is wrong
 
@@ -121,12 +111,11 @@ Production runs compiled JavaScript, not `ts-node`.
 
 | Command | What it does |
 |---|---|
-| `pnpm setup` | Writes `backend/.env` and the local index credentials. Starts nothing. |
+| `pnpm setup` | Writes `backend/.env`. Starts nothing. |
 | `pnpm setup:test` | Creates and migrates the disposable test database. Refuses any target not named `_test`. |
 | `pnpm doctor` | Reports what is wrong and the command that fixes it. |
 | `pnpm dev` | The API, in the foreground, against an existing Midgard database. |
-| `pnpm dev:l1` | The same, and indexes Cardano. |
-| `pnpm status` | Whether the API answers, what the containers are, and where the index points. |
+| `pnpm status` | Whether the API answers, and which database it is configured to read. |
 | `pnpm services:down` | Stops the containers this package started. |
 | `pnpm check` | Typecheck, the documentation gate, and both suites. |
 | `pnpm compat` | Reads, checks or rewrites the node schema pin in `config/midgard-compatibility.json`. |
@@ -134,7 +123,6 @@ Production runs compiled JavaScript, not `ts-node`.
 | `pnpm build` / `pnpm start` | Compile, then run the compiled server. |
 | `pnpm dev:server` | The server alone, with no lifecycle around it. |
 | `pnpm readiness` | The readiness probes, without starting a server. |
-| `pnpm indexer:deploy` | Applies index migrations to whatever `INDEXER_POSTGRES_URL` names. |
 
 ## Configuration
 
@@ -146,18 +134,12 @@ The ones you have to supply:
 | Setting | What it names |
 |---|---|
 | `POSTGRES_URL` | The Midgard node's own database, read-only |
-| `INDEXER_POSTGRES_URL` | The explorer's own index, which this package owns |
-| `MIDGARD_MANIFEST_PATH` | The deployment manifest, required only when `L1_SYNC_ENABLED` is true |
-| `KOIOS_BASE_URL` | Where L1 history is read from, when indexing |
+| `MIDGARD_MANIFEST_PATH` | The deployment manifest: which Midgard this is, and which validators it declares |
 
 ## What the commands will not do
 
-- **Migrate a database this repository does not own.** `pnpm dev` resolves the
-  index URL the same way Prisma does, then checks it against the address
-  `docker compose port explorer-postgres 5432` reports. Anything else is
-  refused, and the message names the mismatch. Apply those by hand through
-  `./scripts/rollout.sh --apply`, which holds the indexer's advisory lock
-  across the migration.
+- **Write to any database.** The Midgard node's is opened read-only, and this
+  package owns none of its own.
 - **Stop a container it did not start.** The set that was already running is
   recorded before anything starts, and before any check that could end the run.
 - **Delete anything.** No command here removes a volume, a database, an MPF
@@ -176,8 +158,6 @@ Two probes answer different questions:
   rotation. The failing driver message goes to the log, never to the response.
 
 `pnpm readiness` runs the same checks without starting a server, which is what
-to use before sending traffic. `pnpm readiness -- --scope=l2` asks the narrower
-development question and is not a deployment gate.
-
-Rolling out an indexer change has an order that matters; it is recorded in the
-[root README](../README.md#rolling-out-an-indexer-change).
+to use before sending traffic. It has one scope: there were two while the
+explorer kept a Cardano index of its own, and a `--scope=` flag is now refused
+rather than silently accepted.

@@ -21,25 +21,20 @@ import { getAssetRoute, getAssetsRoute } from "./routes/asset";
 import { getSearchRoute } from "./routes/search";
 import { postVitalsRoute } from "./routes/vitals";
 import { prisma } from "../db";
-import { indexerPrisma } from "../indexer/db";
 import { logger } from "../logger";
 import { readinessRoute } from "./readiness";
 import {
-  probeIndexDatabase,
-  probeIndexReconciled,
-  probeDeploymentBinding,
   probeManifest,
   probeNodeDatabase,
 } from "./probes";
 import {
-  getL1SummaryRoute,
-  getL1TransactionsPageRoute,
-  getL1TransactionRoute,
-  getL1BlockHeadersRoute,
-  getL1BlockHeaderRoute,
-  getL1DepositsRoute,
-  getL1ValidatorRoute,
+  getCardanoActivityRoute,
+  getCardanoActivitySummaryRoute,
+  getCardanoReferenceRoute,
+  getValidatorRoute,
+  getValidatorsRoute,
 } from "./routes/l1";
+import { getSourceRoute } from "./routes/source";
 import { buildOpenApiDocument, type OpenApiDocument } from "./openapi";
 import { cachePublicJson } from "./cache";
 import { config } from "../config";
@@ -157,57 +152,21 @@ const onFailure = (name: string, error: unknown) =>
   logger.error(`Readiness probe failed for ${name}: ${String(error)}`);
 
 /**
- * L2 readiness: can this process serve the Midgard explorer?
+ * Can this process serve the explorer?
  *
- * The node database and nothing else. Every L2 page reads it, and none of them
- * touch the Cardano index.
+ * The Midgard node's database, which every page reads, and the deployment
+ * manifest, which is how a response says which Midgard it describes. Serving
+ * figures that cannot be attributed to a deployment is the failure this whole
+ * area exists to prevent, so an unreadable manifest is not a degraded mode.
  *
- * This used to include the index, its reconciliation and the manifest, and
- * `/readyz` answers `checks.every(ok)`, so an index that had never reconciled
- * removed the whole instance from rotation, L2 routes included. That
- * contradicted the rule the explorer is built on: an L1 index behind the tip
- * degrades the Cardano surface and must never make an L2 page unavailable.
- *
- * `probeIndexDatabase` moved out with the rest. The L2 query surface does not
- * read the explorer index, so keeping it here would have moved the outage one
- * probe to the left rather than removing it.
+ * There was a second scope, `/readyz/l1`, for the explorer-owned Cardano index,
+ * and `/readyz/full` for both. The index is decommissioned, so a split that
+ * kept an L1 outage from taking the L2 pages down now has one side. Both are
+ * removed rather than kept as aliases: a gate calling `/readyz/full` and
+ * getting the L2 answer would believe it had checked something it had not.
  */
 const readyRoute = readinessRoute(
-  { "midgard-node": probeNodeDatabase },
-  { onFailure },
-);
-
-/**
- * L1 readiness: can this process serve the Cardano surface?
- *
- * The index's shape, its migrations, a completed reconciliation, and the
- * manifest every indexed row is attributed to. Separate probes because they
- * fail for different reasons and an operator needs to read which: an index can
- * be shaped correctly and hold nothing any query can reach.
- *
- * A failure here takes the L1 pages out of rotation and leaves the L2 pages
- * serving, which is the whole point of the split.
- */
-const readyL1Route = readinessRoute(
-  {
-    "midgard-node": probeNodeDatabase,
-    "explorer-index": probeIndexDatabase,
-    "index-reconciled": probeIndexReconciled,
-    manifest: probeManifest,
-    "deployment-binding": probeDeploymentBinding,
-  },
-  { onFailure },
-);
-
-/** Both capabilities, for a deployment gate that wants one call. */
-const readyFullRoute = readinessRoute(
-  {
-    "midgard-node": probeNodeDatabase,
-    "explorer-index": probeIndexDatabase,
-    "index-reconciled": probeIndexReconciled,
-    manifest: probeManifest,
-    "deployment-binding": probeDeploymentBinding,
-  },
+  { "midgard-node": probeNodeDatabase, manifest: probeManifest },
   { onFailure },
 );
 
@@ -226,18 +185,6 @@ export const ENDPOINTS: readonly Endpoint[] = [
     "System",
     "Report whether the Midgard node database can serve a request",
     readyRoute,
-  ),
-  endpoint(
-    "/readyz/l1",
-    "System",
-    "Report whether the Cardano index can serve a request",
-    readyL1Route,
-  ),
-  endpoint(
-    "/readyz/full",
-    "System",
-    "Report whether both capabilities can serve a request",
-    readyFullRoute,
   ),
   endpoint(
     "/api/openapi.json",
@@ -465,69 +412,54 @@ export const ENDPOINTS: readonly Endpoint[] = [
   ),
 
   endpoint(
-    "/api/l1/summary",
-    "Cardano L1",
-    "Return index and deployment summary",
-    getL1SummaryRoute,
+    "/api/source",
+    "System",
+    "Report which Midgard deployment and database the figures come from",
+    getSourceRoute,
+    { cacheSeconds: 5 },
+  ),
+
+  endpoint(
+    "/api/l1/activity/summary",
+    "Cardano",
+    "Count what the node recorded on Cardano, by kind",
+    getCardanoActivitySummaryRoute,
+    { cacheSeconds: 30 },
   ),
   endpoint(
-    "/api/l1/transaction",
-    "Cardano L1",
-    "Return one Cardano transaction touching Midgard",
-    getL1TransactionRoute,
+    "/api/l1/activity/:page",
+    "Cardano",
+    "List what the node recorded on Cardano, newest first",
+    getCardanoActivityRoute,
+    { parameters: [pageParam] },
+  ),
+  endpoint(
+    "/api/l1/reference",
+    "Cardano",
+    "Return the Midgard records that name one Cardano transaction",
+    getCardanoReferenceRoute,
     {
-      parameters: [
-        query("txHash", "64-character Cardano transaction hash.", hex64),
-      ],
-      notFound: true,
+      parameters: [query("txHash", "64-character Cardano transaction hash.", hex64)],
       rateLimited: true,
-    },
-  ),
-  endpoint(
-    "/api/l1/block-headers",
-    "Cardano L1",
-    "List indexed Midgard block headers",
-    getL1BlockHeadersRoute,
-    {
-      parameters: [query("limit", "Maximum rows; capped at 100.", limitSchema)],
-    },
-  ),
-  endpoint(
-    "/api/l1/block-header",
-    "Cardano L1",
-    "Return one Midgard header observed on Cardano",
-    getL1BlockHeaderRoute,
-    {
-      parameters: [query("headerHash", "56-character Midgard header hash.", hex56)],
-      notFound: true,
       cacheSeconds: 30,
     },
   ),
   endpoint(
+    "/api/l1/validators",
+    "Cardano",
+    "List the validators this deployment's manifest declares",
+    getValidatorsRoute,
+    { cacheSeconds: 30 },
+  ),
+  endpoint(
     "/api/l1/validator",
-    "Cardano L1",
-    "Return indexed evidence for one Midgard validator",
-    getL1ValidatorRoute,
+    "Cardano",
+    "Return one validator this deployment's manifest declares",
+    getValidatorRoute,
     {
       parameters: [query("scriptHash", "56-character validator script hash.", hex56)],
       notFound: true,
       cacheSeconds: 30,
-    },
-  ),
-  endpoint(
-    "/api/l1/transactions/:page",
-    "Cardano L1",
-    "List Cardano transactions by page",
-    getL1TransactionsPageRoute,
-    { parameters: [pageParam] },
-  ),
-  endpoint(
-    "/api/l1/deposits",
-    "Cardano L1",
-    "List Cardano deposit events",
-    getL1DepositsRoute,
-    {
-      parameters: [query("limit", "Maximum rows; capped at 100.", limitSchema)],
     },
   ),
 ];

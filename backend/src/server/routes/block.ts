@@ -10,7 +10,7 @@ import {
   getLastBlocks,
   getTotalBlocks,
 } from "../../db/block";
-import { getDeploymentContext, getIndexSettlement } from "../../db/deployment";
+import { getDeploymentContext } from "../../db/deployment";
 import { blockSettlement } from "../../db/association";
 import { readConsistently } from "../../db/consistent";
 import { decodeTransactionSafe } from "../../decode/transaction";
@@ -60,16 +60,8 @@ export async function getBlockRoute(req: Request, res: Response) {
     ]),
   );
 
-  const [[{ header, da, finalization, commitments }, rows, neighbours, events], context, indexed] =
-    await Promise.all([
-      nodeReads,
-      getDeploymentContext(),
-      // The Cardano side, fetched here rather than by the page. The frontend
-      // used to request it separately and swallow every failure into "not
-      // observed in the Cardano index yet", which turned a broken join into a
-      // sentence about index lag and hid the defect for as long as it existed.
-      getIndexSettlement(headerHash),
-    ]);
+  const [[{ header, da, finalization, commitments }, rows, neighbours, events], context] =
+    await Promise.all([nodeReads, getDeploymentContext()]);
   if (header === null) {
     return res.status(404).json({ error: "Block not found." });
   }
@@ -85,10 +77,6 @@ export async function getBlockRoute(req: Request, res: Response) {
       nodeHash: finalization?.submitted_tx_hash ?? null,
       nodeStatus: finalization?.status ?? null,
       nodeObservedAt: finalization?.updatedAt?.toISOString() ?? null,
-      ...indexed,
-      // A difference only means something when both sources are known to
-      // describe the same deployment.
-      identityVerified: context.identityState === "verified",
       // What the node's silence is worth. A snapshot cannot settle whether the
       // live node holds a finalization record it does not.
       nodeFreshness: context.freshness.state,

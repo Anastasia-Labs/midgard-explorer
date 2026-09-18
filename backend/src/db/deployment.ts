@@ -1,18 +1,9 @@
 import { config } from "../config";
 import { prisma } from "../db";
-import {
-  SYNC_SOURCES,
-  getSyncCursorTimes,
-  getSyncCursors,
-  readIndexConsistently,
-  indexerPrisma,
-  reconciliationAgeSeconds,
-} from "../indexer/db";
-import { loadManifest } from "../indexer/manifest";
-import { checkBinding } from "../indexer/binding";
+import { loadManifest } from "./manifest";
 import { logger } from "../logger";
 import { readL2Source, type L2FreshnessState, type L2SourceKind } from "./source";
-import type { ConfirmationSource, DeploymentContext } from "./association";
+import type { DeploymentContext } from "./association";
 
 /**
  * Which deployment a response describes, and how current its source is.
@@ -139,138 +130,28 @@ export async function getDeploymentContext(): Promise<DeploymentContext> {
       networkMagic: null,
       database: "unknown",
       sourceKind: "fixture",
-      identityState: "degraded",
+      // Nothing could be read: no manifest, or no answer from the database. A
+      // consumer must treat this the way it treats a missing context.
+      identityState: "unconfigured",
       freshness: { state: "unknown", observedAsOf: null, lagSeconds: null },
     };
   }
-  // `verified` means the index CONFIRMS it belongs to this deployment, not that
-  // a manifest parsed. It was a literal, so every response claimed verification
-  // whether or not a binding existed, and `mismatch` was therefore never
-  // reserved for two deployment-verified sources the way the contract says.
-  let identityState: "verified" | "degraded" = "degraded";
-  try {
-    const check = await checkBinding(
-      loadManifest(config.MIDGARD_MANIFEST_PATH),
-      identity.l2Database,
-    );
-    identityState = check.state === "bound" ? "verified" : "degraded";
-  } catch (error) {
-    logger.warn(`Could not confirm the deployment binding: ${String(error)}`);
-  }
-
   return {
     deploymentId: identity.deployment,
     network: identity.network,
     networkMagic: null,
     database: identity.l2Database,
     sourceKind: identity.sourceKind,
-    identityState,
+    // `configured`, never `verified`.
+    //
+    // Everything known about which deployment this is comes from one file this
+    // process reads. A manifest that parses says what the operator INTENDED,
+    // and nothing here checks it against Cardano or against a second record:
+    // the explorer-owned index that used to hold that check is decommissioned,
+    // and its binding row went with it. Claiming verification from a parse
+    // would be the same defect that made every response claim it before the
+    // binding existed.
+    identityState: "configured",
     freshness: identity.freshness,
   };
-}
-
-/** What a settlement verdict knows about the Cardano side. */
-export type IndexSettlement = {
-  confirmationSource: ConfirmationSource;
-  indexHash: string | null;
-  indexObservedAt: string | null;
-  indexBlockHeight: number | null;
-  indexAvailable: boolean;
-  indexLagSeconds: number | null;
-};
-
-/**
- * The Cardano side of a verdict where nothing was read.
- *
- * Two callers reach it: a deployment that declares no independent source, and
- * a transaction that is in no block, where there is no header to look up. They
- * differ in what `indexAvailable` may claim, so the source decides it rather
- * than a literal spelled out at the call site.
- */
-export function unconsultedIndexSettlement(
-  source: ConfirmationSource = config.L1_CONFIRMATION_SOURCE,
-): IndexSettlement {
-  return {
-    confirmationSource: source,
-    indexHash: null,
-    indexObservedAt: null,
-    indexBlockHeight: null,
-    // Not "unreadable": in index mode nothing here was asked, and the caller
-    // that reaches this has no question the index could answer.
-    indexAvailable: source === "index",
-    indexLagSeconds: null,
-  };
-}
-
-/**
- * What the Cardano index observed for one block, and how far behind it is.
- *
- * Reads nothing when the deployment declares no independent source. That is
- * the whole mechanism: no query is issued, so no row can reach a verdict, and
- * a stale or half-built index cannot become evidence by accident.
- *
- * Never throws. An index that cannot be read is silence, not a denial, and the
- * resolver turns that into `unavailable` or `node_only` rather than into a
- * failed request: an L1 outage must not make an L2 page unavailable, which is
- * the same rule the readiness split enforces.
- */
-export async function getIndexSettlement(
-  headerHash: string,
-  // Taken rather than read, so a test can prove the read is skipped without
-  // rewriting the process environment.
-  source: ConfirmationSource = config.L1_CONFIRMATION_SOURCE,
-): Promise<IndexSettlement> {
-  if (source === "none") return unconsultedIndexSettlement(source);
-  try {
-    // One snapshot of the index, not three reads of it. A pass committing
-    // between the header read and the cursor read used to produce "no header,
-    // and the index is current", which reads as a settlement that did not
-    // happen rather than one recorded a moment ago.
-    const { header, cursors, cursorTimes } = await readIndexConsistently(async (tx) => ({
-      header: await tx.l1BlockHeader.findUnique({ where: { headerHash } }),
-      cursors: await getSyncCursors(tx),
-      cursorTimes: await getSyncCursorTimes(tx),
-    }));
-
-    // Freshness comes from an observation clock, not from a height.
-    //
-    // This used to return 0 whenever coverage was non-zero, which made every
-    // built index look perfectly current. `stale` was therefore unreachable and
-    // every lagging disagreement was promoted to `mismatch`, which is exactly
-    // the false integrity alarm the state exists to prevent. Null now means the
-    // index has never completed a pass, and the resolver treats null as "not
-    // comparable" rather than as "fresh".
-    const covered = Math.min(...SYNC_SOURCES.map((s) => cursors.get(s) ?? 0));
-    const lagSeconds = covered > 0 ? reconciliationAgeSeconds(cursorTimes) : null;
-
-    // When the INDEX last had something true to say, not when the L2 block's
-    // window closed. `endTime` describes the Midgard block and says nothing
-    // about when Cardano was observed, so labelling it "as of" misdescribed
-    // every row it appeared on.
-    const observedAt =
-      covered > 0 && cursorTimes.size > 0
-        ? new Date(
-            Math.min(...[...cursorTimes.values()].map((at) => at.getTime())),
-          ).toISOString()
-        : null;
-
-    return {
-      confirmationSource: source,
-      indexHash: header?.l1TxHash ?? null,
-      indexObservedAt: observedAt,
-      indexBlockHeight: header?.blockHeight ?? null,
-      indexAvailable: true,
-      indexLagSeconds: lagSeconds,
-    };
-  } catch (error) {
-    logger.warn(`Cardano index unavailable for header ${headerHash}: ${String(error)}`);
-    return {
-      confirmationSource: source,
-      indexHash: null,
-      indexObservedAt: null,
-      indexBlockHeight: null,
-      indexAvailable: false,
-      indexLagSeconds: null,
-    };
-  }
 }

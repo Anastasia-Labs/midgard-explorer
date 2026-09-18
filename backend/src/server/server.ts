@@ -10,9 +10,7 @@ import { registerRoutes } from "./routes";
 import http from "http";
 import { bigintStringify } from "./helpers";
 import { prisma } from "../db";
-import { indexerPrisma } from "../indexer/db";
 import { configureBenchBypass } from "./cache";
-import { startSync, type SyncHandle } from "../indexer/sync";
 import { reportDatabaseIdentity } from "../db/identity";
 import { mountRateLimits, startRateLimitSweeper } from "./rateLimit";
 import { resolveCorsOrigin, securityHeaders } from "./security";
@@ -79,19 +77,10 @@ export const startServer = async () => {
       ? null
       : startMetricsServer(config.METRICS_HOST, config.METRICS_PORT);
 
-  // Background L1 indexing. Deliberately after route registration: a sync
-  // failure must never prevent the API from coming up.
-  // Before the sync loop, so the log names its databases even if sync fails.
+  // Which database this process actually connected to, said out loud at boot.
+  // Deliberately after route registration: naming the source must never keep
+  // the API from coming up.
   void reportDatabaseIdentity();
-
-  // One process indexes. Extra instances serve reads against the same index
-  // with L1_SYNC_ENABLED=false, and say so rather than appearing to index.
-  let sync: SyncHandle | null = null;
-  if (config.L1_SYNC_ENABLED) {
-    sync = startSync();
-  } else {
-    logger.info("L1 sync disabled by configuration; serving reads only");
-  }
 
   // 404 for unmatched routes.
   app.use((_req, res) => {
@@ -125,32 +114,22 @@ export const startServer = async () => {
   const shutdown = (signal: string) => {
     logger.info(`Received ${signal}, shutting down.`);
 
-    // Stop scheduling immediately, then drain HTTP and the indexer at the same
-    // time. `server.close` fires its callback only once every connection has
-    // ended, so stopping the indexer inside it made a keep-alive client able to
-    // hold the drain past the forced-exit timer below and have an active sync
-    // killed mid-transaction. Idle sockets are closed rather than waited on for
-    // the same reason.
-    const indexerDrained = sync
-      ? sync.stop().catch((err) => {
-          logger.error(`Indexer did not drain cleanly: ${String(err)}`);
-        })
-      : Promise.resolve();
-
+    // Idle sockets are closed rather than waited on: `server.close` fires its
+    // callback only once every connection has ended, so a keep-alive client
+    // could otherwise hold the drain past the forced-exit timer below.
     const httpDrained = new Promise<void>((resolve) => {
       server.close(() => resolve());
       server.closeIdleConnections();
     });
     metricsServer?.close();
 
-    void Promise.all([indexerDrained, httpDrained]).then(async () => {
+    void httpDrained.then(async () => {
       await prisma.$disconnect();
-      await indexerPrisma.$disconnect();
       logger.info("Shutdown complete.");
       process.exit(0);
     });
 
-    // Force-exit if either side does not drain in time.
+    // Force-exit if the drain does not finish in time.
     setTimeout(() => {
       logger.error("Forced shutdown after timeout.");
       process.exit(1);

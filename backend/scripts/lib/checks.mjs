@@ -62,16 +62,12 @@ export const REQUIRED_BACKEND_ENV = [
   "RECENT_TRANSACTIONS_LIMIT",
   "TRANSACTIONS_PER_PAGE",
   "BLOCKS_PER_PAGE",
-  "INDEXER_POSTGRES_URL",
-  "KOIOS_BASE_URL",
-  "L1_SYNC_INTERVAL_MS",
-  "L1_REORG_LOOKBACK_BLOCKS",
 ];
 
-/* Required only when the indexer runs, matching the same rule in config.ts.
- * The manifest names the L1 deployment, and an explorer serving L2 records
- * never opens it. */
-export const REQUIRED_WHEN_INDEXING = ["MIDGARD_MANIFEST_PATH"];
+/* The deployment manifest. Optional in the file, and checked when it is set:
+ * it names the deployment every response is attributed to, so the backend
+ * refuses to boot on one it cannot parse. */
+export const OPTIONAL_SETTINGS = ["MIDGARD_MANIFEST_PATH"];
 
 const ALL = ["demo", "existing", "full"];
 const REAL_DATA = ["existing", "full"];
@@ -143,53 +139,12 @@ const memoryMb = () => {
   }
 };
 
-/** Whether this configuration runs the indexer.
- *
- * Read from backend/.env rather than assumed, because it decides which of two
- * questions doctor is answering: whether the explorer can serve L2 records, or
- * whether it could be put into rotation. `pnpm dev:l1` asks the second one for
- * a single run and checks the manifest itself. */
-const indexingConfigured = (ctx) => {
-  // Asked for on the command line. `pnpm doctor --with-l1-sync` is the
-  // question "would this serve L1 too?", and it is the question a failed
-  // `pnpm dev:l1` sends the reader here to ask.
-  if (ctx.withL1Sync) return true;
-
-  // Or already true of a run that is up. `pnpm dev:l1` sets
-  // L1_SYNC_ENABLED for that process only, so backend/.env still says false
-  // while an indexer is running, and doctor would have answered the narrower
-  // question about the wider system.
-  const state = parseEnvFile(join(ctx.repoRoot, ".dev", ctx.mode, "state.env"));
-  if (state?.get("EXISTING_WITH_L1_SYNC") === "1") return true;
-
-  // Absent means indexing, matching the default in backend/src/config.ts: one
-  // process indexes, and an extra read-only instance opts out explicitly. A
-  // doctor that read absence as "not indexing" would answer the narrower
-  // question for a .env that runs the indexer.
-  const value = (backendEnv(ctx)?.get("L1_SYNC_ENABLED") ?? "").toLowerCase();
-  if (value === "") return true;
-  return value === "true" || value === "1";
-};
-
-/** Which readiness scope this mode is asking about.
- *
- * ADR 3 records the two: `full` is what `/readyz` answers and what a rollout
- * gates on, `l2` is whether this process can serve L2 blocks, transactions,
- * addresses and UTxOs. Running the full scope against a development machine
- * reports "not ready" for pages that render correctly, which is how a check
- * teaches its reader to ignore it. */
-const readinessScope = (ctx) =>
-  ctx.mode === "existing" && !indexingConfigured(ctx) ? "l2" : "full";
-
-/** Probes the L2 scope runs, mirroring PROBES in backend/scripts/probe-readiness.ts. */
-const L2_PROBES = new Set(["node database", "explorer index"]);
-
 /** The backend's own readiness probe, run once and shared by the checks that
  * read it. Doctor does not re-implement which relations the query path needs:
  * probes.ts is where that list lives, and a second copy would drift from it. */
 const readinessReport = async (ctx) => {
   if (ctx._readiness !== undefined) return ctx._readiness;
-  const scope = readinessScope(ctx);
+  const scope = "full";
   ctx._readiness = (async () => {
     if (!existsSync(join(ctx.repoRoot, "backend", "node_modules"))) {
       return { scope, available: false, reason: "backend dependencies are not installed" };
@@ -236,12 +191,6 @@ const readinessCheck = (probeName, { outsideScope } = {}) =>
       return fail(
         `could not run the readiness probe: ${report.reason}`,
         "Doctor cannot say whether this mode would serve until the probe runs. Try: cd backend && pnpm readiness",
-      );
-    }
-    if (report.scope === "l2" && !L2_PROBES.has(probeName)) {
-      return warn(
-        `not checked: "${probeName}" is outside the L2 scope this mode runs`,
-        outsideScope ?? "Set L1_SYNC_ENABLED=true in backend/.env to have doctor check it",
       );
     }
     const line = report.lines.find((l) => l.includes(probeName));
@@ -472,9 +421,7 @@ export const CHECKS = [
       const missing = needsEnv(ctx);
       if (missing) return missing;
       const env = backendEnv(ctx);
-      const required = indexingConfigured(ctx)
-        ? [...REQUIRED_BACKEND_ENV, ...REQUIRED_WHEN_INDEXING]
-        : REQUIRED_BACKEND_ENV;
+      const required = REQUIRED_BACKEND_ENV;
       const absent = required.filter((key) => (env.get(key) ?? "") === "");
       return absent.length === 0
         ? pass(`all ${required.length} settings have a value`)
@@ -652,57 +599,6 @@ export const CHECKS = [
     },
   },
   {
-    id: "existing.index-db-reachable",
-    title: "Explorer index PostgreSQL",
-    modes: REAL_DATA,
-    run: async (ctx) => {
-      const missing = needsEnv(ctx);
-      if (missing) return missing;
-      const target = urlTarget(backendEnv(ctx).get("INDEXER_POSTGRES_URL") ?? "");
-      if (target === null) return fail("INDEXER_POSTGRES_URL is not a URL", "Check backend/.env");
-      const up = await tcpReachable(target.host, target.port);
-      return up
-        ? pass(`${target.host}:${target.port} accepts connections`)
-        : fail(
-            `nothing accepts connections on ${target.host}:${target.port}`,
-            "Run: docker compose up -d explorer-postgres",
-          );
-    },
-  },
-  {
-    id: "existing.test-db-distinct",
-    title: "Test index database",
-    modes: REAL_DATA,
-    run: async (ctx) => {
-      const missing = needsEnv(ctx);
-      if (missing) return missing;
-      const env = backendEnv(ctx);
-      const test = env.get("TEST_INDEXER_POSTGRES_URL") ?? "";
-      if (test === "") {
-        return warn(
-          "TEST_INDEXER_POSTGRES_URL is not set",
-          "The database-backed backend tests need it; the suite truncates whatever it names",
-        );
-      }
-      const target = urlTarget(test);
-      if (target === null) return fail("TEST_INDEXER_POSTGRES_URL is not a URL", "Check backend/.env");
-      if (!target.database.endsWith("_test")) {
-        return fail(
-          `the test database is named "${target.database}", which does not end in _test`,
-          "The suite truncates this database and refuses any name that does not end in _test",
-        );
-      }
-      const index = urlTarget(env.get("INDEXER_POSTGRES_URL") ?? "");
-      if (index && index.database === target.database && index.host === target.host) {
-        return fail(
-          "the test database and the index are the same database",
-          "The suite would truncate the index it is meant to read",
-        );
-      }
-      return pass(`${target.database}, distinct from the index`);
-    },
-  },
-  {
     id: "existing.manifest-file",
     title: "Deployment manifest",
     modes: REAL_DATA,
@@ -710,24 +606,21 @@ export const CHECKS = [
       const missing = needsEnv(ctx);
       if (missing) return missing;
       const path = backendEnv(ctx).get("MIDGARD_MANIFEST_PATH") ?? "";
-      // Absent is a configured state for an L2-only explorer, and a failure for
-      // one that indexes. The same rule the backend's own configuration applies.
-      const indexing = indexingConfigured(ctx);
-      const absent = (detail) =>
-        indexing
-          ? fail(detail, "The indexer refuses to start without it, and /readyz refuses the process")
-          : warn(
-              detail,
-              "Not needed to serve L2 records. Set it before `pnpm dev:l1`, and before this instance takes traffic",
-            );
-      if (path === "") return absent("MIDGARD_MANIFEST_PATH is not set");
+      // Absent is a warning and unreadable is a failure, which is the rule the
+      // backend's own configuration applies: it boots without a manifest and
+      // refuses one it cannot parse. A response from a process with none is
+      // attributed to no deployment, which readiness refuses.
+      if (path === "") {
+        return warn(
+          "MIDGARD_MANIFEST_PATH is not set",
+          "Responses cannot say which Midgard they describe, and /readyz refuses the process",
+        );
+      }
       if (!existsSync(path)) {
-        return indexing
-          ? fail(
-              `no file at ${path}`,
-              "A Midgard deployment has no on-chain identifier, so the manifest is the only way to know which contracts to follow",
-            )
-          : warn(`no file at ${path}`, "Not read while this explorer serves L2 records only");
+        return fail(
+          `no file at ${path}`,
+          "A Midgard deployment has no on-chain identifier, so the manifest is the only thing that names it",
+        );
       }
       try {
         const manifest = JSON.parse(readFileSync(path, "utf8"));
@@ -881,12 +774,6 @@ export const CHECKS = [
     run: readinessCheck("node database"),
   },
   {
-    id: "readiness.explorer-index",
-    title: "Index schema and migrations",
-    modes: REAL_DATA,
-    run: readinessCheck("explorer index"),
-  },
-  {
     id: "readiness.manifest",
     title: "Manifest parses",
     modes: REAL_DATA,
@@ -894,20 +781,5 @@ export const CHECKS = [
       outsideScope:
         "The manifest describes the L1 deployment. `/readyz` still refuses a process that cannot read it",
     }),
-  },
-  {
-    id: "readiness.index-reconciled",
-    title: "L1 index reconciled",
-    modes: ["existing"],
-    run: readinessCheck("index reconciled", {
-      outsideScope:
-        "L2 blocks and transactions do not wait on a reconciliation pass against Koios",
-    }),
-  },
-  {
-    id: "readiness.index-reconciled.full",
-    title: "L1 index reconciled",
-    modes: ["full"],
-    run: readinessCheck("index reconciled"),
   },
 ];

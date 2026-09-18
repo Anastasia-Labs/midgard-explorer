@@ -52,7 +52,6 @@ const shape = {
   MIDGARD_READ_REPLICA_URL: blank(required),
   REQUIRE_MIDGARD_READ_REPLICA: boolean.default(false),
   NODE_DB_POOL_MAX: positive.default(8),
-  INDEXER_DB_POOL_MAX: positive.default(5),
   DB_CONNECTION_TIMEOUT_MS: positive.default(5_000),
   DB_IDLE_TIMEOUT_MS: positive.default(30_000),
   DB_STATEMENT_TIMEOUT_MS: positive.default(10_000),
@@ -137,8 +136,6 @@ const shape = {
   RECENT_TRANSACTIONS_LIMIT: positive,
   TRANSACTIONS_PER_PAGE: positive,
   BLOCKS_PER_PAGE: positive,
-  INDEXER_POSTGRES_URL: required,
-  KOIOS_BASE_URL: required,
   // Required where it is read, not everywhere.
   //
   // The manifest names the L1 deployment: which contracts to follow, and which
@@ -147,31 +144,7 @@ const shape = {
   // would not have read. `/readyz` is unchanged: probeManifest still runs in
   // the default scope, so an instance without one is never in rotation.
   MIDGARD_MANIFEST_PATH: blank(required),
-  L1_SYNC_INTERVAL_MS: positive,
-  // The indexing loop. Default true so a single-process deployment behaves as
-  // it always has; a second API instance sets it false and serves reads only,
-  // because two loops against one index duplicate every Koios request and
-  // race each other's writes.
-  L1_SYNC_ENABLED: boolean.default(true),
-  /**
-   * Whether this deployment checks Cardano settlement for itself.
-   *
-   * `none`, the default, means it does not: a block's settlement is the hash
-   * the node recorded, presented as the node's record. `index` reads the
-   * explorer-owned Cardano index as a second observation, which is what makes
-   * `matched`, `mismatch` and `stale` reachable.
-   *
-   * Independent of `L1_SYNC_ENABLED`, which says whether THIS process runs the
-   * indexing loop. A read-only API instance sets that false and still read the
-   * index. This says whether any settlement verdict may rest on it.
-   *
-   * TRANSITIONAL. It exists so the move to node-reported settlement can be
-   * reversed while it is under review, and it is removed with the index lane
-   * itself once that is settled. It is not a permanent deployment choice.
-   */
-  L1_CONFIRMATION_SOURCE: z.enum(["none", "index"]).default("none"),
   // Zero is meaningful here: it means every pass is a full rescan from genesis.
-  L1_REORG_LOOKBACK_BLOCKS: z.coerce.number().int().nonnegative(),
 } as const;
 
 /** The names the backend reads, exported so `.env.example` can be checked
@@ -212,24 +185,17 @@ export const configSchema = z
           "must name the edge's address or CIDR when TRUSTED_PROXY_MODE is single-edge",
       });
     }
-    // The indexer attributes every row it writes to the deployment this file
-    // declares. Starting one without a readable manifest writes rows attributed
-    // to nothing, which no query can reach, so the refusal belongs at boot
-    // rather than at the first pass.
-    if (value.L1_SYNC_ENABLED) {
-      if (value.MIDGARD_MANIFEST_PATH === undefined) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["MIDGARD_MANIFEST_PATH"],
-          message: "is required when L1_SYNC_ENABLED is true",
-        });
-      } else if (!isReadableFile(value.MIDGARD_MANIFEST_PATH)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["MIDGARD_MANIFEST_PATH"],
-          message: `names no readable file: ${value.MIDGARD_MANIFEST_PATH}`,
-        });
-      }
+    // The manifest names the deployment every response is attributed to, and
+    // the validators the Cardano pages describe. It used to be demanded only
+    // when the indexer ran; the indexer is gone and the attribution is not, so
+    // it is checked whenever one is configured.
+    if (value.MIDGARD_MANIFEST_PATH !== undefined
+        && !isReadableFile(value.MIDGARD_MANIFEST_PATH)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["MIDGARD_MANIFEST_PATH"],
+        message: `names no readable file: ${value.MIDGARD_MANIFEST_PATH}`,
+      });
     }
   });
 

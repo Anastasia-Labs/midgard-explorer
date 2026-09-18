@@ -34,7 +34,7 @@ import {
   waitArgs,
   writeAdoption,
 } from "../scripts/lib/compose.mjs";
-import { REQUIRED_BACKEND_ENV, REQUIRED_WHEN_INDEXING } from "../scripts/lib/checks.mjs";
+import { REQUIRED_BACKEND_ENV } from "../scripts/lib/checks.mjs";
 import { runChecks, summarise } from "../scripts/doctor.mjs";
 import { descendants } from "../scripts/lib/proc.mjs";
 
@@ -153,18 +153,13 @@ describe("what setup generates and what doctor requires", () => {
         POSTGRES_USER: "u",
         POSTGRES_PASSWORD: "p",
         POSTGRES_DB: "midgard",
-        INDEXER_POSTGRES_URL: "postgresql://explorer:p@127.0.0.1:5435/midgard_explorer",
-        TEST_INDEXER_POSTGRES_URL: "postgresql://explorer:p@127.0.0.1:5435/midgard_explorer_test",
         MIDGARD_MANIFEST_PATH: "",
-        KOIOS_BASE_URL: "https://preprod.koios.rest/api/v1",
-        L1_SYNC_INTERVAL_MS: "60000",
-        L1_REORG_LOOKBACK_BLOCKS: "20",
       }),
     ),
   );
 
   it("generates every setting doctor calls required", () => {
-    for (const key of [...REQUIRED_BACKEND_ENV, ...REQUIRED_WHEN_INDEXING]) {
+    for (const key of REQUIRED_BACKEND_ENV) {
       assert.ok(generated.has(key), `setup does not generate ${key}, which doctor requires`);
     }
   });
@@ -486,53 +481,6 @@ describe("which index a migration may be applied to", () => {
   });
 });
 
-describe("which question doctor answers about existing mode", () => {
-  /* `up existing --with-l1-sync` sets L1_SYNC_ENABLED for the backend process
-   * only, so backend/.env still reads false while an indexer is running. Doctor
-   * used to believe the file, run the L2 scope, and answer Ready for a system
-   * whose reconciliation had just failed. It was also the command the timeout
-   * message told the reader to run. */
-  const l2Only = () =>
-    fixtureRoot({
-      "backend/.env": [
-        "BACKEND_PORT=3101",
-        "LOG_LOCATION=./logs/x",
-        "POSTGRES_URL=postgresql://u:p@127.0.0.1:5433/midgard",
-        "INDEXER_POSTGRES_URL=postgresql://explorer:p@127.0.0.1:5435/midgard_explorer",
-        "TEST_INDEXER_POSTGRES_URL=postgresql://explorer:p@127.0.0.1:5435/midgard_explorer_test",
-        "MIDGARD_MANIFEST_PATH=",
-        "KOIOS_BASE_URL=https://preprod.koios.rest/api/v1",
-        "RECENT_BLOCKS_LIMIT=10",
-        "RECENT_TRANSACTIONS_LIMIT=10",
-        "TRANSACTIONS_PER_PAGE=25",
-        "BLOCKS_PER_PAGE=25",
-        "L1_SYNC_ENABLED=false",
-        "L1_SYNC_INTERVAL_MS=60000",
-        "L1_REORG_LOOKBACK_BLOCKS=20",
-      ].join("\n"),
-    });
-
-  const manifest = (report) => check(report, "existing.manifest-file").status;
-
-  it("asks the narrow question when nothing says otherwise", () => {
-    assert.equal(manifest(doctor(l2Only(), "existing").report), "warn");
-  });
-
-  it("asks the wider one when the flag is given", () => {
-    assert.equal(manifest(doctor(l2Only(), "existing", "--with-l1-sync").report), "fail");
-  });
-
-  it("asks the wider one when a run is up with the indexer on", () => {
-    const root = l2Only();
-    mkdirSync(join(root, ".dev", "existing"), { recursive: true });
-    writeFileSync(
-      join(root, ".dev", "existing", "state.env"),
-      "EXISTING_APP_URL='http://127.0.0.1:3011'\nEXISTING_WITH_L1_SYNC='1'\n",
-    );
-    assert.equal(manifest(doctor(root, "existing").report), "fail");
-  });
-});
-
 /* Generated inputs for the four decisions that can lose data or leak a
  * credential. These are properties rather than examples: a table of cases only
  * ever covers what somebody thought of, and the failures worth finding here are
@@ -709,6 +657,36 @@ describe("stopping the API stops what it started", () => {
 });
 
 describe("doctor", () => {
+  it("warns about an absent manifest and fails on one that is not there", () => {
+    const base = [
+      "BACKEND_PORT=3101",
+      "LOG_LOCATION=./logs/x",
+      "POSTGRES_URL=postgresql://u:p@127.0.0.1:5433/midgard",
+      "RECENT_BLOCKS_LIMIT=10",
+      "RECENT_TRANSACTIONS_LIMIT=10",
+      "TRANSACTIONS_PER_PAGE=25",
+      "BLOCKS_PER_PAGE=25",
+    ];
+
+    // Absent: the backend boots, and every response is attributed to no
+    // deployment, which readiness refuses. A warning, not a failure.
+    const absent = doctor(
+      fixtureRoot({ "backend/.env": [...base, "MIDGARD_MANIFEST_PATH="].join("\n") }),
+      "existing",
+    ).report;
+    assert.equal(check(absent, "backend.env-complete").status, "pass");
+    assert.equal(check(absent, "existing.manifest-file").status, "warn");
+
+    // Set and not there: a configuration mistake the backend refuses to boot on.
+    const missing = doctor(
+      fixtureRoot({
+        "backend/.env": [...base, "MIDGARD_MANIFEST_PATH=/tmp/not-a-manifest.json"].join("\n"),
+      }),
+      "existing",
+    ).report;
+    assert.equal(check(missing, "existing.manifest-file").status, "fail");
+  });
+
   it("exits 2 on an unknown mode", () => {
     let status = 0;
     try {
@@ -790,67 +768,6 @@ describe("doctor", () => {
     // default is to index. The placeholder path is non-empty, so only the
     // does-the-file-exist check catches it.
     assert.equal(check(report, "existing.manifest-file").status, "fail");
-  });
-
-  it("requires the manifest of an explorer that indexes, and not of one that does not", () => {
-    const base = [
-      "BACKEND_PORT=3101",
-      "LOG_LOCATION=./logs/x",
-      "POSTGRES_URL=postgresql://u:p@127.0.0.1:5433/midgard",
-      "INDEXER_POSTGRES_URL=postgresql://explorer:p@127.0.0.1:5435/midgard_explorer",
-      "TEST_INDEXER_POSTGRES_URL=postgresql://explorer:p@127.0.0.1:5435/midgard_explorer_test",
-      "MIDGARD_MANIFEST_PATH=",
-      "KOIOS_BASE_URL=https://preprod.koios.rest/api/v1",
-      "RECENT_BLOCKS_LIMIT=10",
-      "RECENT_TRANSACTIONS_LIMIT=10",
-      "TRANSACTIONS_PER_PAGE=25",
-      "BLOCKS_PER_PAGE=25",
-      "L1_SYNC_INTERVAL_MS=60000",
-      "L1_REORG_LOOKBACK_BLOCKS=20",
-    ];
-
-    const reading = doctor(
-      fixtureRoot({ "backend/.env": [...base, "L1_SYNC_ENABLED=false"].join("\n") }),
-      "existing",
-    ).report;
-    assert.equal(check(reading, "backend.env-complete").status, "pass");
-    assert.equal(check(reading, "existing.manifest-file").status, "warn");
-
-    const indexing = doctor(
-      fixtureRoot({ "backend/.env": [...base, "L1_SYNC_ENABLED=true"].join("\n") }),
-      "existing",
-    ).report;
-    assert.equal(check(indexing, "backend.env-complete").status, "fail");
-    assert.match(check(indexing, "backend.env-complete").detail, /MIDGARD_MANIFEST_PATH/);
-    assert.equal(check(indexing, "existing.manifest-file").status, "fail");
-  });
-
-  it("refuses a test database that is the index, or is not named for the job", () => {
-    const base = (test) =>
-      [
-        "BACKEND_PORT=3101",
-        "LOG_LOCATION=./logs/x",
-        "POSTGRES_URL=postgresql://u:p@127.0.0.1:5433/midgard",
-        "INDEXER_POSTGRES_URL=postgresql://explorer:p@127.0.0.1:5435/midgard_explorer",
-        `TEST_INDEXER_POSTGRES_URL=${test}`,
-        "MIDGARD_MANIFEST_PATH=/tmp/none.json",
-        "KOIOS_BASE_URL=https://preprod.koios.rest/api/v1",
-        "RECENT_BLOCKS_LIMIT=10",
-        "RECENT_TRANSACTIONS_LIMIT=10",
-        "TRANSACTIONS_PER_PAGE=25",
-        "BLOCKS_PER_PAGE=25",
-        "L1_SYNC_INTERVAL_MS=60000",
-        "L1_REORG_LOOKBACK_BLOCKS=20",
-      ].join("\n");
-
-    const wrongName = doctor(
-      fixtureRoot({
-        "backend/.env": base("postgresql://explorer:p@127.0.0.1:5435/midgard_explorer"),
-      }),
-      "existing",
-    ).report;
-    assert.equal(check(wrongName, "existing.test-db-distinct").status, "fail");
-    assert.match(check(wrongName, "existing.test-db-distinct").detail, /_test/);
   });
 
   it("never lets a password reach the report", () => {
