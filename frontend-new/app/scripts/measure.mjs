@@ -28,6 +28,13 @@ import { readFileSync } from "node:fs";
 
 const [, , frontendRoot, command, ...args] = process.argv;
 
+/** A syntactically valid transaction hash, for the routes that need one.
+ *
+ * The measurement is of COMPILING the route, which happens whether the record
+ * exists or not, so an invented hash measures the same bundler work as a real
+ * one and needs no database. */
+const PROBE_TX = "a".repeat(64);
+
 const fail = (message) => {
   process.stderr.write(`${message}\n`);
   process.exit(1);
@@ -75,7 +82,24 @@ if (command === "peak") {
   const deadline = Date.now() + 60_000;
   // Requesting pages while sampling: an idle server is not the peak, and the
   // first compile of each route is where a bundler actually spends.
-  const paths = ["/", "/blocks", "/transactions", "/l1", "/deposits", "/assets"];
+  // The transaction detail route is in this list because it was not, and its
+  // absence is what made the published floor wrong: the kernel killed
+  // `next-server` at 2.28 GB while Turbopack compiled `/transaction/[txHash]`,
+  // the most-visited page in a block explorer, on a machine provisioned to the
+  // documented 1 GB minimum. A sweep that never opens a route cannot report
+  // what compiling it costs. The flow and raw views are separate client
+  // bundles on the same route, so they are swept too.
+  const paths = [
+    "/",
+    "/blocks",
+    "/transactions",
+    "/l1",
+    "/deposits",
+    "/assets",
+    `/transaction/${PROBE_TX}`,
+    `/transaction/${PROBE_TX}?tab=utxo&view=flow`,
+    `/transaction/${PROBE_TX}?tab=raw`,
+  ];
   const requests = (async () => {
     for (const path of paths) {
       await fetch(`${url}${path}`, { signal: AbortSignal.timeout(120_000) }).catch(() => null);
@@ -119,14 +143,21 @@ if (command === "peak") {
     ./node_modules/.bin/next dev --hostname 0.0.0.0 --port ${port} > /tmp/dev.log 2>&1 &
     node -e '
       const deadline = Date.now() + 170000;
+      // Every route in the ceiling set, not just the overview. A ceiling that
+      // only ever compiled "/" reported a floor the transaction route breaks.
+      // A 404 still compiled the route, which is the work being measured; a
+      // 5xx or a dead server is the failure this reports.
+      const paths = ["/", "/blocks", "/transaction/${PROBE_TX}"];
       const tick = async () => {
-        while (Date.now() < deadline) {
+        let served = 0;
+        while (Date.now() < deadline && served < paths.length) {
           try {
-            const r = await fetch("http://127.0.0.1:${port}/", { signal: AbortSignal.timeout(20000) });
-            if (r.status === 200) { console.log("SERVED 200"); process.exit(0); }
+            const r = await fetch("http://127.0.0.1:${port}" + paths[served], { signal: AbortSignal.timeout(60000) });
+            if (r.status < 500) { served += 1; continue; }
           } catch {}
           await new Promise((r) => setTimeout(r, 2000));
         }
+        if (served === paths.length) { console.log("SERVED " + served + " ROUTES"); process.exit(0); }
         console.log("NEVER SERVED"); process.exit(1);
       };
       tick();

@@ -582,6 +582,80 @@ commit that predates `0bcc98d5`, `a66273e6` and the address filter pushdown in
 6.2 GB of temporary files per request, is the exact query `2e3b2f09` repaired.
 Nobody knows what that row reads today.
 
+### 3.7 Reconciliation after the Cardano index decommission, 2026-09-18
+
+The explorer-owned Cardano index was decommissioned the day after this audit, in
+commits `375c0813`, `baa3baca`, `9fa47f23` and `02d75136`. Some findings above
+describe code that no longer exists. This section says which, so that no work is
+spent on a deleted surface. Every other finding stands as written.
+
+| Finding | Status | Reason |
+|---|---|---|
+| B1 | Closed | Remediated before the decommission. Recorded in section 6 |
+| M7 | Closed | Remediated. One build, owned by Playwright |
+| M2 | **Closed, obsolete** | The six files it named are deleted. `grep -rn 'ctx.skip(!' backend/test/` returns nothing, so the guard pattern it described is gone from the suite |
+| M1 | **Reduced** | Four of the five skipped benchmark self-tests stand. The fifth, `bench-clone-index`, now tests deleted infrastructure and is itself a cleanup item, not a coverage gap |
+| H4 | **Surface changed** | Six routes still parse a page through `parsePageParam`. `/api/l1/activity/:page` is a seventh offset path and is not one of them: it coerces a bad page to the first, so a cap there has to clamp rather than answer 400 |
+| B2 | **Needs re-measurement** | `/deposits` lost its Cardano source column in `9fa47f23`, so the 1373 px intrinsic width that produced the 106 px overflow is no longer the measured width. `/withdrawals` is untouched. Measure both again before fixing either |
+| M3 | Stands | Still five fixture-content skips. The line numbers moved: `layout.spec.ts:98` and `populated.spec.ts:422`, `446`, `603`, `666` |
+| M4 | Stands | The `tx_source` tiers it names are Midgard's, not the index's. Unaffected |
+| L6 | Partly actioned | The explorer database was stopped on 2026-09-18 with its container and `midgard-explorer_explorer-pgdata` volume preserved. The benchmark containers are unchanged |
+
+**Two consequences the decommission did not carry through, found here.**
+
+1. `backend/scripts/lib/net.mjs` kept a `sync-state` subcommand that read
+   `/api/l1/summary`, a route that no longer exists, and `lifecycle.mjs` still
+   offered `dev [--with-l1-sync]` in its usage text after the flag was removed.
+   Nothing invoked either. Both are removed as of this section; `pnpm test:dev`
+   passes 47 of 47.
+2. **The benchmark harness cannot run.** `bench/cli.mts` and `bench/attribute.mts`
+   refuse to start without `BENCH_SOURCE_INDEX_URL`, and `setupBench` clones the
+   index's tables to get the real header hashes that settle its generated
+   blocks. Those hashes now live in the node's own
+   `pending_block_finalizations`. Until the harness reads them from there, all
+   three `pnpm bench` rows in section 5 are blocked. `bench/measure.mts` imports
+   nothing from the index, so H1's memory measurement is not blocked by this,
+   though it has not been run since.
+
+**What this section does not do.** It does not restate the scorecard in section
+2. Those figures are dated evidence from 2026-09-17 and remain true of that
+date. Three of them are no longer true of the head: the backend and app test
+counts (813 and 497, now 543 and 473), the security surface "every file in `db/`
+and `indexer/`" (`indexer/` is deleted, and `db/cardanoActivity.ts` post-dates
+the review), and the untested-scope note about indexer ingest paths. A delta
+review of the four new `db/` and route files is the smallest thing that would
+restore that row's evidence.
+
+### 3.8 Closure record, 2026-09-18
+
+What was done about each finding, and the evidence. A finding is closed here
+only by a verified fix or by evidence that the capability it describes was
+removed. "Passing tests" is not on its own either of those.
+
+| Finding | State | Evidence |
+|---|---|---|
+| B1 gate red | **Closed** | Remediated before this batch; recorded in section 6 |
+| B2 sideways scroll | **Closed** | Re-measured first: `/deposits` 106 px, `/withdrawals` 195 px and `/forced-transactions` 46 px at 1280, a route the finding did not name. Cause was not the table's width: the scroll container clipped it correctly and an absolutely positioned descendant, with no positioned ancestor inside the scroller, extended the DOCUMENT's scroll area. `position: relative` on the shared container. 0 px on seven routes at 1280, 1024, 390 and 1600 in both themes, and the table still scrolls internally (143 px and 232 px of content) |
+| H1 memory minimum | **Closed** | The ceiling run now serves the transaction route, not just the overview. At 1024 MB it serves `/` and `/blocks` then dies compiling `/transaction/[txHash]`; 1536 MB and 2048 MB succeed in 11s. Observed peak with that route swept: 1622 MB. `demo` minimum restated from 1 GB to 2 GB |
+| H2 Web Vitals blocked | **Closed** | Verified in the split-origin shape itself, built with a visitor-reachable API origin. The old absolute destination is refused with the exact violation the finding names; the new same-origin route handler delivers with `connect-src 'self'` unchanged |
+| H3 no frontend advisory gate | **Closed** | One gate, two workspaces. It found three production advisories on the day it was added: two critical Next remote-code-execution and one high in sharp. All three fixed by upgrading, not accepted, so the dispositions file is empty. Gate proven in both directions: exit 1 with the advisory present, exit 0 with it gone |
+| H4 unbounded page depth | **Closed** | Seven offset paths bounded at 100,000 rows scanned, refused before any statement. Proven with the database layer mocked: an over-limit request never reaches it and an in-bound one does. Live: 400 on every route past its bound, including the Cardano activity route, which keeps coercing a malformed page and now refuses an excessive one |
+| M1 benchmark self-tests | **Partly closed** | Three of the four run nightly against a Postgres started with `pg_stat_statements` preloaded, which a service container cannot do. Verified locally: 8 and 5 tests, previously 0. `bench-smoke` stays out, and why is written into the job |
+| M2 indexer skips | **Closed, obsolete** | The files are deleted; the guard pattern is gone from the suite |
+| M3 fixture-conditional skips | **Closed** | All five assert their precondition. `populated.spec.ts` now carries zero `test.skip` |
+| M4 three status derivations | **Closed** | One exported function, three callers, and the constant `true AS committed` column dropped from the query and from the test's reference query. An unrecognised tier reads as `unknown` |
+| M5 unbounded balance decode | **Open, unchanged** | A measurement task before an implementation task, and the measurement it needs is the isolated address-history profile |
+| M6 two `check` scripts | **Closed** | `pnpm check` inside `app` now runs the gate. Reproduced the divergence first: on one unused import `check:app` exits 0 and the gate exits 1. `check:app` remains as the faster subset, named so it cannot be mistaken for the gate |
+| M7 double build | **Closed** | Remediated earlier |
+| L1 skip link focus | **Closed** | `tabIndex={-1}` on `main`; asserted, and the assertion fails without it |
+| L2 target size | **Closed, not a defect as stated** | Measured rather than read: the trigger paints 16 px and accepts a pointer over **43 x 43 px** through its pseudo-element, above the 24 px minimum. The finding measured the painted box. Both numbers are now asserted |
+| L3 node rebuild hazard | **Closed** | Written up in `upstream-node-defects.md` with both counts re-verified: 12 recorded migrations against one declared file |
+| L4 wall-clock budget | **Closed** | The elapsed-time assertion is removed. Every step it followed already waits on the canvas's own completion signals, so it restated them in a form that measures the machine |
+| L5 docs links | **Closed** | Resolved against `git ls-files`. Proven with a real git-excluded page: the gate names it |
+| L6 housekeeping | **Partly actioned** | The explorer database is stopped with its volume kept. Benchmark containers are started and removed per run |
+| L7 hydration warning | **Open, not reproduced** | 24 further loads against a development server at 390 px, across both OS colour schemes and three stored-theme states, on four routes including the block page, with the stored theme confirmed applied. Zero warnings, on top of the 40 production loads already recorded. The original sighting was under memory pressure, about 480 MB available; that condition was not recreated, so absence here is not evidence it is fixed |
+| G1 definition of done | **Closed** | Section 7 now carries the three missing rows |
+
 ## 4. Invariants checked
 
 These are the observable properties an explorer has to hold. They are recorded
@@ -610,20 +684,23 @@ measuring is what produced the rejected heap cap.
 
 ### The next three tasks, in order
 
-1. **Restore the gate (B1).** Extra small. Every later step in this list is
-   verified by this same script, so it has to pass in one run before the rest
-   can be checked the way the repository checks things.
-2. **Bound the table scroll container and widen the assertion (B2).** Small.
-   A visual change, so it needs visual review before step 3.
-3. **Cap the page depth (H4).** Small. No measurement needed, it closes an
+Reordered 2026-09-18, after the decommission. B1 is done, and B2 now needs a
+fresh measurement before it can be fixed, so the depth cap goes first.
+
+1. **Cap the page depth (H4).** Small. No measurement needed, it closes an
    availability exposure, and it is the half of `CURSOR-PAGINATION` that stands
-   on its own.
+   on its own. Seven offset paths now, not six: see section 3.7 for the one that
+   has to clamp rather than answer 400.
+2. **Re-measure and fix the table overflow (B2).** Small. Measure `/deposits`
+   and `/withdrawals` at 1280 px first: one of the two tables lost a column. A
+   visual change, so it needs visual review.
+3. **Investigate the order-dependent browser failures.** Three tests failed in
+   intermediate full runs and passed in isolation and in the final green run.
+   The cause is not established, so this is a measurement task, not a fix.
 
 ### Fits in one hour
 
-- B1, the gate.
 - H3, the frontend advisory gate.
-- M2, make the reachability guard fail under `REQUIRE_DB`.
 - M3, turn the five fixture-conditional skips into assertions.
 - L3, document the node migration hazard.
 - G1, add the three missing register rows.
@@ -642,6 +719,11 @@ measuring is what produced the rejected heap cap.
 Each of these needs the development servers stopped. Ask for the window; do not
 start one while they are up, because the memory guard aborts and the latency
 figures would be skewed anyway.
+
+**Three of the four are blocked as of 2026-09-18.** Every `pnpm bench` row needs
+the harness to stop cloning the decommissioned index first. Section 3.7 records
+what that change is. The H1 memory measurement uses `bench/measure.mts`, which
+has no such dependency.
 
 | Task | Command | Resource need | Expected duration |
 |---|---|---|---|

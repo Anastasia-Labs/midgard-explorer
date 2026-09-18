@@ -16,32 +16,45 @@ because they are not the same kind and cannot be compared as though they were.
   each container, which measured a dependency tree the host does not have.
 - **Observed peak**: resident memory of the process tree, sampled every 250 ms
   on a 2-core machine while the mode served the overview, blocks, transactions,
-  L1, deposits and assets pages. Reproduce with `measure.mjs ... peak`.
+  L1, deposits, assets **and transaction detail** pages, the last including its
+  flow and raw views. Reproduce with `measure.mjs ... peak`.
 - **Declared limit**: what `docker-compose.yml` caps a container at. Not a
   measurement of anything.
 - **Not measured**: exactly that. No number is offered.
 
 ## Frontend, under an enforced ceiling
 
-| Ceiling | `next dev` serves the overview | `next build` completes |
-|---:|---|---|
-| 512 MB | no | not run |
-| 768 MB | no | not run |
-| 896 MB | yes, in 8s | no, out of memory |
-| 1024 MB | yes, in 9s | no, out of memory |
-| 1536 MB | yes, in 8s | yes, in 21s |
-| 2048 MB | yes, in 8s | yes, in 23s |
+The ceiling column changed on 2026-09-18. It used to ask only whether the dev
+server served the overview, and a floor derived from one route was wrong for
+the route a reader opens most: the kernel killed `next-server` at 2.28 GB while
+Turbopack compiled `/transaction/[txHash]` on a machine provisioned to the
+documented 1 GB minimum, and the failure looked like a crash rather than a
+memory limit. The ceiling run now serves the overview, the blocks list and a
+transaction detail page before it reports success.
 
-The development server's hard floor is between 768 MB and 896 MB. The production
-build's is between 1024 MB and 1536 MB, so a machine that can run the dev server
-cannot necessarily build the app.
+| Ceiling | `next dev` serves the overview | `next dev` serves overview + blocks + transaction | `next build` completes |
+|---:|---|---|---|
+| 512 MB | no | not run | not run |
+| 768 MB | no | not run | not run |
+| 896 MB | yes, in 8s | not run | no, out of memory |
+| 1024 MB | yes, in 9s | **no**: serves the first two, dies compiling the transaction route | no, out of memory |
+| 1536 MB | yes, in 8s | yes, in 11s | yes, in 21s |
+| 2048 MB | yes, in 8s | yes, in 11s | yes, in 23s |
+
+The development server's hard floor is between 768 MB and 896 MB **for the
+overview alone**, and between 1024 MB and 1536 MB once the transaction route is
+included. The production build's is between 1024 MB and 1536 MB. The first
+figure is the one a minimum must not be derived from: a machine at 1 GB starts,
+serves the overview, and loses the server the first time somebody opens a
+transaction. The 2026-09-18 columns were measured with the node stack paused;
+the 2026-09-01 column is carried forward unchanged.
 
 ## Per mode
 
 | Mode | Minimum | Recommended | Basis |
 |---|---:|---:|---|
-| `demo` | 1 GB | 3 GB | Hard floor 896 MB for the dev server, rounded up. Observed peak 1671 MB for the app and fixture together, so the floor is where it works and the peak is where it is comfortable. |
-| `existing` | 3 GB | 6 GB | Observed peak 881 MB for the backend under `ts-node`, plus the frontend's 1671 MB, plus declared limits of 512 MB for PostgreSQL and 128 MB for the API cache. Summed, not measured as one figure. |
+| `demo` | 2 GB | 3 GB | Hard floor between 1024 MB and 1536 MB once the transaction route is compiled, rounded up to the next whole gigabyte. Observed peak 1622 MB for the app and fixture together, sweeping that route (2026-09-18). The previous 1 GB minimum came from a floor measured against the overview alone. |
+| `existing` | 3 GB | 6 GB | Observed peak 881 MB for the backend under `ts-node`, plus the frontend's 1622 MB, plus declared limits of 512 MB for PostgreSQL and 128 MB for the API cache. Summed, not measured as one figure. |
 | `full` | not measured | not measured | Nothing here runs the mode. Adding Cardano Node, Kupo and Ogmios changes the answer by more than the explorer contributes, and no figure is offered until it is run. |
 
 Two CPU cores are enough for `demo` and `existing`. Every measurement above was
