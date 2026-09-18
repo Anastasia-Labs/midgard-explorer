@@ -11,6 +11,7 @@ import type { ValueView } from "../../decode/types";
 import { toHex } from "../../utils";
 import { parsePageQuery } from "../validate";
 import { readConsistently } from "../../db/consistent";
+import { transactionStatus } from "../../db/transactionStatus";
 
 function sumValues(values: ValueView[]): ValueView {
   let lovelace = 0n;
@@ -74,14 +75,12 @@ export async function getAddressRoute(req: Request, res: Response) {
                 .map((i) => i.resolved!.value),
             )
           : null;
-      const status =
-        row.header_hash !== null || row.tx_source === "immutable" || row.tx_source === "journal"
-          ? "committed"
-          : row.tx_source === "processed_mempool"
-            ? "pending_commit"
-            : row.tx_source === "mempool"
-              ? "accepted"
-              : "unknown";
+      const status = transactionStatus({
+        // A history row with no recorded tier is one the derivation has no
+        // fact about, which `transactionStatus` answers as unknown.
+        source: row.tx_source ?? "",
+        hasHeaderHash: row.header_hash !== null,
+      });
       return {
         tx_id: toHex(row.tx_id),
         address: row.address,

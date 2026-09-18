@@ -198,7 +198,6 @@ export type TransactionPageRow = {
   tx_id: Uint8Array;
   time_stamp_tz: Date;
   tx: Uint8Array | null;
-  committed: boolean;
   finalization_status: string | null;
 };
 
@@ -229,7 +228,6 @@ export function transactionsPageRows(
       p.member_id AS tx_id,
       j.source_time_stamp_tz AS time_stamp_tz,
       j.payload_cbor AS tx,
-      true AS committed,
       p.status AS finalization_status
     FROM page AS p
     JOIN pending_block_finalization_txs AS j

@@ -19,6 +19,7 @@ import {
 } from "../../decode/transaction";
 import { canonicalHash, isHash32, toHex } from "../../utils";
 import { parsePageParam } from "../validate";
+import { transactionStatus } from "../../db/transactionStatus";
 
 export async function getTransactionRoute(req: Request, res: Response) {
   const raw = req.query.tx_hash;
@@ -165,12 +166,7 @@ export async function getTransactionRoute(req: Request, res: Response) {
     return res.status(404).json({ error: "Transaction not found." });
   }
 
-  const status =
-    tx.source === "immutable" || tx.source === "journal"
-      ? "committed"
-      : tx.source === "processed_mempool"
-        ? "pending_commit"
-        : "accepted";
+  const status = transactionStatus({ source: tx.source });
 
   // Decoded inside the snapshot above. Only this route carries the raw bytes:
   // a list route inlining them would multiply its response by the size of every
@@ -241,7 +237,10 @@ export async function getTransactionsPageRoute(req: Request, res: Response) {
         header_hash: toHex(row.header_hash),
         tx_id: toHex(row.tx_id),
         time_stamp_tz: row.time_stamp_tz,
-        status: row.committed ? "committed" : "pending_commit",
+        // Every row on this page comes from the finalization journal, so the
+        // tier is not in question. It used to read a `committed` column the
+        // query wrote as the literal `true`.
+        status: transactionStatus({ source: "journal" }),
         finalization_status: row.finalization_status,
         transaction: decoded.transaction,
         decodeError: decoded.error,

@@ -46,7 +46,6 @@ const onePass = (reader: PrismaClient, offset: number, filter: string | null) =>
       j.member_id AS tx_id,
       j.source_time_stamp_tz AS time_stamp_tz,
       j.payload_cbor AS tx,
-      true AS committed,
       f.status AS finalization_status
     FROM pending_block_finalization_txs AS j
     JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
