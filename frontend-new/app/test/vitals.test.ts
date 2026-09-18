@@ -26,7 +26,6 @@ const EXPECTED: Record<string, RouteClass> = {
   "/forced-transactions/[page]": "list",
   "/assets": "list",
   "/l1": "list",
-  "/l1/commitments": "list",
   "/block/[headerHash]": "detail",
   "/block/height/[height]": "detail",
   "/transaction/[txHash]": "detail",

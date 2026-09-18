@@ -5,7 +5,7 @@ import { Identifier } from "../../components/ui/domain/identifier";
 import { L1TxLink } from "../../components/ui/domain/l1link";
 import { InfoTip } from "../../components/ui/base/infotip";
 import { StatusLegend } from "../../components/ui/base/legend";
-import { Callout, L1L2Badge, PageHeader } from "../../components/ui/base/layout";
+import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
 import { StatusCell } from "../../components/ui/domain/status";
 import { DataTable, Pagination } from "../../components/ui/base/table";
 import { Timestamp } from "../../components/ui/base/timestamp";
@@ -45,10 +45,6 @@ export default async function DepositsPage({
       <ListError crumbs={CRUMBS} entity="deposit" title="Deposits" message={listErrorMessage(e)} />
     );
   }
-  const l1Observations = await api.l1Deposits(100, init).catch(() => []);
-  const l1ByTx = new Map(l1Observations.map((row) => [row.txHash, row]));
-  const nodeTxs = new Set(data.rows.map((row) => row.deposit_l1_tx_hash));
-  const unmatchedL1 = l1Observations.filter((row) => !nodeTxs.has(row.txHash));
 
   return (
     <>
@@ -86,20 +82,6 @@ export default async function DepositsPage({
               headerNote: "deposit-derived, not an L2 transaction",
               cell: (r) => <Identifier value={r.ledger_tx_id} />,
               hideBelow: "md",
-            },
-            {
-              header: "Cardano source",
-              cell: (r) => {
-                const addresses = l1ByTx.get(r.deposit_l1_tx_hash)?.fundingAddresses ?? [];
-                return addresses.length === 0 ? (
-                  <span className="text-text-3">Not indexed</span>
-                ) : addresses.length === 1 ? (
-                  <AddressLink address={addresses[0]!} chain="cardano" head={10} tail={8} />
-                ) : (
-                  <span>{addresses.length} funding addresses</span>
-                );
-              },
-              hideBelow: "2xl",
             },
             {
               header: "L2 recipient",
@@ -166,19 +148,6 @@ export default async function DepositsPage({
                 value: <Identifier value={r.ledger_tx_id} head={8} tail={6} />,
               },
               {
-                label: "Cardano source",
-                value: (() => {
-                  const addresses = l1ByTx.get(r.deposit_l1_tx_hash)?.fundingAddresses ?? [];
-                  return addresses.length === 0 ? (
-                    "Not indexed"
-                  ) : addresses.length === 1 ? (
-                    <AddressLink address={addresses[0]!} chain="cardano" head={8} tail={6} />
-                  ) : (
-                    `${addresses.length} addresses`
-                  );
-                })(),
-              },
-              {
                 label: "Projected block",
                 value: r.projected_header_hash ? (
                   <Identifier
@@ -207,36 +176,6 @@ export default async function DepositsPage({
           hrefFor={(p) => `/deposits?page=${p}${id ? `&id=${id}` : ""}`}
         />
       </section>
-      <details className="mt-4 rounded-lg border border-border bg-surface">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-text-2">
-          Cardano observations ({l1Observations.length})
-        </summary>
-        {unmatchedL1.length > 0 ? (
-          <div className="border-t border-border p-4">
-            <Callout tone="neutral" title="Additional Cardano observations">
-              These are not present on the current node-results page and remain visible from the
-              explorer-owned L1 index.
-            </Callout>
-            <ul className="mt-3 space-y-2">
-              {unmatchedL1.map((row) => (
-                <li
-                  key={`${row.txHash}-${row.outputIndex}`}
-                  className="flex flex-wrap items-center justify-between gap-2"
-                >
-                  <L1TxLink hash={row.txHash} destination="cardano" />
-                  <span className="mg-caption text-text-3">
-                    {row.eventType} · output #{row.outputIndex}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <p className="border-t border-border px-4 py-3 text-sm text-text-3">
-            All indexed observations match the current node records.
-          </p>
-        )}
-      </details>
     </>
   );
 }

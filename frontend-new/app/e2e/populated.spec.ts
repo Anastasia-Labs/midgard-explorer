@@ -56,19 +56,6 @@ test.describe("populated lists", () => {
     await expect(page.getByText(/published|attested|DA-network available/i)).toHaveCount(0);
   });
 
-  test("shows the independently indexed Cardano header evidence", async ({ page }) => {
-    await page.goto(`/block/${await firstBlockHash(page)}?tab=l1`);
-    // Whose observation. An unattributed "Observed on Cardano" reads as this
-    // page having checked, which is true only where the index is a settlement
-    // source, and this tab renders the index whether or not it is one.
-    await expect(
-      page.getByText("Recorded by the explorer's Cardano index.", { exact: true }),
-    ).toBeVisible();
-    await expect(page.getByText("Protocol version", { exact: true })).toBeVisible();
-    await expect(page.getByText("Operator key hash", { exact: true })).toBeVisible();
-    await expect(page.getByText(/published|attested|DA-network available/i)).toHaveCount(0);
-  });
-
   test("transactions list flags rows that failed to decode", async ({ page }) => {
     await page.goto("/transactions");
     await expect(rowRegion(page).getByText("Partial decode").first()).toBeVisible();
@@ -88,16 +75,6 @@ test.describe("populated lists", () => {
     const id = deposits[0]!.ledger_tx_id;
     await page.goto("/deposits");
     await expect(page.locator(`a[href="/transaction/${id}"]`)).toHaveCount(0);
-  });
-
-  test("reconciles node deposits with the explorer-owned Cardano index", async ({ page }) => {
-    await page.goto("/deposits");
-    const observations = page.getByText(/Cardano observations \(\d+\)/);
-    await expect(observations).toBeVisible();
-    await observations.click();
-    await expect(
-      page.getByText(/current node records|Additional Cardano observations/),
-    ).toBeVisible();
   });
 
   test("withdrawals separate validity from lifecycle status", async ({ page }) => {
@@ -144,27 +121,32 @@ test.describe("populated lists", () => {
     }
   });
 
-  /** The deposits row is the one place both ledgers' addresses sit side by
-   * side, which makes it the check that matters: whatever the rule is, it has
-   * to be the same rule in both columns. */
-  test("marks the Midgard address and the Cardano one it came from", async ({ page }) => {
-    // 1600, not 1440: the Cardano source column is hidden below `2xl`, so at
-    // desktop width this found no column, asserted nothing behind a guard, and
-    // passed. The first version of this test did exactly that.
+  /** A deposit names two things a reader can follow: the Midgard address the
+   * funds landed at, which has a page here, and the Cardano transaction they
+   * came from, which does not. The rule is that neither is bare text.
+   *
+   * There was a third column, the Cardano funding address, decoded by the
+   * explorer's own chain index. That index is decommissioned and the node does
+   * not record the sender, so the column is gone rather than reading "Not
+   * indexed" against every row for ever. */
+  test("marks the Midgard address and links the Cardano transaction out", async ({ page }) => {
     await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto("/deposits");
     await settle(page);
 
-    await expect(page.getByRole("columnheader", { name: "Cardano source" })).toBeVisible();
-
-    // Both addresses in one row: the Midgard recipient, which links to its page
-    // here, and the Cardano source, which links nowhere because this explorer
-    // has no page for it. The rule that has to hold is that neither is bare.
+    // Filtered on the identicon rather than on the address text: the column
+    // truncates, so a row whose address reads `addr_te…mzgz` does not match a
+    // search for `addr_test` and the assertion below would find nothing to make.
     const row = rowRegion(page)
       .getByRole("row")
-      .filter({ hasText: /addr_test/ })
+      .filter({ has: page.locator('svg[viewBox="0 0 5 5"]') })
       .first();
-    await expect(row.locator('svg[viewBox="0 0 5 5"]')).toHaveCount(2);
+    // The Midgard address carries its identicon, as every address on the site
+    // does, rather than being printed as a string.
+    await expect(row.locator('svg[viewBox="0 0 5 5"]')).toHaveCount(1);
+    // And the deposit's Cardano transaction leaves the explorer, because this
+    // explorer has no page for a transaction it did not record.
+    await expect(row.locator('a[href*="cexplorer.io/tx/"]').first()).toBeVisible();
   });
 
   test("known deposit statuses stay readable at desktop width", async ({ page }) => {

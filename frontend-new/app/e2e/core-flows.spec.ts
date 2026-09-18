@@ -90,19 +90,29 @@ test.describe("search", () => {
     await expect(page).toHaveURL(new RegExp(`/block/${hash}`));
   });
 
-  test("resolves indexed Cardano transactions, validators, and bridge event ids", async ({
-    page,
-  }) => {
+  test("resolves settlement hashes, validators, and bridge event ids", async ({ page }) => {
     await page.goto("/");
-    const l1Rows = await page.request
-      .get(`${FIXTURE}/api/l1/transactions/1`)
-      .then(async (response) => (await response.json()).rows as Array<{ txHash: string }>);
+    // A Cardano hash is found through the Midgard record that names it. The
+    // settlement hash resolves to its block, which is the record a reader
+    // searching for it is looking for.
+    const settlement = await page.request
+      .get(`${FIXTURE}/api/l1/activity/1`)
+      .then(async (response) =>
+        (
+          (await response.json()).rows as Array<{
+            kind: string;
+            l1TxHash: string;
+            headerHash: string;
+          }>
+        ).find((row) => row.kind === "settlement"),
+      );
+    expect(settlement, "the fixture records no settlement").toBeTruthy();
     await openSearch(page);
-    await searchInput(page).fill(l1Rows[0]!.txHash);
-    const indexed = page.locator('[data-region="search-prefix"]');
-    await expect(indexed.getByText("Cardano transaction", { exact: true })).toBeVisible();
-    await indexed.getByText("Cardano transaction", { exact: true }).click();
-    await expect(page).toHaveURL(`/l1/transaction/${l1Rows[0]!.txHash}`);
+    await searchInput(page).fill(settlement!.l1TxHash);
+    const found = page.locator('[data-region="search-prefix"]');
+    await expect(found.getByText(/block/i).first()).toBeVisible();
+    await found.getByText(/block/i).first().click();
+    await expect(page).toHaveURL(new RegExp(`/block/${settlement!.headerHash}`));
 
     await openSearch(page);
     await searchInput(page).fill("a202e037d8");

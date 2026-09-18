@@ -21,7 +21,7 @@ const BUDGETED: ReadonlySet<string> = new Set<VitalName>(["LCP", "INP", "CLS"]);
 
 /** Index pages, with or without a page number. */
 const LIST =
-  /^\/(blocks|transactions|deposits|withdrawals|forced-transactions)(\/\d+)?$|^\/(assets|l1|l1\/commitments)$/;
+  /^\/(blocks|transactions|deposits|withdrawals|forced-transactions)(\/\d+)?$|^\/(assets|l1)$/;
 
 /** One record each. */
 const DETAIL =

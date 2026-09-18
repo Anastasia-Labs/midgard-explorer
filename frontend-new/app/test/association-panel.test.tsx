@@ -2,21 +2,20 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { Association, DeploymentContext } from "@midgard-explorer/contracts";
-import { CardanoAssociation } from "../src/components/ui/domain/association";
+import { CardanoAssociation, hasRecordedSettlement } from "../src/components/ui/domain/association";
 
 /**
- * The two rules this panel exists to keep.
+ * The rule this panel exists to keep: nothing it says is presented as
+ * confirmed.
  *
- * Both hashes survive a disagreement, because the disagreement IS the finding
- * and rendering one of them would hide it. And an index that is behind is
- * described as behind rather than as a denial: the block page printed "the
- * explorer-owned Cardano index has not attributed its Cardano commitment
- * transaction" for blocks the index had attributed perfectly, so a defect read
- * as index lag for as long as it existed.
+ * The explorer reads one source, the Midgard node. It used to also keep a
+ * Cardano index and arbitrate between the two, and most of this file tested
+ * that arbitration. The index is decommissioned; what is left to prove is that
+ * every wording names the node, that an empty record never reads as evidence,
+ * and that a state this build does not know cannot take the page down.
  */
 
 const NODE_HASH = "a".repeat(64);
-const INDEX_HASH = "b".repeat(64);
 const HEADER = "c".repeat(56);
 
 const context: DeploymentContext = {
@@ -25,7 +24,7 @@ const context: DeploymentContext = {
   networkMagic: null,
   database: "midgard",
   sourceKind: "primary",
-  identityState: "verified",
+  identityState: "configured",
   freshness: { state: "live", observedAsOf: "2026-09-02T00:00:00Z", lagSeconds: 3 },
 } as unknown as DeploymentContext;
 
@@ -37,9 +36,8 @@ const association = (over: Record<string, unknown> = {}): Association =>
     kind: "block_settlement",
     deploymentId: "dep",
     network: "preprod",
-    reconciliation: "matched",
+    reconciliation: "node_reported",
     l2ObservedAsOf: "2026-09-02T00:00:00Z",
-    l1ObservedAsOf: "2026-09-02T00:00:01Z",
     evidence: [
       {
         source: "midgard_finalization_journal",
@@ -56,387 +54,126 @@ const association = (over: Record<string, unknown> = {}): Association =>
     ...over,
   }) as unknown as Association;
 
-describe("a matched association", () => {
-  it("offers a compact settlement link without repeating evidence", () => {
+describe("a settlement the node reported", () => {
+  it("attributes the transaction to the node", () => {
+    render(<CardanoAssociation association={association()} context={context} />);
+    expect(screen.getByText("Settlement transaction reported by the node")).toBeTruthy();
+    expect(screen.getByText(/does not check Cardano itself/)).toBeTruthy();
+    expect(screen.getByText("Midgard node")).toBeTruthy();
+  });
+
+  it("claims no confirmation, agreement or second source", () => {
+    const { container } = render(
+      <CardanoAssociation association={association()} context={context} />,
+    );
+    const text = (container.textContent ?? "").toLowerCase();
+    for (const claim of ["agree", "index", "confirmed", "corroborat", "verified"]) {
+      expect(text, `the panel said "${claim}"`).not.toContain(claim);
+    }
+  });
+
+  it("keeps the settlement link and the node's raw state", () => {
+    const { container } = render(
+      <CardanoAssociation association={association()} context={context} />,
+    );
+    expect(container.querySelector(`a[href="/l1/transaction/${NODE_HASH}"]`)).toBeTruthy();
+    expect(container.textContent).toContain("finalized");
+  });
+
+  it("shows one timestamp, for the one source", () => {
+    render(<CardanoAssociation association={association()} context={context} />);
+    expect(screen.getByText("Midgard data as of")).toBeTruthy();
+    expect(screen.queryByText("Cardano data as of")).toBeNull();
+  });
+
+  /** Configured is not verified, and the source row says which. */
+  it("names the deployment as configured", () => {
+    render(<CardanoAssociation association={association()} context={context} />);
+    expect(screen.getByText(/deployment as configured/)).toBeTruthy();
+  });
+
+  /** The compact strip is the one label with no paragraph under it. */
+  it("labels the compact strip as the node's report", () => {
     const { container } = render(
       <CardanoAssociation association={association()} context={context} compact />,
     );
-    expect(container.textContent).toContain("Cardano settlement");
+    expect(container.textContent).toContain("Settlement reported by the node");
+    expect(container.textContent).not.toContain("Cardano settlement");
     expect(container.querySelector(`a[href="/l1/transaction/${NODE_HASH}"]`)).toBeTruthy();
-    expect(container.textContent).not.toContain("Midgard data as of");
-  });
-
-  it("says node and index records agree", () => {
-    render(<CardanoAssociation association={association()} context={context} />);
-    expect(screen.getByText(/Node and index records agree/i)).toBeTruthy();
-  });
-
-  it("names the relationship rather than leaving it to be inferred", () => {
-    render(<CardanoAssociation association={association()} context={context} />);
-    expect(screen.getByText("Block settlement")).toBeTruthy();
   });
 });
 
-describe("a disagreement", () => {
-  const contested = association({
-    reconciliation: "mismatch",
-    l1TxHash: null,
-    evidence: [
-      {
-        source: "midgard_finalization_journal",
-        transactionHash: NODE_HASH,
-        outputIndex: null,
-        blockHeight: null,
-        observedAt: null,
-        rawState: "finalized",
-      },
-      {
-        source: "cardano_l1_index",
-        transactionHash: INDEX_HASH,
-        outputIndex: null,
-        blockHeight: 5_000_000,
-        observedAt: null,
-        rawState: null,
-      },
-    ],
-  });
-
-  /** Neither is dropped. A response that kept one would hide the finding, and a
-   * reader handed a single hash would never know a second existed. */
-  it.each([false, true])("shows both hashes with compact=%s", (compact) => {
+describe("a record with no settlement transaction", () => {
+  it("says none was recorded, without inventing evidence", () => {
     const { container } = render(
-      <CardanoAssociation association={contested} context={context} compact={compact} />,
-    );
-    const text = container.textContent ?? "";
-    expect(text).toContain(NODE_HASH.slice(0, 10));
-    expect(text).toContain(INDEX_HASH.slice(0, 10));
-  });
-
-  it("names both sources so a reader knows which said what", () => {
-    render(<CardanoAssociation association={contested} context={context} />);
-    expect(screen.getByText("Midgard node")).toBeTruthy();
-    expect(screen.getByText("Explorer's Cardano index")).toBeTruthy();
-  });
-
-  it("says plainly that they disagree", () => {
-    render(<CardanoAssociation association={contested} context={context} />);
-    expect(screen.getByText(/two sources disagree/i)).toBeTruthy();
-  });
-});
-
-describe("an index that is behind", () => {
-  /** The inversion this replaces: reporting lag as absence, or a defect as lag. */
-  /** Whatever the index's state, a one-sided result never reads as proof that
-   * settlement did not happen. That is the claim the panel must not make. */
-  it("never turns a missing index record into evidence of no settlement", () => {
-    render(
       <CardanoAssociation
-        association={association({ reconciliation: "node_only" })}
+        association={association({ reconciliation: "none", l1TxHash: null, evidence: [] })}
         context={context}
       />,
     );
-    expect(screen.getByText(/not evidence|has not observed it/i)).toBeTruthy();
+    expect(screen.getByText("No settlement transaction recorded")).toBeTruthy();
+    expect(container.textContent).not.toMatch(/reported by the node/);
+    expect(container.querySelector('a[href^="/l1/transaction/"]')).toBeNull();
   });
 
-  it("calls stale too far behind to compare, rather than a disagreement", () => {
-    render(
-      <CardanoAssociation
-        association={association({ reconciliation: "stale" })}
-        context={context}
-      />,
-    );
-    expect(screen.getByText(/too far behind to compare/i)).toBeTruthy();
-  });
-
-  it("says an unreadable index says nothing about settlement", () => {
-    render(
-      <CardanoAssociation
-        association={association({ reconciliation: "unavailable" })}
-        context={context}
-      />,
-    );
-    expect(screen.getByText(/says nothing about whether settlement happened/i)).toBeTruthy();
-  });
-});
-
-describe("nothing to show", () => {
-  it("renders nothing at all when there is no association", () => {
-    const { container } = render(<CardanoAssociation association={null} context={context} />);
-    expect(container.innerHTML).toBe("");
-  });
-
-  it("renders without a context, which is the degraded case", () => {
-    const { container } = render(<CardanoAssociation association={association()} context={null} />);
-    expect(container.textContent).toContain("Block settlement");
-  });
-});
-
-describe("provenance says something different from settlement", () => {
-  /**
-   * A deposit's L1 hash is where the funds came from, and the node is the only
-   * source that has one: the Cardano index is never asked for a second opinion
-   * on it. The generic `node_only` copy told a reader the index "has not
-   * covered this transaction yet", describing a comparison that was never
-   * attempted, which is the same false absence the block page used to print.
-   */
-  it("does not tell a deposit it is waiting for index coverage", () => {
-    render(
-      <CardanoAssociation
-        association={
-          {
-            kind: "deposit_origin",
-            reconciliation: "node_only",
-            deploymentId: "dep",
-            network: "preprod",
-            l2ObservedAsOf: null,
-            l1ObservedAsOf: null,
-            evidence: [],
-            l1TxHash: "a".repeat(64),
-            l1OutputIndex: 0,
-            l2TxId: null,
-          } as never
-        }
-        context={null}
-      />,
-    );
-    expect(screen.queryByText(/index lag/i)).toBeNull();
-    expect(screen.queryByText(/has not covered/i)).toBeNull();
-    expect(screen.getByText(/No second source is compared/i)).toBeTruthy();
-  });
-
-  /** A block genuinely is waiting for the index, so it keeps the lag wording. */
-  it("still tells a block settlement that the index is behind", () => {
-    render(
-      <CardanoAssociation
-        association={
-          {
-            kind: "block_settlement",
-            reconciliation: "node_only",
-            deploymentId: "dep",
-            network: "preprod",
-            l2ObservedAsOf: null,
-            l1ObservedAsOf: null,
-            evidence: [],
-            l2BlockHeaderHash: "c".repeat(56),
-            l1TxHash: "a".repeat(64),
-            state: "finalized",
-          } as never
-        }
-        context={null}
-      />,
-    );
-    expect(screen.getByText(/holds no record of this transaction/i)).toBeTruthy();
-  });
-
-  /**
-   * A replica reports a state and no duration, and the panel has to say the
-   * state anyway.
-   *
-   * `lagSeconds` is null for every standby now: receive-versus-replay measures
-   * a standby against itself, and true lag needs a comparison against the
-   * primary that this connection cannot make. The panel used to print the
-   * freshness state only alongside a duration, so removing the number would
-   * have silently removed the word "lagging" from the interface.
-   */
-  it("names a replica's freshness even with no duration to attach", () => {
-    render(
-      <CardanoAssociation
-        association={association()}
-        context={
-          {
-            ...context,
-            sourceKind: "replica",
-            freshness: { state: "lagging", observedAsOf: "2026-09-02T00:00:00Z", lagSeconds: null },
-          } as unknown as DeploymentContext
-        }
-      />,
-    );
-    expect(screen.getByText(/replica on preprod, lagging/i)).toBeTruthy();
-  });
-
-  it("still attaches a duration when one was measured", () => {
-    render(<CardanoAssociation association={association()} context={context} />);
-    expect(screen.getByText(/primary on preprod, live by/i)).toBeTruthy();
-  });
-
-  /**
-   * "That is index lag" was asserted for every one-sided result, including one
-   * from an index reporting itself live. Lag is the usual cause and not an
-   * available one there, and explaining away the single case that deserves a
-   * look is worse than saying less.
-   */
-  it("does not blame lag when the index reports itself current", () => {
-    render(
-      <CardanoAssociation
-        association={association({ reconciliation: "node_only" })}
-        context={context}
-      />,
-    );
-    expect(screen.queryByText(/index lag/i)).toBeNull();
-    expect(screen.getByText(/absent from a current index/i)).toBeTruthy();
-  });
-
-  /**
-   * The backend decides this, not the panel.
-   *
-   * A version of this component tested `context.freshness` to choose the
-   * wording, which is the L2 SOURCE's freshness: a live node made the panel
-   * announce the Cardano index as current whatever the index was doing.
-   * `reconcile` now returns `stale` when the index cannot be compared, so an
-   * index that is behind never reaches the `node_only` copy at all.
-   */
-  it("says the sources were not comparable when the resolver says stale", () => {
-    render(
-      <CardanoAssociation
-        association={association({ reconciliation: "stale" })}
-        context={context}
-      />,
-    );
-    expect(screen.queryByText(/is current and holds no record/i)).toBeNull();
-  });
-
-  /**
-   * Four situations, four sentences. `stale` used to say "the index is too far
-   * behind" about all of them, which is true of one: an index that never
-   * completed a pass is not behind, an unverified identity is not behind, and a
-   * snapshot is fixed rather than lagging.
-   */
-  it.each([
-    ["index_lagging", /too far behind/i],
-    ["index_freshness_unknown", /has not completed a pass/i],
-    ["identity_unverified", /not known to describe one deployment/i],
-    ["l2_source_not_current", /copy rather than the live node/i],
-  ])("explains %s in its own terms", (reason, expected) => {
-    render(
-      <CardanoAssociation
-        association={association({ reconciliation: "stale", comparability: reason })}
-        context={context}
-      />,
-    );
-    expect(screen.getByText(expected)).toBeTruthy();
-  });
-
-  /**
-   * One reason, three sources, and only one of them is a snapshot.
-   *
-   * `l2_source_not_current` is reached by a snapshot, by a standby that is
-   * behind, and by a standby whose currency could not be established. The
-   * message said "Midgard data is a fixed copy... from a snapshot", which is
-   * false of the two replica states, and a replica reaches this reason far more
-   * often than a snapshot does. The callout now says only what holds for all
-   * three; the source row is where the specific one is named.
-   */
-  it("does not call a lagging replica a snapshot", () => {
-    render(
-      <CardanoAssociation
-        association={association({
-          reconciliation: "stale",
-          comparability: "l2_source_not_current",
-        })}
-        context={
-          {
-            ...context,
-            sourceKind: "replica",
-            freshness: { state: "lagging", observedAsOf: "2026-09-02T00:00:00Z", lagSeconds: null },
-          } as unknown as DeploymentContext
-        }
-      />,
-    );
-    expect(screen.queryByText(/fixed copy|come from a snapshot/i)).toBeNull();
-    expect(screen.getByText(/copy rather than the live node/i)).toBeTruthy();
-    expect(screen.getByText(/replica on preprod, lagging/i)).toBeTruthy();
-  });
-
-  /** A backend that predates the field still gets a sentence, and it is the one
-   * that was there before. */
-  it("falls back to the lag wording when no reason is carried", () => {
-    render(
-      <CardanoAssociation
-        association={association({ reconciliation: "stale" })}
-        context={context}
-      />,
-    );
-    expect(screen.getByText(/too far behind/i)).toBeTruthy();
-  });
-});
-
-/**
- * A deployment that reads no independent source.
- *
- * The panel is the only place a reader is told how much is known about a
- * settlement, so it is the place a false claim of confirmation would live. The
- * rule under test: where nothing checked Cardano, every wording says so, and
- * none of the two-source sentences reaches the screen.
- */
-describe("where nothing checks Cardano", () => {
-  const declared = (over: Record<string, unknown> = {}) =>
-    association({
-      reconciliation: "node_reported",
-      comparability: "no_independent_source",
-      ...over,
-    });
-
-  it("attributes the settlement transaction to the node", () => {
-    render(<CardanoAssociation association={declared()} context={context} />);
-    expect(screen.getByText(/reported by the node/i)).toBeTruthy();
-    // The hash is still there. Withholding a real record would lose
-    // information to make a point about it.
-    expect(screen.getAllByText(new RegExp(NODE_HASH.slice(0, 8))).length).toBeGreaterThan(0);
-  });
-
-  it("never says the sources agree, and never names an index", () => {
-    const { container } = render(<CardanoAssociation association={declared()} context={context} />);
-    const text = container.textContent ?? "";
-    expect(text).not.toMatch(/agree/i);
-    expect(text).not.toMatch(/index/i);
-    expect(text).not.toMatch(/confirmed/i);
-  });
-
-  /** An absence reported by a copy is not an established absence. */
   it("does not present a copy's silence as a settled absence", () => {
     render(
       <CardanoAssociation
-        association={declared({ reconciliation: "unavailable", l1TxHash: null, evidence: [] })}
+        association={association({ reconciliation: "unavailable", l1TxHash: null, evidence: [] })}
         context={context}
       />,
     );
-    expect(screen.getByText(/could not be established/i)).toBeTruthy();
-    expect(screen.getByText(/says nothing about whether settlement happened/i)).toBeTruthy();
+    expect(screen.getByText("Settlement could not be established")).toBeTruthy();
+    expect(screen.getByText(/says nothing about whether settlement happened/)).toBeTruthy();
   });
+});
 
-  it("says a record with no settlement transaction has none", () => {
+describe("provenance", () => {
+  /** A deposit's hash is where the funds came from, not a settlement, and the
+   * wording keeps that distinction while carrying the same verdict. */
+  it("does not call a deposit's origin a settlement transaction", () => {
     render(
       <CardanoAssociation
-        association={declared({ reconciliation: "none", l1TxHash: null, evidence: [] })}
+        association={association({
+          kind: "deposit_origin",
+          l1OutputIndex: null,
+          l2TxId: null,
+          evidence: [
+            {
+              source: "midgard_bridge_record",
+              transactionHash: NODE_HASH,
+              outputIndex: null,
+              blockHeight: null,
+              observedAt: null,
+              rawState: null,
+            },
+          ],
+        })}
         context={context}
       />,
     );
-    expect(screen.getByText(/No settlement transaction recorded/i)).toBeTruthy();
+    expect(screen.getByText("Recorded by the node")).toBeTruthy();
+    expect(screen.queryByText("Settlement transaction reported by the node")).toBeNull();
+    expect(screen.getByText("Midgard bridge record")).toBeTruthy();
   });
+});
 
-  /** The compact strip is the one place a label stands alone, with no
-   * paragraph under it to qualify what it means. */
-  it("labels the compact strip as the node's report", () => {
-    render(<CardanoAssociation association={declared()} context={context} compact />);
-    expect(screen.getByText("Settlement reported by the node")).toBeTruthy();
-    expect(screen.queryByText("Cardano settlement")).toBeNull();
-  });
-
-  /** And the two-source deployment is untouched. */
-  it("still says the sources agree when they were compared", () => {
-    render(<CardanoAssociation association={association()} context={context} compact />);
-    expect(screen.getByText("Cardano settlement")).toBeTruthy();
+describe("placement", () => {
+  it("counts only a reported settlement as settled", () => {
+    expect(hasRecordedSettlement(association())).toBe(true);
+    expect(hasRecordedSettlement(association({ reconciliation: "none" }))).toBe(false);
+    expect(hasRecordedSettlement(association({ reconciliation: "unavailable" }))).toBe(false);
+    expect(hasRecordedSettlement(null)).toBe(false);
   });
 });
 
 /**
  * A backend newer than this bundle.
  *
- * Nothing in this repository deploys the API and the interface together: the
- * backend is a node process and the frontend is a separate build, so a restart
- * between them serves states this bundle has never heard of. The verdict table
- * was indexed blind, so an unknown state read `undefined.tone` and threw
- * inside a server component, taking the whole page down rather than the panel.
+ * Nothing in this repository deploys the API and the interface together, so a
+ * restart between them serves states this bundle has never heard of. The
+ * verdict table was indexed blind, so an unknown state read `undefined.tone`
+ * and threw inside a server component, taking the whole page down.
  */
 describe("a state this build does not recognise", () => {
   it("says so instead of crashing the page", () => {
@@ -447,8 +184,6 @@ describe("a state this build does not recognise", () => {
       />,
     );
     expect(screen.getByText(/does not recognise the state/i)).toBeTruthy();
-    // The source records still render, because they are what the response
-    // actually carried.
     expect((container.textContent ?? "").includes("Midgard node")).toBe(true);
   });
 });

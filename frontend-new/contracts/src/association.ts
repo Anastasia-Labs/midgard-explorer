@@ -70,17 +70,26 @@ export const DeploymentContext = Schema.Struct({
   networkMagic: Schema.NullOr(Schema.Number),
   database: Schema.String,
   sourceKind: SourceKind,
-  identityState: Schema.Literal("verified", "degraded"),
+  /** How much is KNOWN about which deployment this is.
+   *
+   * `configured` means a manifest named it and nothing checked that claim.
+   * `unconfigured` means even that could not be read. Neither is a
+   * verification: the index that used to confirm a deployment binding is
+   * decommissioned, and a manifest that parses says what an operator intended.
+   * No surface may present either as verified. */
+  identityState: Schema.Literal("configured", "unconfigured"),
   freshness: Freshness,
 });
 export type DeploymentContext = Schema.Schema.Type<typeof DeploymentContext>;
 
 /** Which record an observation came from. Derived links must never be presented
- * as stronger than the source that produced them. */
+ * as stronger than the source that produced them.
+ *
+ * `cardano_l1_index` is gone with the index that wrote it. Everything left is a
+ * record the node or the manifest holds. */
 export const EvidenceSource = Schema.Literal(
   "midgard_finalization_journal",
   "midgard_bridge_record",
-  "cardano_l1_index",
   "deployment_manifest",
 );
 export type EvidenceSource = Schema.Schema.Type<typeof EvidenceSource>;
@@ -97,64 +106,29 @@ export const CardanoEvidence = Schema.Struct({
 export type CardanoEvidence = Schema.Schema.Type<typeof CardanoEvidence>;
 
 /**
- * What comparing the node against the index produced.
+ * What the node's records support saying about a settlement.
  *
- * `mismatch` is reserved for two sources that were both verified and both fresh
- * enough to compare. An index that is merely behind yields `stale`, and one that
- * could not be read yields `unavailable`. Without that separation, ordinary
- * replication lag would raise a false integrity alarm and discredit the
- * mechanism that exists to report real ones.
+ * Three verdicts, and none of them is a comparison. The explorer reads one
+ * source: the Midgard node. It can report what that source holds and how much
+ * its silence is worth, and nothing else.
  *
- * Half of these describe a comparison, so a deployment that reads one source
- * reaches none of them. It answers `node_reported`, `none` or `unavailable`,
- * and a consumer must not read the absence of `mismatch` there as agreement.
+ * `matched`, `mismatch`, `index_only` and `stale` described two observations
+ * and were removed with the explorer-owned Cardano index that produced the
+ * second one. A consumer must not read the absence of `mismatch` as agreement:
+ * nothing disagrees here because nothing else looked.
  */
 export const Reconciliation = Schema.Literal(
-  "matched",
-  "node_only",
-  "index_only",
-  "mismatch",
-  "stale",
-  "unavailable",
-  "none",
-  /**
-   * The node named a settlement transaction and nothing checked it.
-   *
-   * Sent by a deployment that reads no independent source, where it is the
-   * ordinary answer for a settled block rather than a degraded one. It is not
-   * `matched`: nothing corroborated the hash, and no surface built on it may
-   * say confirmed. It requires a node hash, so a record without one stays
-   * `none`.
-   */
+  /** The node named a settlement transaction, and nothing checked it. Requires
+   * an actual hash, so a record without one is `none`. */
   "node_reported",
+  /** The node recorded no settlement transaction, and its own data is current
+   * enough for that absence to mean something. */
+  "none",
+  /** Nothing could be established: the node's records are a copy that is not
+   * known to be current, and hold no hash. */
+  "unavailable",
 );
 export type Reconciliation = Schema.Schema.Type<typeof Reconciliation>;
-
-/**
- * Why two sources could not be compared, when they could not.
- *
- * `stale` carries four quite different situations, and calling all of them "the
- * index is too far behind" is true of exactly one. An index that never
- * completed a pass is not behind; a deployment whose identity is unverified is
- * not behind; a snapshot is not behind, it is fixed. The backend is the only
- * side that can tell them apart, because the interface has the L2 deployment
- * context and neither the index's freshness nor the identity check.
- *
- * Optional so a frontend built against this still parses a backend that
- * predates it.
- */
-export const Comparability = Schema.Literal(
-  "comparable",
-  /** No second source exists in this deployment, so no comparison was
-   * attempted. Distinct from an index that was read and found silent, and
-   * from one that could not be read at all. */
-  "no_independent_source",
-  "index_lagging",
-  "index_freshness_unknown",
-  "identity_unverified",
-  "l2_source_not_current",
-);
-export type Comparability = Schema.Schema.Type<typeof Comparability>;
 
 /**
  * Settlement states, taken from the node's own vocabulary rather than invented
@@ -188,9 +162,7 @@ const associationFields = {
   deploymentId: Schema.NullOr(Schema.String),
   network: Schema.String,
   reconciliation: Reconciliation,
-  comparability: Schema.optional(Comparability),
   l2ObservedAsOf: Schema.NullOr(IsoTimestamp),
-  l1ObservedAsOf: Schema.NullOr(IsoTimestamp),
   evidence: Schema.Array(CardanoEvidence),
 };
 

@@ -110,13 +110,12 @@ test.describe("transaction concepts keep one semantic glyph", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
   });
 
-  test("keeps Cardano detail focused on Midgard actions", async ({ page }) => {
+  test("keeps Cardano detail focused on what Midgard recorded", async ({ page }) => {
     const rows = await page.request
-      .get(`${FIXTURE}/api/l1/transactions/1`)
-      .then(async (response) => (await response.json()).rows as Array<{ txHash: string }>);
-    await page.goto(`/l1/transaction/${rows[0]!.txHash}`);
+      .get(`${FIXTURE}/api/l1/activity/1`)
+      .then(async (response) => (await response.json()).rows as Array<{ l1TxHash: string }>);
+    await page.goto(`/l1/transaction/${rows[0]!.l1TxHash}`);
     await settle(page);
-    await expect(page.getByRole("heading", { name: "Midgard activity" })).toBeVisible();
     await expect(page.getByRole("link", { name: "View on CExplorer" })).toBeVisible();
     await expect(page.getByRole("tab")).toHaveCount(0);
   });

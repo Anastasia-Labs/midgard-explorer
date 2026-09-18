@@ -53,7 +53,6 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
 
   // Cardano-observed evidence is independent from the node DB. Its absence
   // must not make an otherwise valid node block fail to render.
-  const l1Header = await api.l1BlockHeader(hash, init).catch(() => null);
 
-  return <BlockView hash={hash} data={data} l1Header={l1Header} />;
+  return <BlockView hash={hash} data={data} />;
 }

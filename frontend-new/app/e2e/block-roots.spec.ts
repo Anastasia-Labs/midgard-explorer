@@ -51,17 +51,6 @@ test.describe("block Merkle roots", () => {
     await expect(page.getByRole("tabpanel").getByText("UTxOs root")).toBeVisible();
   });
 
-  test("the Cardano evidence roots stay one disclosure down", async ({ page }) => {
-    // They are a second source for the same commitments, kept and demoted
-    // rather than removed: the page leads with the node's own record.
-    await page.goto(`/block/${await hashAt(page, 10)}?tab=l1`);
-    await settle(page);
-    const panel = page.getByRole("tabpanel");
-    await expect(panel.getByText("Previous UTxOs root")).toBeHidden();
-    await panel.getByText("Roots recorded on Cardano").click();
-    await expect(panel.getByText("Previous UTxOs root")).toBeVisible();
-  });
-
   test("meets the accessibility rules in both themes", async ({ page }) => {
     await expectNoViolationsInBothThemes(page, `/block/${await hashAt(page, 10)}?tab=roots`);
   });

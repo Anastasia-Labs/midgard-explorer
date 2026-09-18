@@ -7,7 +7,6 @@ import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { BlockNav } from "../../components/ui/domain/blocknav";
 import { IdentityBar } from "../../components/ui/domain/identitybar";
-import { L1TxLink } from "../../components/ui/domain/l1link";
 import { CardanoAssociation } from "../../components/ui/domain/association";
 import { Journey } from "../../components/ui/domain/journey";
 import { Callout, Card, PageHeader } from "../../components/ui/base/layout";
@@ -20,7 +19,7 @@ import { Timestamp } from "../../components/ui/base/timestamp";
 import { formatDuration, formatTimestamp, truncateId } from "../../lib/format";
 import { blockJourney } from "../../lib/journey";
 import { MerkleRoots } from "./MerkleRoots";
-import type { BlockResponse, L1BlockHeader } from "@midgard-explorer/contracts";
+import type { BlockResponse } from "@midgard-explorer/contracts";
 
 /**
  * Everything a block page shows, given the records it was handed.
@@ -29,15 +28,7 @@ import type { BlockResponse, L1BlockHeader } from "@midgard-explorer/contracts";
  * what the reader sees, which is why the two are apart: the derivations below
  * are arithmetic over records and can be read without a running backend.
  */
-export function BlockView({
-  hash,
-  data,
-  l1Header,
-}: {
-  hash: string;
-  data: BlockResponse;
-  l1Header: L1BlockHeader | null;
-}) {
+export function BlockView({ hash, data }: { hash: string; data: BlockResponse }) {
   const header = data.header;
   const finalization = data.finalization;
 
@@ -155,165 +146,6 @@ export function BlockView({
     </div>
   );
 
-  /* Why there is no Cardano evidence, taken from the reconciliation the backend
-   * performed rather than assumed.
-   *
-   * This said "the explorer-owned Cardano index has not attributed its Cardano
-   * commitment transaction" for every case, including the one where the index
-   * had attributed it perfectly and the lookup could not match because the two
-   * sides were keyed differently. A defect read as index lag for as long as it
-   * existed, which is the inversion of the rule that missing index data must be
-   * described as lag rather than as absence. */
-  const cardanoAbsence = ((): { tone: "neutral" | "warning"; title: string; detail: string } => {
-    // Before the switch, because these verdicts are reachable in both
-    // deployment shapes and mean something different in each. Every branch
-    // below describes an index; this deployment does not read one.
-    if (data.cardano?.comparability === "no_independent_source") {
-      return data.cardano.reconciliation === "none"
-        ? {
-            tone: "neutral",
-            title: "No settlement transaction recorded.",
-            detail:
-              "The node has recorded no Cardano transaction for this block. This explorer does not search Cardano itself, so this is the node's record rather than a result of looking.",
-          }
-        : {
-            tone: "neutral",
-            title: "This explorer holds no Cardano record for this block.",
-            detail:
-              "Settlement here is what the node reports, shown above with its transaction hash. Nothing on this page observes Cardano independently.",
-          };
-    }
-    switch (data.cardano?.reconciliation) {
-      case "unavailable":
-        return {
-          tone: "warning",
-          title: "The Cardano index could not be read.",
-          detail:
-            "This says nothing about whether the block settled. The node's own record is shown above.",
-        };
-      case "stale":
-        return {
-          tone: "warning",
-          title: "The Cardano index is behind.",
-          detail:
-            "It has not yet covered the range this block settled in, so its silence is lag rather than absence.",
-        };
-      case "node_only":
-        return {
-          tone: "neutral",
-          title: "Not observed on Cardano yet.",
-          detail:
-            "The node has recorded this block, and the explorer's own chain index has not yet seen the transaction that committed it.",
-        };
-      case "none":
-        return {
-          tone: "neutral",
-          title: "No settlement has been attempted.",
-          detail: "The node has not yet queued this block for Cardano.",
-        };
-      default:
-        return {
-          tone: "neutral",
-          title: "No Cardano evidence for this block.",
-          detail: "The explorer's chain index holds no header for it.",
-        };
-    }
-  })();
-
-  const l1EvidenceTab = l1Header ? (
-    <Card>
-      <div className="p-4">
-        {/* Whose observation, not just that there was one. This tab reads the
-            explorer's own Cardano index, which a deployment may or may not use
-            as a settlement source, and an unattributed "Observed on Cardano"
-            reads as this page having checked. */}
-        <Callout
-          tone="neutral"
-          title="Recorded by the explorer's Cardano index."
-          {...(data.cardano?.comparability === "no_independent_source"
-            ? {
-                children:
-                  "This deployment does not use the index as a settlement source, so the settlement shown above is the node's record and this is a separate observation.",
-              }
-            : {})}
-        />
-      </div>
-      <dl className="grid gap-x-8 gap-y-3 border-t border-border p-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Protocol version" value={l1Header.protocolVersion} />
-        <Field
-          label="Cardano transaction"
-          value={
-            l1Header.l1TxHash ? (
-              <L1TxLink hash={l1Header.l1TxHash} destination="midgard" />
-            ) : (
-              "Carried forward; head transaction not attributed"
-            )
-          }
-        />
-        <Field
-          label="Cardano block"
-          value={l1Header.blockHeight === null ? "Not attributed" : `#${l1Header.blockHeight}`}
-        />
-        <Field
-          label="Window start"
-          value={<Timestamp exact iso={new Date(Number(l1Header.startTime)).toISOString()} />}
-        />
-        <Field
-          label="Window end"
-          value={<Timestamp exact iso={new Date(Number(l1Header.endTime)).toISOString()} />}
-        />
-        <Field
-          label="Previous header"
-          value={
-            <Identifier
-              value={l1Header.prevHeaderHash}
-              href={`/block/${l1Header.prevHeaderHash}`}
-            />
-          }
-        />
-        <Field label="Operator key hash" value={<Identifier value={l1Header.operatorVkey} />} />
-      </dl>
-      <div className="grid grid-cols-2 gap-2 border-t border-border p-4 text-sm text-text-2 sm:grid-cols-3">
-        <span>Midgard transactions: {l1Header.l2TransactionCount}</span>
-        <span>Deposits: {l1Header.depositCount}</span>
-        <span>Withdrawals: {l1Header.withdrawalCount}</span>
-        <span>Forced: {l1Header.forcedTransactionCount}</span>
-        <span>Total events: {l1Header.totalEventCount}</span>
-        <span>Transition steps: {l1Header.transitionStepCount}</span>
-      </div>
-      <details className="border-t border-border">
-        <summary className="cursor-pointer p-4 text-sm text-text-2">
-          Roots recorded on Cardano
-        </summary>
-        <div className="grid gap-x-8 gap-y-2 px-4 pb-4 sm:grid-cols-2">
-          {(
-            [
-              ["Previous UTxOs root", l1Header.prevUtxosRoot],
-              ["UTxOs root", l1Header.utxosRoot],
-              ["Transactions root", l1Header.transactionsRoot],
-              ["Deposits root", l1Header.depositsRoot],
-              ["Withdrawals root", l1Header.withdrawalsRoot],
-              ["Forced transactions root", l1Header.forcedTransactionsRoot],
-              ["Transition trace root", l1Header.transitionTraceRoot],
-              ["Event-to-step root", l1Header.eventToStepRoot],
-            ] as const
-          ).map(([label, root]) => (
-            <div key={label} className="flex items-center justify-between gap-4">
-              <span className="text-sm text-text-3">{label}</span>
-              <Identifier value={root} head={6} tail={6} />
-            </div>
-          ))}
-        </div>
-      </details>
-    </Card>
-  ) : (
-    <div className="p-4">
-      <Callout tone={cardanoAbsence.tone} title={cardanoAbsence.title}>
-        {cardanoAbsence.detail}
-      </Callout>
-    </div>
-  );
-
   return (
     <>
       <Breadcrumbs
@@ -415,7 +247,6 @@ export function BlockView({
               </Card>
             ),
           },
-          { id: "l1", label: "Cardano evidence", content: l1EvidenceTab },
           {
             id: "events",
             label: "Protocol events",

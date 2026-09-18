@@ -77,43 +77,42 @@ describe("the backend answers the shapes the frontend decodes", () => {
     await satisfies("/api/forced-transactions/1", C.ForcedTxsPageResponse);
   });
 
-  it("the L1 summary, including source kind and freshness", async () => {
+  /** Which deployment and database the figures come from. The shell's banner
+   * is built from this on every page, so a drift here is a drift everywhere. */
+  it("the source, with its identity state and freshness", async () => {
     if (!reachable) return;
-    await satisfies("/api/l1/summary", C.L1SummaryResponse);
+    await satisfies("/api/source", C.DeploymentContext);
   });
 
-  /**
-   * The one that would have caught the original defect on the day it landed.
-   *
-   * `L1BlockHeader.headerHash` is branded `Hash28`, so a 32-byte Merkle root in
-   * that field fails to decode here rather than silently producing a page whose
-   * links go nowhere.
-   */
-  it("L1 block headers, keyed by a 28-byte hash", async () => {
+  it("the node-recorded Cardano activity and its summary", async () => {
     if (!reachable) return;
-    await satisfies("/api/l1/block-headers?limit=5", Schema.Array(C.L1BlockHeader));
+    await satisfies("/api/l1/activity/1", C.CardanoActivityPage);
+    await satisfies("/api/l1/activity/summary", C.CardanoActivitySummary);
+  });
+
+  it("the validators the manifest declares", async () => {
+    if (!reachable) return;
+    await satisfies("/api/l1/validators", C.L1ValidatorsResponse);
   });
 
   /** A detail response, which is where the association envelope lives. */
   it("a block detail, with its deployment context and association", async () => {
     if (!reachable) return;
-    const headers = (await get("/api/l1/block-headers?limit=1")) as Array<{ headerHash: string }>;
-    const first = headers[0];
-    // Silence here was the whole test evaporating.
-    //
-    // This returned when the index held no header, so a CI job whose index was
-    // never built proved nothing about the association envelope and reported a
-    // pass. Where a backend is REQUIRED, a header is required too: the envelope
-    // is the thing under test and it only appears on a block detail.
+    const blocks = (await get("/api/blocks/1")) as { rows: Array<{ header_hash: string }> };
+    const first = blocks.rows[0];
+    // Silence here was the whole test evaporating. Where a backend is
+    // REQUIRED, a block is required too: the envelope is the thing under test
+    // and it only appears on a block detail.
     if (first === undefined) {
       if (REQUIRED) {
         throw new Error(
-          "The backend holds no block headers, so the association envelope was " +
-            "never decoded. Seed the index before running with REQUIRE_BACKEND=1.",
+          "The backend holds no blocks, so the association envelope was never " +
+            "decoded. Point it at a Midgard database that has some before running " +
+            "with REQUIRE_BACKEND=1.",
         );
       }
       return;
     }
-    await satisfies(`/api/block?header_hash=${first.headerHash}`, C.BlockResponse);
+    await satisfies(`/api/block?header_hash=${first.header_hash}`, C.BlockResponse);
   });
 });

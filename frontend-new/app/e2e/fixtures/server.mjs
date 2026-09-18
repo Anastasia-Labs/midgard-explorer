@@ -22,7 +22,6 @@ import {
   FLOW_UNEQUAL_TX,
   PAYMENT_TX,
   L1_VALIDATORS,
-  L1_TXS,
   TXS,
   WITHDRAWALS,
   addressResponse,
@@ -52,74 +51,11 @@ const midgardContext = () => ({
   networkMagic: null,
   database: "midgard_fixture",
   sourceKind: "fixture",
-  identityState: "verified",
+  // Configured, not verified: the fixture names a deployment and nothing
+  // checks it, which is exactly the real backend's position.
+  identityState: "configured",
   freshness: { state: "synthetic", observedAsOf: null, lagSeconds: null },
 });
-
-/* Which reconciliation a fixture block shows.
- *
- * Spread across blocks rather than pinned to one, so the end-to-end suite meets
- * every state the panel can render instead of only the happy one. The fixture
- * was previously incapable of producing a disagreement at all, which is the same
- * shape of gap that let a broken block key ship behind a green suite: a harness
- * that cannot express a failure cannot catch one. */
-const reconciliationFor = (blockNumber, l1TxHash) => {
-  if (l1TxHash === null) return "none";
-  if (blockNumber % 11 === 0) return "mismatch";
-  if (blockNumber % 13 === 0) return "stale";
-  if (blockNumber % 17 === 0) return "unavailable";
-  if (blockNumber % 7 === 0) return "node_only";
-  return "matched";
-};
-
-/* Blocks whose verdict was reached without an independent source.
- *
- * Fixed block numbers, not a mode this server answers in. A mode would be the
- * truer model of a deployment, and it cannot be tested through this app: the
- * block route sets `revalidate: 30`, so Next serves a payload captured in the
- * previous mode for half a minute and the result depends on which test ran
- * first. A block that always answers the same way is cacheable and still
- * exercises every wording.
- *
- * 31 is settled and 20 has no submitted hash, which is the pair the panel
- * distinguishes: a hash is attributed to the node, and an empty record must not
- * be. 31 is also the one settled block outside the newest that carries a
- * decodable committed transaction, which the transaction page needs to reach
- * its tabbed layout at all; 40 would do as well and is the block half the suite
- * lands on first.
- *
- * `unavailable` is deliberately absent. The real API reaches it only when the
- * L2 source is not current, so a fixture block claiming it beside a `synthetic`
- * deployment context would be a payload no route can produce; its wording is
- * covered in `test/association-panel.test.tsx`.
- */
-const NO_INDEPENDENT_SOURCE_BLOCKS = new Set([31, 20]);
-
-/* The second observation, present only where the two sources actually differ. */
-const indexEvidence = (reconciliation, l1TxHash) =>
-  reconciliation === "mismatch"
-    ? [
-        {
-          source: "cardano_l1_index",
-          transactionHash: l1TxHash.replace(/^../, "ff"),
-          outputIndex: null,
-          blockHeight: 5_120_000,
-          observedAt: null,
-          rawState: null,
-        },
-      ]
-    : reconciliation === "matched"
-      ? [
-          {
-            source: "cardano_l1_index",
-            transactionHash: l1TxHash,
-            outputIndex: null,
-            blockHeight: 5_120_000,
-            observedAt: null,
-            rawState: null,
-          },
-        ]
-      : [];
 
 /**
  * The states this build recognises, and the mapping the backend applies.
@@ -145,56 +81,100 @@ const SETTLEMENT_STATES = new Set([
 
 const settlementState = (raw) => (SETTLEMENT_STATES.has(raw) ? raw : "unknown");
 
-/* Why two sources could not be compared, which the API carries on EVERY
- * association and this fixture carried on none. A field the real payload always
- * sets and the fixture never sets leaves its decode and its rendering untested
- * end to end, which is how the panel's four `stale` sentences were reachable in
- * a component test and unreachable in a browser. */
-const comparabilityFor = (declared, reconciliation) =>
-  declared ? "no_independent_source" : reconciliation === "stale" ? "index_lagging" : "comparable";
+/* The settlement association, as the backend builds it from the node's record.
+ *
+ * Three verdicts, and the fixture reaches two of them. `node_reported` needs a
+ * hash, `none` is a record with none. `unavailable` is reached only when the
+ * Midgard source is not current, and this fixture's context is `synthetic`, so a
+ * block claiming it would be a payload no route can produce; its wording is
+ * covered in `test/association-panel.test.tsx`.
+ *
+ * The fixture used to spread seven verdicts across blocks, most of them
+ * comparisons with an explorer-owned Cardano index. That index is
+ * decommissioned, and so are they. */
+const blockAssociation = (headerHash, l1TxHash, status) => ({
+  kind: "block_settlement",
+  deploymentId: midgardContext().deploymentId,
+  network: "preprod",
+  reconciliation: l1TxHash === null ? "none" : "node_reported",
+  l2ObservedAsOf: null,
+  evidence:
+    l1TxHash === null && status === null
+      ? []
+      : [
+          {
+            source: "midgard_finalization_journal",
+            transactionHash: l1TxHash,
+            outputIndex: null,
+            blockHeight: null,
+            observedAt: null,
+            rawState: status,
+          },
+        ],
+  l2BlockHeaderHash: headerHash,
+  l1TxHash,
+  state: settlementState(status),
+});
 
-const blockAssociation = (headerHash, l1TxHash, status, blockNumber = 1) => {
-  // Resolved once. It was computed three times from the same arguments, and a
-  // fourth caller deriving it separately is how a payload starts disagreeing
-  // with itself.
-  const declared = NO_INDEPENDENT_SOURCE_BLOCKS.has(blockNumber);
-  const reconciliation = declared
-    ? // A hash is the node's report. Without one there is nothing to
-      // attribute, which is the distinction the panel has to keep.
-      l1TxHash !== null
-      ? "node_reported"
-      : "none"
-    : reconciliationFor(blockNumber, l1TxHash);
-  return {
-    kind: "block_settlement",
-    deploymentId: midgardContext().deploymentId,
-    network: "preprod",
-    reconciliation,
-    comparability: comparabilityFor(declared, reconciliation),
-    l2ObservedAsOf: null,
-    l1ObservedAsOf: null,
-    evidence:
-      l1TxHash === null
-        ? []
-        : [
-            {
-              source: "midgard_finalization_journal",
-              transactionHash: l1TxHash,
-              outputIndex: null,
-              blockHeight: null,
-              observedAt: null,
-              rawState: status,
-            },
-            // Nothing observed Cardano for these, so there is no second row.
-            ...(declared ? [] : indexEvidence(reconciliation, l1TxHash)),
-          ],
-    l2BlockHeaderHash: headerHash,
-    // Null on a disagreement, matching the backend: two sources naming different
-    // transactions is not a question the API settles by preferring one.
-    l1TxHash: reconciliation === "mismatch" ? null : l1TxHash,
-    state: settlementState(status),
-  };
-};
+/* Midgard's Cardano footprint, as the node recorded it: the same union the
+ * backend reads from four tables, built from the fixture's own four sources. */
+const cardanoActivity = () =>
+  [
+    ...BLOCKS.map((block) => ({ block, fin: blockFinalization(block.number) }))
+      .filter(({ fin }) => fin !== null && fin.submitted_tx_hash !== null)
+      .map(({ block, fin }) => ({
+        kind: "settlement",
+        l1TxHash: fin.submitted_tx_hash,
+        outputIndex: null,
+        recordedAt: fin.updatedAt,
+        status: fin.status,
+        headerHash: block.header_hash,
+        recordId: null,
+      })),
+    ...DEPOSITS.map((row) => ({
+      kind: "deposit",
+      l1TxHash: row.deposit_l1_tx_hash,
+      outputIndex: null,
+      recordedAt: row.inclusion_time,
+      status: row.status,
+      headerHash: row.projected_header_hash,
+      recordId: row.event_id,
+    })),
+    ...WITHDRAWALS.map((row) => ({
+      kind: "withdrawal",
+      l1TxHash: row.withdrawal_l1_tx_hash,
+      outputIndex: row.withdrawal_l1_output_index,
+      recordedAt: row.inclusion_time,
+      status: row.status,
+      headerHash: row.projected_header_hash,
+      recordId: row.event_id,
+    })),
+    ...FORCED.map((row) => ({
+      kind: "forced_transaction",
+      l1TxHash: row.tx_order_l1_tx_hash,
+      outputIndex: row.tx_order_l1_output_index,
+      recordedAt: row.inclusion_time,
+      status: row.status,
+      headerHash: row.projected_header_hash,
+      recordId: row.tx_order_id,
+    })),
+  ].sort((a, b) =>
+    a.recordedAt === b.recordedAt
+      ? b.l1TxHash.localeCompare(a.l1TxHash)
+      : b.recordedAt.localeCompare(a.recordedAt),
+  );
+
+/* The manifest's validators, in the shape the backend serves. */
+const manifestValidators = () =>
+  L1_VALIDATORS.map((v) => ({
+    family: v.family,
+    purpose: v.entryName.endsWith("Mint") ? "Mint" : "Spend",
+    scriptHash: v.scriptHash,
+    address: v.address,
+    rewardAddress: null,
+    policyId: null,
+    placeholder: false,
+  }));
 
 const PORT = Number(process.env.FIXTURE_PORT ?? 3101);
 const LIMIT = 25;
@@ -325,7 +305,14 @@ const routes = [
       if (q.length < 6 || !/^[0-9a-f]+$/.test(q)) {
         return { hits: [], minPrefix: 6, tooShort: q.length < 6 };
       }
-      const blocks = BLOCKS.filter((b) => b.header_hash.startsWith(q)).map((b) => ({
+      // A block is found by its header hash or by the settlement hash the node
+      // recorded for it, which is how a Cardano hash still resolves without a
+      // chain index.
+      const blocks = BLOCKS.filter(
+        (b) =>
+          b.header_hash.startsWith(q) ||
+          (blockFinalization(b.number)?.submitted_tx_hash ?? "").startsWith(q),
+      ).map((b) => ({
         kind: "block",
         headerHash: b.header_hash,
         height: b.height,
@@ -335,11 +322,6 @@ const routes = [
         txId: t.tx_id,
         height: BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? null,
         headerHash: t.header_hash,
-      }));
-      const l1 = L1_TXS.filter((t) => t.txHash.startsWith(q)).map((t) => ({
-        kind: "l1Transaction",
-        txHash: t.txHash,
-        blockHeight: t.blockHeight,
       }));
       const validators = L1_VALIDATORS.filter((v) => v.scriptHash.startsWith(q)).map((v) => ({
         kind: "validator",
@@ -352,7 +334,7 @@ const routes = [
         txHash: row.deposit_l1_tx_hash,
       }));
       return {
-        hits: [...blocks, ...txs, ...l1, ...validators, ...deposits].slice(0, 10),
+        hits: [...blocks, ...txs, ...validators, ...deposits].slice(0, 10),
         minPrefix: 6,
         tooShort: false,
       };
@@ -473,57 +455,42 @@ const routes = [
         Number(m[1]),
       ),
   ],
+  ["source", /^\/api\/source$/, () => midgardContext()],
   [
-    "l1/summary",
-    /^\/api\/l1\/summary$/,
-    () => ({
-      source: {
-        deployment: "fixture-deployment",
-        network: "preprod",
-        deployedAt: "2026-07-01T00:00:00.000Z",
-        l2Database: "midgard_fixture",
-        isFixture: true,
-        validators: L1_VALIDATORS,
-      },
-      transactions: L1_TXS.length,
-      events: L1_TXS.reduce((sum, tx) => sum + tx.events.length, 0),
-      blockHeaders: 18,
-      lastSyncedHeight: 5_120_000,
-      // A reconciled index: all three cursors past zero and equal, which is the
-      // state the backend reports after a pass where every source completed.
-      sync: {
-        state: "reconciled",
-        cursors: [
-          { source: "l1", height: 5_120_000 },
-          { source: "l1:mints", height: 5_120_000 },
-          { source: "l1:rewards", height: 5_120_000 },
-        ],
-      },
-      byValidator: [
-        { validator: "deposit", count: 11 },
-        { validator: "stateQueue", count: 1 },
-      ],
-    }),
+    "l1/activity/summary",
+    /^\/api\/l1\/activity\/summary$/,
+    () => {
+      const rows = cardanoActivity();
+      const byKind = ["settlement", "deposit", "withdrawal", "forced_transaction"].map((kind) => {
+        const own = rows.filter((row) => row.kind === kind);
+        return {
+          kind,
+          count: own.length,
+          newestRecordedAt: own[0]?.recordedAt ?? null,
+        };
+      });
+      return {
+        midgard: midgardContext(),
+        total: rows.length,
+        newestRecordedAt: rows[0]?.recordedAt ?? null,
+        byKind,
+      };
+    },
   ],
   [
-    "l1/transactions",
-    /^\/api\/l1\/transactions\/(\d+)$/,
-    (m) =>
-      page(
-        L1_TXS.map((tx) => ({
-          txHash: tx.txHash,
-          blockHeight: tx.blockHeight,
-          blockHash: tx.blockHash,
-          slot: tx.slot,
-          epoch: tx.epoch,
-          txTime: tx.txTime,
-          fee: tx.fee,
-          size: tx.size,
-          totalOutput: tx.totalOutput,
-          events: tx.events,
-        })),
-        Number(m[1]),
-      ),
+    "l1/activity",
+    /^\/api\/l1\/activity\/(\d+)$/,
+    (m) => ({ midgard: midgardContext(), ...page(cardanoActivity(), Number(m[1])) }),
+  ],
+  [
+    "l1/validators",
+    /^\/api\/l1\/validators$/,
+    () => ({
+      midgard: midgardContext(),
+      deploymentId: midgardContext().deploymentId,
+      network: "preprod",
+      validators: manifestValidators(),
+    }),
   ],
 ];
 
@@ -543,11 +510,12 @@ const handleBlock = (url, res) => {
   const fin = blockFinalization(found.number);
   return json(res, {
     midgard: midgardContext(),
+    // Null status where the node has no finalization row, matching the
+    // backend, so an unfinalized block carries no evidence row at all.
     cardano: blockAssociation(
       found.header_hash,
       fin?.submitted_tx_hash ?? null,
-      fin?.status ?? "unknown",
-      found.number,
+      fin?.status ?? null,
     ),
     header: blockHeader(found.number),
     rows: blockRows(found.number).map((row) => ({ ...row, height: found.height })),
@@ -590,16 +558,11 @@ const handleTransaction = (url, res) => {
     // reports the same hash here, which is the relationship the contract exists
     // to state and the fixture has to be able to exercise.
     cardano: {
-      // The inclusion block's number, not the default. Every transaction in
-      // one block reports that block's settlement, and passing no number made
-      // all 60 of them report block 1's verdict instead: a transaction could
-      // not disagree with its own block, so no browser test could reach a
-      // transaction page in any state but the happy one.
+      // Every transaction in one block reports that block's settlement.
       ...blockAssociation(
         inclusion?.header_hash ?? null,
         txFin?.submitted_tx_hash ?? null,
-        txFin?.status ?? "unknown",
-        inclusionBlock?.number,
+        txFin?.status ?? null,
       ),
       kind: "l2_transaction_settlement",
       l2TxId: found.tx_id,
@@ -671,15 +634,6 @@ const handleAddress = (url, res) => {
   return json(res, addressResponse(address, page, utxoCursor || null));
 };
 
-const handleL1Transaction = (url, res) => {
-  const hash = url.searchParams.get("txHash");
-  if (!hash || !/^[0-9a-f]{64}$/i.test(hash)) {
-    return fail(res, 400, "bad_request", "txHash");
-  }
-  const found = L1_TXS.find((tx) => tx.txHash === hash.toLowerCase());
-  return found ? json(res, found) : fail(res, 404, "not_found");
-};
-
 /** The last client address this fixture was told about, per path. The backend
  * rate-limits per client, so a server-rendered page that does not forward the
  * viewer's address puts every reader into one bucket. Only a request that
@@ -704,18 +658,6 @@ const server = createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/__payment-tx") {
     return json(res, { txId: PAYMENT_TX.tx_id });
   }
-  if (req.method === "GET" && url.pathname === "/__l1-specimens") {
-    const withAction = (predicate) =>
-      L1_TXS.find((tx) => tx.actions.some(predicate))?.txHash ?? null;
-    return json(res, {
-      decodedDeposit: withAction((a) => a.userEvent?.kind === "deposit"),
-      decodedWithdrawal: withAction((a) => a.userEvent?.kind === "withdrawal"),
-      failedContract: withAction((a) => a.validContract === false),
-      // The one transaction carrying every UTxO section, found by the fact
-      // that distinguishes it rather than by the generator's index.
-      spentOutput: L1_TXS.find((tx) => tx.outputs.some((o) => o.spentBy))?.txHash ?? null,
-    });
-  }
   if (url.pathname.startsWith("/api/")) {
     forwarded.set(url.pathname, req.headers["x-forwarded-for"] ?? null);
   }
@@ -724,8 +666,6 @@ const server = createServer(async (req, res) => {
     state.fail = url.searchParams.get("fail");
     state.slowMs = Number(url.searchParams.get("slow") ?? 0);
     state.health = url.searchParams.get("health") || null;
-    // Empty resets to the default rather than to an invalid mode, so the
-    // clean-up hook can clear it the same way it clears a fault.
     return json(res, { ok: true, ...state });
   }
 
@@ -759,116 +699,25 @@ const server = createServer(async (req, res) => {
       return fail(res, 500, "internal_error");
     return handleTransaction(url, res);
   }
-  if (url.pathname === "/api/l1/transaction") {
-    if (state.fail === "all" || state.fail === "l1/transaction") {
-      return fail(res, 500, "internal_error");
-    }
-    return handleL1Transaction(url, res);
-  }
-  if (url.pathname === "/api/l1/block-headers" || url.pathname === "/api/l1/block-header") {
-    const rows = BLOCKS.map((block) => {
-      const da = blockDa(block.number) ?? blockDa(1);
-      // The oldest block is left unattributed on purpose. A commit transaction
-      // re-outputs the previous queue node alongside the new head, so a header
-      // really can be seen carried forward before the transaction that
-      // committed it is observed, and the page has to say so rather than
-      // render an empty cell. Without one here that branch is never rendered.
-      const attributed = block.number > 1;
-      return {
-        headerHash: block.header_hash,
-        l1TxHash: attributed ? L1_TXS[block.number % L1_TXS.length].txHash : null,
-        blockHeight: attributed ? 5_120_000 - block.number : null,
-        prevUtxosRoot: "00".repeat(32),
-        utxosRoot: da.utxos_root,
-        withdrawalsRoot: da.withdrawals_root,
-        forcedTransactionsRoot: da.forced_transactions_root,
-        transactionsRoot: da.transactions_root,
-        depositsRoot: da.deposits_root,
-        transitionTraceRoot: da.transition_trace_root,
-        eventToStepRoot: da.event_to_step_root,
-        withdrawalCount: String(da.withdrawal_count),
-        forcedTransactionCount: String(da.forced_transaction_count),
-        l2TransactionCount: String(da.l2_transaction_count),
-        depositCount: String(da.deposit_count),
-        totalEventCount: String(da.total_event_count),
-        transitionStepCount: String(da.transition_step_count),
-        startTime: String(new Date(da.block_start_time).getTime()),
-        endTime: String(new Date(da.block_end_time).getTime()),
-        prevHeaderHash:
-          BLOCKS.find((candidate) => candidate.number === Math.max(1, block.number - 1))
-            ?.header_hash ?? block.header_hash,
-        operatorVkey: L1_VALIDATORS[1].scriptHash,
-        protocolVersion: "1",
-      };
+  if (url.pathname === "/api/l1/reference") {
+    const hash = (url.searchParams.get("txHash") ?? "").toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(hash)) return fail(res, 400, "bad_request", "txHash");
+    return json(res, {
+      midgard: midgardContext(),
+      txHash: hash,
+      references: cardanoActivity().filter((row) => row.l1TxHash === hash),
     });
-    if (url.pathname.endsWith("block-header")) {
-      const found = rows.find((row) => row.headerHash === url.searchParams.get("headerHash"));
-      return found ? json(res, found) : fail(res, 404, "not_found");
-    }
-    return json(res, rows.slice(0, Number(url.searchParams.get("limit") ?? 25)));
-  }
-  if (url.pathname === "/api/l1/deposits") {
-    const rows = L1_TXS.flatMap((tx) =>
-      tx.events
-        .filter((event) => event.validator === "deposit")
-        .map((event) => ({
-          ...event,
-          txHash: tx.txHash,
-          fundingAddresses: tx.inputs.flatMap((input) => (input.address ? [input.address] : [])),
-          tx,
-        })),
-    );
-    return json(res, rows.slice(0, Number(url.searchParams.get("limit") ?? 25)));
   }
   if (url.pathname === "/api/l1/validator") {
-    const validator = L1_VALIDATORS.find(
-      (row) => row.scriptHash === url.searchParams.get("scriptHash"),
-    );
+    const hash = (url.searchParams.get("scriptHash") ?? "").toLowerCase();
+    if (!/^[0-9a-f]{56}$/.test(hash)) return fail(res, 400, "bad_request", "scriptHash");
+    const validator = manifestValidators().find((v) => v.scriptHash === hash);
     if (!validator) return fail(res, 404, "not_found");
-    const rich = L1_TXS[0];
-    const history = L1_TXS.filter(
-      (tx) =>
-        tx.redeemers.some((row) => row.scriptHash === validator.scriptHash) ||
-        tx.outputs.some((row) => row.address === validator.address) ||
-        tx.events.some((row) => row.validator === validator.family),
-    ).map((tx) => ({
-      txHash: tx.txHash,
-      blockHeight: tx.blockHeight,
-      txTime: tx.txTime,
-      ioCount: tx.outputs.filter((row) => row.address === validator.address).length,
-      executionCount: tx.redeemers.filter((row) => row.scriptHash === validator.scriptHash).length,
-      eventCount: tx.events.filter((row) => row.validator === validator.family).length,
-    }));
-    const utxos = rich.outputs
-      .filter((row) => row.address === validator.address)
-      .map((row) => ({
-        ...row,
-        tx: { txHash: rich.txHash, blockHeight: rich.blockHeight, txTime: rich.txTime },
-      }));
-    const redeemers = L1_TXS.flatMap((tx) => tx.redeemers).filter(
-      (row) => row.scriptHash === validator.scriptHash,
-    );
     return json(res, {
-      deployment: "fixture-deployment",
+      midgard: midgardContext(),
+      deploymentId: midgardContext().deploymentId,
+      network: "preprod",
       validator,
-      coverage: { limitedTo: 100, truncated: false },
-      utxos,
-      history,
-      operations:
-        redeemers.length === 0
-          ? []
-          : [
-              {
-                purpose: "spend",
-                validContract: true,
-                count: redeemers.length,
-                memUnits: redeemers.reduce((sum, row) => sum + BigInt(row.memUnits), 0n).toString(),
-                stepUnits: redeemers
-                  .reduce((sum, row) => sum + BigInt(row.stepUnits), 0n)
-                  .toString(),
-                fee: redeemers.reduce((sum, row) => sum + BigInt(row.fee), 0n).toString(),
-              },
-            ],
     });
   }
   if (url.pathname === "/api/asset") {

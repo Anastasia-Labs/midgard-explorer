@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import type { MetricsResponse, RecentBlockRow, RecentTxRow } from "@midgard-explorer/contracts";
-import type { L1Summary } from "../../lib/api";
+import type { CardanoActivitySummary } from "../../lib/api";
 import { OverviewHeader } from "./OverviewHeader";
 import { SearchBox } from "../../components/search/SearchOverlay";
 import { BRIDGE } from "../../lib/nav";
@@ -32,7 +32,7 @@ export type OverviewData = {
   totalBlocks: number | null;
   totalTxs: number | null;
   metrics: MetricsResponse | null;
-  l1: L1Summary | null;
+  l1: CardanoActivitySummary | null;
 };
 
 async function fetchOverview(): Promise<OverviewData> {
@@ -230,7 +230,7 @@ export function L1Activity({
   summary,
   onRetry,
 }: {
-  summary: L1Summary | null;
+  summary: CardanoActivitySummary | null;
   onRetry: () => void;
 }) {
   return (
@@ -247,28 +247,29 @@ export function L1Activity({
       <div className="px-4 py-3">
         {summary === null ? (
           <ErrorState message="Could not load Cardano activity." onRetry={onRetry} />
-        ) : summary.transactions === 0 ? (
-          <p className="text-sm text-text-2">No Cardano activity indexed yet.</p>
+        ) : summary.total === 0 ? (
+          <p className="text-sm text-text-2">The node has recorded nothing on Cardano yet.</p>
         ) : (
           <>
             <dl className="grid grid-cols-2 gap-4">
-              {[
-                { label: "Transactions", count: summary.transactions },
-                { label: "Contract events", count: summary.events },
-              ].map(({ label, count }) => (
-                <div key={label} className="min-w-0">
-                  <dt className="mg-caption text-text-2">{label}</dt>
-                  <dd className="mt-1 text-2xl font-semibold tabular-nums text-text">
-                    {groupThousands(String(count))}
-                  </dd>
-                </div>
-              ))}
+              {summary.byKind
+                .filter((kind) => kind.kind === "settlement" || kind.kind === "deposit")
+                .map((kind) => (
+                  <div key={kind.kind} className="min-w-0">
+                    <dt className="mg-caption text-text-2">
+                      {kind.kind === "settlement" ? "Block settlements" : "Deposits"}
+                    </dt>
+                    <dd className="mt-1 text-2xl font-semibold tabular-nums text-text">
+                      {groupThousands(String(kind.count))}
+                    </dd>
+                  </div>
+                ))}
             </dl>
-            {summary.lastSyncedHeight === null ? (
-              <p className="mt-2 mg-micro text-warning">Index coverage unavailable.</p>
-            ) : summary.sync.state !== "reconciled" ? (
-              <p className="mt-2 mg-micro text-warning">Indexing in progress.</p>
-            ) : null}
+            {/* Whose records these are, said on the panel. They are the node's
+                own count of what it did on Cardano, not a scan of the chain. */}
+            <p className="mt-2 mg-micro text-text-3">
+              {groupThousands(String(summary.total))} records, as the node recorded them.
+            </p>
           </>
         )}
       </div>
