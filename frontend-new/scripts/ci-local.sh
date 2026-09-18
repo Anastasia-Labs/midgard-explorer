@@ -20,6 +20,15 @@ pnpm -v
 step "install (frozen lockfile)"
 pnpm install --frozen-lockfile
 
+step "dependency advisories, gated on recorded dispositions"
+# The same gate the backend runs, pointed at this workspace. This half is the
+# internet-facing one and the larger dependency surface, and it had no advisory
+# gate at all: the day one was added it found two critical unauthenticated
+# remote-code-execution advisories in Next and one high one in sharp. The gate
+# fails closed, so an audit that cannot be produced is an error rather than a
+# quiet pass.
+node ../backend/scripts/audit-gate.mjs .
+
 step "format check"
 pnpm exec prettier --check .
 

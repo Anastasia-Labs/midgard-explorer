@@ -8,6 +8,7 @@
  *
  * Usage: docs-check.mjs <repoRoot>
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -16,6 +17,31 @@ if (!repoRoot) {
   process.stderr.write("docs-check.mjs needs the repository root\n");
   process.exit(2);
 }
+
+/**
+ * Every file git tracks, and every directory holding one.
+ *
+ * The link check used to ask the filesystem whether a target existed, which
+ * answers a question about this machine rather than about the repository. A
+ * page linking to a plan under `docs/superpowers/`, or to a local evidence
+ * directory, passed here and was dead for everyone who cloned it.
+ */
+const trackedPaths = execFileSync("git", ["-C", repoRoot, "ls-files", "-z"], {
+  encoding: "utf8",
+  maxBuffer: 32 * 1024 * 1024,
+})
+  .split("\0")
+  .filter(Boolean);
+const tracked = new Set(trackedPaths);
+const trackedDirectories = new Set(
+  trackedPaths.flatMap((file) => {
+    const parts = file.split("/").slice(0, -1);
+    return parts.map((_, i) => parts.slice(0, i + 1).join("/"));
+  }),
+);
+
+/** A path inside the repository, in the form `git ls-files` prints. */
+const relativeToRepo = (absolute) => relative(repoRoot, absolute).split("\\").join("/");
 
 /** Markdown that is meant to be read, which is not every markdown file: the
  * design briefs and redesign notes are working papers, kept but not maintained
@@ -80,16 +106,36 @@ for (const page of PAGES) {
 
   // Links to something in this repository. External URLs and in-page anchors
   // are somebody else's to keep working.
+  //
+  // Resolved against TRACKED files, not against the working tree. A page that
+  // links into a git-excluded path (a plan, a local evidence directory, a
+  // build output) passes on the machine that has it and is a dead link in a
+  // fresh clone, which is the only place a reader ever follows it.
   for (const [, label, target] of text.matchAll(/\[([^\]]*)\]\(([^)]+)\)/g)) {
     if (/^(https?:|mailto:|#)/.test(target)) continue;
     const [file] = target.split("#");
     if (file === "") continue;
     const resolved = resolve(dirname(path), file);
+    const relative = relativeToRepo(resolved);
     if (!existsSync(resolved)) {
       problems.push(`${page}: "${label}" points at ${file}, which does not exist`);
       continue;
     }
-    if (statSync(resolved).isDirectory() && !file.endsWith("/")) {
+    const isDirectory = statSync(resolved).isDirectory();
+    if (!isDirectory && !tracked.has(relative)) {
+      problems.push(
+        `${page}: "${label}" points at ${file}, which exists here but is not tracked, ` +
+          `so it is a dead link in a fresh clone`,
+      );
+      continue;
+    }
+    if (isDirectory && !trackedDirectories.has(relative)) {
+      problems.push(
+        `${page}: "${label}" points at ${file}, a directory holding no tracked file`,
+      );
+      continue;
+    }
+    if (isDirectory && !file.endsWith("/")) {
       problems.push(`${page}: "${label}" points at a directory without a trailing slash`);
     }
   }
