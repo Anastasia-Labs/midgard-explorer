@@ -223,11 +223,11 @@ export async function getRecentTransactionsRoute(_req: Request, res: Response) {
 }
 
 export async function getTransactionsPageRoute(req: Request, res: Response) {
-  const parsedPage = parsePageParam(req.params.page);
+  const parsedPage = parsePageParam(req.params.page, config.TRANSACTIONS_PER_PAGE);
   if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
   const page = parsedPage.value;
 
-  const { rows, hasNextPage, total, limit } = await getTransactionsPage(
+  const { rows, hasNextPage, total, limit, page: served } = await getTransactionsPage(
     page,
     typeof req.query.status === "string" ? req.query.status : undefined,
   );
@@ -248,5 +248,5 @@ export async function getTransactionsPageRoute(req: Request, res: Response) {
       };
     }),
   );
-  return res.json({ rows: payload, hasNextPage, total, limit });
+  return res.json({ rows: payload, hasNextPage, total, limit, page: served });
 }

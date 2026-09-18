@@ -212,6 +212,8 @@ const page = (rows, p) => {
     hasNextPage: start + LIMIT < rows.length,
     total: rows.length,
     limit: LIMIT,
+    // The page actually served, as the real API reports it.
+    page: safe,
   };
 };
 

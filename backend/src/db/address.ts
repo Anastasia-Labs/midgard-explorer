@@ -1,7 +1,9 @@
 import { prisma } from "../db";
 import { readConsistently, type NodeReader } from "./consistent";
 
-const HISTORY_LIMIT = 25;
+/** History rows per page. Exported so the route can bound the page depth it
+ * accepts before any statement is issued. */
+export const HISTORY_LIMIT = 25;
 
 
 /**
@@ -212,6 +214,9 @@ export async function getAddressHistory(
     total,
     limit: HISTORY_LIMIT,
     hasNextPage: safePage * HISTORY_LIMIT < total,
+    // The page actually served. A caller that asked for a malformed one was
+    // coerced, and a response that repeated the request would misdescribe it.
+    page: safePage,
     firstActivity: summary.first_activity,
     latestActivity: summary.latest_activity,
   };

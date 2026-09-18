@@ -1,5 +1,11 @@
 import { Request, Response } from "express";
-import { getAddressHistory, getAddressUtxos, pageUtxoRows, UTXO_PAGE_LIMIT } from "../../db/address";
+import {
+  HISTORY_LIMIT,
+  getAddressHistory,
+  getAddressUtxos,
+  pageUtxoRows,
+  UTXO_PAGE_LIMIT,
+} from "../../db/address";
 import { computeBalance, decodeTransactionSafe, decodeUtxos } from "../../decode/transaction";
 import type { ValueView } from "../../decode/types";
 import { toHex } from "../../utils";
@@ -27,7 +33,7 @@ export async function getAddressRoute(req: Request, res: Response) {
   if (typeof address !== "string" || address.length === 0) {
     return res.status(400).json({ error: "Missing address query param." });
   }
-  const parsedPage = parsePageQuery(req.query.page);
+  const parsedPage = parsePageQuery(req.query.page, HISTORY_LIMIT);
   if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
   const page = parsedPage.value;
 

@@ -42,7 +42,9 @@ export type CardanoActivityRow = {
   recordId: string | null;
 };
 
-const PAGE_SIZE = 25;
+/** Rows per page. Exported so the route can bound the page depth it accepts
+ * before any statement is issued. */
+export const PAGE_SIZE = 25;
 
 /**
  * One SELECT per kind, unioned.
@@ -139,6 +141,9 @@ export async function getCardanoActivityPage(page: number, db?: NodeReader) {
     hasNextPage: rows.length > PAGE_SIZE,
     total: Number(totals[0]?.count ?? 0),
     limit: PAGE_SIZE,
+    // The page actually served. A caller that asked for a malformed one was
+    // coerced, and a response that repeated the request would misdescribe it.
+    page: safePage,
   };
 }
 

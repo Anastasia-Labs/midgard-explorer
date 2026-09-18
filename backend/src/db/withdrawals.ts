@@ -1,7 +1,9 @@
 import { prisma } from "../db";
 import { readConsistently } from "./consistent";
 
-const LIMIT = 25;
+/** Rows per page. Exported so the route can bound the page depth it accepts
+ * before any statement is issued. */
+export const LIMIT = 25;
 
 export async function getWithdrawalsPage(page: number, eventId?: string) {
   const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
@@ -39,5 +41,8 @@ export async function getWithdrawalsPage(page: number, eventId?: string) {
     hasNextPage: rows.length > LIMIT,
     total: Number(totalRows[0].count),
     limit: LIMIT,
+    // The page actually served. A caller that asked for a malformed one was
+    // coerced, and a response that repeated the request would misdescribe it.
+    page: safePage,
   };
 }

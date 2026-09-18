@@ -102,10 +102,28 @@ export const ApiErrorBody = Schema.Struct({
 });
 export type ApiErrorBody = Schema.Schema.Type<typeof ApiErrorBody>;
 
+/**
+ * The deepest a single offset-paginated request may scan, in rows.
+ *
+ * Mirrors `MAX_PAGE_OFFSET_ROWS` in `backend/src/server/validate.ts`, where the
+ * reasoning is written out. The two are separate workspaces and neither
+ * imports the other, so this is a copy; the contract suite that runs against
+ * the real backend is what keeps the copy honest.
+ */
+export const MAX_PAGE_OFFSET_ROWS = 100_000;
+
+/** The last page a list with this page size will serve. */
+export const maxPageFor = (pageSize: number): number =>
+  Math.max(1, Math.floor(MAX_PAGE_OFFSET_ROWS / pageSize));
+
 export const paged = <A, I, R>(row: Schema.Schema<A, I, R>) =>
   Schema.Struct({
     rows: Schema.Array(row),
     hasNextPage: Schema.Boolean,
     total: Schema.Number,
     limit: Schema.Number,
+    /** The page the server actually served, which is not always the one that
+     * was asked for: a list that treats a page number as a navigation hint
+     * coerces a malformed one rather than refusing it. */
+    page: Schema.Number,
   });

@@ -263,5 +263,7 @@ export async function getTransactionsPage(page: number, status?: string) {
     ]),
   );
   const hasNextPage = safePage * limit < total;
-  return { rows, hasNextPage, total, limit };
+    // The page actually served. A caller that asked for a malformed one was
+    // coerced, and a response that repeated the request would misdescribe it.
+  return { rows, hasNextPage, total, limit, page: safePage };
 }

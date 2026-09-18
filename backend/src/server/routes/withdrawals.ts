@@ -4,7 +4,7 @@ import {
   decodeWithdrawalAddress,
   decodeWithdrawalValue,
 } from "../../decode/withdrawal";
-import { getWithdrawalsPage } from "../../db/withdrawals";
+import { LIMIT, getWithdrawalsPage } from "../../db/withdrawals";
 import { loadManifest } from "../../db/manifest";
 import { logger } from "../../logger";
 import { toHex } from "../../utils";
@@ -33,13 +33,13 @@ const NO_NETWORK =
   "The deployment manifest could not be read, so the address network is unknown.";
 
 export async function getWithdrawalsPageRoute(req: Request, res: Response) {
-  const parsedPage = parsePageParam(req.params.page);
+  const parsedPage = parsePageParam(req.params.page, LIMIT);
   if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
   const page = parsedPage.value;
   const parsedId = parseOptionalHexQuery(req.query.id);
   if (!parsedId.ok) return res.status(400).json({ error: parsedId.error });
   const id = parsedId.value;
-  const { rows, hasNextPage, total, limit } = await getWithdrawalsPage(page, id);
+  const { rows, hasNextPage, total, limit, page: served } = await getWithdrawalsPage(page, id);
   const network = networkFor(config.MIDGARD_MANIFEST_PATH);
   const payload = rows.map((row) => {
     const decodedValue = decodeWithdrawalValue(row.l2_value);
@@ -66,5 +66,5 @@ export async function getWithdrawalsPageRoute(req: Request, res: Response) {
         : null,
     };
   });
-  return res.json({ rows: payload, hasNextPage, total, limit });
+  return res.json({ rows: payload, hasNextPage, total, limit, page: served });
 }

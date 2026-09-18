@@ -504,6 +504,9 @@ export async function getBlocksPage(page: number, status?: string) {
     hasNextPage: safePage * limit < total,
     total,
     limit,
+    // The page actually served. A caller that asked for a malformed one was
+    // coerced, and a response that repeated the request would misdescribe it.
+    page: safePage,
   };
 }
 

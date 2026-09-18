@@ -198,11 +198,11 @@ export async function getTotalBlocksRoute(_req: Request, res: Response) {
 }
 
 export async function getBlocksPageRoute(req: Request, res: Response) {
-  const parsedPage = parsePageParam(req.params.page);
+  const parsedPage = parsePageParam(req.params.page, config.BLOCKS_PER_PAGE);
   if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
   const page = parsedPage.value;
 
-  const { rows, hasNextPage, total, limit } = await getBlocksPage(
+  const { rows, hasNextPage, total, limit, page: served } = await getBlocksPage(
     page,
     typeof req.query.status === "string" ? req.query.status : undefined,
   );
@@ -225,5 +225,5 @@ export async function getBlocksPageRoute(req: Request, res: Response) {
     payload_retained_locally: row.payload_retained_locally,
     finalization_status: row.finalization_status,
   }));
-  return res.json({ rows: payload, hasNextPage, total, limit });
+  return res.json({ rows: payload, hasNextPage, total, limit, page: served });
 }

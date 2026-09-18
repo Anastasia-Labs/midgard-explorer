@@ -99,7 +99,11 @@ export function buildOpenApiDocument(
             ? { "204": { description: "Recorded." } }
             : { "200": response("Successful response.") }),
           "400": response(
-            write ? "Not a sample this route accepts." : "Malformed identifier or parameter.",
+            write
+              ? "Not a sample this route accepts."
+              : "Malformed identifier or parameter, or a page past the depth this " +
+                "route serves. The bound is on rows scanned, so the last page " +
+                "depends on the page size: see MAX_PAGE_OFFSET_ROWS.",
           ),
           ...(write ? { "413": response("Body over 1 KB.") } : {}),
           ...(route.notFound

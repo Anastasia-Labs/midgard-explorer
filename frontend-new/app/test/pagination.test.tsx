@@ -2,6 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DataTable, Pagination } from "../src/components/ui/base/table";
+import { maxPageFor } from "@midgard-explorer/contracts";
 import { parsePage } from "../src/lib/parsePage";
 
 const notFound = vi.hoisted(() =>
@@ -51,6 +52,19 @@ describe("parsePage", () => {
       expect(() => parsePage(raw)).toThrow("NEXT_NOT_FOUND");
     },
   );
+
+  /* The bound is the API's, not a digit count. A link to a page the API
+   * answers with a 400 should be a 404 here rather than a server error the
+   * reader cannot act on. */
+  it("serves the last page the API will serve and refuses the one past it", () => {
+    expect(parsePage(String(maxPageFor(25)))).toBe(maxPageFor(25));
+    expect(() => parsePage(String(maxPageFor(25) + 1))).toThrow("NEXT_NOT_FOUND");
+  });
+
+  it("takes the bound from the page size it is given", () => {
+    expect(parsePage("2000", 50)).toBe(2000);
+    expect(() => parsePage("2001", 50)).toThrow("NEXT_NOT_FOUND");
+  });
 });
 
 describe("Pagination", () => {

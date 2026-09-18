@@ -1,12 +1,13 @@
 import { Request, Response } from "express";
 import {
+  PAGE_SIZE,
   getCardanoActivityPage,
   getCardanoActivitySummary,
   getCardanoReferences,
 } from "../../db/cardanoActivity";
 import { getValidator, listValidators } from "../../db/l1";
 import { getDeploymentContext } from "../../db/deployment";
-import { parseHexOfLength } from "../validate";
+import { parseHexOfLength, parseHintedPage } from "../validate";
 
 /**
  * Midgard's Cardano footprint, as the node recorded it.
@@ -29,10 +30,12 @@ import { parseHexOfLength } from "../validate";
  */
 
 export async function getCardanoActivityRoute(req: Request, res: Response) {
-  // Coerced, not rejected. See the convention note above.
-  const page = Number(req.params.page);
+  // A malformed page is coerced to the first, per the convention note above.
+  // Depth is a different question and is refused: see `parseHintedPage`.
+  const parsedPage = parseHintedPage(req.params.page, PAGE_SIZE);
+  if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
   const [activity, midgard] = await Promise.all([
-    getCardanoActivityPage(page),
+    getCardanoActivityPage(parsedPage.value),
     getDeploymentContext(),
   ]);
   return res.json({ midgard, ...activity });
