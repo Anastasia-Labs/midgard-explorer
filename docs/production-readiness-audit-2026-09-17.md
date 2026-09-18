@@ -140,6 +140,19 @@ the stronger claim.
 | Usability and accessibility | **Partial** | 76 page loads across 19 routes, two themes and two viewports: **zero axe violations** under `wcag2a`, `wcag2aa`, `wcag21a` and `wcag21aa`. Zero unnamed interactive elements. One `h1`, one `main` and a working skip link on every page. A visible 2 px focus outline on every one of fourteen keyboard stops. Correct `tablist` semantics. Real 404 status codes | High for the automated and keyboard evidence | No testing with a real assistive technology. Automated checks do not cover WCAG 2.2 target size, which L2 records as failing. Contrast was checked as rendered by axe, not token by token |
 | Simplicity and clarity | **Not separately assessed** | This audit did not treat simplicity as its own dimension and collected no evidence against a simplicity criterion. Observations that touch it sit under maintainability and usability | n/a | All of it. No verdict is offered |
 
+**Where these verdicts stand on 2026-09-18.** The table above is dated evidence
+from 2026-09-17 and is left as it was read. Six of its rows have moved since,
+and section 3.8 carries the evidence for each:
+
+| Area | Then | Now |
+|---|---|---|
+| Security | Partial, no frontend advisory gate, `indexer/` among the surfaces read | Both workspaces gated; three advisories in the frontend fixed rather than accepted; `indexer/` is deleted and `db/cardanoActivity.ts` post-dates the review, so the new files are a delta review still owed |
+| Performance and resource efficiency | Unmeasured | Measured at this head: 13 of 13 target workloads pass, peak resident memory 665.3 MB against a 512 MB budget. The breach is open as M5; stress is blocked on disk |
+| Test coverage and quality | 1,361 tests, five fixture skips, six indexer files skipping under `REQUIRE_DB` | 582 backend, 475 app, 41 development-command. The indexer files are deleted and their skips with them; the five fixture skips are assertions |
+| Gate completeness and reliability | Two `check` scripts, one weaker | `pnpm check` inside `app` runs the gate itself |
+| Usability and accessibility | Overflow at 1280, target size recorded as failing | No sideways scroll on seven routes at four widths in both themes; target size measured at 43 x 43 px and asserted |
+| Developer experience and operations | Documented memory minimum wrong | Restated from a measured floor, with the transaction route in both the ceiling set and the sweep |
+
 ### Next acceptance check per area
 
 One check per area. Each is the smallest thing that would move the verdict.
@@ -684,19 +697,23 @@ measuring is what produced the rejected heap cap.
 
 ### The next three tasks, in order
 
-Reordered 2026-09-18, after the decommission. B1 is done, and B2 now needs a
-fresh measurement before it can be fixed, so the depth cap goes first.
+Rewritten 2026-09-18. B1, B2, H1, H2, H3, H4, M1, M2, M3, M4, M6, M7, L1, L2,
+L3, L4, L5 and G1 are closed; section 3.8 records the evidence for each. What
+is left is one measurement, one mechanism, and one thing that has not
+reproduced.
 
-1. **Cap the page depth (H4).** Small. No measurement needed, it closes an
-   availability exposure, and it is the half of `CURSOR-PAGINATION` that stands
-   on its own. Seven offset paths now, not six: see section 3.7 for the one that
-   has to clamp rather than answer 400.
-2. **Re-measure and fix the table overflow (B2).** Small. Measure `/deposits`
-   and `/withdrawals` at 1280 px first: one of the two tables lost a column. A
-   visual change, so it needs visual review.
-3. **Investigate the order-dependent browser failures.** Three tests failed in
-   intermediate full runs and passed in isolation and in the final green run.
-   The cause is not established, so this is a measurement task, not a fix.
+1. **Identify what dominates backend peak resident memory (M5).** The target
+   profile at this head peaks at 665.3 MB against a 512 MB budget. That is
+   below both earlier figures, 737.3 MB measured and 682.6 MB reported, and
+   still a breach. The next step is the isolated `address-history` profile, and
+   the task is finished when the mechanism is named rather than when the number
+   moves.
+2. **Run the stress profile.** It needs 30 GB of free disk and this machine has
+   27.8 GB, which the harness warns about and which would make the figures
+   describe a starved filesystem. Nothing else blocks it.
+3. **Reproduce the hydration warning (L7), or leave it open.** 64 loads across
+   development and production builds have not. The one condition not recreated
+   is the memory pressure of the original sighting.
 
 ### Fits in one hour
 
@@ -720,17 +737,22 @@ Each of these needs the development servers stopped. Ask for the window; do not
 start one while they are up, because the memory guard aborts and the latency
 figures would be skewed anyway.
 
-**Three of the four are blocked as of 2026-09-18.** Every `pnpm bench` row needs
-the harness to stop cloning the decommissioned index first. Section 3.7 records
-what that change is. The H1 memory measurement uses `bench/measure.mts`, which
-has no such dependency.
+**The harness runs again.** It refused to start without the decommissioned
+index until 2026-09-18; it now reads its real settled header hashes from the
+node's finalization journal, so `BENCH_SOURCE_NODE_URL` replaces
+`BENCH_SOURCE_INDEX_URL` and no second database is cloned.
 
-| Task | Command | Resource need | Expected duration |
-|---|---|---|---|
-| **Measure** the development memory peak for the transaction route (H1) | `measure.mjs limit 1024`, then 1536 and 2048, with the transaction route in the swept set | 2 cores, 3 GB free | 30 minutes |
-| **Measure** the isolated address-balance peak (M5) | `pnpm bench --only address-history --mode baseline --iterations 1000` at `target`, reading `peakRssBytes` | quiet machine, 3.5 GB available | 40 minutes |
-| **Measure** the canonical target rerun at the current head | `pnpm bench --profile target --mode baseline --iterations 1000 --with-frontend` | quiet machine, 4 GB available | 60 minutes |
-| **Measure** the stress retry after the address fixes | `pnpm bench --profile stress --mode baseline --iterations 1000` | quiet machine, 3.5 GB available, 30 GB disk | 70 minutes, 10 of them seeding |
+| Task | Command | Resource need | Expected duration | State |
+|---|---|---|---|---|
+| **Measure** the development memory peak for the transaction route (H1) | `measure.mjs limit 1024`, then 1536 and 2048, with the transaction route in the swept set | 2 cores, 3 GB free | 30 minutes | **Done 2026-09-18.** 1024 MB fails on that route, 1536 MB and 2048 MB pass, observed peak 1622 MB |
+| **Measure** the canonical target rerun at the current head | `pnpm bench --profile target --mode baseline --iterations 1000 --with-frontend` | quiet machine, 4 GB available | 60 minutes | **Done 2026-09-18.** 13 of 13 workloads pass; peak resident memory 665.3 MB against a 512 MB budget |
+| **Measure** the isolated address-balance peak (M5) | `pnpm bench --only address-history --mode baseline --iterations 1000` at `target`, reading `peakRssBytes` | quiet machine, 3.5 GB available | 40 minutes | Open. It is the next step for the memory breach above |
+| **Measure** the stress retry after the address fixes | `pnpm bench --profile stress --mode baseline --iterations 1000` | quiet machine, 3.5 GB available, 30 GB disk | 70 minutes, 10 of them seeding | Blocked on disk: 27.8 GB free against the 30 GB the harness requires, and it says so rather than running starved |
+
+Both runs above were taken with the Cardano node, Ogmios, Kupo and the Midgard
+node paused for the window, and with the Midgard database left running because
+it is what the explorer reads. Every service was restarted and checked
+afterwards.
 
 The stress retry is the most valuable of the four. The current stress artifact
 was built from `5ded259a`, which predates `2e3b2f09`, and its worst row is
@@ -953,6 +975,23 @@ register it concerns, or in a new dated page.
 | M4 | One exported status function has three callers and the constant column is gone |
 | M5 | An isolated measurement names the dominant contributor to backend peak resident memory. Complete when the mechanism is identified, not when the number moves |
 | G1 | Three rows exist in the register with approved targets, and none of them reads `DISCOVERY` |
+
+### The three dimensions the definition of done was missing
+
+Added 2026-09-18, closing G1. Criterion 9 named eleven dimensions and none of
+them was security, correctness invariants or accessibility, so B1, B2, H2 and
+H3 could all have been outstanding while every stated condition for "done" was
+met. A dimension with no row reads as a pass.
+
+| Row | Target | How it is measured | State on 2026-09-18 |
+|---|---|---|---|
+| **Dependency advisories** | No production advisory without a recorded disposition, in either workspace | `backend/scripts/audit-gate.mjs` against `backend` and against `frontend-new`, both in their gates. The gate fails closed: an audit it cannot produce is an error, not a pass | **PASS.** Backend: 3 advisories, all dispositioned. Frontend: 0, after upgrading rather than accepting |
+| **Accessibility** | Zero axe violations across the swept routes in both themes and both viewports, no regression from today's zero; plus WCAG 2.2 target size on interactive elements | `populated.spec.ts` for the axe sweep, `a11y-targets.spec.ts` for focus movement and pointer-target size. Target size is measured as the region that accepts a pointer, not as the painted box | **PASS.** Zero violations across 19 routes; skip link moves focus; information triggers accept a pointer over 43 x 43 px |
+| **Correctness invariants** | Every invariant in section 4 holds, and each has a test that fails when the invariant is broken | The suites named against each invariant in section 4 | **PARTIAL.** The invariants hold as recorded; not every one has a test that fails when it is broken, and section 4 says which |
+
+These are ratchets, not aspirations: each names today's measured value, so the
+question at any later point is whether it still holds rather than whether
+anybody has looked.
 
 ### How to avoid an expanding scope
 
