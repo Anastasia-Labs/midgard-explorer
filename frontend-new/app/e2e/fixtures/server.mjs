@@ -692,6 +692,16 @@ const server = createServer(async (req, res) => {
     return out === undefined ? undefined : json(res, out);
   }
 
+  /* The Web Vitals beacon's destination. The real API answers 204 and records
+     the sample; nothing in the suite reads it back, so this only has to exist:
+     without it the same-origin route handler forwards into a 404 and a test
+     that checks the beacon reaches the API cannot tell that from a handler
+     that was never mounted. */
+  if (req.method === "POST" && url.pathname === "/api/vitals") {
+    res.writeHead(204).end();
+    return;
+  }
+
   if (url.pathname === "/api/block") {
     if (state.fail === "all" || state.fail === "block") return fail(res, 500, "internal_error");
     return handleBlock(url, res);
