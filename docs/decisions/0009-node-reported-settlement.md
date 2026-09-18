@@ -14,6 +14,14 @@ repository and stops being a settlement source.
 to `none`. It is transitional: it exists so this can be reversed while it is
 reviewed, and it goes away with the index lane once that is settled.
 
+> **As carried out, 2026-09-18.** The two paragraphs above describe the first
+> step and are kept because the decision was taken in that form. The flag did
+> what it says and is gone: the index lane went with it, the setting is written
+> by nothing and read by nothing, and there is one source rather than a choice
+> between two. The database, its schema, its migrations and its volume are
+> retained, stopped, so the decision is still reversible by a person. What that
+> reversal now costs is code, not configuration. See "Carried out" below.
+
 ## What the decision costs, stated plainly
 
 **Independent confirmation is unavailable within this explorer.** Three things
