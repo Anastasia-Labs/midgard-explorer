@@ -141,6 +141,12 @@ jobs:
 
       - run: pnpm typecheck
 
+      - name: Type check the JavaScript tooling
+        # `tsconfig.json` has `allowJs` off, so nothing under `scripts/` was
+        # ever checked. This config turns `checkJs` on for the modules that
+        # earn it and names the rest in its own comment.
+        run: pnpm typecheck:scripts
+
       - name: Documentation says what exists
         run: pnpm docs:check
 
