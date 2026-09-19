@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   renameSync,
+  rmSync,
   truncateSync,
   writeFileSync,
 } from "node:fs";
@@ -11,6 +12,21 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TABLES } from "../scripts/snapshot.mjs";
+
+/**
+ * Temporary directories this file creates, removed together in `afterAll`.
+ *
+ * Every one of them holds a `pg_dump` archive. The concurrent-writer case
+ * bulk-loads 200,000 rows first, so its archive is 13 MB, and nothing removed
+ * it: nine runs had left 116 MB in `/tmp`, which is the same disk the
+ * benchmark's free-space gate measures before it will certify a run.
+ */
+const tempDirs: string[] = [];
+const tempDir = (prefix: string): string => {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+};
 
 /**
  * The snapshot tool, exercised against real throwaway databases.
@@ -203,7 +219,7 @@ beforeAll(() => {
      INSERT INTO operator_secrets VALUES (1, 'canary-must-not-travel');`,
   );
 
-  out = mkdtempSync(join(tmpdir(), "snapshot-safety-"));
+  out = tempDir("snapshot-safety-");
   const exported = snapshot(["export", `--out=${out}`], {
     // A PRISMA-shaped URL, deliberately. `POSTGRES_URL` in this repository
     // carries `?schema=public`, which libpq rejects outright ("invalid URI query
@@ -217,6 +233,7 @@ beforeAll(() => {
 }, 180_000);
 
 afterAll(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   if (!reachable) return;
   if (container === "") {
     for (const name of [SRC, DEST, FOREIGN]) dropDb(name);
@@ -476,7 +493,7 @@ describe("the manifest describes the archive, not a later database", () => {
   it("ignores rows written while the capture is running", async () => {
     if (!reachable) return;
 
-    const out2 = mkdtempSync(join(tmpdir(), "snapshot-during-write-"));
+    const out2 = tempDir("snapshot-during-write-");
 
     // Enough rows that the dump takes long enough for a concurrent writer to
     // land inside it. With the fixture's handful of rows the capture finished
