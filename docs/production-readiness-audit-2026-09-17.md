@@ -922,8 +922,14 @@ The three earlier desktop failures did not reproduce in isolation or the full
 run. Their assertions and time budgets were unchanged. The full run passed the
 503-node stress-layout test on desktop and mobile. This supports, but does not
 prove, resource contention as the earlier cause. A successful run with L1
-paused does not establish that the full gate fits alongside a syncing L1 node.
-The existing skips were not changed or newly audited in this remediation.
+paused does not establish that the full gate fits alongside a syncing L1 node;
+the 2026-09-19 run does, and it was also clean. The existing skips were not
+changed or newly audited in this remediation.
+
+Those three failures left no artifact, which is why their cause is still
+unestablished: `trace` was `on-first-retry` and local runs have no retries, so
+nothing was recorded. It is now `retain-on-failure` outside CI, so the next
+occurrence is explicable rather than another sighting.
 
 Complete run output was retained locally at `/tmp/midgard-full-gate.log` and
 `/tmp/midgard-isolated-gate.log`; these temporary files are not durable repository
@@ -948,6 +954,27 @@ fix, page-depth cap or storage redesign was performed in this window.
 - **Machine load** ran between 2.5 and 5.0 on two cores for most of the session,
   with swap near capacity at times. No wall time recorded here is a measurement
   of the code, and the register's own timings should not be revised from them.
+
+### Fresh runs, 2026-09-19
+
+Both gates, with the retired explorer database stopped and **the whole L1 stack
+running**: the Cardano node, Ogmios, Kupo, the Midgard node and its Postgres
+were up continuously from 05:00 UTC, and the browser gate ran 06:07 to 06:22.
+That answers the question the 2026-09-17 entry left open, which was whether a
+full gate fits beside a syncing L1 node on this machine. It does.
+
+| Check | Result |
+|---|---|
+| Backend `REQUIRE_DB=1 pnpm check` | **Exit 0.** 581 passed, 11 skipped, across 67 files (64 passed, 3 skipped). Development commands 41 passed, 0 skipped. Documentation 37 pages. Type check now covers `scripts/snapshot.mjs` as well as `src`, `test` and `bench` |
+| Frontend `./scripts/ci-local.sh` | **Exit 0, Gate green**, 12.7 minutes for the browser stage. Advisories 0 without a disposition; contracts 12; tokens 3; app unit 475 across 42 files; browser **470 passed, 30 skipped, zero failures and zero flaky** |
+| Development console gate | 10 loads clean: 5 routes including a real record page, at 390 and 1280 |
+
+The 11 backend skips are three files of benchmark self-tests gated on `BENCH_*`
+variables. The 30 browser skips come from 12 `test.skip` call sites, every one
+a viewport or project guard; none is fixture dependent, which is M3 holding.
+
+One test fewer than the 2026-09-18 backend run, because a config case that
+duplicated the one above it went with the retired flag it was passing.
 
 ### Reported results carried over, not reproduced here
 
