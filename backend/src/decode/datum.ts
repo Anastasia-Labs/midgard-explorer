@@ -1,4 +1,6 @@
-import { Data } from "@lucid-evolution/lucid";
+/** Narrow imports rather than the `@lucid-evolution/lucid` barrel, for the
+ * reason `db/bech32.ts` records. */
+import { Data } from "@lucid-evolution/plutus";
 
 /**
  * The one safe entry point for turning datum CBOR into a typed value.

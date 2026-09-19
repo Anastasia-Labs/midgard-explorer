@@ -182,6 +182,8 @@ export function outputExcerpt(output: string, head = 12, tail = 40): string {
 export type ServerHandle = {
   base: string;
   bypassToken: string;
+  /** The server process, so a diagnostic can read its `/proc` entry. */
+  pid: number;
   /** Highest resident memory the server reached, in bytes. */
   peakRssBytes: () => number;
   /** `null` while the process is alive, the exit code once it is not. */
@@ -383,6 +385,7 @@ export async function startServer(
   return {
     base,
     bypassToken,
+    pid: child.pid ?? 0,
     peakRssBytes: () => peakRss,
     exitCode: () => child.exitCode,
     output: failure,

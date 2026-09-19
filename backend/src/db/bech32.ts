@@ -1,8 +1,19 @@
+/**
+ * Imported from the three packages that hold these symbols, not from the
+ * `@lucid-evolution/lucid` barrel.
+ *
+ * The barrel re-exports the providers, the wallet and the message-signing
+ * bindings as well, and a barrel is loaded whole. Measured on this machine:
+ * importing it costs 140.9 MB of resident memory against a 43.8 MB bare Node
+ * process, where `plutus` and `utils` together cost 96.5 MB. The explorer
+ * reads a database and never builds, signs or submits a transaction, so the
+ * 44 MB difference buys nothing. `bench/memory.mts` is the measurement.
+ */
 import {
   credentialToAddress,
   credentialToRewardAddress,
   scriptHashToCredential,
-} from "@lucid-evolution/lucid";
+} from "@lucid-evolution/utils";
 import { CANONICAL_HASH28 } from "../utils";
 
 /**

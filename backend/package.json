@@ -28,7 +28,8 @@
     "audit:gate": "node scripts/audit-gate.mjs",
     "coverage:lint": "node scripts/coverage-lint.mjs",
     "bench": "node --import ./bench/register.mjs bench/cli.mts",
-    "bench:attribute": "node --import ./bench/register.mjs bench/attribute.mts"
+    "bench:attribute": "node --import ./bench/register.mjs bench/attribute.mts",
+    "bench:memory": "node --import ./bench/register.mjs bench/memory.mts"
   },
   "author": "",
   "license": "ISC",
@@ -38,7 +39,10 @@
   },
   "dependencies": {
     "@al-ft/midgard-core": "file:vendor/al-ft-midgard-core.tgz",
+    "@lucid-evolution/core-types": "0.1.23",
     "@lucid-evolution/lucid": "0.4.31",
+    "@lucid-evolution/plutus": "0.1.30",
+    "@lucid-evolution/utils": "0.1.67",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@prisma/client-runtime-utils": "^7.8.0",
