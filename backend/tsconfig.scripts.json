@@ -12,10 +12,11 @@
   // The files stay `.mjs` and stay directly executable: an operator runs
   // `node scripts/snapshot.mjs restore <archive>` on a machine with no build
   // step, so JSDoc rather than TypeScript. The remaining modules are listed
-  // in the order they are worth doing, by what a mistake in them costs:
-  // `lib/checks.mjs` (48 errors), `lib/compose.mjs` (22), `coverage-lint.mjs`
-  // (21), `setup.mjs` (20). Adding one means clearing its errors, not
-  // widening the include and suppressing them.
+  // in the order they are worth doing, by what a mistake in them costs, with
+  // the errors a project-wide run attributes to each: `lib/checks.mjs` (48),
+  // `lib/compose.mjs` (22), `coverage-lint.mjs` (21), `setup.mjs` (20).
+  // Adding one means clearing its errors, not widening the include and
+  // suppressing them.
   "compilerOptions": {
     "target": "ES2022",
     "module": "Node18",
