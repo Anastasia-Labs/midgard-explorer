@@ -147,7 +147,7 @@ and section 3.8 carries the evidence for each:
 | Area | Then | Now |
 |---|---|---|
 | Security | Partial, no frontend advisory gate, `indexer/` among the surfaces read | Both workspaces gated; three advisories in the frontend fixed rather than accepted; `indexer/` is deleted and `db/cardanoActivity.ts` post-dates the review, so the new files are a delta review still owed |
-| Performance and resource efficiency | Unmeasured | Measured at this head: 13 of 13 target workloads pass, peak resident memory 669.4 MB against a 512 MB budget. That run is stamped NOT A BASELINE (27.5 GiB free against 30, `track_io_timing` off) and ran on a different PostgreSQL configuration from the certified baselines, so its latencies are not comparable to them. The breach is open as M5; stress is blocked on disk |
+| Performance and resource efficiency | Unmeasured | **Unverified at this head.** The last measurement, 2026-09-18 at `44ad31ad`, passed 13 of 13 target workloads at 669.4 MB peak resident memory against a 512 MB budget, but it is stamped NOT A BASELINE (27.5 GiB free against 30, `track_io_timing` off), ran on a different PostgreSQL configuration from the certified baselines, and predates the import narrowing. Certified target and stress runs are blocked on disk headroom and a resource window |
 | Test coverage and quality | 1,361 tests, five fixture skips, six indexer files skipping under `REQUIRE_DB` | 582 backend, 475 app, 41 development-command. The indexer files are deleted and their skips with them; the five fixture skips are assertions |
 | Gate completeness and reliability | Two `check` scripts, one weaker | `pnpm check` inside `app` runs the gate itself |
 | Usability and accessibility | Overflow at 1280, target size recorded as failing | No sideways scroll on seven routes at four widths in both themes; target size measured at 43 x 43 px and asserted |
@@ -657,7 +657,7 @@ removed. "Passing tests" is not on its own either of those.
 | M2 indexer skips | **Closed, obsolete** | The files are deleted; the guard pattern is gone from the suite |
 | M3 fixture-conditional skips | **Closed** | All five assert their precondition. `populated.spec.ts` now carries zero `test.skip` |
 | M4 three status derivations | **Closed** | One exported function, three callers, and the constant `true AS committed` column dropped from the query and from the test's reference query. An unrecognised tier reads as `unknown` |
-| M5 unbounded balance decode | **Open, mechanism partly named** | `pnpm bench:memory` now separates the JavaScript heap, what V8 reserves and what the kernel reports, per workload. At the `small` profile the idle floor before any request was 270.1 MB against 43.8 MB for a bare Node process: the `@lucid-evolution/lucid` barrel costs 140.9 MB to import and `@al-ft/midgard-core`, which depends on it and loads on the first decode, 171.7 MB. Narrowing the explorer's own three import sites took the floor to 221.5 MB. Against that floor `address-history` moved resident memory by 0.1 MB and `transactions-list-page-1` by 143 MB, so this finding's own hypothesis does not hold at that scale. `LazyFree` is 0, so what is held is held. The target-scale attribution is outstanding and needs the resource window |
+| M5 unbounded balance decode | **Open, mechanism partly named, current figure unverified** | `pnpm bench:memory` now separates the JavaScript heap, what V8 reserves and what the kernel reports, per workload. At the `small` profile the idle floor before any request was 270.1 MB against 43.8 MB for a bare Node process: the `@lucid-evolution/lucid` barrel costs 140.9 MB to import and `@al-ft/midgard-core`, which depends on it and loads on the first decode, 171.7 MB. Narrowing the explorer's own three import sites took the floor to 221.5 MB. Against that floor `address-history` moved resident memory by 0.1 MB and `transactions-list-page-1` by 143 MB, so this finding's own hypothesis does not hold at that scale. `LazyFree` is 0, so what is held is held. The target-scale attribution is outstanding and needs the resource window |
 | M6 two `check` scripts | **Closed** | `pnpm check` inside `app` now runs the gate. Reproduced the divergence first: on one unused import `check:app` exits 0 and the gate exits 1. `check:app` remains as the faster subset, named so it cannot be mistaken for the gate |
 | M7 double build | **Closed** | Remediated earlier |
 | L1 skip link focus | **Closed** | `tabIndex={-1}` on `main`; asserted, and the assertion fails without it |
@@ -695,42 +695,43 @@ here so they can become a budget row rather than an audit that happened once.
 Measurement tasks and implementation tasks are separated, because acting before
 measuring is what produced the rejected heap cap.
 
-### The next three tasks, in order
+### What is outstanding
 
-Rewritten 2026-09-18. B1, B2, H1, H2, H3, H4, M1, M2, M3, M4, M6, M7, L1, L2,
-L3, L4, L5 and G1 are closed; section 3.8 records the evidence for each. What
-is left is one measurement, one mechanism, and one thing that has not
-reproduced.
+**Implementation closed 2026-09-19.** B1, B2, H1, H2, H3, H4, M1, M2, M3, M4,
+M6, M7, L1, L2, L3, L4, L5 and G1 are closed; section 3.8 records the evidence
+for each. Three items remain, and none of them is more code.
 
-1. **Identify what dominates backend peak resident memory (M5).** The target
-   profile at this head peaks at 669.4 MB against a 512 MB budget, recorded in
-   `docs/performance/baselines/target-44ad31ad.json`. That is below both
-   earlier figures, 737.3 MB measured and 682.6 MB reported, and still a
-   breach. That artifact is stamped NOT A BASELINE and the run used a
-   different PostgreSQL configuration from the certified baselines, so the
-   memory figure stands as an observation and its latencies do not compare.
-   The budget itself has no recorded derivation, which
-   `performance-budgets.md` now says.
-
-   **The mechanism is named** (2026-09-19, `backend/bench/memory.mts`). The
-   idle floor before any request was 270.1 MB, against 43.8 MB for a bare Node
-   process: `@lucid-evolution/lucid` costs 140.9 MB to import, and
-   `@al-ft/midgard-core` depends on that same barrel and costs 171.7 MB alone,
-   loading on the first transaction decode. Narrowing the explorer's own
-   imports to `plutus`, `utils` and `core-types` took the floor to 221.5 MB;
-   the peak moved only 384.8 to 369.8 MB at the `small` profile, because the
-   codec pulls the barrel back in. Above the floor the growth is per-request
-   heap that V8 commits and does not return, and `LazyFree` is 0, so it is not
-   memory the kernel has already reclaimed. What remains is a target-scale
-   attribution and one upstream change: every runtime import the codec makes
-   from the barrel is `CML`, which is its own package, so taking it from there
-   would return about 44 MB.
-2. **Run the stress profile.** It needs 30 GB of free disk and this machine has
-   27.8 GB, which the harness warns about and which would make the figures
-   describe a starved filesystem. Nothing else blocks it.
-3. **Reproduce the hydration warning (L7), or leave it open.** 64 loads across
-   development and production builds have not. The one condition not recreated
-   is the memory pressure of the original sighting.
+1. **Backend memory at target scale is unverified.** There is no current
+   figure. The last one, 669.4 MB, was taken at `44ad31ad` on 2026-09-18,
+   before the import narrowing in `688fad3d`, and that run is stamped NOT A
+   BASELINE. It exceeded the 512 MB budget, as did the 737.3 MB before it. The
+   budget is unchanged and is kept as the historical target until a
+   replacement is decided from deployment capacity, expected workload,
+   headroom and measurement scope; `performance-budgets.md` carries that
+   table. The mechanism behind the peak **is** named: the idle floor was
+   270.1 MB against 43.8 MB for a bare Node process, because
+   `@lucid-evolution/lucid` costs 140.9 MB to import and `@al-ft/midgard-core`
+   depends on that barrel and costs 171.7 MB alone, loading on the first
+   transaction decode. Narrowing the explorer's own imports took the floor to
+   221.5 MB and the `small` peak 384.8 to 369.8 MB. `LazyFree` is 0, so what
+   is held is held. One upstream change remains worth about 44 MB: every
+   runtime import the codec makes from the barrel is `CML`, its own package.
+2. **The certified target and stress runs are blocked.** Two things, both
+   external to the code. Disk: `df -kP` from `backend/` reports 27.05 GiB
+   against the `30 * 1024**3` the harness requires, short 2.95 GiB, on one
+   filesystem that also holds the benchmark's PostgreSQL data, WAL and temp.
+   And a resource window: generating the 537,812-row target dataset beside the
+   running L1 stack took the machine to 154 MB available and the Cardano node
+   restarted, which is recorded in section 6. Neither the free-disk guard nor
+   any budget was lowered.
+3. **L7 is unresolved and has not reproduced.** Detection is finished: the
+   development console gate now resolves a real block hash, loads a
+   server-rendered record page and runs every route at 390 as well as 1280,
+   and it refuses to run rather than report a clean without the record page.
+   Ten loads through it were clean, on top of 40 production and 24
+   development loads. The condition never recreated is the memory pressure of
+   the original sighting, and recreating it is deliberately kept out of the
+   benchmark window: forcing it is not worth another node restart.
 
 ### Fits in one hour
 
@@ -764,7 +765,7 @@ node's finalization journal, so `BENCH_SOURCE_NODE_URL` replaces
 | **Measure** the development memory peak for the transaction route (H1) | `measure.mjs limit 1024`, then 1536 and 2048, with the transaction route in the swept set | 2 cores, 3 GB free | 30 minutes | **Done 2026-09-18.** 1024 MB fails on that route, 1536 MB and 2048 MB pass, observed peak 1622 MB |
 | **Measure** the canonical target rerun at the current head | `pnpm bench --profile target --mode baseline --iterations 1000 --with-frontend` | quiet machine, 4 GB available, 30 GiB free disk, the dedicated benchmark server | 60 minutes | **Run 2026-09-18, not certified.** 13 of 13 workloads pass; peak resident memory 669.4 MB against a 512 MB budget. The harness stamped it NOT A BASELINE and exited 2 |
 | **Measure** the isolated address-balance peak (M5) | `pnpm bench:memory --profile target --requests 200`, which reports every workload's resident, heap and external figures before, at peak and after | quiet machine, 3.5 GB available | 40 minutes | Partly done. At `small` the answer is that `address-history` moves resident memory by 0.1 MB and is not the dominant contributor; the target-scale run is what settles it |
-| **Measure** the stress retry after the address fixes | `pnpm bench --profile stress --mode baseline --iterations 1000` | quiet machine, 3.5 GB available, 30 GB disk | 70 minutes, 10 of them seeding | Blocked on disk: 27.8 GB free against the 30 GB the harness requires, and it says so rather than running starved |
+| **Measure** the stress retry after the address fixes | `pnpm bench --profile stress --mode baseline --iterations 1000` | quiet machine, 3.5 GB available, 30 GiB disk, the four L1 containers paused | 4 h 20 m at the last run, 6.8 M rows | Blocked on two things: 27.05 GiB free against the `30 * 1024**3` the harness requires, and the resource window. Run only after the target profile has been assessed |
 
 Both runs above were taken with the Cardano node, Ogmios, Kupo and the Midgard
 node paused for the window, and with the Midgard database left running because
@@ -1039,7 +1040,7 @@ register it concerns, or in a new dated page.
 | M2 | With the index database stopped and `REQUIRE_DB=1` set, the suite fails rather than reporting success |
 | M3 | Removing the named fixture row fails the test that depends on it |
 | M4 | One exported status function has three callers and the constant column is gone |
-| M5 | An isolated measurement names the dominant contributor to backend peak resident memory. Complete when the mechanism is identified, not when the number moves |
+| M5 | An isolated measurement names the dominant contributor to backend peak resident memory. Complete when the mechanism is identified, not when the number moves. The mechanism is identified at the `small` profile; the target-scale confirmation is one of the three outstanding items |
 | G1 | Three rows exist in the register with approved targets, and none of them reads `DISCOVERY` |
 
 ### The three dimensions the definition of done was missing

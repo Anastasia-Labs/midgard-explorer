@@ -105,10 +105,36 @@ BASELINE", so the number was chosen before anything was measured, and no page
 here says why 512 rather than another figure. Every other row on this table
 cites its source. The same number is the memory limit `docker-compose.yml`
 declares for the retained `explorer-postgres` container, which is a different
-process, so the coincidence is not a derivation.
+process, so the coincidence is not a derivation. It may have been meant as a
+small-deployment budget; nothing records that, and saying so would be a guess.
 
-The measured value has moved 737.3 MB (2026-09-05) to 669.4 MB (2026-09-18),
-and two runs 25 minutes apart agreed within 0.6%. It has never met the target.
+**It is kept as the historical target until a replacement is decided**, and it
+is not treated as a proven requirement. The question this row should answer is
+whether the backend runs reliably inside the resources of a deployment we
+intend to support, not whether the number can be forced below 512. A
+defensible replacement needs four inputs, and none of them is in this
+repository yet:
+
+| Input | What it has to say |
+|---|---|
+| Deployment capacity | RAM left for the backend after PostgreSQL, the frontend and everything else on the host or tier |
+| Expected workload | dataset size, concurrency and sustained request rate the deployment has to carry |
+| Headroom | what is left for bursts without swapping or being killed |
+| Measurement scope | backend **process-tree resident memory**, which is what the harness samples, not the JavaScript heap |
+
+The order is: measure the updated backend at the agreed workload, then set the
+target against the machine or hosting tier somebody has decided to support,
+then record that decision here. Until then this row reads FAIL against a
+number nobody can source, and that is the honest reading rather than a defect
+report.
+
+**No current figure exists for the target profile.** The last measurement,
+669.4 MB, was taken at `44ad31ad` on 2026-09-18, which is before the import
+narrowing in `688fad3d`. That change moved the idle floor 270.1 to 221.5 MB
+and the `small`-profile peak 384.8 to 369.8 MB, so the target-profile number
+has certainly moved and nobody knows where to. The series so far, all
+historical: 737.3 MB (2026-09-05), 669.4 MB (2026-09-18). Neither met the
+target. Restating this row needs the certified rerun, which is blocked below.
 
 **The 2026-09-18 figure is a measurement, not a certified baseline.** The
 harness stamped that run `NOT A BASELINE` and exited 2 for two reasons it
@@ -150,7 +176,7 @@ aspiration.
 
 | Budget | Measured baseline | Target (approved) | Owner | Dependency | Verification command | Status |
 |---|---|---|---|---|---|---|
-| Backend peak RSS, `target` profile | **669.4 MB** [`44ad31ad`](performance/baselines/target-44ad31ad.json), 2026-09-18, scope `full`, 13 of 13 workloads passing. **Stamped NOT A BASELINE**, exit 2: see below | ≤512 MB, **no recorded derivation**: see below | explorer | none | `pnpm bench --profile target --mode baseline --with-frontend` (`peakRssBytes`) | FAIL, and the target is unsourced |
+| Backend peak RSS, `target` profile | **No current figure.** Historical: 669.4 MB [`44ad31ad`](performance/baselines/target-44ad31ad.json), 2026-09-18, scope `full`, 13 of 13 workloads passing, **stamped NOT A BASELINE**, exit 2, and taken before the import narrowing in `688fad3d` | ≤512 MB, **no recorded derivation**, kept as the historical target until a replacement is decided: see below | explorer | none | `pnpm bench --profile target --mode baseline --with-frontend` (`peakRssBytes`) | **UNVERIFIED** at this head. The last historical figure exceeded the target |
 | Frontend `next build` peak | between 1,024 and 1,536 MB (`docs/resource-requirements.md`, measured on this two-core machine) | ≤1,536 MB | explorer | none | `frontend-new/app/scripts/measure.mjs` | PASS at the boundary: the upper bound equals the target, so any growth breaches it |
 | Frontend `next dev` floor | between 768 and 896 MB (same source) | ≤896 MB | explorer | none | same | PASS at the boundary: as above |
 | Compression never enlarges an eligible response | **0 of 11** responses over 1 KB grew when encoded (vacuous: no response is encoded at all, so none can grow) [`efc9af69`](performance/baselines/target-efc9af69.json) | encoded ≤ identity for every response over 1 KB, measured as identity vs encoded bytes | explorer | none | harness, `encodedBytes` vs `uncompressedBytes` on one url, both taken through the edge proxy named in the report's `payload` | PASS (vacuous, see below) |
