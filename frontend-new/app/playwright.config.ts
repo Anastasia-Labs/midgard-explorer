@@ -47,7 +47,13 @@ export default defineConfig({
   reporter: process.env.CI ? "line" : "list",
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
-    trace: "on-first-retry",
+    /* CI retries, so the first retry records the trace and costs nothing on a
+     * passing run. Locally `retries` is 0, so "on-first-retry" recorded
+     * nothing ever: three desktop specs failed once on this machine on
+     * 2026-09-17 and left no artifact, which is why their cause is still
+     * unestablished. "retain-on-failure" records every test and keeps the
+     * trace only where one failed. */
+    trace: process.env.CI ? "on-first-retry" : "retain-on-failure",
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },
