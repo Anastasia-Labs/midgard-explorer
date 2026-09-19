@@ -108,17 +108,44 @@ declares for the retained `explorer-postgres` container, which is a different
 process, so the coincidence is not a derivation.
 
 The measured value has moved 737.3 MB (2026-09-05) to 669.4 MB (2026-09-18),
-and two runs 25 minutes apart agreed within 0.6%, so the figure is stable and
-the trend is downward. It has never met the target. Two honest ways to close
-the row, and neither is raising the number quietly: identify what dominates the
-peak, which is the open M5 task, or restate the target against a deployment
-constraint somebody can name. Until one of those happens this row reads FAIL
-against an aspiration.
+and two runs 25 minutes apart agreed within 0.6%. It has never met the target.
+
+**The 2026-09-18 figure is a measurement, not a certified baseline.** The
+harness stamped that run `NOT A BASELINE` and exited 2 for two reasons it
+records in the artifact: the machine had 27.5 GiB free against the 30 GiB the
+gate requires, and `track_io_timing` was off. A third difference is not in the
+artifact's warnings and matters more for comparison: that run used a different
+PostgreSQL server from every certified baseline above it. It reports version
+17.10, `shared_buffers` 160 MB and `effective_cache_size` 5 GB, where
+`efc9af69`, `7b1731d5` and the stress run all used the dedicated benchmark
+server at 17.11, `shared_buffers` 320 MB, `effective_cache_size` 1.25 GB and
+`track_io_timing` on. Half the buffer pool and a planner told the operating
+system cache was four times larger do not produce comparable latencies. Read
+the 669.4 MB as a resident-memory observation at that head and read none of
+that run's latencies against the rows above.
+
+**What dominates the peak is now measured** (`backend/bench/memory.mts`,
+2026-09-19). The idle floor, before the server answers anything, was 270.1 MB.
+A bare Node process on this machine is 43.8 MB; `@lucid-evolution/lucid` costs
+140.9 MB to import and `@al-ft/midgard-core`, which depends on that same
+barrel and loads on the first transaction decode, costs 171.7 MB on its own.
+Narrowing the explorer's three import sites to `plutus`, `utils` and
+`core-types` took the floor to 221.5 MB. The peak fell only 384.8 to 369.8 MB
+at the `small` profile, because the codec pulls the barrel back in as soon as
+anything is decoded. Above that floor the growth is per-request heap that V8
+commits and does not return: `LazyFree` in `/proc/<pid>/smaps_rollup` is 0, so
+those pages are genuinely dirty rather than released and uncollected.
+
+Two honest ways to close the row, and neither is raising the number quietly:
+carry the remaining 44 MB by getting the codec off the barrel, which is an
+upstream change, or restate the target against a deployment constraint somebody
+can name. Until one of those happens this row reads FAIL against an
+aspiration.
 
 
 | Budget | Measured baseline | Target (approved) | Owner | Dependency | Verification command | Status |
 |---|---|---|---|---|---|---|
-| Backend peak RSS, `target` profile | **669.4 MB** [`44ad31ad`](performance/baselines/target-44ad31ad.json), 2026-09-18, scope `full`, 13 of 13 workloads passing | ≤512 MB, **no recorded derivation**: see below | explorer | none | `pnpm bench --profile target --mode baseline --with-frontend` (`peakRssBytes`) | FAIL, and the target is unsourced |
+| Backend peak RSS, `target` profile | **669.4 MB** [`44ad31ad`](performance/baselines/target-44ad31ad.json), 2026-09-18, scope `full`, 13 of 13 workloads passing. **Stamped NOT A BASELINE**, exit 2: see below | ≤512 MB, **no recorded derivation**: see below | explorer | none | `pnpm bench --profile target --mode baseline --with-frontend` (`peakRssBytes`) | FAIL, and the target is unsourced |
 | Frontend `next build` peak | between 1,024 and 1,536 MB (`docs/resource-requirements.md`, measured on this two-core machine) | ≤1,536 MB | explorer | none | `frontend-new/app/scripts/measure.mjs` | PASS at the boundary: the upper bound equals the target, so any growth breaches it |
 | Frontend `next dev` floor | between 768 and 896 MB (same source) | ≤896 MB | explorer | none | same | PASS at the boundary: as above |
 | Compression never enlarges an eligible response | **0 of 11** responses over 1 KB grew when encoded (vacuous: no response is encoded at all, so none can grow) [`efc9af69`](performance/baselines/target-efc9af69.json) | encoded ≤ identity for every response over 1 KB, measured as identity vs encoded bytes | explorer | none | harness, `encodedBytes` vs `uncompressedBytes` on one url, both taken through the edge proxy named in the report's `payload` | PASS (vacuous, see below) |

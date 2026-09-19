@@ -147,7 +147,7 @@ and section 3.8 carries the evidence for each:
 | Area | Then | Now |
 |---|---|---|
 | Security | Partial, no frontend advisory gate, `indexer/` among the surfaces read | Both workspaces gated; three advisories in the frontend fixed rather than accepted; `indexer/` is deleted and `db/cardanoActivity.ts` post-dates the review, so the new files are a delta review still owed |
-| Performance and resource efficiency | Unmeasured | Measured at this head: 13 of 13 target workloads pass, peak resident memory 669.4 MB against a 512 MB budget. The breach is open as M5; stress is blocked on disk |
+| Performance and resource efficiency | Unmeasured | Measured at this head: 13 of 13 target workloads pass, peak resident memory 669.4 MB against a 512 MB budget. That run is stamped NOT A BASELINE (27.5 GiB free against 30, `track_io_timing` off) and ran on a different PostgreSQL configuration from the certified baselines, so its latencies are not comparable to them. The breach is open as M5; stress is blocked on disk |
 | Test coverage and quality | 1,361 tests, five fixture skips, six indexer files skipping under `REQUIRE_DB` | 582 backend, 475 app, 41 development-command. The indexer files are deleted and their skips with them; the five fixture skips are assertions |
 | Gate completeness and reliability | Two `check` scripts, one weaker | `pnpm check` inside `app` runs the gate itself |
 | Usability and accessibility | Overflow at 1280, target size recorded as failing | No sideways scroll on seven routes at four widths in both themes; target size measured at 43 x 43 px and asserted |
@@ -706,10 +706,23 @@ reproduced.
    profile at this head peaks at 669.4 MB against a 512 MB budget, recorded in
    `docs/performance/baselines/target-44ad31ad.json`. That is below both
    earlier figures, 737.3 MB measured and 682.6 MB reported, and still a
-   breach. The budget itself has no recorded derivation, which
-   `performance-budgets.md` now says. The next step is the isolated `address-history` profile, and
-   the task is finished when the mechanism is named rather than when the number
-   moves.
+   breach. That artifact is stamped NOT A BASELINE and the run used a
+   different PostgreSQL configuration from the certified baselines, so the
+   memory figure stands as an observation and its latencies do not compare.
+   The budget itself has no recorded derivation, which
+   `performance-budgets.md` now says.
+
+   **The mechanism is named** (2026-09-19, `backend/bench/memory.mts`). The
+   idle floor before any request was 270.1 MB, against 43.8 MB for a bare Node
+   process: `@lucid-evolution/lucid` costs 140.9 MB to import, and
+   `@al-ft/midgard-core` depends on that same barrel and costs 171.7 MB alone,
+   loading on the first transaction decode. Narrowing the explorer's own
+   imports to `plutus`, `utils` and `core-types` took the floor to 221.5 MB;
+   the peak moved only 384.8 to 369.8 MB at the `small` profile, because the
+   codec pulls the barrel back in. Above the floor the growth is per-request
+   heap that V8 commits and does not return, and `LazyFree` is 0, so it is not
+   memory the kernel has already reclaimed. What remains is a target-scale
+   attribution and an upstream change to the codec's dependency.
 2. **Run the stress profile.** It needs 30 GB of free disk and this machine has
    27.8 GB, which the harness warns about and which would make the figures
    describe a starved filesystem. Nothing else blocks it.
@@ -747,7 +760,7 @@ node's finalization journal, so `BENCH_SOURCE_NODE_URL` replaces
 | Task | Command | Resource need | Expected duration | State |
 |---|---|---|---|---|
 | **Measure** the development memory peak for the transaction route (H1) | `measure.mjs limit 1024`, then 1536 and 2048, with the transaction route in the swept set | 2 cores, 3 GB free | 30 minutes | **Done 2026-09-18.** 1024 MB fails on that route, 1536 MB and 2048 MB pass, observed peak 1622 MB |
-| **Measure** the canonical target rerun at the current head | `pnpm bench --profile target --mode baseline --iterations 1000 --with-frontend` | quiet machine, 4 GB available | 60 minutes | **Done 2026-09-18.** 13 of 13 workloads pass; peak resident memory 669.4 MB against a 512 MB budget |
+| **Measure** the canonical target rerun at the current head | `pnpm bench --profile target --mode baseline --iterations 1000 --with-frontend` | quiet machine, 4 GB available, 30 GiB free disk, the dedicated benchmark server | 60 minutes | **Run 2026-09-18, not certified.** 13 of 13 workloads pass; peak resident memory 669.4 MB against a 512 MB budget. The harness stamped it NOT A BASELINE and exited 2 |
 | **Measure** the isolated address-balance peak (M5) | `pnpm bench --only address-history --mode baseline --iterations 1000` at `target`, reading `peakRssBytes` | quiet machine, 3.5 GB available | 40 minutes | Open. It is the next step for the memory breach above |
 | **Measure** the stress retry after the address fixes | `pnpm bench --profile stress --mode baseline --iterations 1000` | quiet machine, 3.5 GB available, 30 GB disk | 70 minutes, 10 of them seeding | Blocked on disk: 27.8 GB free against the 30 GB the harness requires, and it says so rather than running starved |
 
