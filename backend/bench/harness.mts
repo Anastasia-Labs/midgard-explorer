@@ -262,9 +262,6 @@ export async function startServer(
       // something nobody deploys. That makes the production CORS guard apply,
       // which refuses a wildcard, so the harness names its own origin.
       CORS_ORIGIN: `http://127.0.0.1:${port}`,
-      // The indexer would write to the frozen snapshot and move the data the
-      // benchmark is measuring against.
-      L1_SYNC_ENABLED: "false",
       NODE_ENV: "production",
       // The server rate-limits per client at 120 requests a minute. A run is
       // twelve workloads of 40 requests from one address, so the first three

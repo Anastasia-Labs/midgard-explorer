@@ -30,7 +30,6 @@ const valid = {
   RECENT_TRANSACTIONS_LIMIT: "10",
   TRANSACTIONS_PER_PAGE: "25",
   BLOCKS_PER_PAGE: "25",
-  INDEXER_POSTGRES_URL: "postgres://u:p@localhost:5435/midgard_explorer",
   MIDGARD_MANIFEST_PATH: "./test/fixtures/manifest-sample.json",
 };
 
@@ -135,9 +134,10 @@ describe("parseConfig", () => {
     );
   });
 
-  /* The manifest names the L1 deployment, so it is required exactly where it is
-   * read. An L2-only development instance never opens it and used to be refused
-   * at boot; an indexing instance without it writes rows attributed to nothing. */
+  /* The manifest names the L1 deployment the figures belong to. Nothing in the
+   * explorer writes rows any more, so it is optional everywhere and checked
+   * only where it is set: readiness, not boot, refuses an instance that cannot
+   * attribute what it serves. */
   describe("MIDGARD_MANIFEST_PATH", () => {
     /** Optional, and checked when it is there. An explorer with no manifest
      * serves Midgard figures it cannot attribute to a deployment, which
@@ -157,18 +157,8 @@ describe("parseConfig", () => {
       ).toThrow(/MIDGARD_MANIFEST_PATH/);
     });
 
-    it("is optional when the instance serves reads only", () => {
-      const { MIDGARD_MANIFEST_PATH: _omitted, ...rest } = valid;
-      const parsed = parseConfig({ ...rest, L1_SYNC_ENABLED: "false" });
-      expect(parsed.MIDGARD_MANIFEST_PATH).toBeUndefined();
-    });
-
     it("reads an empty value as absent rather than as a path", () => {
-      const parsed = parseConfig({
-        ...valid,
-        L1_SYNC_ENABLED: "false",
-        MIDGARD_MANIFEST_PATH: "",
-      });
+      const parsed = parseConfig({ ...valid, MIDGARD_MANIFEST_PATH: "" });
       expect(parsed.MIDGARD_MANIFEST_PATH).toBeUndefined();
     });
   });
