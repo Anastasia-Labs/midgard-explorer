@@ -976,6 +976,28 @@ a viewport or project guard; none is fixture dependent, which is M3 holding.
 One test fewer than the 2026-09-18 backend run, because a config case that
 duplicated the one above it went with the retired flag it was passing.
 
+**Acceptance against node storage only: 39 of 39 checks passed.** Fourteen API
+routes, two retired readiness scopes answering 404, both search shapes, the
+depth bound on two routes, source identification, fourteen pages and one
+redirect, with `midgard-explorer-postgres` stopped and its volume intact.
+
+**One environmental event, caused here.** A target-scale memory profile was
+started with the L1 stack running, on the judgement that it would fit in the
+2.4 GB then available. Generating the 537,812-row dataset took the machine to
+154 MB available and the Cardano node exited at 06:29:45 UTC; Docker's
+`always` policy restarted it and it revalidated its chunk database, which is a
+read-only pass and not a resync. The container reports exit 0 with
+`OOMKilled` false and it carries no memory limit of its own, so a system-wide
+kill would not set that flag, and `dmesg` is unreadable here: the timing is
+evidence, not proof. `midgard-node-postgres-1` did not restart and lost
+nothing. Target-scale measurement needs the resource window, and this is why.
+
+**One of the acceptance checks reported a false failure first.**
+`grep -c ':5435'` matched the ephemeral source port **54350** on an unrelated
+HTTPS connection and claimed a connection to a stopped database. It compares
+the port field now. The same shape as the other traps this register records: a
+check that answers confidently about something it never looked at.
+
 ### Reported results carried over, not reproduced here
 
 Kept separate on purpose. These were reported before this audit and were not
