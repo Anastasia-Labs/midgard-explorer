@@ -147,7 +147,7 @@ and section 3.8 carries the evidence for each:
 | Area | Then | Now |
 |---|---|---|
 | Security | Partial, no frontend advisory gate, `indexer/` among the surfaces read | Both workspaces gated; three advisories in the frontend fixed rather than accepted; `indexer/` is deleted and `db/cardanoActivity.ts` post-dates the review, so the new files are a delta review still owed |
-| Performance and resource efficiency | Unmeasured | Measured at this head: 13 of 13 target workloads pass, peak resident memory 665.3 MB against a 512 MB budget. The breach is open as M5; stress is blocked on disk |
+| Performance and resource efficiency | Unmeasured | Measured at this head: 13 of 13 target workloads pass, peak resident memory 669.4 MB against a 512 MB budget. The breach is open as M5; stress is blocked on disk |
 | Test coverage and quality | 1,361 tests, five fixture skips, six indexer files skipping under `REQUIRE_DB` | 582 backend, 475 app, 41 development-command. The indexer files are deleted and their skips with them; the five fixture skips are assertions |
 | Gate completeness and reliability | Two `check` scripts, one weaker | `pnpm check` inside `app` runs the gate itself |
 | Usability and accessibility | Overflow at 1280, target size recorded as failing | No sideways scroll on seven routes at four widths in both themes; target size measured at 43 x 43 px and asserted |
@@ -703,9 +703,11 @@ is left is one measurement, one mechanism, and one thing that has not
 reproduced.
 
 1. **Identify what dominates backend peak resident memory (M5).** The target
-   profile at this head peaks at 665.3 MB against a 512 MB budget. That is
-   below both earlier figures, 737.3 MB measured and 682.6 MB reported, and
-   still a breach. The next step is the isolated `address-history` profile, and
+   profile at this head peaks at 669.4 MB against a 512 MB budget, recorded in
+   `docs/performance/baselines/target-44ad31ad.json`. That is below both
+   earlier figures, 737.3 MB measured and 682.6 MB reported, and still a
+   breach. The budget itself has no recorded derivation, which
+   `performance-budgets.md` now says. The next step is the isolated `address-history` profile, and
    the task is finished when the mechanism is named rather than when the number
    moves.
 2. **Run the stress profile.** It needs 30 GB of free disk and this machine has
@@ -745,7 +747,7 @@ node's finalization journal, so `BENCH_SOURCE_NODE_URL` replaces
 | Task | Command | Resource need | Expected duration | State |
 |---|---|---|---|---|
 | **Measure** the development memory peak for the transaction route (H1) | `measure.mjs limit 1024`, then 1536 and 2048, with the transaction route in the swept set | 2 cores, 3 GB free | 30 minutes | **Done 2026-09-18.** 1024 MB fails on that route, 1536 MB and 2048 MB pass, observed peak 1622 MB |
-| **Measure** the canonical target rerun at the current head | `pnpm bench --profile target --mode baseline --iterations 1000 --with-frontend` | quiet machine, 4 GB available | 60 minutes | **Done 2026-09-18.** 13 of 13 workloads pass; peak resident memory 665.3 MB against a 512 MB budget |
+| **Measure** the canonical target rerun at the current head | `pnpm bench --profile target --mode baseline --iterations 1000 --with-frontend` | quiet machine, 4 GB available | 60 minutes | **Done 2026-09-18.** 13 of 13 workloads pass; peak resident memory 669.4 MB against a 512 MB budget |
 | **Measure** the isolated address-balance peak (M5) | `pnpm bench --only address-history --mode baseline --iterations 1000` at `target`, reading `peakRssBytes` | quiet machine, 3.5 GB available | 40 minutes | Open. It is the next step for the memory breach above |
 | **Measure** the stress retry after the address fixes | `pnpm bench --profile stress --mode baseline --iterations 1000` | quiet machine, 3.5 GB available, 30 GB disk | 70 minutes, 10 of them seeding | Blocked on disk: 27.8 GB free against the 30 GB the harness requires, and it says so rather than running starved |
 

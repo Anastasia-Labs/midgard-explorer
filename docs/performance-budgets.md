@@ -99,9 +99,26 @@ Fallbacks in order: paginate or cap the decoded transaction rows and report the 
 
 ## Resource, delivery and payload budgets
 
+**The 512 MB memory target has no recorded basis.** It entered in `07f51103`
+with its baseline column reading "not measured" and its status "PENDING
+BASELINE", so the number was chosen before anything was measured, and no page
+here says why 512 rather than another figure. Every other row on this table
+cites its source. The same number is the memory limit `docker-compose.yml`
+declares for the retained `explorer-postgres` container, which is a different
+process, so the coincidence is not a derivation.
+
+The measured value has moved 737.3 MB (2026-09-05) to 669.4 MB (2026-09-18),
+and two runs 25 minutes apart agreed within 0.6%, so the figure is stable and
+the trend is downward. It has never met the target. Two honest ways to close
+the row, and neither is raising the number quietly: identify what dominates the
+peak, which is the open M5 task, or restate the target against a deployment
+constraint somebody can name. Until one of those happens this row reads FAIL
+against an aspiration.
+
+
 | Budget | Measured baseline | Target (approved) | Owner | Dependency | Verification command | Status |
 |---|---|---|---|---|---|---|
-| Backend peak RSS, `target` profile | **737.3 MB** [`efc9af69`](performance/baselines/target-efc9af69.json) | ≤512 MB | explorer | none | `pnpm bench --profile target --mode baseline` (`peakRssBytes`) | FAIL |
+| Backend peak RSS, `target` profile | **669.4 MB** [`44ad31ad`](performance/baselines/target-44ad31ad.json), 2026-09-18, scope `full`, 13 of 13 workloads passing | ≤512 MB, **no recorded derivation**: see below | explorer | none | `pnpm bench --profile target --mode baseline --with-frontend` (`peakRssBytes`) | FAIL, and the target is unsourced |
 | Frontend `next build` peak | between 1,024 and 1,536 MB (`docs/resource-requirements.md`, measured on this two-core machine) | ≤1,536 MB | explorer | none | `frontend-new/app/scripts/measure.mjs` | PASS at the boundary: the upper bound equals the target, so any growth breaches it |
 | Frontend `next dev` floor | between 768 and 896 MB (same source) | ≤896 MB | explorer | none | same | PASS at the boundary: as above |
 | Compression never enlarges an eligible response | **0 of 11** responses over 1 KB grew when encoded (vacuous: no response is encoded at all, so none can grow) [`efc9af69`](performance/baselines/target-efc9af69.json) | encoded ≤ identity for every response over 1 KB, measured as identity vs encoded bytes | explorer | none | harness, `encodedBytes` vs `uncompressedBytes` on one url, both taken through the edge proxy named in the report's `payload` | PASS (vacuous, see below) |

@@ -34,7 +34,9 @@ test("the skip link moves focus to the main region", async ({ page }, info) => {
  * pointer does not experience. This walks outwards from the centre of a real
  * trigger and asks the document what is under each point.
  */
-test("an information trigger accepts a pointer over at least 24 x 24 px", async ({ page }, info) => {
+test("an information trigger accepts a pointer over at least 24 x 24 px", async ({
+  page,
+}, info) => {
   test.skip(info.project.name !== "desktop", "measures a pointer target");
   await page.goto("/deposits");
   await page.waitForLoadState("networkidle");

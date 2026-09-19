@@ -23,10 +23,7 @@ export function WebVitals() {
     //
     // text/plain posts without a CORS preflight, and a beacon survives the page
     // being hidden, which is when LCP, INP and CLS are usually final.
-    navigator.sendBeacon(
-      "/api/vitals",
-      new Blob([JSON.stringify(sample)], { type: "text/plain" }),
-    );
+    navigator.sendBeacon("/api/vitals", new Blob([JSON.stringify(sample)], { type: "text/plain" }));
   });
   return null;
 }
