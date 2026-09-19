@@ -48,6 +48,12 @@ pnpm --filter @midgard-explorer/contracts exec tsc --noEmit
 step "typecheck: app"
 pnpm --filter @midgard-explorer/app exec tsc --noEmit
 
+step "typecheck: app tooling (checkJs)"
+# `tsconfig.json` has `checkJs` off, so the .mjs tooling beside the app was
+# never type checked. This config turns it on for the modules that earn it and
+# names the rest in its own comment.
+pnpm --filter @midgard-explorer/app exec tsc -p tsconfig.scripts.json
+
 step "typecheck: ui"
 pnpm --filter @midgard-explorer/ui exec tsc --noEmit
 

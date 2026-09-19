@@ -35,6 +35,7 @@ const [, , frontendRoot, command, ...args] = process.argv;
  * one and needs no database. */
 const PROBE_TX = "a".repeat(64);
 
+/** @param {string} message @returns {never} */
 const fail = (message) => {
   process.stderr.write(`${message}\n`);
   process.exit(1);
@@ -45,10 +46,13 @@ if (!frontendRoot) fail("measure.mjs needs the frontend-new directory");
  *
  * The tree matters: `next dev` is a supervisor whose bundler workers hold most
  * of the memory, so sampling the pid alone reports a fraction of the cost. */
+/** @param {number} pid @returns {number} */
 const treeRssMb = (pid) => {
+  /** @param {number} root @returns {number[]} */
   const descendants = (root) => {
     const found = [root];
     for (let i = 0; i < found.length; i += 1) {
+      /** @type {number[]} */
       let children = [];
       try {
         children = readFileSync(`/proc/${found[i]}/task/${found[i]}/children`, "utf8")
@@ -76,8 +80,13 @@ const treeRssMb = (pid) => {
 };
 
 if (command === "peak") {
-  const [url, ...pids] = args;
-  if (!url || pids.length === 0) fail("peak needs a URL and at least one pid");
+  const [url, ...rest] = args;
+  if (!url || rest.length === 0) fail("peak needs a URL and at least one pid");
+  // Numbers from here on. They arrive as argv strings, and the walk below
+  // compares a pid against the children it reads, which are numbers: a string
+  // root never matched one, so the loop guard did not hold for the root.
+  const pids = rest.map(Number);
+  if (pids.some((pid) => !Number.isInteger(pid) || pid <= 0)) fail("pids must be integers");
   let peak = 0;
   const deadline = Date.now() + 60_000;
   // Requesting pages while sampling: an idle server is not the peak, and the

@@ -67,6 +67,7 @@ const TABLES = [
  * their turn; `runCli` turns the throw back into an exit code. */
 class SnapshotRefusal extends Error {}
 
+/** @param {string} message @returns {never} */
 const die = (message) => {
   throw new SnapshotRefusal(message);
 };
@@ -80,8 +81,10 @@ const die = (message) => {
  * fails: the first run of this script printed the password to the terminal.
  * PG* variables keep the credential out of argv entirely.
  */
+/** @param {string} url @returns {Record<string, string | undefined>} */
 function pgEnv(url) {
   const u = new URL(url);
+  /** @type {Record<string, string | undefined>} */
   const env = {
     ...process.env,
     PGHOST: u.hostname,
@@ -96,7 +99,16 @@ function pgEnv(url) {
   return env;
 }
 
-/** Never includes the URL, so a failure cannot print a credential. */
+/**
+ * Never includes the URL, so a failure cannot print a credential.
+ *
+ * @param {string} command
+ * @param {readonly string[]} args
+ * @param {string} url
+ * @param {{ env?: Record<string, string | undefined>, input?: string,
+ *   stdio?: import("node:child_process").StdioOptions }} [options]
+ * @returns {string}
+ */
 const run = (command, args, url, options = {}) => {
   try {
     return execFileSync(command, args, {
@@ -105,11 +117,13 @@ const run = (command, args, url, options = {}) => {
       ...options,
     });
   } catch (error) {
-    const detail = typeof error?.stderr === "string" ? error.stderr.trim() : "";
+    const stderr = /** @type {{ stderr?: unknown }} */ (error).stderr;
+    const detail = typeof stderr === "string" ? stderr.trim() : "";
     die(`${command} failed${detail ? `: ${detail}` : "."}`);
   }
 };
 
+/** @param {string} url @param {string} sql @returns {string} */
 const psql = (url, sql) => run("psql", ["-At", "-c", sql], url).trim();
 
 /**
@@ -124,6 +138,7 @@ const psql = (url, sql) => run("psql", ["-At", "-c", sql], url).trim();
  * Refused rather than worked around. Stripping the offending statements would
  * make this script responsible for knowing every version's preamble.
  */
+/** @param {string} url @param {string} tool */
 function assertVersionMatch(url, tool) {
   const server = Number(psql(url, "SHOW server_version_num;"));
   const serverMajor = Math.floor(server / 10000);
@@ -143,6 +158,7 @@ function assertVersionMatch(url, tool) {
 
 /** A capture's fingerprint, so a restore can refuse a dump that does not match
  * the schema this build reads. Column names and types, not data. */
+/** @param {string} url @returns {string} */
 function schemaFingerprint(url) {
   const rows = psql(
     url,
@@ -155,6 +171,7 @@ function schemaFingerprint(url) {
   return createHash("sha256").update(rows).digest("hex");
 }
 
+/** @param {string} url @returns {Record<string, number>} */
 const rowCounts = (url) =>
   Object.fromEntries(
     TABLES.map((table) => [
@@ -188,6 +205,7 @@ const MARKER_COLUMNS = {
  * `explorer_snapshot_meta` handed over databases this tool never wrote.
  * `test/snapshot-safety.test.mts` holds one case per hole.
  */
+/** @param {string} url @returns {"empty" | "snapshot" | "foreign"} */
 function targetOwnership(url) {
   const objects = Number(
     psql(
@@ -226,9 +244,11 @@ function targetOwnership(url) {
   return rows === 1 ? "snapshot" : "foreign";
 }
 
+/** @param {string} path @returns {string} */
 const sha256 = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");
 
+/** @param {string} name @returns {string} */
 function requireEnv(name) {
   const value = process.env[name];
   if (!value || value.trim() === "") die(`${name} is not set.`);
@@ -237,6 +257,7 @@ function requireEnv(name) {
 
 /** Never printed. A connection string carries a password, and this writes a
  * manifest that is meant to be shared. */
+/** @param {string} url @returns {string} */
 const databaseName = (url) => new URL(url).pathname.slice(1);
 
 /**
@@ -256,6 +277,11 @@ const databaseName = (url) => new URL(url).pathname.slice(1);
  * concurrent ordering could contradict, and a standby uses REPEATABLE READ for
  * the same reason it always did.
  */
+/**
+ * @param {string} url
+ * @param {boolean} inRecovery
+ * @param {(snapshotId: string, ask: (sql: string) => Promise<string>) => Promise<unknown>} work
+ */
 async function withExportedSnapshot(url, inRecovery, work) {
   // No URL argument. `pgEnv` exists so the connection never reaches a command
   // line, where every user on the host can read it out of `ps`, and because a
@@ -273,6 +299,7 @@ async function withExportedSnapshot(url, inRecovery, work) {
 
   let stdout = "";
   let stderr = "";
+  /** @type {Error | null} */
   let failure = null;
   child.stdout.on("data", (chunk) => (stdout += chunk));
   child.stderr.on("data", (chunk) => (stderr += chunk));
@@ -287,6 +314,7 @@ async function withExportedSnapshot(url, inRecovery, work) {
    * is finished" signal available over a pipe.
    */
   let sequence = 0;
+  /** @param {string} sql @returns {Promise<string>} */
   const ask = async (sql) => {
     const seen = stdout.length;
     const marker = `__snapshot_ok_${(sequence += 1)}__`;
@@ -336,6 +364,7 @@ async function withExportedSnapshot(url, inRecovery, work) {
   }
 }
 
+/** @param {typeof args} args */
 async function exportSnapshot(args) {
   const out = resolve(args.out ?? "snapshots");
   mkdirSync(out, { recursive: true });
@@ -375,7 +404,10 @@ async function exportSnapshot(args) {
   process.stdout.write(
     `Capturing ${TABLES.length} relations from "${databaseName(url)}"\n`,
   );
-  await withExportedSnapshot(url, inRecovery, async (snapshotId, ask) => {
+  await withExportedSnapshot(url, inRecovery, async (
+    /** @type {string} */ snapshotId,
+    /** @type {(sql: string) => Promise<string>} */ ask,
+  ) => {
     run(
       "pg_dump",
       [
@@ -446,7 +478,12 @@ async function exportSnapshot(args) {
 
 /** The same eighteen counts, asked inside the transaction that exported the
  * dump's snapshot. */
+/**
+ * @param {(sql: string) => Promise<string>} ask
+ * @returns {Promise<Record<string, number>>}
+ */
 async function countsInSession(ask) {
+  /** @type {[string, number][]} */
   const entries = [];
   for (const table of TABLES) {
     entries.push([
@@ -460,6 +497,7 @@ async function countsInSession(ask) {
 /** The column fingerprint, likewise from the dump's own snapshot: a migration
  * applied mid-capture would otherwise be recorded against an archive taken
  * before it. */
+/** @param {(sql: string) => Promise<string>} ask @returns {Promise<string>} */
 async function fingerprintInSession(ask) {
   // The SAME statement text as `schemaFingerprint`, deliberately. The restore
   // recomputes the fingerprint with that helper and compares digests, so these
@@ -480,6 +518,12 @@ async function fingerprintInSession(ask) {
  * dropped the marker and then died would otherwise leave a database this tool
  * no longer recognises as its own. The next restore would demand `--force` to
  * reclaim a database it had written itself.
+ */
+/**
+ * @param {string} url
+ * @param {{ capturedAt: string, sourceDatabase: string, deploymentId?: string | null, network?: string | null, archiveSha256: string }} meta
+ * @param {{ env: Record<string, string | undefined> }} writable the session
+ *   override that lets this one statement write to a read-only database
  */
 function writeMarker(url, meta, writable) {
   run(
@@ -529,6 +573,11 @@ function writeMarker(url, meta, writable) {
 /** Puts back the marker a failed restore removed, from the values read before
  * anything was touched. Same shape as `writeMarker`, different source of truth:
  * this one asserts what the database still holds, not what was being written. */
+/**
+ * @param {string} url
+ * @param {string} packed
+ * @param {{ env: Record<string, string | undefined> }} writable
+ */
 function restoreMarker(url, packed, writable) {
   const [capturedAt, sourceDatabase, deploymentId, network, archiveSha256] =
     packed.split("|");
@@ -566,11 +615,13 @@ const SNAPSHOT_VERSION = 1;
  * over an archive can hand over its manifest, so its shape and its values are
  * input, not fact.
  */
+/** @param {string} archive */
 const readMeta = (archive) => {
   const metaPath = `${archive}.json`;
   if (!existsSync(metaPath))
     die(`No manifest beside ${archive}. Expected ${metaPath}.`);
 
+  /** @type {Record<string, unknown>} */
   let meta;
   try {
     meta = JSON.parse(readFileSync(metaPath, "utf8"));
@@ -581,6 +632,21 @@ const readMeta = (archive) => {
     die(`Manifest at ${metaPath} is not an object.`);
   }
 
+  /**
+   * @overload
+   * @param {string} name
+   * @param {{ required?: true, pattern?: RegExp | null }} [options]
+   * @returns {string}
+   *
+   * @overload
+   * @param {string} name
+   * @param {{ required: false, pattern?: RegExp | null }} options
+   * @returns {string | null}
+   *
+   * @param {string} name
+   * @param {{ required?: boolean, pattern?: RegExp | null }} [options]
+   * @returns {string | null}
+   */
   const text = (name, { required = true, pattern = null } = {}) => {
     const value = meta[name];
     if (value === undefined || value === null) {
@@ -607,7 +673,7 @@ const readMeta = (archive) => {
   if (typeof meta.sourceWasReplica !== "boolean") {
     die(`Manifest field "sourceWasReplica" is not a boolean.`);
   }
-  if (!Number.isInteger(meta.archiveBytes) || meta.archiveBytes <= 0) {
+  if (!Number.isInteger(meta.archiveBytes) || Number(meta.archiveBytes) <= 0) {
     die(`Manifest field "archiveBytes" is not a positive integer.`);
   }
   const validated = {
@@ -670,16 +736,18 @@ const readMeta = (archive) => {
     );
   }
 
-  const missing = TABLES.filter((table) => !(table in meta.rowCounts));
+  const declaredCounts = /** @type {Record<string, number>} */ (meta.rowCounts);
+  const missing = TABLES.filter((table) => !(table in declaredCounts));
   if (missing.length > 0) {
     die(
       `Manifest at ${metaPath} has no row count for ${missing.join(", ")}. ` +
         `It was written for a different set of tables than this build reads.`,
     );
   }
-  return { ...validated, rowCounts: meta.rowCounts };
+  return { ...validated, rowCounts: declaredCounts };
 };
 
+/** @param {typeof args} args */
 function verifySnapshot(args) {
   const archive = resolve(args._[0] ?? die("Usage: snapshot:verify <archive>"));
   const meta = readMeta(archive);
@@ -706,6 +774,7 @@ function verifySnapshot(args) {
  * weeks and presented it as the live chain, and the cause was one line in a
  * gitignored .env.
  */
+/** @param {typeof args} args */
 function restoreSnapshot(args) {
   const archive = resolve(
     args._[0] ?? die("Usage: snapshot:restore <archive>"),
@@ -774,6 +843,7 @@ function restoreSnapshot(args) {
   // between left a snapshot open to writes, silently, until someone noticed.
   // A session-level override does the same job with no window at all, because
   // it dies with the process that asked for it.
+  /** @type {{ env: Record<string, string | undefined> }} */
   const writable = {
     env: { ...pgEnv(url), PGOPTIONS: "-c default_transaction_read_only=off" },
   };
@@ -938,8 +1008,10 @@ if (invokedDirectly) runCli();
 
 /** One place where a refusal becomes an exit code, so every path reports the
  * same way and no `finally` is skipped on the way there. */
+/** @param {unknown} error @returns {never} */
 function fail(error) {
-  process.stderr.write(`${error?.message ?? String(error)}\n`);
+  const message = /** @type {{ message?: unknown }} */ (error)?.message;
+  process.stderr.write(`${typeof message === "string" ? message : String(error)}\n`);
   process.exit(1);
 }
 

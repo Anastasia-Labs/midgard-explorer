@@ -12,7 +12,7 @@
     "_comment_check": "The gate, not an approximation of it. This used to be typecheck+lint+test under the app's own ESLint configuration, which does not report what the workspace configuration reports: at one commit the outer script failed and this one exited 0 on the same code, which is how eleven commits reached the branch with a red gate nobody had seen. Running the gate from here costs a few seconds and cannot disagree with it.",
     "check": "pnpm --dir .. check",
     "check:app": "pnpm typecheck && pnpm lint && pnpm test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json",
     "lint": "eslint src e2e scripts && node scripts/type-scale-check.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
