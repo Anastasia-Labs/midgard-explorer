@@ -717,9 +717,15 @@ for each. Three items remain, and none of them is more code.
    is held is held. One upstream change remains worth about 44 MB: every
    runtime import the codec makes from the barrel is `CML`, its own package.
 2. **The certified target and stress runs are blocked.** Two things, both
-   external to the code. Disk: `df -kP` from `backend/` reports 27.05 GiB
-   against the `30 * 1024**3` the harness requires, short 2.95 GiB, on one
+   external to the code. Disk: `df -kP` from `backend/` reports 26.99 GiB
+   against the `30 * 1024**3` the harness requires, short 3.01 GiB, on one
    filesystem that also holds the benchmark's PostgreSQL data, WAL and temp.
+   Note the order in `runHarness`: `buildBackend` then `buildFrontend` then
+   `captureEnvironment` then `setupBench`. The frontend is rebuilt **before**
+   free disk is sampled, so clearing `.next` buys nothing at the guard, and
+   the benchmark dataset is generated **after** it, so clearing the bench
+   volume counts at the check and is spent immediately afterwards. Only space
+   that is free at line 768 and stays free is headroom.
    And a resource window: generating the 537,812-row target dataset beside the
    running L1 stack took the machine to 154 MB available and the Cardano node
    restarted, which is recorded in section 6. Neither the free-disk guard nor

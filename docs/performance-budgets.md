@@ -124,9 +124,9 @@ repository yet:
 
 The order is: measure the updated backend at the agreed workload, then set the
 target against the machine or hosting tier somebody has decided to support,
-then record that decision here. Until then this row reads FAIL against a
-number nobody can source, and that is the honest reading rather than a defect
-report.
+then record that decision here. Until both of those happen the row reads
+UNVERIFIED: there is no current figure, and the number it would be compared
+against is one nobody can source.
 
 **No current figure exists for the target profile.** The last measurement,
 669.4 MB, was taken at `44ad31ad` on 2026-09-18, which is before the import
@@ -162,16 +162,22 @@ anything is decoded. Above that floor the growth is per-request heap that V8
 commits and does not return: `LazyFree` in `/proc/<pid>/smaps_rollup` is 0, so
 those pages are genuinely dirty rather than released and uncollected.
 
-Two honest ways to close the row, and neither is raising the number quietly:
-get the codec off the barrel, or restate the target against a deployment
-constraint somebody can name. The first is an upstream change and a small one.
-Every runtime import `@al-ft/midgard-core` makes from `@lucid-evolution/lucid`
-is `CML`, at three sites in two chunks, and CML is its own package. Taking it
-from `@anastasia-labs/cardano-multiplatform-lib-nodejs` instead would stop the
+Two things would move the row, and neither is raising the number quietly.
+
+The first is **not implemented here and is not scheduled**: getting the codec
+off the barrel. Every runtime import `@al-ft/midgard-core` makes from
+`@lucid-evolution/lucid` is `CML`, at three sites in two chunks, and CML is
+its own package. Taking it from
+`@anastasia-labs/cardano-multiplatform-lib-nodejs` instead would stop the
 barrel loading the providers, the wallet and the message-signing bindings, and
 the explorer already holds `plutus` and `utils` for its own use: about 44 MB,
-the difference between the barrel at 140.9 MB and those two at 96.5 MB. Until one of those happens this row reads FAIL against an
-aspiration.
+the difference between the barrel at 140.9 MB and those two at 96.5 MB. The
+package is vendored as a tarball with a provenance test over it, so this is an
+upstream change to raise, recorded here as a measurement rather than as work
+in progress.
+
+The second is restating the target against a deployment constraint somebody
+can name, which is the table above.
 
 
 | Budget | Measured baseline | Target (approved) | Owner | Dependency | Verification command | Status |
