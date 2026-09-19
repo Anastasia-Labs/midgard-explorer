@@ -722,7 +722,9 @@ reproduced.
    codec pulls the barrel back in. Above the floor the growth is per-request
    heap that V8 commits and does not return, and `LazyFree` is 0, so it is not
    memory the kernel has already reclaimed. What remains is a target-scale
-   attribution and an upstream change to the codec's dependency.
+   attribution and one upstream change: every runtime import the codec makes
+   from the barrel is `CML`, which is its own package, so taking it from there
+   would return about 44 MB.
 2. **Run the stress profile.** It needs 30 GB of free disk and this machine has
    27.8 GB, which the harness warns about and which would make the figures
    describe a starved filesystem. Nothing else blocks it.
