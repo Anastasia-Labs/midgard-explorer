@@ -24,11 +24,21 @@ const REQUIRED = process.env.REQUIRE_BACKEND === "1";
 
 let reachable = false;
 
-const get = async (path: string): Promise<unknown> => {
-  const res = await fetch(`${BASE}${path}`, { signal: AbortSignal.timeout(10_000) });
+const get = async (path: string, timeoutMs = 10_000): Promise<unknown> => {
+  const res = await fetch(`${BASE}${path}`, { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`${path} answered ${res.status}`);
   return res.json();
 };
+
+/** The reachability probe gives up well inside Vitest's 10 s hook limit.
+ *
+ * It used the same 10 s as the contract checks, which equals the hook limit.
+ * Where nothing listens and the connection is refused, that never mattered.
+ * Where the port hangs instead, as a dead localhost port does under WSL, the
+ * hook died at 10,000 ms before the probe could give up, and the file failed
+ * rather than skipping. That turned "no backend running" into a red frontend
+ * gate. Three seconds is what the app's own `/api/health` allows. */
+const PROBE_TIMEOUT_MS = 3_000;
 
 /** Decodes, or fails naming the field rather than the whole response. */
 const satisfies = async (path: string, schema: Schema.Schema<never, never, never> | unknown) => {
@@ -41,7 +51,7 @@ const satisfies = async (path: string, schema: Schema.Schema<never, never, never
 
 beforeAll(async () => {
   try {
-    await get("/healthz");
+    await get("/healthz", PROBE_TIMEOUT_MS);
     reachable = true;
   } catch (error) {
     if (REQUIRED) throw error;
