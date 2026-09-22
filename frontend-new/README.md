@@ -26,8 +26,12 @@ pnpm dev
 Open <http://127.0.0.1:3011>.
 
 There is no file to generate first. The app calls <http://127.0.0.1:3101> by
-default, which is where `cd backend && pnpm dev` serves. If nothing answers
-there, this command says so and stops rather than rendering a page of errors.
+default, which is where `cd backend && pnpm dev` serves.
+
+The backend does not have to be running first. If nothing answers there, this
+command says so and starts anyway. Pages show the API as unavailable, and once
+the backend answers they fill themselves in within about five seconds, without a
+reload.
 
 To point somewhere else, for one run or for good:
 
@@ -108,17 +112,17 @@ answer by accident.
 
 ## Commands
 
-| Command                     | What it does                                                       |
-| --------------------------- | ------------------------------------------------------------------ |
-| `pnpm dev`                  | The app against the backend, refusing to start if nothing answers. |
-| `pnpm dev:demo`             | The app and the fixture API, in one terminal.                      |
-| `pnpm check`                | Formatting, lint, typecheck and the unit suites.                   |
-| `pnpm test`                 | Unit suites only.                                                  |
-| `pnpm test:e2e`             | The Playwright suite, on its own ports.                            |
-| `pnpm build` / `pnpm start` | The production build, then serve it.                               |
-| `pnpm fixtures`             | The fixture API alone.                                             |
-| `pnpm measure`              | The memory floor, measured under an enforced ceiling.              |
-| `pnpm format`               | Rewrites formatting; `format:check` only reports.                  |
+| Command                     | What it does                                                 |
+| --------------------------- | ------------------------------------------------------------ |
+| `pnpm dev`                  | The app against the backend, warning if nothing answers yet. |
+| `pnpm dev:demo`             | The app and the fixture API, in one terminal.                |
+| `pnpm check`                | Formatting, lint, typecheck and the unit suites.             |
+| `pnpm test`                 | Unit suites only.                                            |
+| `pnpm test:e2e`             | The Playwright suite, on its own ports.                      |
+| `pnpm build` / `pnpm start` | The production build, then serve it.                         |
+| `pnpm fixtures`             | The fixture API alone.                                       |
+| `pnpm measure`              | The memory floor, measured under an enforced ceiling.        |
+| `pnpm format`               | Rewrites formatting; `format:check` only reports.            |
 
 ## Layout
 

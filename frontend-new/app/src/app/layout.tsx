@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { AppShell } from "../components/shell/AppShell";
 import { SourceBanner } from "../components/shell/SourceBanner";
+import { ApiRecovery } from "../components/shell/ApiRecovery";
 import { WebVitals } from "../components/shell/WebVitals";
 import { assertNetworkConfigured } from "../lib/network";
 import { Providers } from "./providers";
@@ -96,6 +97,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         />
         <Providers>
           <WebVitals />
+          <ApiRecovery />
           {/* Above the shell on purpose: a viewer must see that the figures
               are a fixture before they read any of them. */}
           <SourceBanner />

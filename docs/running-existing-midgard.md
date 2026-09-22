@@ -83,9 +83,10 @@ pnpm install
 pnpm dev
 ```
 
-The web app serves <http://127.0.0.1:3011> and calls the backend directly. It
-refuses to start when the API is not answering, so a missing first terminal is
-reported rather than rendered as an error on every page.
+The web app serves <http://127.0.0.1:3011> and calls the backend directly. The
+order of the two terminals does not matter: if the API is not answering, the web
+app says so and starts anyway, shows the API as unavailable, and fills each page
+in within about five seconds of the backend answering, without a reload.
 
 ## Ports
 

@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 /**
- * Refuses to start the development server when the API it will call is not
+ * Says, before the development server starts, whether the API it will call is
  * answering.
  *
- * Without this, every page renders an error and the cause is a network tab
- * away. The two-terminal quick start puts the backend first, so this failing
- * means that terminal is not running yet, and the message says so.
+ * It used to refuse to start when the API was down, so that a missing backend
+ * was named in the terminal rather than discovered one error page at a time.
+ * The frontend now starts without it: every page shows the API as unavailable,
+ * and `ApiRecovery` re-renders the page once the backend answers. The message
+ * stays, as a warning, because the cause of those alerts is still worth saying
+ * where the command was typed.
  *
  * Demo mode does not use this: its API is the fixture server, which this
  * command starts itself.
@@ -53,17 +56,20 @@ for (const [who, base] of bases) {
 
 if (unreachable.length > 0) {
   for (const [who, base] of unreachable) {
-    process.stderr.write(`The API ${who} calls, ${base}, is not answering.\n`);
+    process.stderr.write(`The API ${who} calls, ${base}, is not answering yet.\n`);
   }
   process.stderr.write(
     "\n" +
+      "  Starting anyway. Pages show the API as unavailable and fill\n" +
+      "  themselves in once it answers, with no reload.\n" +
+      "\n" +
       "  Start it in another terminal:  cd backend && pnpm dev\n" +
-      "  Or run without one:            pnpm dev:demo\n" +
-      "  Or point somewhere else:       NEXT_PUBLIC_API_BASE=<url> pnpm dev\n",
+      "  Or run with fixture data:      pnpm dev:demo\n" +
+      "  Or point somewhere else:       NEXT_PUBLIC_API_BASE=<url> pnpm dev\n\n",
   );
-  process.exit(1);
 }
 
 for (const [who, base] of bases) {
+  if (unreachable.some(([, down]) => down === base)) continue;
   process.stdout.write(`API for ${who}: ${base} is answering\n`);
 }
