@@ -387,13 +387,17 @@ const routes = [
     "transactions/recent",
     /^\/api\/transactions\/recent$/,
     () => ({
-      rows: TXS.slice(0, 7).map((t) => ({
-        height: BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? null,
-        header_hash: t.header_hash,
-        tx_id: t.tx_id,
-        time_stamp_tz: t.time_stamp_tz,
-        status: t.status === "pending_commit" ? "pending_commit" : "committed",
-      })),
+      rows: TXS.slice(0, 7).map((t) => {
+        const block = BLOCKS.find((b) => b.header_hash === t.header_hash);
+        return {
+          height: block?.height ?? null,
+          header_hash: t.header_hash,
+          tx_id: t.tx_id,
+          time_stamp_tz: t.time_stamp_tz,
+          status: t.status === "pending_commit" ? "pending_commit" : "committed",
+          finalization_status: block ? (blockFinalization(block.number)?.status ?? null) : null,
+        };
+      }),
     }),
   ],
   ["transactions/total", /^\/api\/transactions\/total$/, () => ({ total: TXS.length })],

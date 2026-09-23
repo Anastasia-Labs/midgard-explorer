@@ -99,6 +99,7 @@ export const RecentTxRow = Schema.Struct({
   tx_id: HexString,
   time_stamp_tz: IsoTimestamp,
   status: StatusString,
+  finalization_status: Schema.NullOr(Schema.String),
 });
 export type RecentTxRow = Schema.Schema.Type<typeof RecentTxRow>;
 

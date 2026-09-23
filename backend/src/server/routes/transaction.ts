@@ -214,6 +214,7 @@ export async function getRecentTransactionsRoute(_req: Request, res: Response) {
     tx_id: toHex(row.tx_id),
     time_stamp_tz: row.time_stamp_tz,
     status: "committed",
+    finalization_status: row.finalization_status,
   }));
   return res.json({ rows: payload });
 }
