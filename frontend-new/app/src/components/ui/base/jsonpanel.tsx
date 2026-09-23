@@ -8,6 +8,44 @@ import { FieldLabel } from "./infotip";
 import { Icon } from "./icons";
 import { SemanticLabel } from "./semantic";
 
+/** A value longer than this gets its own wrapped block under its key. */
+export const LONG_VALUE = 96;
+
+const LONG_LINE = new RegExp(`^(\\s*)("(?:[^"\\\\]|\\\\.)*":\\s)?("[^"]{${LONG_VALUE},}",?)$`);
+
+/** The JSON, one line per line, with a long string value moved onto its own
+ * wrapped block, indented under its key.
+ *
+ * The characters are exactly the response's: only how they wrap on screen
+ * changes, so selecting the text still copies the whole value. A single CBOR
+ * string used to be one line thousands of characters wide. */
+function JsonLines({ json }: { json: string }) {
+  return (
+    <>
+      {json.split("\n").map((line, i) => {
+        const match = LONG_LINE.exec(line);
+        if (!match)
+          return (
+            <span key={i}>
+              {line}
+              {"\n"}
+            </span>
+          );
+        const [, indent = "", key = "", value = ""] = match;
+        return (
+          <span key={i}>
+            {indent}
+            {key}
+            <span className="block break-all" style={{ paddingLeft: `${indent.length + 2}ch` }}>
+              {value}
+            </span>
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 export function JsonPanel({
   title,
   value,
@@ -23,9 +61,9 @@ export function JsonPanel({
   term?: GlossaryTerm;
   semantic?: SemanticIconKind;
 }) {
+  const full = variant === "full";
   const json = JSON.stringify(value, null, 2) ?? "null";
   const [copied, setCopied] = useState(false);
-  const full = variant === "full";
 
   return (
     <section
@@ -85,11 +123,13 @@ export function JsonPanel({
         role="region"
         aria-label={full ? `${title} body` : title}
         className={cn(
-          "overflow-auto font-mono text-xs leading-relaxed",
+          // Wraps rather than scrolling sideways: one long value used to push
+          // the whole panel wider than a laptop screen.
+          "overflow-auto font-mono text-xs leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]",
           full ? "max-h-128 p-4" : "max-h-56 px-0 py-3",
         )}
       >
-        {json}
+        <JsonLines json={json} />
       </pre>
     </section>
   );

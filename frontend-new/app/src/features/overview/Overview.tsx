@@ -12,7 +12,7 @@ import { Icon } from "../../components/ui/base/icons";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { NewRowsBanner, useHeldList } from "../../components/ui/base/livelist";
 import { NetworkMetrics } from "../../components/ui/domain/metrics";
-import { StatusBadge } from "../../components/ui/domain/status";
+import { StatusMark } from "../../components/ui/domain/status";
 import { EmptyState, ErrorState, L1L2Badge, Panel } from "../../components/ui/base/layout";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { cn, groupThousands } from "../../lib/format";
@@ -163,19 +163,36 @@ export function Overview({ initial }: { initial: OverviewData }) {
             render={(r) => (
               <>
                 <span className="flex min-w-0 flex-col gap-0.5">
+                  {/* The number leads, as on the blocks list. A block with no
+                      number is named by its hash. */}
                   <span className="flex flex-wrap items-center gap-2">
-                    <Identifier
-                      value={r.header_hash}
-                      href={`/block/${r.header_hash}`}
-                      head={8}
-                      tail={6}
-                    />
+                    {r.height === null ? (
+                      <Identifier
+                        value={r.header_hash}
+                        href={`/block/${r.header_hash}`}
+                        head={8}
+                        tail={6}
+                      />
+                    ) : (
+                      <Link
+                        href={`/block/${r.header_hash}`}
+                        className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
+                      >
+                        Block #{r.height}
+                      </Link>
+                    )}
+                    {/* No mark until the node records a settlement attempt. */}
                     {r.finalization_status === null ? null : (
-                      <StatusBadge status={r.finalization_status} />
+                      <StatusMark status={r.finalization_status} />
                     )}
                   </span>
                   <span className="mg-caption text-text-3">
-                    {r.height === null ? null : `#${r.height} · `}
+                    {r.height === null ? null : (
+                      <>
+                        <span className="font-mono">{`${r.header_hash.slice(0, 8)}…`}</span>
+                        {" · "}
+                      </>
+                    )}
                     {r.header_l2_transaction_count} tx · {r.header_deposit_count}{" "}
                     {r.header_deposit_count === 1 ? "deposit" : "deposits"}
                   </span>
@@ -201,15 +218,20 @@ export function Overview({ initial }: { initial: OverviewData }) {
             noun="transaction"
             render={(r) => (
               <>
-                <span className="flex min-w-0 flex-col gap-0.5">
+                {/* One line: the transaction, how far it got, and its block. */}
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
                   <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={8} />
                   <span className="flex flex-wrap items-center gap-2 mg-caption text-text-3">
-                    <StatusBadge status={r.status} />
+                    {/* How far it got: its block's Cardano settlement once the node
+                        recorded one, until then its state on Midgard. */}
+                    <StatusMark status={r.finalization_status ?? r.status} />
                     <Link
                       href={`/block/${r.header_hash}`}
                       className="tabular-nums text-link hover:text-link-hover hover:underline"
                     >
-                      {r.height === null ? `${r.header_hash.slice(0, 8)}…` : `#${r.height}`}
+                      {r.height === null
+                        ? `Block ${r.header_hash.slice(0, 8)}…`
+                        : `Block #${r.height}`}
                     </Link>
                   </span>
                 </span>

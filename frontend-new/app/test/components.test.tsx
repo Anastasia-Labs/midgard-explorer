@@ -6,7 +6,12 @@ import { Journey } from "../src/components/ui/domain/journey";
 import { LedgerRow } from "../src/components/ui/base/mobilerow";
 import { NetworkMetrics } from "../src/components/ui/domain/metrics";
 import { Callout, EmptyState, ErrorState, L1L2Badge } from "../src/components/ui/base/layout";
-import { StatusBadge } from "../src/components/ui/domain/status";
+import {
+  StatusBadge,
+  StatusCell,
+  StatusMark,
+  StatusPair,
+} from "../src/components/ui/domain/status";
 import { SummaryBand } from "../src/components/ui/domain/summary";
 import { DecodeWarn } from "../src/components/ui/base/table";
 import { blockJourney, transactionJourney } from "../src/lib/journey";
@@ -79,6 +84,25 @@ describe("StatusBadge", () => {
  * renderings of one story; `Journey` replaced all three. The invariants they
  * guarded did not go away with them, so they are asserted here against the
  * component that now does the rendering. */
+describe("StatusMark", () => {
+  it("names each state by its mark, with no visible word", () => {
+    const { container } = render(
+      <>
+        <StatusMark status="finalized" />
+        <StatusMark status="committed" />
+        <StatusMark status="observed_waiting_stability" />
+        <StatusMark status="abandoned" />
+        <StatusMark status="some_future_stage" />
+      </>,
+    );
+    for (const name of ["Finalized", "Committed", "Awaiting stability", "Abandoned"]) {
+      expect(screen.getByRole("button", { name })).toBeDefined();
+    }
+    expect(screen.getByRole("button", { name: "some_future_stage" })).toBeDefined();
+    expect(container.textContent).toBe("");
+  });
+});
+
 describe("Journey", () => {
   const admission = {
     status: "accepted",
@@ -326,9 +350,9 @@ describe("StatusBadge reads the authoritative registry", () => {
     // Scoped to the badge: the help trigger beside it carries its own glyph,
     // so an unscoped svg lookup would report a marker that is not there.
     const marker = (container: HTMLElement) =>
-      container.querySelector(".rounded-full.border")?.querySelector("svg") ?? null;
+      container.querySelector(".rounded-full")?.querySelector("svg") ?? null;
 
-    const settled = render(<StatusBadge status="committed" />);
+    const settled = render(<StatusBadge status="finalized" />);
     expect(marker(settled.container)).not.toBeNull();
     cleanup();
     const failed = render(<StatusBadge status="rejected" />);
@@ -523,5 +547,36 @@ describe("L1L2Badge", () => {
     );
     expect(screen.getByText("L1")).toBeDefined();
     expect(screen.getByText("L2")).toBeDefined();
+  });
+});
+
+describe("StatusCell", () => {
+  it("shows the label with no info button and no progress dots", () => {
+    const { container } = render(<StatusCell status="committed" />);
+    expect(screen.getByText("Committed")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /About/ })).toBeNull();
+    expect(screen.queryByText(/step \d of \d/)).toBeNull();
+    expect(container.querySelectorAll(".h-1.w-2\\.5").length).toBe(0);
+  });
+});
+
+describe("StatusPair", () => {
+  it("shows the L2 status and the L1 settlement together", () => {
+    render(<StatusPair l2="committed" l1="pending_submission" />);
+    expect(screen.getByText("Committed")).toBeDefined();
+    expect(screen.getByText("L1")).toBeDefined();
+    expect(screen.getByText("Pending submission")).toBeDefined();
+  });
+
+  it("says when no settlement is recorded rather than leaving a gap", () => {
+    render(<StatusPair l2="committed" l1={null} />);
+    expect(screen.getByText("Not recorded")).toBeDefined();
+  });
+});
+
+describe("StatusBadge on a detail page", () => {
+  it("keeps its explanation by default", () => {
+    render(<StatusBadge status="pending_commit" />);
+    expect(screen.getByRole("button", { name: "About Pending commit" })).toBeDefined();
   });
 });

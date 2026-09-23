@@ -43,12 +43,14 @@ test.describe("block Merkle roots", () => {
     await expect(panel.getByText("UTxOs root")).toHaveCount(0);
   });
 
-  test("the data availability tab sends the reader here for roots", async ({ page }) => {
-    await page.goto(`/block/${await hashAt(page, 10)}?tab=da`);
+  test("states once that the roots are the node's, not recomputed", async ({ page }) => {
+    await page.goto(`/block/${await hashAt(page, 10)}?tab=roots`);
     await settle(page);
-    await page.getByRole("tabpanel").getByRole("link", { name: "Merkle roots" }).click();
-    await expect(page).toHaveURL(/tab=roots/);
-    await expect(page.getByRole("tabpanel").getByText("UTxOs root")).toBeVisible();
+    await expect(
+      page
+        .getByRole("tabpanel")
+        .getByText("As the node recorded them. The explorer does not recompute them."),
+    ).toHaveCount(1);
   });
 
   test("meets the accessibility rules in both themes", async ({ page }) => {

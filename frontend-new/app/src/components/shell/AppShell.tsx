@@ -122,10 +122,10 @@ export function AppShell({ children }: { children: ReactNode }) {
             {NETWORK_LABEL === null ? (
               <span className="hidden items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1 text-micro font-semibold text-warning sm:inline-flex">
                 <span aria-hidden className="size-1.5 rounded-full bg-warning" />
-                Network not configured
+                Network not stated
                 <InfoTip
-                  subject="network configuration"
-                  explain="Set NEXT_PUBLIC_NETWORK_LABEL to identify which network this deployment reads from. Until then, the explorer withholds a network claim rather than guessing."
+                  subject="network"
+                  explain="This deployment does not state which network it reads from, so the explorer makes no network claim."
                 />
               </span>
             ) : (

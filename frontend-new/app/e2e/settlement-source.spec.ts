@@ -80,36 +80,44 @@ test("the fixture produces both records a single source can", async ({ page }) =
 
 test("a settled block names the node as the source of the hash", async ({ page }) => {
   await gotoBlock(page, "node_reported");
-  const panel = panelOf(page);
-  await expect(panel.getByText("Settlement transaction reported by the node")).toBeVisible();
-  await expect(panel.getByText(/does not check Cardano itself/)).toBeVisible();
-  // The record survives: its source row and the node's own status.
-  await expect(panel.getByText("Midgard node", { exact: true })).toBeVisible();
-  await expect(panel.getByText(/deployment as configured/)).toBeVisible();
+  // The same shape as a settled transaction: the hash in the header, and the
+  // node's state, its reporter and the source in the Details tab.
+  const identity = page.locator('[data-region="identity"]');
+  await expect(identity.getByText("Settlement", { exact: true })).toBeVisible();
+  await expect(identity.getByText("Finalized", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Details" }).click();
+  const details = page.locator("#panel-details");
+  await expect(details.getByText(/reported by the Midgard node/)).toBeVisible();
+  await expect(details.getByText(/deployment as configured/)).toBeVisible();
 });
 
-/** The panel's job is the relationship between a Midgard block and the Cardano
- * transaction the node recorded for it, and the explorer's own page for that
- * hash says what Midgard did with it. The bridge tables link their hashes
- * straight out, which is a separate and older decision. */
+/** The relationship between a Midgard block and the Cardano transaction the
+ * node recorded for it links to the explorer's own page for that hash, which
+ * says what Midgard did with it. The bridge tables link their hashes straight
+ * out, which is a separate and older decision. */
 test("a settled block keeps its settlement link inside the explorer", async ({ page }) => {
   await gotoBlock(page, "node_reported");
-  const panel = panelOf(page);
-  await expect(panel.locator('a[href^="/l1/transaction/"]').first()).toBeVisible();
-  await expect(panel.locator('a[href*="cexplorer.io"], a[href*="cardanoscan.io"]')).toHaveCount(0);
+  const identity = page.locator('[data-region="identity"]');
+  await expect(identity.locator('a[href^="/l1/transaction/"]')).toBeVisible();
+  await page.getByRole("tab", { name: "Details" }).click();
+  const details = page.locator("#panel-details");
+  await expect(details.locator('a[href^="/l1/transaction/"]')).toHaveCount(1);
+  await expect(
+    page.locator('main a[href*="cexplorer.io"], main a[href*="cardanoscan.io"]'),
+  ).toHaveCount(0);
 });
 
 test("a settled block claims no independent confirmation anywhere on the page", async ({
   page,
 }) => {
   await gotoBlock(page, "node_reported");
-  const panel = panelOf(page);
-  const text = ((await panel.textContent()) ?? "").toLowerCase();
+  await page.getByRole("tab", { name: "Details" }).click();
+  const details = page.locator("#panel-details");
+  const text = ((await details.textContent()) ?? "").toLowerCase();
   for (const claim of ["agree", "index", "confirmed", "corroborat", "verified"]) {
-    expect(text, `the panel claimed "${claim}"`).not.toContain(claim);
+    expect(text, `the settlement details claimed "${claim}"`).not.toContain(claim);
   }
-  // The headline is the strongest claim on the page, and it is not in the panel.
-  await expect(page.getByText("Final on Cardano, as the node records it").first()).toBeVisible();
+  await expect(page.getByText("Finalized", { exact: true }).first()).toBeVisible();
   // The tab that rendered the decommissioned index is gone, not left empty.
   await expect(page.getByRole("tab", { name: "Cardano evidence" })).toHaveCount(0);
 });
@@ -122,18 +130,22 @@ test("a block with no node record says so without inventing evidence", async ({ 
   await expect(panel.locator('a[href^="/l1/transaction/"]')).toHaveCount(0);
 });
 
-test("a settled transaction keeps its quiet placement and its evidence panel", async ({ page }) => {
+test("a settled transaction carries its settlement hash in the header and its evidence below", async ({
+  page,
+}) => {
   await page.goto(`/transaction/${await settledTransaction(page.request)}`);
 
-  // The compact strip: the one label with no paragraph under it to qualify it.
-  await expect(page.getByText("Settlement reported by the node")).toBeVisible();
-  await expect(page.getByText("Cardano settlement", { exact: true })).toHaveCount(0);
+  // The hash sits in the header beside the block, under the badge it supports.
+  const identity = page.locator('[data-region="identity"]');
+  await expect(identity.getByText("Settlement", { exact: true })).toBeVisible();
+  await expect(identity.locator('a[href^="/l1/transaction/"]')).toBeVisible();
+  await expect(identity.getByText("Finalized", { exact: true })).toBeVisible();
 
-  // The evidence panel is still reachable, and says the transaction settles
-  // through its block rather than having an L1 transaction of its own.
-  await page.getByRole("tab", { name: "Technical details" }).click();
+  // The Details tab lists the settlement once: the Cardano transaction, the
+  // node's state and who reported it, and every stage in order.
+  await page.getByRole("tab", { name: "Details" }).click();
   const details = page.locator("#panel-details");
-  await details.getByText("Settlement evidence").click();
-  await expect(details.getByText("Settled through its block")).toBeVisible();
-  await expect(details.getByText(/reported by the node/).first()).toBeVisible();
+  await expect(details.getByText("Settlement", { exact: true })).toBeVisible();
+  await expect(details.getByText(/reported by the Midgard node/)).toBeVisible();
+  await expect(details.locator('a[href^="/l1/transaction/"]')).toHaveCount(1);
 });

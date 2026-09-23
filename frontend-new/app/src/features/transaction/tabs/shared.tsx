@@ -19,19 +19,17 @@ export function OutputState({ output }: { output: OutputView }) {
   }
   const style =
     output.state.status === "unspent"
-      ? "border-success/35 bg-success/10 text-success"
+      ? "bg-success/10 text-success"
       : output.state.status === "not_in_current_ledger"
-        ? "border-warning/35 bg-warning/10 text-warning"
-        : "border-border-strong bg-surface text-text-3";
+        ? "bg-warning/10 text-warning"
+        : "bg-surface-2 text-text-3";
   const label =
     output.state.status === "unspent"
       ? "Unspent"
       : output.state.status === "not_in_current_ledger"
         ? "Not in current ledger"
         : "State not checked";
-  return (
-    <span className={`rounded border px-2 py-0.5 text-micro font-medium ${style}`}>{label}</span>
-  );
+  return <span className={`rounded px-2 py-0.5 text-micro font-medium ${style}`}>{label}</span>;
 }
 
 export function EvidenceList({

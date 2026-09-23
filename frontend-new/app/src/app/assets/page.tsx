@@ -46,7 +46,7 @@ export default async function AssetsPage() {
       <PageHeader
         entity="asset"
         title="Native assets"
-        subtitle="Every asset carried by a spendable UTxO in the current ledger. Mint and burn history is not tracked here."
+        subtitle="Assets in spendable UTxOs of the current ledger. Mint and burn history is not tracked."
         meta={
           <span>
             <strong className="font-semibold text-text tabular-nums">{data.total}</strong> distinct{" "}

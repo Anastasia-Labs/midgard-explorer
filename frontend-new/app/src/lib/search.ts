@@ -158,7 +158,7 @@ export function searchCandidates(raw: string): SearchResult {
     candidates.push({
       kind: "l1Transaction",
       label: "Cardano transaction",
-      detail: "Looks this hash up in Midgard's Cardano index",
+      detail: "Looks this hash up in the node's Cardano records",
       href: `/l1/transaction/${hex}`,
     });
     // A 64-hex string is also a policy plus an 8-character asset name.

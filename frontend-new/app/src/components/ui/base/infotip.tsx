@@ -33,6 +33,10 @@ type TipProps = {
   content?: ReactNode;
   icon?: IconName;
   triggerLabel?: string;
+  /** Replaces the trigger's grey, for a trigger that carries its own color,
+   * such as a status mark. */
+  triggerClassName?: string;
+  iconSize?: number;
 };
 
 /** Collision-safe help for mouse, keyboard, touch, and screen readers.
@@ -50,6 +54,8 @@ export function InfoTip({
   content,
   icon = "info",
   triggerLabel,
+  triggerClassName,
+  iconSize,
 }: TipProps) {
   const id = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -295,12 +301,12 @@ export function InfoTip({
         className={cn(
           "relative inline-flex shrink-0 items-center justify-center rounded-full",
           content ? "size-9" : "size-4",
-          "text-text-3 transition-colors hover:text-text-2",
+          triggerClassName ?? "text-text-3 transition-colors hover:text-text-2",
           !content && "after:absolute after:-inset-3.5 after:content-['']",
-          open && "text-text",
+          open && !triggerClassName && "text-text",
         )}
       >
-        <Icon name={icon} size={content ? 16 : 14} />
+        <Icon name={icon} size={iconSize ?? (content ? 16 : 14)} />
       </button>
       {panel}
     </span>

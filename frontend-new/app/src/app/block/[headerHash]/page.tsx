@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 import { Breadcrumbs } from "../../../components/ui/base/breadcrumbs";
 import { IdentityBar } from "../../../components/ui/domain/identitybar";
 import { PageError } from "../../../components/ui/base/pageerror";
-import { PageHeader } from "../../../components/ui/base/layout";
 import { BlockView } from "../../../features/block/BlockView";
 import { api } from "../../../lib/api";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
@@ -44,8 +43,7 @@ export default async function BlockPage({ params }: { params: Promise<{ headerHa
             { label: "Block" },
           ]}
         />
-        <PageHeader entity="block" title="Block" />
-        <IdentityBar overline="Block header hash" value={hash} />
+        <IdentityBar title="Block" overline="Block header hash" value={hash} />
         <PageError message={listErrorMessage(e)} />
       </>
     );

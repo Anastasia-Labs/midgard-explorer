@@ -80,3 +80,24 @@ it("previews the row's exact UTxO rather than all outputs at an address", () => 
   expect(dialog.textContent).toContain("Unspent");
   expect(dialog.querySelector("a")?.getAttribute("href")).toBe(`/transaction/${txId}`);
 });
+
+it("draws a script credential as code, never as a key", () => {
+  const glyph = (kind: string) => {
+    render(
+      <AddressRecord
+        address={address}
+        identity={{ ...identity, payment: { ...identity.payment, kind } }}
+      >
+        ₳ 3
+      </AddressRecord>,
+    );
+    const html = screen.getByRole("button", { name: "Payment credential" }).innerHTML;
+    cleanup();
+    return html;
+  };
+  // Lucide code-xml's slash, and key-round's bow.
+  expect(glyph("Script")).toContain("m14.5 4-5 16");
+  expect(glyph("Script")).not.toContain("16.5");
+  expect(glyph("PubKey")).toContain('cx="16.5"');
+  expect(glyph("FutureCredential")).not.toContain('cx="16.5"');
+});

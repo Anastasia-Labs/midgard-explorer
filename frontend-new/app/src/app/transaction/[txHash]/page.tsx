@@ -21,16 +21,19 @@ import { Tabs } from "../../../components/ui/base/tabs";
 import { Timestamp } from "../../../components/ui/base/timestamp";
 import { TransactionEvents } from "../../../components/ui/domain/transactionevents";
 import { api } from "../../../lib/api";
+import { transactionForDisplay } from "../../../lib/transactionDisplay";
 import { OUTCOME_TONE, transactionJourney } from "../../../lib/journey";
 import { truncateId } from "../../../lib/format";
 import { TERMINAL_TX_STATUSES } from "../../../lib/txStatus";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
 import { statusOf } from "../../../lib/status-registry";
 import { viewerInit } from "../../../lib/viewerInit";
-import { OverviewTab } from "../../../features/transaction/tabs/OverviewTab";
+import { DetailsTab, ReferenceInputs } from "../../../features/transaction/tabs/OverviewTab";
+import { SettlementDetails } from "../../../components/ui/domain/settlementdetails";
+import { L1TxLink } from "../../../components/ui/domain/l1link";
 import { MintPanel } from "../../../features/transaction/MintPanel";
 import { StateTab } from "../../../features/transaction/tabs/StateTab";
-import { ActionSummary, totalOutputValue } from "../../../features/transaction/ActionSummary";
+import { totalOutputValue } from "../../../features/transaction/ActionSummary";
 
 export const dynamic = "force-dynamic";
 
@@ -201,7 +204,28 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
               "Pending"
             ),
           },
-          { label: "Time", value: <Timestamp exact wrap iso={tx.timestamp} /> },
+          // The Cardano transaction the node recorded, beside the block it
+          // settles. It is evidence, not the verdict: the badge above says
+          // which state the settlement is in.
+          ...(hasRecordedSettlement(data.cardano) &&
+          "l1TxHash" in data.cardano &&
+          data.cardano.l1TxHash !== null
+            ? [
+                {
+                  label: "Settlement",
+                  value: (
+                    <L1TxLink
+                      hash={data.cardano.l1TxHash}
+                      destination="midgard"
+                      marker={false}
+                      head={6}
+                      tail={6}
+                    />
+                  ),
+                },
+              ]
+            : []),
+          { label: "Time", value: <Timestamp stacked iso={tx.timestamp} /> },
           { label: "Total output", value: <ValueCell value={totalOutputValue(tx)} /> },
           { label: "Fee", term: "fee", value: <AdaAmount lovelace={tx.fee} /> },
           {
@@ -214,9 +238,14 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
             ),
           },
         ]}
-      >
-        <ActionSummary tx={tx} />
-      </IdentityBar>
+      ></IdentityBar>
+      {tx.validity === "TxIsValid" ? null : (
+        <div className="mb-4">
+          <Callout tone="danger" title={statusOf(tx.validity).label}>
+            {statusOf(tx.validity).explain}
+          </Callout>
+        </div>
+      )}
 
       {!terminal ? <LifecyclePoller /> : null}
       {journeyModel.outcome !== "complete" ? journey : null}
@@ -239,14 +268,15 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
                 {tx.mint && (tx.mint.assets.length > 0 || tx.mint.policyIds.length > 0) ? (
                   <MintPanel mint={tx.mint} />
                 ) : null}
-                <StateTab tx={tx} />
-                {hasRecordedSettlement(data.cardano) ? (
-                  <CardanoAssociation association={data.cardano} context={data.midgard} compact />
-                ) : null}
+                <StateTab tx={tx} proposed={data.inclusion === null} />
               </>
             ),
           },
-          ...(datums.length + tx.witnesses.scripts.length + tx.witnesses.redeemers.length > 0
+          ...(datums.length +
+            tx.witnesses.scripts.length +
+            tx.witnesses.redeemers.length +
+            tx.referenceInputs.length >
+          0
             ? [
                 {
                   id: "scripts",
@@ -256,6 +286,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
                       {tx.witnesses.redeemers.length > 0 ? <TransactionEvents tx={tx} /> : null}
                       <WitnessPanel scripts={tx.witnesses.scripts} redeemers={[]} />
                       <DatumPanel datums={datums} />
+                      <ReferenceInputs tx={tx} />
                     </div>
                   ),
                 },
@@ -263,26 +294,18 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
             : []),
           {
             id: "details",
-            label: "Technical details",
+            label: "Details",
             content: (
-              <div className="space-y-4">
-                <OverviewTab tx={tx} />
-                <details className="rounded-xl border border-border bg-surface p-4">
-                  <summary className="cursor-pointer text-sm font-medium">
-                    Settlement evidence
-                  </summary>
-                  <div className="mt-4">
-                    {journeyModel.outcome === "complete" ? journey : null}
-                    {hasRecordedSettlement(data.cardano) ? (
-                      <CardanoAssociation association={data.cardano} context={data.midgard} />
-                    ) : (
-                      <p className="text-sm text-text-2">
-                        See the settlement notice above for the available source records.
-                      </p>
-                    )}
-                  </div>
-                </details>
-              </div>
+              <DetailsTab
+                tx={tx}
+                settlement={
+                  <SettlementDetails
+                    association={data.cardano}
+                    context={data.midgard}
+                    journey={journeyModel}
+                  />
+                }
+              />
             ),
           },
           {
@@ -290,7 +313,10 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
             label: "Raw",
             content: (
               <div className="space-y-4">
-                <ApiExample path={`/api/transaction?tx_hash=${tx.txId}`} />
+                <ApiExample
+                  path={`/api/transaction?tx_hash=${tx.txId}`}
+                  note="Returns the full API response, including the explorer's source and settlement records."
+                />
                 {tx.cborHex === null ? null : (
                   <RawCbor
                     cborHex={tx.cborHex}
@@ -299,7 +325,16 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
                     txId={tx.txId}
                   />
                 )}
-                <RawData data={data} filename={`tx-${tx.txId}.json`} />
+                <RawData
+                  title="Transaction JSON"
+                  data={transactionForDisplay({
+                    tx,
+                    status,
+                    inclusion: data.inclusion,
+                    cardano: data.cardano,
+                  })}
+                  filename={`tx-${tx.txId}.json`}
+                />
               </div>
             ),
           },

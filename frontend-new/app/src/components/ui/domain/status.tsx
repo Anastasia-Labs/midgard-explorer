@@ -1,7 +1,8 @@
 import { cn } from "../../../lib/format";
 import { statusOf, type StatusTone } from "../../../lib/status-registry";
+import type { IconName } from "../base/icons";
 import { InfoTip } from "../base/infotip";
-import { JourneyIndicator } from "./journey";
+import { L1L2Badge } from "../base/layout";
 
 export { statusOf };
 
@@ -21,14 +22,22 @@ const STATE_CLASS: Record<StatusTone, StateClass> = {
 const TONE_CLASS: Record<StatusTone, string> = {
   // Settled and failed states are filled: they are conclusions, and they should
   // carry more weight than the states still in motion.
-  success: "border-success/40 bg-success/15 text-success font-semibold",
-  danger: "border-danger/50 bg-danger/15 text-danger font-semibold",
-  info: "border-info/40 bg-info/10 text-info font-medium",
-  warning: "border-warning/45 bg-warning/10 text-warning font-medium",
-  neutral: "border-border-strong border-dashed bg-transparent text-text-2 font-medium",
+  success: "bg-success/12 text-success font-semibold",
+  danger: "bg-danger/12 text-danger font-semibold",
+  info: "bg-info/10 text-info font-medium",
+  warning: "bg-warning/12 text-warning font-medium",
+  neutral: "bg-surface-2 text-text-2 font-medium",
 };
 
 /** Shape of the leading marker, so the badge reads without color. */
+const TEXT_CLASS: Record<StatusTone, string> = {
+  success: "text-success font-semibold",
+  danger: "text-danger font-semibold",
+  info: "text-info font-medium",
+  warning: "text-warning font-medium",
+  neutral: "text-text-2 font-medium",
+};
+
 function Marker({ state }: { state: StateClass }) {
   if (state === "settled") {
     return (
@@ -69,12 +78,16 @@ export function ToneBadge({
   explain,
   recognized = true,
   className,
+  variant = "pill",
 }: {
   tone: StatusTone;
   label: string;
   explain?: string | undefined;
   recognized?: boolean | undefined;
   className?: string | undefined;
+  /** `text` for table rows: the colour and the mark without the pill, so a
+   * column of statuses reads as text rather than a stack of buttons. */
+  variant?: "pill" | "text";
 }) {
   const state: StateClass = recognized ? STATE_CLASS[tone] : "unknown";
   return (
@@ -85,7 +98,8 @@ export function ToneBadge({
           // can be arbitrarily long and carry no spaces to break on. Without
           // this an unrecognised code widens its row, and at 320px that pushes
           // the whole page into a horizontal scroll.
-          "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs",
+          "inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs",
+          variant === "pill" ? "rounded-full px-2 py-0.5" : null,
           // Registry labels are short product copy. Breaking "Projected" into
           // a column of letters made a valid desktop row look corrupted. Node
           // status codes are an open set, though, and an unknown unbroken code
@@ -98,7 +112,7 @@ export function ToneBadge({
           // breaks at spaces and never inside a word, which is all "Projected"
           // needed.
           recognized ? null : "wrap-anywhere",
-          TONE_CLASS[tone],
+          variant === "pill" ? TONE_CLASS[tone] : TEXT_CLASS[tone],
           className,
         )}
       >
@@ -111,31 +125,90 @@ export function ToneBadge({
   );
 }
 
-export function StatusBadge({ status, className }: { status: string; className?: string }) {
-  const { tone, label, explain, known } = statusOf(status);
+export function StatusBadge({
+  status,
+  className,
+  explain = true,
+  variant = "pill",
+}: {
+  status: string;
+  className?: string;
+  /** Off in list cells: one explanation per record page, not one per row. */
+  explain?: boolean;
+  variant?: "pill" | "text";
+}) {
+  const entry = statusOf(status);
   return (
     <ToneBadge
-      tone={tone}
-      label={label}
-      explain={explain}
-      recognized={known}
+      tone={entry.tone}
+      label={entry.label}
+      explain={explain ? entry.explain : undefined}
+      recognized={entry.known}
       className={className}
+      variant={variant}
     />
   );
 }
 
-/** The list-row form: what state, and how far through the protocol that state
- * is. The badge alone leaves a reader ranking codes from memory. */
+/** A status in a list row: coloured text and its mark, no pill. The
+ * explanation lives on the record's page and in the Status key. */
 export function StatusCell({ status }: { status: string }) {
   return (
-    /* `min-w-0 max-w-full` for the same reason the badge itself carries them:
-       without it this wrapper keeps its content width under a `min-w-0` parent,
-       so "Pending submission" beside the indicator pushed the overview 18px
-       past a 320px viewport. The indicator does not shrink, so the badge text
-       is what gives way. */
-    <span className="inline-flex min-w-0 max-w-full items-center gap-2">
-      <StatusBadge status={status} className="min-w-0" />
-      <JourneyIndicator status={status} />
+    <span className="inline-flex min-w-0 max-w-full items-center">
+      <StatusBadge status={status} explain={false} variant="text" className="min-w-0" />
+    </span>
+  );
+}
+
+const MARK_ICON: Record<StateClass, IconName> = {
+  settled: "circleCheck",
+  progressing: "circleDot",
+  waiting: "circleEllipsis",
+  failed: "circleX",
+  unknown: "circleHelp",
+};
+
+const MARK_COLOR: Record<StatusTone, string> = {
+  success: "text-success",
+  danger: "text-danger",
+  info: "text-info",
+  warning: "text-warning",
+  neutral: "text-text-3",
+};
+
+/** A status as its mark alone, where space is tight, as on the overview's
+ * latest lists. The circled glyph carries the state class and the color the
+ * tone; the name is in the tooltip, on hover, focus or tap, and is the
+ * mark's accessible name. */
+export function StatusMark({ status }: { status: string }) {
+  const entry = statusOf(status);
+  const state: StateClass = entry.known ? STATE_CLASS[entry.tone] : "unknown";
+  const name = entry.label;
+  return (
+    <InfoTip
+      explain={name}
+      triggerLabel={name}
+      icon={MARK_ICON[state]}
+      iconSize={16}
+      triggerClassName={MARK_COLOR[entry.known ? entry.tone : "neutral"]}
+    />
+  );
+}
+
+/** Where a record is on Midgard, and whether its block has settled on
+ * Cardano. Two facts, shown together so one is never read as the other. */
+export function StatusPair({ l2, l1 }: { l2: string; l1: string | null }) {
+  return (
+    <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-x-2 gap-y-1">
+      <StatusCell status={l2} />
+      <span className="inline-flex items-center gap-1">
+        <L1L2Badge layer="L1" />
+        {l1 === null ? (
+          <span className="text-xs text-text-3">Not recorded</span>
+        ) : (
+          <StatusCell status={l1} />
+        )}
+      </span>
     </span>
   );
 }

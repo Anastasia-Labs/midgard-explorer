@@ -31,13 +31,9 @@ export function MerkleRoots({ commitments }: { commitments: BlockCommitments | n
   ];
   return (
     <>
-      <div className="p-4 pb-0">
-        <Callout tone="neutral" title="Roots from the node's finalization record.">
-          This block&apos;s header commits to each root below. The previous header is the one this
-          block builds on. The explorer shows both roots as the node recorded them and does not
-          recompute them.
-        </Callout>
-      </div>
+      <p className="px-4 pt-4 mg-caption text-text-3">
+        As the node recorded them. The explorer does not recompute them.
+      </p>
       <ul className="divide-y divide-border">
         {roots.map(([label, pair]) => (
           <li key={label} className="grid gap-2 p-4 sm:grid-cols-[12rem_1fr]">

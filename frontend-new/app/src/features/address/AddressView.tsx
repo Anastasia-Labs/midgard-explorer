@@ -3,16 +3,15 @@ import { AdaAmount, ValueCell } from "../../components/ui/domain/amount";
 import { ApiExample } from "../../components/ui/domain/apiexample";
 import { AssetHierarchy } from "../../components/ui/domain/asset";
 import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
-import { InfoTip } from "../../components/ui/base/infotip";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { IdentityBar } from "../../components/ui/domain/identitybar";
-import { Callout, Card, Chip, EmptyState, PageHeader } from "../../components/ui/base/layout";
+import { Callout, Card, Chip, EmptyState } from "../../components/ui/base/layout";
 import { RawData } from "../../components/ui/base/rawdata";
 import { StatusCell } from "../../components/ui/domain/status";
-import { SummaryBand } from "../../components/ui/domain/summary";
 import { Tabs } from "../../components/ui/base/tabs";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { DataTable, DecodeWarn, Pagination } from "../../components/ui/base/table";
+import { addressForDisplay } from "../../lib/addressDisplay";
 import { assetCount, truncateId } from "../../lib/format";
 const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Address" }];
 
@@ -45,8 +44,17 @@ export function AddressView({
   const assets = assetCount(data.balance.assets);
   const undecodableUtxos = data.utxos.filter((u) => u.decodeError !== null).length;
 
+  const pruned = data.history.some((r) => !r.spentComplete || r.spent === null);
+
   const activityTab = (
     <Card>
+      {/* Said once for the page. Each affected row keeps its own label. */}
+      {pruned ? (
+        <p className="border-b border-border px-4 py-3 mg-caption text-text-3">
+          Inputs pruned: some inputs are no longer in the ledger, so the amount spent from this
+          address is unknown, not zero.
+        </p>
+      ) : null}
       <DataTable
         caption="Transactions involving this address"
         columns={[
@@ -60,7 +68,7 @@ export function AddressView({
             ),
           },
           {
-            header: "Status",
+            header: "L2 status",
             cell: (r) => <StatusCell status={r.status} />,
             hideBelow: "sm",
           },
@@ -81,7 +89,7 @@ export function AddressView({
                   href={`/block/${r.header_hash}`}
                   className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
                 >
-                  #{r.height}
+                  Block #{r.height}
                 </Link>
               ),
             hideBelow: "md",
@@ -112,13 +120,7 @@ export function AddressView({
               r.spentComplete && r.spent !== null ? (
                 <ValueCell value={r.spent} />
               ) : (
-                <span className="inline-flex items-center gap-1 text-text-3">
-                  Inputs pruned
-                  <InfoTip
-                    subject="pruned inputs"
-                    explain="Some inputs of this transaction are no longer in the ledger, so the amount spent from this address cannot be determined. Treat its net address movement as unknown, not zero."
-                  />
-                </span>
+                <span className="text-text-3">Inputs pruned</span>
               ),
             hideBelow: "lg",
             align: "right",
@@ -172,7 +174,7 @@ export function AddressView({
                   />
                 ) : (
                   <Link href={`/block/${r.header_hash}`} className="text-link hover:underline">
-                    #{r.height}
+                    Block #{r.height}
                   </Link>
                 ),
             },
@@ -314,34 +316,17 @@ export function AddressView({
   return (
     <>
       <Breadcrumbs items={CRUMBS} />
-      <PageHeader entity="address" title="Address" />
-      <IdentityBar overline="Midgard address" value={address} mark />
-
-      {data.undecodedOutputs > 0 ? (
-        <div className="mb-4">
-          <Callout tone="warning" title="Balance is incomplete.">
-            {data.undecodedOutputs} UTxO{data.undecodedOutputs === 1 ? "" : "s"} at this address
-            could not be decoded (legacy encoding), so the balance below undercounts by their value.
-            {undecodableUtxos > 0
-              ? " They are listed in the UTxOs tab, marked unreadable, rather than omitted."
-              : null}
-          </Callout>
-        </div>
-      ) : null}
-
-      <SummaryBand
-        items={[
+      <IdentityBar
+        title="Address"
+        overline="Midgard address"
+        value={address}
+        mark
+        summary={[
           {
             label: "Spendable balance",
             value: <AdaAmount lovelace={data.balance.lovelace} />,
             emphasis: true,
-            ...(data.undecodedOutputs > 0
-              ? {
-                  sub: `Undercount: ${data.undecodedOutputs} output${
-                    data.undecodedOutputs === 1 ? "" : "s"
-                  } could not be decoded`,
-                }
-              : {}),
+            ...(data.undecodedOutputs > 0 ? { sub: "Incomplete, see below" } : {}),
           },
           { label: "Native assets", value: assets },
           { label: "UTxOs", value: data.utxoCount },
@@ -349,7 +334,7 @@ export function AddressView({
           {
             label: "First activity",
             value: data.firstActivity ? (
-              <Timestamp exact iso={data.firstActivity} />
+              <Timestamp stacked iso={data.firstActivity} />
             ) : (
               "Not recorded"
             ),
@@ -357,13 +342,25 @@ export function AddressView({
           {
             label: "Latest activity",
             value: data.latestActivity ? (
-              <Timestamp exact iso={data.latestActivity} />
+              <Timestamp stacked iso={data.latestActivity} />
             ) : (
               "Not recorded"
             ),
           },
         ]}
       />
+
+      {data.undecodedOutputs > 0 ? (
+        <div className="mb-4">
+          <Callout tone="warning" title="Balance is incomplete.">
+            {data.undecodedOutputs} UTxO{data.undecodedOutputs === 1 ? "" : "s"} at this address
+            could not be decoded (legacy encoding), so the balance above undercounts by their value.
+            {undecodableUtxos > 0
+              ? " They are listed in the UTxOs tab, marked unreadable, rather than omitted."
+              : null}
+          </Callout>
+        </div>
+      ) : null}
 
       <Tabs
         tabs={[
@@ -374,14 +371,17 @@ export function AddressView({
             id: "raw",
             label: "Raw",
             content: (
-              <>
-                <div className="mb-4">
-                  <ApiExample
-                    path={`/api/address?address=${encodeURIComponent(address)}&page=${page}`}
-                  />
-                </div>
-                <RawData data={data} filename={`address-${truncateId(address, 8, 6)}.json`} />
-              </>
+              <div className="space-y-4">
+                <ApiExample
+                  path={`/api/address?address=${encodeURIComponent(address)}&page=${page}`}
+                  note="Returns the full API response, including each transaction body and the paging cursors."
+                />
+                <RawData
+                  title="Address JSON"
+                  data={addressForDisplay(address, data)}
+                  filename={`address-${truncateId(address, 8, 6)}.json`}
+                />
+              </div>
             ),
           },
         ]}

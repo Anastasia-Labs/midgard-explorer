@@ -14,9 +14,11 @@ export type LedgerRowSpec = {
 export function LedgerRow({ spec }: { spec: LedgerRowSpec }) {
   return (
     <div className="px-4 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">{spec.primary}</div>
-        {spec.status ? <div className="shrink-0">{spec.status}</div> : null}
+      {/* Wraps rather than overlapping: two status badges beside a hash do
+          not fit a phone row, and the badges drop below the hash instead. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+        <div className="min-w-0 max-w-full">{spec.primary}</div>
+        {spec.status ? <div className="min-w-0 max-w-full">{spec.status}</div> : null}
       </div>
       {spec.meta || spec.secondary ? (
         <div className="mt-1 flex items-baseline justify-between gap-3 mg-caption">

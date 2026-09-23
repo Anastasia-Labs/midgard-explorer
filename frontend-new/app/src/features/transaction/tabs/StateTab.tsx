@@ -3,12 +3,12 @@ import { AssetHierarchy, ValueCell } from "../../../components/ui/domain/amount"
 import { AddressRecord } from "../../../components/ui/domain/addressrecord";
 import { Icon } from "../../../components/ui/base/icons";
 import { Identifier } from "../../../components/ui/domain/identifier";
-import { NetMovement } from "../../../components/ui/domain/ledger";
 import { Card, Chip, Callout } from "../../../components/ui/base/layout";
 import { ReferenceScript } from "../../../components/ui/domain/scriptdata";
 import { SemanticLabel, SemanticValue } from "../../../components/ui/base/semantic";
 import { OutputState } from "./shared";
 import { UtxoFlow } from "../../../components/ui/domain/utxoflow";
+import { BalanceChanges } from "../../../components/ui/domain/ledger";
 import { ledgerEquation } from "../../../lib/ledger";
 import { ViewToggle } from "../../../components/ui/base/viewtoggle";
 
@@ -18,7 +18,7 @@ import { ViewToggle } from "../../../components/ui/base/viewtoggle";
  * Extracted from the route so the page resolves data and composes tabs while
  * each tab owns its own sections. The route file had grown past 700 lines with
  * five tabs' worth of presentation inlined in its body. */
-export function StateTab({ tx }: { tx: TransactionView }) {
+export function StateTab({ tx, proposed = false }: { tx: TransactionView; proposed?: boolean }) {
   const utxoTable = (
     <>
       <div className="grid gap-4 lg:grid-cols-[1fr_auto_1fr]">
@@ -91,10 +91,14 @@ export function StateTab({ tx }: { tx: TransactionView }) {
                 >
                   <ValueCell value={output.value} />
                 </AddressRecord>
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <Identifier value={`${tx.txId}#${output.index}`} head={10} tail={6} />
-                  <OutputState output={output} />
-                </div>
+                {/* The reference and "Unspent" are in the UTxO preview beside the
+                    address. What stays visible is what the reader acts on: where
+                    the output went, or a warning about its state. */}
+                {output.state.consumedBy || output.state.status !== "unspent" ? (
+                  <div className="mt-2 flex justify-end">
+                    <OutputState output={output} />
+                  </div>
+                ) : null}
                 {output.hasDatum ? (
                   <div className="mt-1.5 flex gap-1.5">
                     <Chip>
@@ -127,31 +131,38 @@ export function StateTab({ tx }: { tx: TransactionView }) {
   );
 
   return (
-    <section aria-labelledby="transaction-movement" className="mb-6">
-      {ledgerEquation(tx).kind === "unbalanced" ? (
-        <Callout tone="warning" title="Amounts do not balance">
-          A value may not have decoded correctly. Check the raw response before relying on these
-          amounts.
-        </Callout>
-      ) : null}
-      <ViewToggle
-        heading={
-          <h2 id="transaction-movement" className="text-lg font-semibold tracking-tight">
-            Inputs &amp; outputs
+    <>
+      {/* The answer to "what changed?" first, then the records it comes from.
+          An invalid transaction's outputs never become ledger state, so its
+          arithmetic would describe a change that did not happen. */}
+      {tx.validity === "TxIsValid" ? (
+        <section aria-labelledby="balance-changes" className="mb-6">
+          <h2 id="balance-changes" className="mb-3 text-lg font-semibold tracking-tight">
+            Balance changes
           </h2>
-        }
-        label="UTxO view"
-        views={[
-          { id: "table", label: "Table", content: utxoTable },
-          { id: "flow", label: "Flow", content: <UtxoFlow tx={tx} /> },
-        ]}
-      />
-      <details className="mt-4">
-        <summary className="cursor-pointer text-sm text-link">Net movement by address</summary>
-        <div className="mt-3">
-          <NetMovement tx={tx} />
-        </div>
-      </details>
-    </section>
+          <BalanceChanges tx={tx} proposed={proposed} />
+        </section>
+      ) : null}
+      <section aria-labelledby="transaction-movement" className="mb-6">
+        {ledgerEquation(tx).kind === "unbalanced" ? (
+          <Callout tone="warning" title="Amounts do not balance">
+            A value may not have decoded correctly. Check the raw response before relying on these
+            amounts.
+          </Callout>
+        ) : null}
+        <ViewToggle
+          heading={
+            <h2 id="transaction-movement" className="text-lg font-semibold tracking-tight">
+              Inputs &amp; outputs
+            </h2>
+          }
+          label="UTxO view"
+          views={[
+            { id: "table", label: "Table", content: utxoTable },
+            { id: "flow", label: "Flow", content: <UtxoFlow tx={tx} /> },
+          ]}
+        />
+      </section>
+    </>
   );
 }

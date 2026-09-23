@@ -172,16 +172,56 @@ export const PATHS = {
   zap: <path d="M13 2 4 14h7l-1 8 9-12h-7Z" />,
   key: (
     <>
-      <circle cx="8" cy="8" r="4.5" />
-      <path d="m11.2 11.2 8.3 8.3" />
-      <path d="m17 17 2-2" />
+      {/* Lucide key-round, v1.47.0, ISC. */}
+      <path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" />
+      <circle cx="16.5" cy="7.5" r=".5" fill="currentColor" />
+    </>
+  ),
+  // Status marks, where the word is left out: Lucide v1.47.0, ISC, taken from
+  // lucide-static. One circled glyph per state class, so the shape reads
+  // without the color.
+  circleCheck: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m16 9-5.5 5.5L8 12" />
+    </>
+  ),
+  circleDot: (
+    <>
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="12" cy="12" r="10" />
+    </>
+  ),
+  circleEllipsis: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M17 12h.01" />
+      <path d="M12 12h.01" />
+      <path d="M7 12h.01" />
+    </>
+  ),
+  circleX: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="m15 9-6 6" />
+      <path d="m9 9 6 6" />
+    </>
+  ),
+  circleHelp: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" />
     </>
   ),
   utxo: (
     <>
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <circle cx="8" cy="12" r="2" />
-      <path d="M10 12h7M15 9l3 3-3 3" />
+      {/* Lucide coins, v1.47.0, ISC: a discrete piece of unspent value. A box
+          would read as a block, which is the cube. */}
+      <path d="M13.744 17.736a6 6 0 1 1-7.48-7.48" />
+      <path d="M15 6h1v4" />
+      <path d="m6.134 14.768.866-.5 2 3.464" />
+      <circle cx="16" cy="8" r="6" />
     </>
   ),
   datum: (
@@ -193,9 +233,10 @@ export const PATHS = {
   ),
   script: (
     <>
-      <path d="m8 9-3 3 3 3" />
-      <path d="m16 9 3 3-3 3" />
-      <path d="m14 5-4 14" />
+      {/* Lucide code-xml, v1.47.0, ISC. */}
+      <path d="m18 16 4-4-4-4" />
+      <path d="m6 8-4 4 4 4" />
+      <path d="m14.5 4-5 16" />
     </>
   ),
   shield: (
@@ -227,10 +268,11 @@ export const PATHS = {
   ),
   stake: (
     <>
-      <path d="M12 3v18" />
-      <path d="m7 8 5-5 5 5" />
-      <path d="M5 21h14" />
-      <circle cx="12" cy="13" r="3" />
+      {/* Lucide git-branch, v1.47.0, ISC: the address branching to its stake
+          association, rather than money or rewards. */}
+      <path d="M15 6a9 9 0 0 0-9 9V3" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
     </>
   ),
   eye: (
@@ -250,6 +292,20 @@ export const PATHS = {
 
 export type IconName = keyof typeof PATHS;
 
+/** Icons taken from Lucide, drawn at Lucide's own stroke weight. The rest of
+ * the set was drawn at 1.75 and stays there. */
+const LUCIDE_STROKE: ReadonlySet<IconName> = new Set([
+  "key",
+  "stake",
+  "utxo",
+  "script",
+  "circleCheck",
+  "circleDot",
+  "circleEllipsis",
+  "circleX",
+  "circleHelp",
+]);
+
 export function Icon({
   name,
   size = 16,
@@ -263,7 +319,7 @@ export function Icon({
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.75"
+      strokeWidth={LUCIDE_STROKE.has(name) ? 2 : 1.75}
       strokeLinecap="round"
       strokeLinejoin="round"
       style={{ flexShrink: 0, display: "block" }}

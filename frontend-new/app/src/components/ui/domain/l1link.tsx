@@ -21,42 +21,60 @@ import { L1_EXPLORER_NAME, l1TxUrl } from "../../../lib/network";
  */
 export type L1Destination = "midgard" | "cardano";
 
-export function L1TxLink({ hash, destination }: { hash: string; destination: L1Destination }) {
+export function L1TxLink({
+  hash,
+  destination,
+  marker = true,
+  head,
+  tail,
+}: {
+  hash: string;
+  destination: L1Destination;
+  /** Off where the label already says Cardano, such as a "Settlement" field. */
+  marker?: boolean;
+  /** Characters kept each side of the ellipsis, for a narrow header figure. */
+  head?: number;
+  tail?: number;
+}) {
   const href = destination === "midgard" ? `/l1/transaction/${hash}` : l1TxUrl(hash);
-  const short = truncateId(hash);
+  const short = truncateId(hash, head, tail);
   const linkClass =
     "whitespace-nowrap font-mono text-sm text-text underline decoration-border-strong " +
     "underline-offset-2 transition-colors hover:text-link hover:decoration-link";
 
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="rounded border border-border-strong bg-surface-2 px-1 text-micro font-medium uppercase text-text-3">
-        L1
-        <span className="sr-only"> (Cardano layer 1)</span>
+    <span className="inline-flex max-w-full flex-wrap items-center gap-1.5">
+      {marker ? (
+        <span className="rounded border border-border-strong bg-surface-2 px-1 text-micro font-medium uppercase text-text-3">
+          L1
+          <span className="sr-only"> (Cardano layer 1)</span>
+        </span>
+      ) : null}
+      <span className="inline-flex items-center gap-1">
+        {href === null ? (
+          <span className="whitespace-nowrap font-mono text-sm">{short}</span>
+        ) : destination === "midgard" ? (
+          <a
+            href={href}
+            className={linkClass}
+            aria-label={`Midgard context for L1 transaction ${short}`}
+          >
+            {short}
+          </a>
+        ) : (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`${linkClass} inline-flex items-center gap-1`}
+            aria-label={`View L1 transaction ${short} on ${L1_EXPLORER_NAME ?? "the Cardano explorer"}`}
+          >
+            {short}
+            <Icon name="external" size={12} />
+          </a>
+        )}
+        <CopyButton value={hash} />
       </span>
-      {href === null ? (
-        <span className="whitespace-nowrap font-mono text-sm">{short}</span>
-      ) : destination === "midgard" ? (
-        <a
-          href={href}
-          className={linkClass}
-          aria-label={`Midgard context for L1 transaction ${short}`}
-        >
-          {short}
-        </a>
-      ) : (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`${linkClass} inline-flex items-center gap-1`}
-          aria-label={`View L1 transaction ${short} on ${L1_EXPLORER_NAME ?? "the Cardano explorer"}`}
-        >
-          {short}
-          <Icon name="external" size={12} />
-        </a>
-      )}
-      <CopyButton value={hash} />
     </span>
   );
 }

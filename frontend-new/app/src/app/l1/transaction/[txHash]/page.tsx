@@ -5,7 +5,7 @@ import type { CardanoActivityRow, CardanoReferenceResponse } from "@midgard-expl
 import { Breadcrumbs } from "../../../../components/ui/base/breadcrumbs";
 import { IdentityBar } from "../../../../components/ui/domain/identitybar";
 import { PageError } from "../../../../components/ui/base/pageerror";
-import { Callout, Card, PageHeader } from "../../../../components/ui/base/layout";
+import { Card } from "../../../../components/ui/base/layout";
 import { Identifier } from "../../../../components/ui/domain/identifier";
 import { StatusBadge } from "../../../../components/ui/domain/status";
 import { Timestamp } from "../../../../components/ui/base/timestamp";
@@ -141,8 +141,8 @@ export default async function L1TransactionPage({
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="transaction" title="Cardano transaction" />
         <IdentityBar
+          title="Cardano transaction"
           overline="Transaction hash"
           value={hash}
           {...(externalHref === null ? {} : { externalHref })}
@@ -156,8 +156,8 @@ export default async function L1TransactionPage({
   return (
     <>
       <Breadcrumbs items={CRUMBS} />
-      <PageHeader entity="transaction" title="Cardano transaction" />
       <IdentityBar
+        title="Cardano transaction"
         overline="Transaction hash"
         value={hash}
         {...(externalHref === null ? {} : { externalHref })}
@@ -181,11 +181,10 @@ export default async function L1TransactionPage({
           {data.references.map((row) => (
             <Reference key={`${row.kind}-${row.recordId ?? row.headerHash ?? "one"}`} row={row} />
           ))}
-          <Callout tone="neutral" title="What this page does not show.">
-            The transaction&apos;s own contents: its inputs, outputs, scripts and datums. Those live
-            on Cardano and this explorer does not read it
-            {externalHref === null ? "." : `, so ${externalName} is where to read them.`}
-          </Callout>
+          <p className="mg-caption text-text-3">
+            Its inputs, outputs and scripts are on Cardano, which this explorer does not read
+            {externalHref === null ? "." : `. Open it on ${externalName} to see them.`}
+          </p>
         </>
       )}
     </>

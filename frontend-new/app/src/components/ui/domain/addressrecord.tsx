@@ -5,6 +5,12 @@ import { ValueCell } from "./amount";
 import { Identifier } from "./identifier";
 import { InfoTip } from "../base/infotip";
 import { SEMANTIC_ICONS } from "../../../lib/semantic-icons";
+import type { IconName } from "../base/icons";
+
+/** A payment credential is a key only when it is one. A script is drawn as
+ * code, and a kind this explorer does not know yet claims neither. */
+const credentialIcon = (kind: string, fallback: IconName): IconName =>
+  kind === "Script" ? "script" : kind === "PubKey" ? fallback : "hash";
 
 /** Shared credential inspection for resolved Midgard ledger records. */
 export function AddressRecord({
@@ -24,7 +30,7 @@ export function AddressRecord({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2">
+      <div className="flex min-w-0 flex-wrap items-center">
         <AddressLink address={address} kind={identity.payment.kind} />
         <span className="inline-flex items-center" role="group" aria-label="Address details">
           {(["payment", "stake"] as const).map((kind) => {
@@ -35,7 +41,11 @@ export function AddressRecord({
             return (
               <span key={kind} data-semantic-icon={semantic}>
                 <InfoTip
-                  icon={SEMANTIC_ICONS[semantic].icon}
+                  icon={
+                    kind === "payment"
+                      ? credentialIcon(credential.kind, SEMANTIC_ICONS[semantic].icon)
+                      : SEMANTIC_ICONS[semantic].icon
+                  }
                   triggerLabel={label}
                   subject={label}
                   content={

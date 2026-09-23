@@ -91,16 +91,6 @@ describe("a settlement the node reported", () => {
     render(<CardanoAssociation association={association()} context={context} />);
     expect(screen.getByText(/deployment as configured/)).toBeTruthy();
   });
-
-  /** The compact strip is the one label with no paragraph under it. */
-  it("labels the compact strip as the node's report", () => {
-    const { container } = render(
-      <CardanoAssociation association={association()} context={context} compact />,
-    );
-    expect(container.textContent).toContain("Settlement reported by the node");
-    expect(container.textContent).not.toContain("Cardano settlement");
-    expect(container.querySelector(`a[href="/l1/transaction/${NODE_HASH}"]`)).toBeTruthy();
-  });
 });
 
 describe("a record with no settlement transaction", () => {

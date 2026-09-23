@@ -79,7 +79,7 @@ it("omits Scripts for a transaction without script or datum evidence", async () 
   expect(screen.queryByText("Scripts", { exact: true })).toBeNull();
 });
 
-it("shows mint and burn evidence once in Overview, not Technical details", async () => {
+it("shows mint and burn evidence once in Overview, not in Details", async () => {
   const row = TXS.find((item) => item.transaction?.mint?.assets.length)!;
   vi.mocked(api.transaction).mockResolvedValue({
     status: "committed",

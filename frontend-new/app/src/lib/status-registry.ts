@@ -68,7 +68,9 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
   ),
   committed: e(
     "tx_lifecycle",
-    "success",
+    // In a block, not yet final: in progress, not concluded. A check here
+    // read as settled beside a Cardano column that said otherwise.
+    "info",
     "Committed",
     "Included in a Midgard block. Reversible until that block is final on Cardano.",
   ),
@@ -94,7 +96,7 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
   ),
   consumed: e(
     "bridge_status",
-    "success",
+    "info",
     "Consumed",
     // `bridge_status` is shared by deposits, withdrawals and forced
     // transactions, so this names the event UTxO rather than the deposit one.

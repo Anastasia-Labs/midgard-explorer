@@ -185,15 +185,20 @@ test.describe("summary band fills its rows", () => {
       const blocks = await page.request
         .get(`${FIXTURE}/api/blocks/1`)
         .then(async (r) => ((await r.json()) as { rows: Array<{ header_hash: string }> }).rows);
-      await page.goto(`/block/${blocks[0]!.header_hash}?tab=da`);
+      await page.goto(`/block/${blocks[0]!.header_hash}?tab=details`);
       await settle(page);
-      const overflowing = await page.getByRole("tabpanel").evaluate((panel) =>
-        [...panel.querySelectorAll<HTMLElement>("p.mg-overline")]
-          .map((label) => label.parentElement as HTMLElement)
-          .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
-          .map((cell) => cell.textContent?.trim() ?? ""),
-      );
-      expect(overflowing, "fields wider than their column").toEqual([]);
+      const measured = await page.getByRole("tabpanel").evaluate((panel) => {
+        const cells = [...panel.querySelectorAll<HTMLElement>("dd")];
+        return {
+          count: cells.length,
+          overflowing: cells
+            .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+            .map((cell) => cell.textContent?.trim() ?? ""),
+        };
+      });
+      // A panel with no fields would pass the check below without measuring.
+      expect(measured.count).toBeGreaterThan(0);
+      expect(measured.overflowing, "fields wider than their column").toEqual([]);
     });
   }
 

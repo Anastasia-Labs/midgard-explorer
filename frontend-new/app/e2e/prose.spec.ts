@@ -64,6 +64,9 @@ test.describe("rendered prose", () => {
         for (let node = walker.nextNode(); node; node = walker.nextNode()) {
           const el = node.parentElement;
           if (!el || skipTags.has(el.tagName)) continue;
+          // Code at any depth is not prose: a JSON body renders one element
+          // per line inside its <pre>.
+          if (el.closest("pre, code")) continue;
           if (getComputedStyle(el).fontFamily.includes("mono")) continue;
 
           const text = (node.textContent ?? "").trim();

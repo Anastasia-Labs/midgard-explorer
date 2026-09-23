@@ -5,7 +5,8 @@ import type { L1ValidatorResponse } from "@midgard-explorer/contracts";
 import { Breadcrumbs } from "../../../../components/ui/base/breadcrumbs";
 import { IdentityBar } from "../../../../components/ui/domain/identitybar";
 import { PageError } from "../../../../components/ui/base/pageerror";
-import { Callout, Card, PageHeader } from "../../../../components/ui/base/layout";
+import { Callout, Card } from "../../../../components/ui/base/layout";
+import { FactGroup, FactRow } from "../../../../components/ui/base/facts";
 import { Identifier } from "../../../../components/ui/domain/identifier";
 import { ApiError, api } from "../../../../lib/api";
 import { contractName } from "../../../../components/ui/domain/validatorlabel";
@@ -30,15 +31,6 @@ const CRUMBS = [
   { label: "Cardano", href: "/l1" },
   { label: "Validator" },
 ];
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-      <dt className="text-sm text-text-3">{label}</dt>
-      <dd className="min-w-0 text-sm">{children}</dd>
-    </div>
-  );
-}
 
 /**
  * One validator this deployment declares.
@@ -70,8 +62,7 @@ export default async function ValidatorPage({
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader title="Validator" />
-        <IdentityBar overline="Script hash" value={hash} />
+        <IdentityBar title="Validator" overline="Script hash" value={hash} />
         <PageError message={listErrorMessage(error)} />
       </>
     );
@@ -92,16 +83,18 @@ export default async function ValidatorPage({
           { label: contractName(validator.family) },
         ]}
       />
-      <PageHeader
-        entity="validator"
+      <IdentityBar
         title={`${contractName(validator.family)} validator`}
-        subtitle="Declared by this deployment's manifest."
+        overline="Validator script hash"
+        value={validator.scriptHash}
+        summary={[
+          {
+            label: "Deployment",
+            value: <Identifier value={data.deploymentId} head={10} tail={6} />,
+          },
+          { label: "Network", value: data.network },
+        ]}
       />
-      <IdentityBar overline="Validator script hash" value={validator.scriptHash} />
-
-      <p className="mb-4 mg-caption text-text-3">
-        Deployment: <span className="font-mono">{data.deploymentId}</span> on {data.network}
-      </p>
 
       {validator.placeholder ? (
         <div className="mb-4">
@@ -113,13 +106,10 @@ export default async function ValidatorPage({
       ) : null}
 
       <Card className="mb-4">
-        <div className="border-b border-border p-4">
-          <h2 className="text-body font-semibold text-text">What the manifest declares</h2>
-        </div>
-        <dl className="flex flex-col gap-3 p-4">
-          <Row label="Family">{contractName(validator.family)}</Row>
-          <Row label="Purpose">{validator.purpose}</Row>
-          <Row label="Payment address">
+        <FactGroup title="Declared by the manifest">
+          <FactRow label="Family">{contractName(validator.family)}</FactRow>
+          <FactRow label="Purpose">{validator.purpose}</FactRow>
+          <FactRow label="Payment address">
             {addressHref === null ? (
               <Identifier value={validator.address} head={12} tail={8} />
             ) : (
@@ -133,9 +123,9 @@ export default async function ValidatorPage({
                 {truncateId(validator.address, 12, 8)}
               </a>
             )}
-          </Row>
+          </FactRow>
           {validator.rewardAddress === null ? null : (
-            <Row label="Reward address">
+            <FactRow label="Reward address">
               {rewardHref === null ? (
                 <Identifier value={validator.rewardAddress} head={12} tail={8} />
               ) : (
@@ -149,28 +139,25 @@ export default async function ValidatorPage({
                   {truncateId(validator.rewardAddress, 12, 8)}
                 </a>
               )}
-            </Row>
+            </FactRow>
           )}
           {validator.policyId === null ? null : (
-            <Row label="Policy id">
+            <FactRow label="Policy id">
               <Identifier value={validator.policyId} />
-            </Row>
+            </FactRow>
           )}
-        </dl>
+        </FactGroup>
       </Card>
 
-      <Callout tone="neutral" title="What happened at this address is not shown here.">
-        This explorer reads the Midgard node, not Cardano, so it holds no transaction history for a
-        validator address
-        {addressHref === null
-          ? ". Configure a Cardano explorer address URL to link out to one."
-          : `. ${externalName} has it, through the address above.`}{" "}
-        The node&apos;s own records of what it did on Cardano are on the{" "}
+      <p className="mg-caption text-text-3">
+        This explorer does not read Cardano, so it has no history for this address
+        {addressHref === null ? "" : `; ${externalName} has it, through the address above`}. What
+        the node itself did on Cardano is on{" "}
         <a className="text-link hover:text-link-hover hover:underline" href="/l1">
           Cardano activity
-        </a>{" "}
-        page.
-      </Callout>
+        </a>
+        .
+      </p>
     </>
   );
 }

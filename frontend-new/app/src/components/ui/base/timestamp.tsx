@@ -30,6 +30,7 @@ export function Timestamp({
   iso,
   exact: showExact = false,
   wrap = false,
+  stacked = false,
   className,
 }: {
   iso: string;
@@ -39,6 +40,9 @@ export function Timestamp({
   exact?: boolean;
   /** Allow long absolute timestamps to wrap in compact rows before hydration. */
   wrap?: boolean;
+  /** Relative time on one line and the exact instant on the next, for a
+   * record header's figure. Takes the figure's own type on the first line. */
+  stacked?: boolean;
   className?: string;
 }) {
   const nowMs = useSyncExternalStore(subscribe, getNow, getServerNow);
@@ -46,6 +50,21 @@ export function Timestamp({
   const relative = nowMs === 0 ? exact : relativeTime(iso, nowMs);
   // No `title`: hover reached neither touch nor keyboard. The absolute instant
   // is either rendered beside the relative one or read out by assistive tech.
+  if (stacked) {
+    return (
+      <time dateTime={iso} className={cn("block min-w-0", className)}>
+        <span aria-hidden className="block">
+          {relative}
+        </span>
+        {relative !== exact ? (
+          <span aria-hidden className="mt-1 block mg-micro font-normal text-text-3">
+            {exact}
+          </span>
+        ) : null}
+        <span className="sr-only">{exact}</span>
+      </time>
+    );
+  }
   return (
     <time
       dateTime={iso}

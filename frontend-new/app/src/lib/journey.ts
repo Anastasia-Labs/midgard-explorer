@@ -73,13 +73,12 @@ const L1_TERMINAL_SUCCESS = "finalized";
  * The headline over a settled record, and the strongest claim either page
  * makes.
  *
- * Every stage behind it comes from `pending_block_finalizations`, which is the
- * node's own journal. "Final on Cardano" alone reads as this explorer having
- * established finality, which it does where it observes Cardano and does not
- * where it only reads the node. Naming the source is true in both, and the
- * settlement panel below states which of the two this deployment is.
+ * Every stage behind it comes from `pending_block_finalizations`, the node's
+ * own journal. Midgard is the explorer's only source, so naming it on the
+ * badge said nothing the whole site does not; the Details tab says once that
+ * the node reported it. "Finalized" is the same word the lists use.
  */
-const SETTLED_HEADLINE = "Final on Cardano, as the node records it";
+const SETTLED_HEADLINE = "Finalized";
 
 /** Finalization statuses that mean the node gave up. */
 const L1_TERMINAL_FAILURE = "abandoned";

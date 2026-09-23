@@ -37,7 +37,7 @@ export function BlockNav({ neighbours }: { neighbours: BlockNeighbours }) {
           className={cn(base, "text-text-2 transition-colors hover:bg-surface-2 hover:text-text")}
         >
           <Icon name="chevronLeft" size={14} />
-          {prev.height === null ? `${prev.header_hash.slice(0, 8)}…` : `#${prev.height}`}
+          {prev.height === null ? `${prev.header_hash.slice(0, 8)}…` : `Block #${prev.height}`}
         </Link>
       ) : (
         <span
@@ -60,7 +60,7 @@ export function BlockNav({ neighbours }: { neighbours: BlockNeighbours }) {
           }
           className={cn(base, "text-text-2 transition-colors hover:bg-surface-2 hover:text-text")}
         >
-          {next.height === null ? `${next.header_hash.slice(0, 8)}…` : `#${next.height}`}
+          {next.height === null ? `${next.header_hash.slice(0, 8)}…` : `Block #${next.height}`}
           <Icon name="chevronRight" size={14} />
         </Link>
       ) : (

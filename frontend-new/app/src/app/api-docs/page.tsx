@@ -45,7 +45,7 @@ export default async function ApiDocsPage() {
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
         title="API reference"
-        subtitle="Read-only JSON access to Midgard and the explorer's Cardano index."
+        subtitle="Read-only JSON access to the Midgard data this explorer shows."
         meta={
           document === null ? (
             <span>Contract unavailable</span>

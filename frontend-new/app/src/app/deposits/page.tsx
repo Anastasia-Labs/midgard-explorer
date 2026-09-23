@@ -1,9 +1,9 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { ValueCell } from "../../components/ui/domain/amount";
 import { Icon } from "../../components/ui/base/icons";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { L1TxLink } from "../../components/ui/domain/l1link";
-import { InfoTip } from "../../components/ui/base/infotip";
 import { StatusLegend } from "../../components/ui/base/legend";
 import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
 import { StatusCell } from "../../components/ui/domain/status";
@@ -52,7 +52,6 @@ export default async function DepositsPage({
       <PageHeader
         entity="deposit"
         title="Deposits"
-        subtitle="Funds deposited from Cardano into Midgard."
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
@@ -74,8 +73,10 @@ export default async function DepositsPage({
           caption="Deposits from Cardano into Midgard"
           columns={[
             {
-              header: "Deposit origin",
-              cell: (r) => <L1TxLink hash={r.deposit_l1_tx_hash} destination="cardano" />,
+              header: "Deposit on Cardano",
+              cell: (r) => (
+                <L1TxLink hash={r.deposit_l1_tx_hash} destination="cardano" marker={false} />
+              ),
             },
             {
               header: "Ledger entry ID",
@@ -94,14 +95,7 @@ export default async function DepositsPage({
                 r.value ? (
                   <ValueCell value={r.value} />
                 ) : (
-                  <span className="inline-flex items-center gap-1 text-text-3">
-                    undecodable
-                    <InfoTip
-                      subject="undecodable value"
-                      term="partialDecode"
-                      explain="This deposit's value is one of the unavailable fields."
-                    />
-                  </span>
+                  <span className="text-text-3">undecodable</span>
                 ),
               align: "right",
             },
@@ -164,8 +158,22 @@ export default async function DepositsPage({
           })}
           rows={data.rows}
           keyOf={(r) => r.event_id}
-          emptyTitle="No deposits yet"
-          emptyHint="Deposits appear once funds are locked on Cardano for an address on this network."
+          emptyTitle={id ? "No matching deposit" : "No deposits yet"}
+          {...(id
+            ? {
+                emptyAction: (
+                  <Link
+                    href="/deposits"
+                    className="text-link hover:text-link-hover hover:underline"
+                  >
+                    Clear filter
+                  </Link>
+                ),
+              }
+            : {
+                emptyHint:
+                  "Deposits appear once funds are locked on Cardano for an address on this network.",
+              })}
         />
         <StatusLegend kinds={["bridge_status"]} />
         <Pagination

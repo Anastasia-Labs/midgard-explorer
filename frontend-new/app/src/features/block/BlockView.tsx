@@ -1,23 +1,24 @@
 import type { BlockEventMember } from "@midgard-explorer/contracts";
-import type { ReactNode } from "react";
-import Link from "next/link";
 import { AdaAmount, ValueCell } from "../../components/ui/domain/amount";
 import { ApiExample } from "../../components/ui/domain/apiexample";
 import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { BlockNav } from "../../components/ui/domain/blocknav";
 import { IdentityBar } from "../../components/ui/domain/identitybar";
-import { CardanoAssociation } from "../../components/ui/domain/association";
+import { CardanoAssociation, hasRecordedSettlement } from "../../components/ui/domain/association";
 import { Journey } from "../../components/ui/domain/journey";
-import { Callout, Card, PageHeader } from "../../components/ui/base/layout";
+import { Card } from "../../components/ui/base/layout";
+import { FactGroup, FactRow } from "../../components/ui/base/facts";
+import { L1TxLink } from "../../components/ui/domain/l1link";
 import { RawData } from "../../components/ui/base/rawdata";
-import { StatusBadge } from "../../components/ui/domain/status";
-import { SummaryBand } from "../../components/ui/domain/summary";
+import { SettlementDetails } from "../../components/ui/domain/settlementdetails";
+import { ToneBadge } from "../../components/ui/domain/status";
 import { DataTable, DecodeWarn } from "../../components/ui/base/table";
 import { Tabs } from "../../components/ui/base/tabs";
 import { Timestamp } from "../../components/ui/base/timestamp";
-import { formatDuration, formatTimestamp, truncateId } from "../../lib/format";
-import { blockJourney } from "../../lib/journey";
+import { blockForDisplay } from "../../lib/blockDisplay";
+import { formatDuration, truncateId } from "../../lib/format";
+import { OUTCOME_TONE, blockJourney } from "../../lib/journey";
 import { MerkleRoots } from "./MerkleRoots";
 import type { BlockResponse } from "@midgard-explorer/contracts";
 
@@ -108,43 +109,26 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
     />
   );
 
-  const daTab = data.da ? (
-    <>
-      <div className="p-4 pb-0">
-        <Callout tone="neutral" title="Payload retained locally." />
-      </div>
-      <p className="p-4 text-sm text-text-2">
-        The roots this payload carries are on the{" "}
-        <Link
-          className="text-link hover:text-link-hover hover:underline"
-          href={`/block/${hash}?tab=roots`}
-        >
-          Merkle roots
-        </Link>{" "}
-        tab, next to the previous header&apos;s.
-      </p>
-      <div className="grid gap-x-8 gap-y-3 border-t border-border p-4 text-sm sm:grid-cols-3">
-        <Field label="Block start" value={<Timestamp exact iso={data.da.block_start_time} />} />
-        <Field label="Block end" value={<Timestamp exact iso={data.da.block_end_time} />} />
-        <Field
-          label="Duration"
-          value={windowMs === null ? "Not recorded" : formatDuration(windowMs)}
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-2 border-t border-border p-4 text-sm text-text-2 sm:grid-cols-3">
-        <span>Txs: {data.da.l2_transaction_count}</span>
-        <span>Deposits: {data.da.deposit_count}</span>
-        <span>Withdrawals: {data.da.withdrawal_count}</span>
-        <span>Forced: {data.da.forced_transaction_count}</span>
-        <span>Events: {data.da.total_event_count}</span>
-        <span>Steps: {data.da.transition_step_count}</span>
-      </div>
-    </>
-  ) : (
-    <div className="p-4">
-      <Callout tone="neutral" title="No payload is retained locally for this header." />
-    </div>
-  );
+  const journeyModel = blockJourney(finalization, header.height, hash);
+  const settlementHash =
+    hasRecordedSettlement(data.cardano) && "l1TxHash" in data.cardano
+      ? data.cardano.l1TxHash
+      : null;
+  const title = header.height === null ? `Header ${truncateId(hash)}` : `Block #${header.height}`;
+
+  const counts = [
+    header.header_deposit_count,
+    header.header_withdrawal_count,
+    header.header_forced_transaction_count,
+  ];
+  const eventTotal = counts.some((n) => n === null)
+    ? null
+    : counts.reduce<number>((a, n) => a + (n ?? 0), 0);
+  const eventCount =
+    data.events.deposits.length +
+    data.events.withdrawals.length +
+    data.events.forced_transactions.length;
+  const partial = decodable.length < data.rows.length;
 
   return (
     <>
@@ -152,84 +136,80 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
         items={[
           { label: "Overview", href: "/" },
           { label: "Blocks", href: "/blocks" },
-          {
-            label:
-              header.height === null ? `Header ${truncateId(hash)}` : `Block #${header.height}`,
-          },
+          { label: title },
         ]}
       />
-      <PageHeader
-        entity="block"
-        title={header.height === null ? `Header ${truncateId(hash)}` : `Block #${header.height}`}
-      >
-        <span className="flex flex-wrap items-center gap-2">
-          <BlockNav neighbours={data.neighbours} />
-          {finalization ? <StatusBadge status={finalization.status} /> : null}
-        </span>
-      </PageHeader>
-      <IdentityBar overline="Block header hash" value={hash} />
-
-      {/* One journey replaces the five-column finalization timeline and the
-          callout that restated it: the same milestones, the same evidence, in
-          the grammar every other record on the site uses. It leads the page
-          because "is this block final?" is the question a block is opened to
-          answer; the counts below are context for that answer. */}
-      <Journey
-        model={blockJourney(finalization, header.height, hash)}
-        detailsLabel="Settlement timings and evidence"
-      >
-        {finalization ? (
-          <p className="mg-micro text-text-3">
-            Latest node update: {formatTimestamp(finalization.updatedAt)}
-            {finalization.submitted_tx_hash
-              ? null
-              : " · no Cardano block-commitment transaction recorded yet"}
-          </p>
-        ) : null}
-      </Journey>
-
-      <CardanoAssociation association={data.cardano} context={data.midgard} />
-
-      {/* Height is in the title and the closing time is in the journey, so
-          neither is repeated here. */}
-      <SummaryBand
-        items={[
+      <IdentityBar
+        title={title}
+        overline="Block header hash"
+        value={hash}
+        badges={
+          <>
+            <ToneBadge
+              tone={OUTCOME_TONE[journeyModel.outcome]}
+              label={journeyModel.headline}
+              explain={journeyModel.explanation || undefined}
+            />
+            <BlockNav neighbours={data.neighbours} />
+          </>
+        }
+        summary={[
+          ...(settlementHash
+            ? [
+                {
+                  label: "Settlement",
+                  value: (
+                    <L1TxLink
+                      hash={settlementHash}
+                      destination="midgard"
+                      marker={false}
+                      head={6}
+                      tail={6}
+                    />
+                  ),
+                },
+              ]
+            : []),
+          { label: "Time", value: <Timestamp stacked iso={header.block_end_time} /> },
           {
-            label: "Committed txs",
+            label: "Transactions",
             value: header.header_l2_transaction_count ?? "Unknown",
-            ...(decodable.length < data.rows.length ? { sub: `${decodable.length} decoded` } : {}),
+            ...(partial ? { sub: `${decodable.length} decoded` } : {}),
           },
           {
-            label: "Deposits",
-            value: header.header_deposit_count ?? "Unknown",
+            label: "Protocol events",
+            value: eventTotal ?? "Unknown",
+            ...(eventTotal
+              ? {
+                  sub: [
+                    plural(header.header_deposit_count ?? 0, "deposit"),
+                    plural(header.header_withdrawal_count ?? 0, "withdrawal"),
+                    plural(header.header_forced_transaction_count ?? 0, "forced"),
+                  ].join(" · "),
+                }
+              : {}),
           },
           {
-            label: "Withdrawals",
-            value: header.header_withdrawal_count ?? "Unknown",
-          },
-          {
-            label: "Forced transactions",
-            value: header.header_forced_transaction_count ?? "Unknown",
-          },
-          { label: "Inputs", value: inputCount },
-          {
-            label: "Output total",
+            label: "Total output",
             value: <AdaAmount lovelace={outputLovelace.toString()} />,
-            ...(decodable.length < data.rows.length ? { sub: "Decoded transactions only" } : {}),
+            ...(partial ? { sub: "Decoded transactions only" } : {}),
           },
           {
             label: "Fees",
             value: decodable.length > 0 ? <AdaAmount lovelace={feeSum.toString()} /> : "Unknown",
           },
-          {
-            label: "Duration",
-            value: windowMs === null ? "Not recorded" : formatDuration(windowMs),
-            sub: "Header window",
-          },
         ]}
       />
 
+      {journeyModel.outcome !== "complete" ? (
+        <Journey model={journeyModel} showHeadline={false} />
+      ) : null}
+      {hasRecordedSettlement(data.cardano) ? null : (
+        <CardanoAssociation association={data.cardano} context={data.midgard} />
+      )}
+
       <Tabs
+        aliases={{ da: "details" }}
         tabs={[
           {
             id: "transactions",
@@ -237,7 +217,39 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
             count: data.rows.length,
             content: <Card>{transactionsTab}</Card>,
           },
-          { id: "da", label: "Data availability", content: <Card>{daTab}</Card> },
+          {
+            id: "events",
+            label: "Protocol events",
+            count: eventCount,
+            content: (
+              <Card>
+                {eventCount === 0 ? (
+                  <p className="p-4 text-sm text-text-3">
+                    {eventTotal === 0
+                      ? "No deposits, withdrawals or forced transactions in this block."
+                      : eventTotal === null
+                        ? "The node recorded no list of this block's protocol events."
+                        : `The header counts ${plural(eventTotal, "protocol event")}, but the node recorded no list of them.`}
+                  </p>
+                ) : (
+                  <>
+                    {eventTotal !== null && eventTotal !== eventCount ? (
+                      <p className="border-b border-border px-4 py-3 mg-caption text-text-3">
+                        The header counts {plural(eventTotal, "protocol event")}. The node recorded{" "}
+                        {eventCount} of them.
+                      </p>
+                    ) : null}
+                    <EventMembers title="Deposits" rows={data.events.deposits} />
+                    <EventMembers title="Withdrawals" rows={data.events.withdrawals} />
+                    <EventMembers
+                      title="Forced transactions"
+                      rows={data.events.forced_transactions}
+                    />
+                  </>
+                )}
+              </Card>
+            ),
+          },
           {
             id: "roots",
             label: "Merkle roots",
@@ -248,17 +260,47 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
             ),
           },
           {
-            id: "events",
-            label: "Protocol events",
-            count:
-              data.events.deposits.length +
-              data.events.withdrawals.length +
-              data.events.forced_transactions.length,
+            id: "details",
+            label: "Details",
             content: (
               <Card>
-                <EventMembers title="Deposits" rows={data.events.deposits} />
-                <EventMembers title="Withdrawals" rows={data.events.withdrawals} />
-                <EventMembers title="Forced transactions" rows={data.events.forced_transactions} />
+                <FactGroup title="Timing">
+                  <FactRow label="Started">
+                    {header.block_start_time === null ? (
+                      "Not recorded"
+                    ) : (
+                      <Timestamp exact iso={header.block_start_time} />
+                    )}
+                  </FactRow>
+                  <FactRow label="Closed">
+                    <Timestamp exact iso={header.block_end_time} />
+                  </FactRow>
+                  <FactRow label="Duration">
+                    {windowMs === null ? "Not recorded" : formatDuration(windowMs)}
+                  </FactRow>
+                </FactGroup>
+                <FactGroup title="Contents">
+                  <FactRow label="Inputs">
+                    {inputCount}
+                    {partial ? <span className="text-text-3"> in decoded transactions</span> : null}
+                  </FactRow>
+                  {data.da ? (
+                    <>
+                      <FactRow label="Events">{data.da.total_event_count}</FactRow>
+                      <FactRow label="Transition steps">{data.da.transition_step_count}</FactRow>
+                    </>
+                  ) : null}
+                  <FactRow label="Payload">
+                    {header.payload_retained_locally ? "Retained locally" : "Not retained locally"}
+                  </FactRow>
+                </FactGroup>
+                <FactGroup title="Settlement">
+                  <SettlementDetails
+                    association={data.cardano}
+                    context={data.midgard}
+                    journey={journeyModel}
+                  />
+                </FactGroup>
               </Card>
             ),
           },
@@ -266,18 +308,28 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
             id: "raw",
             label: "Raw",
             content: (
-              <>
-                <div className="mb-4">
-                  <ApiExample path={`/api/block?header_hash=${hash}`} />
-                </div>
-                <RawData data={data} filename={`block-${hash}.json`} />
-              </>
+              <div className="space-y-4">
+                <ApiExample
+                  path={`/api/block?header_hash=${hash}`}
+                  note="Returns the full API response, including every transaction body and the explorer's source and settlement records."
+                />
+                <RawData
+                  title="Block JSON"
+                  data={blockForDisplay(data)}
+                  filename={`block-${hash}.json`}
+                />
+              </div>
             ),
           },
         ]}
       />
     </>
   );
+}
+
+function plural(n: number, noun: string): string {
+  if (noun === "forced") return `${n} forced`;
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 function EventMembers({ title, rows }: { title: string; rows: readonly BlockEventMember[] }) {
@@ -287,7 +339,7 @@ function EventMembers({ title, rows }: { title: string; rows: readonly BlockEven
         {title} <span className="font-normal text-text-3">({rows.length})</span>
       </h3>
       {rows.length === 0 ? (
-        <p className="text-sm text-text-3">None in this header.</p>
+        <p className="text-sm text-text-3">None in this block.</p>
       ) : (
         <ul className="space-y-2">
           {rows.map((row) => (
@@ -305,14 +357,5 @@ function EventMembers({ title, rows }: { title: string; rows: readonly BlockEven
         </ul>
       )}
     </section>
-  );
-}
-
-function Field({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <p className="mg-overline">{label}</p>
-      <div className="mt-0.5 text-text">{value}</div>
-    </div>
   );
 }

@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { Breadcrumbs } from "../../../components/ui/base/breadcrumbs";
 import { IdentityBar } from "../../../components/ui/domain/identitybar";
 import { PageError } from "../../../components/ui/base/pageerror";
-import { PageHeader } from "../../../components/ui/base/layout";
 import { AddressView } from "../../../features/address/AddressView";
 import { api } from "../../../lib/api";
 import { classify } from "../../../lib/classify";
@@ -53,8 +52,7 @@ export default async function AddressPage({
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="address" title="Address" />
-        <IdentityBar overline="Midgard address" value={address} mark />
+        <IdentityBar title="Address" overline="Midgard address" value={address} mark />
         <PageError message={listErrorMessage(e)} />
       </>
     );

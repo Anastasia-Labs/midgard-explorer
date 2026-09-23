@@ -3,9 +3,9 @@ import { Identifier } from "../../components/ui/domain/identifier";
 import { L1TxLink } from "../../components/ui/domain/l1link";
 import { DeploymentNote } from "../../components/shell/SourceBanner";
 import { ListError } from "../../components/ui/base/listerror";
-import { Callout, PageHeader } from "../../components/ui/base/layout";
+import { PageHeader } from "../../components/ui/base/layout";
 import { DataTable, Pagination } from "../../components/ui/base/table";
-import { StatusBadge } from "../../components/ui/domain/status";
+import { StatusCell } from "../../components/ui/domain/status";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
 import type { CardanoActivityRow } from "@midgard-explorer/contracts";
@@ -91,7 +91,7 @@ export default async function L1Page({
       <PageHeader
         entity="transaction"
         title="Cardano activity"
-        subtitle="The Cardano transactions the Midgard node recorded, newest first."
+        subtitle="The node's records, not a chain scan. The explorer does not read Cardano, so nothing here confirms that Cardano accepted a transaction."
         meta={
           <span>
             <strong className="font-semibold text-text tabular-nums">
@@ -106,21 +106,13 @@ export default async function L1Page({
         <DeploymentNote />
       </div>
 
-      <div className="mb-4">
-        <Callout tone="neutral" title="These are the node's records, not a chain scan.">
-          Each row is a Cardano transaction this Midgard node wrote down. The explorer does not read
-          Cardano itself, so a transaction no Midgard record names does not appear here, and nothing
-          on this page confirms that Cardano accepted one.
-        </Callout>
-      </div>
-
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
         <DataTable
           caption="Cardano transactions recorded by the Midgard node, newest first"
           columns={[
             {
               header: "Transaction",
-              cell: (r) => <L1TxLink hash={r.l1TxHash} destination="midgard" />,
+              cell: (r) => <L1TxLink hash={r.l1TxHash} destination="midgard" marker={false} />,
             },
             {
               header: "Record",
@@ -153,7 +145,7 @@ export default async function L1Page({
                 r.status === null ? (
                   <span className="text-text-3">Unknown</span>
                 ) : (
-                  <StatusBadge status={r.status} />
+                  <StatusCell status={r.status} />
                 ),
               hideBelow: "md",
             },
@@ -176,8 +168,8 @@ export default async function L1Page({
                   ? null
                   : truncateId(r.recordId);
             return {
-              primary: <L1TxLink hash={r.l1TxHash} destination="midgard" />,
-              status: r.status === null ? undefined : <StatusBadge status={r.status} />,
+              primary: <L1TxLink hash={r.l1TxHash} destination="midgard" marker={false} />,
+              status: r.status === null ? undefined : <StatusCell status={r.status} />,
               meta: <Timestamp iso={r.recordedAt} />,
               secondary: <span className="text-text-2">{KIND_LABEL[r.kind]}</span>,
               details:

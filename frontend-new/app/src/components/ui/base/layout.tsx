@@ -25,10 +25,13 @@ export function EmptyState({
   title,
   hint,
   icon = "inbox",
+  action,
 }: {
   title: string;
   hint?: string | undefined;
   icon?: IconName;
+  /** What the reader can do about it, such as clearing a filter. */
+  action?: ReactNode;
 }) {
   return (
     <div className="p-8 text-center">
@@ -37,6 +40,7 @@ export function EmptyState({
       </span>
       <p className="text-text-2">{title}</p>
       {hint ? <p className="mt-1 text-sm text-text-3">{hint}</p> : null}
+      {action ? <div className="mt-3 text-sm">{action}</div> : null}
     </div>
   );
 }

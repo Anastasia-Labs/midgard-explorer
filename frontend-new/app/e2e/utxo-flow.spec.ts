@@ -68,11 +68,14 @@ test.describe("the view toggle", () => {
     await expect(page.getByRole("radio", { name: "Flow" })).toHaveAttribute("aria-checked", "true");
   });
 
-  test("keeps address movement available in both views", async ({ page }) => {
+  test("shows balance changes above inputs and outputs, outside the view choice", async ({
+    page,
+  }) => {
     await openState(page);
-    await expect(page.getByText("Net movement by address", { exact: true })).toBeVisible();
+    await expect(page.locator('[data-region="balance-changes"]')).toBeVisible();
+    await expect(page.getByRole("radio", { name: "Balance changes" })).toHaveCount(0);
     await page.getByRole("radio", { name: "Flow" }).click();
-    await expect(page.getByText("Net movement by address", { exact: true })).toBeVisible();
+    await expect(page.locator('[data-region="balance-changes"]')).toBeVisible();
   });
 });
 

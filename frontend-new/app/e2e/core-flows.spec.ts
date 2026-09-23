@@ -45,7 +45,7 @@ test.describe("shell and navigation", () => {
     const badge = page.getByText("Fixture", { exact: true }).first();
     if (await isNarrow(page)) await expect(badge).toBeAttached();
     else await expect(badge).toBeVisible();
-    await expect(page.getByText("Network not configured")).toHaveCount(0);
+    await expect(page.getByText("Network not stated")).toHaveCount(0);
   });
 
   test("theme toggle flips the effective theme and persists it", async ({ page }) => {

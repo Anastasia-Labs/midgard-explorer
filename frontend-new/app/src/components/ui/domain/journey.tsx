@@ -1,6 +1,5 @@
 import Link from "next/link";
 import {
-  journeyProgress,
   railStages,
   type JourneyModel,
   type JourneyStage,
@@ -99,55 +98,6 @@ function stageDeltas(stages: readonly JourneyStage[]): (string | null)[] {
     }
   }
   return deltas;
-}
-
-const PROGRESS_FILL = {
-  active: "bg-info",
-  complete: "bg-success",
-  failed: "bg-danger",
-  unknown: "bg-warning",
-} as const;
-
-/** The rail, compressed to fit beside a status badge in a list row.
- *
- * It answers "how far along?" at a glance, which a code alone cannot: a reader
- * scanning fifty rows should not have to know that `observed_waiting_stability`
- * comes after `submitted_unconfirmed`. The dots are decorative; the label
- * carries the same fact in words for anyone not reading pixels. */
-export function JourneyIndicator({ status }: { status: string }) {
-  const { step, total, state, label } = journeyProgress(status);
-  const description =
-    state === "failed"
-      ? `${label}: stopped`
-      : state === "unknown"
-        ? `${label}: stage not recognized`
-        : `${label}: step ${step} of ${total}`;
-
-  return (
-    <span className="inline-flex items-center gap-0.75">
-      {/* The dots are decorative and the sr-only line carries the same fact in
-          words. A hover-only `title` added nothing a touch user could reach. */}
-      <span className="sr-only">{description}</span>
-      {Array.from({ length: total }, (_, i) => (
-        <span
-          key={i}
-          aria-hidden
-          className={cn(
-            "h-1 w-2.5 rounded-full",
-            state === "failed"
-              ? i === 0
-                ? PROGRESS_FILL.failed
-                : "bg-border-strong"
-              : state === "unknown"
-                ? "border border-dashed border-warning"
-                : i < step
-                  ? PROGRESS_FILL[state]
-                  : "bg-border-strong",
-          )}
-        />
-      ))}
-    </span>
-  );
 }
 
 export function Journey({

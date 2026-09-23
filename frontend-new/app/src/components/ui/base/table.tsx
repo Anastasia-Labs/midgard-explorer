@@ -36,6 +36,7 @@ export function DataTable<T>({
   onRetry,
   emptyTitle = "No data yet",
   emptyHint,
+  emptyAction,
   mobileRow,
 }: {
   columns: Column<T>[];
@@ -47,13 +48,15 @@ export function DataTable<T>({
   onRetry?: () => void;
   emptyTitle?: string;
   emptyHint?: string;
+  emptyAction?: ReactNode;
   mobileRow?: (row: T) => LedgerRowSpec;
 }) {
   if (state === "loading") return <TableSkeleton />;
   if (state === "error") {
     return <ErrorState message={errorMessage ?? "Failed to load."} onRetry={onRetry} />;
   }
-  if (rows.length === 0) return <EmptyState title={emptyTitle} hint={emptyHint} />;
+  if (rows.length === 0)
+    return <EmptyState title={emptyTitle} hint={emptyHint} action={emptyAction} />;
 
   return (
     <>

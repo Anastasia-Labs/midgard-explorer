@@ -1,4 +1,4 @@
-import { expect, test } from "./helpers";
+import { expect, FIXTURE, test } from "./helpers";
 
 /**
  * Two accessibility properties automated checks do not cover.
@@ -38,7 +38,12 @@ test("an information trigger accepts a pointer over at least 24 x 24 px", async 
   page,
 }, info) => {
   test.skip(info.project.name !== "desktop", "measures a pointer target");
-  await page.goto("/deposits");
+  // List rows no longer carry an information trigger per status, so the
+  // measurement uses a record page, where field labels such as Fee keep one.
+  const txId = await page.request
+    .get(`${FIXTURE}/api/transactions/1`)
+    .then(async (r) => (await r.json()).rows[0].tx_id as string);
+  await page.goto(`/transaction/${txId}`);
   await page.waitForLoadState("networkidle");
 
   const measured = await page.evaluate(() => {

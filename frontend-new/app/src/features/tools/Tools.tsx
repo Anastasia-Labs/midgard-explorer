@@ -200,6 +200,7 @@ function CborDecoder() {
       explain="Paste the hex of any CBOR payload, such as a datum or a redeemer taken from a transaction's Raw tab. Bytes are shown as hex and large integers as decimal strings, the same way the rest of the explorer shows them."
     >
       <Field label="CBOR hex" value={hex} onChange={setHex} placeholder="d8799f0102ff" rows={4} />
+      <p className="mg-micro text-text-3">Decoded in your browser. Nothing is sent to a server.</p>
       {result && !result.ok ? <Result tone="error">{result.error}</Result> : null}
       {rendered !== null ? (
         <div className="space-y-1.5">

@@ -70,10 +70,12 @@ test.describe("transaction concepts keep one semantic glyph", () => {
       0,
     );
 
-    await page.getByRole("tab", { name: "Technical details" }).click();
-    for (const kind of ["requiredSigner", "requiredObserver", "script", "metadata"]) {
-      await expect(page.locator(`[data-semantic-icon="${kind}"]:visible`).first()).toBeVisible();
-    }
+    // Evidence rows render only when the transaction declares them: an empty
+    // optional declaration is not shown as "Not declared".
+    await page.getByRole("tab", { name: "Details" }).click();
+    const details = page.locator("#panel-details");
+    await expect(details.getByText("Required signers")).toBeVisible();
+    await expect(details.getByText("Not declared")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Protocol availability" })).toHaveCount(0);
   });
 

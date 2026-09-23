@@ -35,7 +35,7 @@ const activity = async (
 test("lists what the node recorded, and says it is not a chain scan", async ({ page }) => {
   await page.goto("/l1");
   await expect(page.getByRole("heading", { name: "Cardano activity" })).toBeVisible();
-  await expect(page.getByText("These are the node's records, not a chain scan.")).toBeVisible();
+  await expect(page.getByText(/The node's records, not a chain scan\./)).toBeVisible();
   // The rows, not a table cell: below `sm` the table is replaced by a list, so
   // a cell-role assertion passes on desktop and finds nothing on a phone.
   await expect(rowRegion(page).getByText("Block settlement").first()).toBeVisible();
@@ -74,7 +74,7 @@ test("opens a transaction on the Midgard context the node holds for it", async (
     "href",
     /preprod\.cexplorer\.io\/tx\/[0-9a-f]{64}$/,
   );
-  await expect(page.getByText("What this page does not show.")).toBeVisible();
+  await expect(page.getByText(/Its inputs, outputs and scripts are on Cardano/)).toBeVisible();
   // No decoded transaction body: that came from the decommissioned index.
   for (const section of ["UTxOs", "Contracts", "Collateral", "Raw"]) {
     await expect(page.getByRole("tab", { name: section })).toHaveCount(0);
@@ -103,8 +103,9 @@ test("a validator page describes the manifest and links its address out", async 
     .validators as Array<{ scriptHash: string; address: string }>;
   const first = validators[0]!;
   await page.goto(`/l1/validator/${first.scriptHash}`);
-  await expect(page.getByText("What the manifest declares")).toBeVisible();
-  await expect(page.getByText("Declared by this deployment's manifest.")).toBeVisible();
+  await expect(page.getByText("Declared by the manifest")).toBeVisible();
+  // Operator setup instructions are not reader copy.
+  await expect(page.getByText(/Configure/)).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: new RegExp(`View ${first.address} on CExplorer`) }),
   ).toHaveAttribute("href", /preprod\.cexplorer\.io\/address\//);

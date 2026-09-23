@@ -73,9 +73,11 @@ describe("tone semantics", () => {
     const success = Object.entries(STATUS_REGISTRY)
       .filter(([, v]) => v.tone === "success")
       .map(([k]) => k);
-    expect(success).toEqual(
-      expect.arrayContaining(["committed", "consumed", "finalized", "TxIsValid"]),
-    );
+    expect(success).toEqual(expect.arrayContaining(["finalized", "TxIsValid"]));
+    // In a block or in the ledger, but reversible until the block is final on
+    // Cardano: in progress, never a concluded check.
+    expect(success).not.toContain("committed");
+    expect(success).not.toContain("consumed");
     expect(success).not.toContain("pending_commit");
     expect(success).not.toContain("observed_waiting_stability");
   });
@@ -111,7 +113,7 @@ describe("statusOf", () => {
     const r = statusOf("committed");
     expect(r.known).toBe(true);
     expect(r.label).toBe("Committed");
-    expect(r.tone).toBe("success");
+    expect(r.tone).toBe("info");
   });
 
   it("renders an unknown status verbatim with a neutral tone", () => {

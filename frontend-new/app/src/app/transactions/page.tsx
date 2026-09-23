@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ValueCell } from "../../components/ui/domain/amount";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { ListTools } from "../../components/ui/base/listtools";
-import { StatusCell } from "../../components/ui/domain/status";
+import { StatusCell, StatusPair } from "../../components/ui/domain/status";
 import { ListError } from "../../components/ui/base/listerror";
 import { PageHeader } from "../../components/ui/base/layout";
 import { DataTable, DecodeWarn, Pagination } from "../../components/ui/base/table";
@@ -54,7 +54,6 @@ export default async function TransactionsPage({
       <PageHeader
         entity="transaction"
         title="Transactions"
-        subtitle="Transactions processed by the Midgard ledger, newest first. Open one for its journey, ledger equation, and raw data."
         meta={
           <span>
             <strong className="font-semibold text-text tabular-nums">
@@ -95,8 +94,18 @@ export default async function TransactionsPage({
               ),
             },
             {
-              header: "Status",
+              header: "L2 status",
               cell: (r) => <StatusCell status={r.status} />,
+            },
+            {
+              header: "L1 settlement",
+              cell: (r) =>
+                r.finalization_status === null ? (
+                  <span className="text-text-3">Not recorded</span>
+                ) : (
+                  <StatusCell status={r.finalization_status} />
+                ),
+              hideBelow: "sm",
             },
             {
               header: "Block",
@@ -105,7 +114,7 @@ export default async function TransactionsPage({
                   href={`/block/${r.header_hash}`}
                   className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
                 >
-                  {r.height === null ? `${r.header_hash.slice(0, 8)}…` : `#${r.height}`}
+                  {r.height === null ? `${r.header_hash.slice(0, 8)}…` : `Block #${r.height}`}
                 </Link>
               ),
               hideBelow: "sm",
@@ -147,7 +156,7 @@ export default async function TransactionsPage({
             ),
             status: (
               <span className="inline-flex items-center gap-1.5">
-                <StatusCell status={r.status} />
+                <StatusPair l2={r.status} l1={r.finalization_status} />
                 {r.decodeError ? <DecodeWarn error={r.decodeError} /> : null}
               </span>
             ),
@@ -160,7 +169,7 @@ export default async function TransactionsPage({
                 label: "Block",
                 value: (
                   <Link href={`/block/${r.header_hash}`} className="tabular-nums text-link">
-                    {r.height === null ? `${r.header_hash.slice(0, 8)}…` : `#${r.height}`}
+                    {r.height === null ? `${r.header_hash.slice(0, 8)}…` : `Block #${r.height}`}
                   </Link>
                 ),
               },
@@ -168,8 +177,19 @@ export default async function TransactionsPage({
           })}
           rows={data.rows}
           keyOf={(r) => r.tx_id}
-          emptyTitle="No transactions yet"
-          emptyHint="Submitted transactions appear here as the node processes them."
+          emptyTitle={status ? "No matching transactions" : "No transactions yet"}
+          {...(status
+            ? {
+                emptyAction: (
+                  <Link
+                    href="/transactions"
+                    className="text-link hover:text-link-hover hover:underline"
+                  >
+                    Clear filter
+                  </Link>
+                ),
+              }
+            : { emptyHint: "Submitted transactions appear here as the node processes them." })}
         />
         <Pagination
           page={page}

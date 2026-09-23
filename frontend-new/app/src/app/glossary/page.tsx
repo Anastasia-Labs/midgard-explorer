@@ -15,10 +15,7 @@ export default function GlossaryPage() {
   return (
     <>
       <Breadcrumbs items={CRUMBS} />
-      <PageHeader
-        title="Glossary"
-        subtitle="Definitions used consistently across Midgard and Cardano transaction views."
-      />
+      <PageHeader title="Glossary" />
       <Concepts />
       <GlossaryIndex />
     </>

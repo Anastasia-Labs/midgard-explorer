@@ -94,7 +94,7 @@ const RELATIONSHIP: Record<Association["kind"], string> = {
   forced_transaction_order: "Forced transaction order",
 };
 
-const SOURCE_LABEL: Record<string, string> = {
+export const SOURCE_LABEL: Record<string, string> = {
   midgard_finalization_journal: "Midgard node",
   midgard_bridge_record: "Midgard bridge record",
   deployment_manifest: "Deployment manifest",
@@ -113,11 +113,26 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
+/** Which Midgard data this is, how fresh, and whether the deployment is only
+ * configured. The state always; the lag only when one was measured, because a
+ * replica measures against itself and true lag needs the primary. Configured,
+ * not verified: nothing checks the deployment against Cardano. */
+export function sourceText(context: DeploymentContext): string {
+  const freshness =
+    context.freshness.lagSeconds === null
+      ? context.freshness.state
+      : `${context.freshness.state} by ${formatDuration(context.freshness.lagSeconds * 1000)}`;
+  return `${context.sourceKind} on ${context.network}, ${freshness}${
+    context.identityState === "configured" ? ", deployment as configured" : ""
+  }`;
+}
+
 /**
  * Whether the node recorded a settlement transaction for this record.
  *
- * Pages use this to decide placement: a settled record gets the quiet strip, and
- * anything else gets the full notice. It says nothing about corroboration,
+ * Pages use this to decide placement: a settled record carries its hash in the
+ * header and the full evidence in "More details", and anything else gets the
+ * full notice. It says nothing about corroboration,
  * because nothing corroborates anything here.
  */
 export function hasRecordedSettlement(
@@ -129,9 +144,7 @@ export function hasRecordedSettlement(
 export function CardanoAssociation({
   association,
   context,
-  compact = false,
 }: {
-  compact?: boolean;
   association: Association | null | undefined;
   context: DeploymentContext | null | undefined;
 }) {
@@ -149,18 +162,6 @@ export function CardanoAssociation({
   // The strip is for a record whose settlement needs no explanation. Its label
   // names the node, because "Cardano settlement" over a hash nothing checked
   // is the claim this panel exists to avoid making.
-  if (compact && hasRecordedSettlement(association) && settled) {
-    return (
-      <div
-        data-region="association"
-        className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-info/25 bg-info/5 px-4 py-3"
-      >
-        <span className="text-sm font-medium text-info">Settlement reported by the node</span>
-        <L1TxLink hash={settled} destination="midgard" />
-      </div>
-    );
-  }
-
   return (
     <Card className="mb-4" region="association">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border p-4">
@@ -204,19 +205,7 @@ export function CardanoAssociation({
 
         {context ? (
           <Row label="Source">
-            <span className="mg-caption text-text-2">
-              {context.sourceKind} on {context.network}
-              {/* The state ALWAYS, the duration only when one was measured.
-                  A replica reports no duration: everything a standby can see
-                  measures it against itself, and true lag needs a comparison
-                  against the primary. */}
-              {context.freshness.lagSeconds === null
-                ? `, ${context.freshness.state}`
-                : `, ${context.freshness.state} by ${formatDuration(context.freshness.lagSeconds * 1000)}`}
-              {/* Configured, not verified: the deployment is named by a file
-                  this process reads, and nothing checks it against Cardano. */}
-              {context.identityState === "configured" ? ", deployment as configured" : ""}
-            </span>
+            <span className="mg-caption text-text-2">{sourceText(context)}</span>
           </Row>
         ) : null}
       </dl>
