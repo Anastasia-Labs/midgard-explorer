@@ -71,3 +71,16 @@ describe("a polled list", () => {
     );
   });
 });
+
+describe("a polled list that started empty", () => {
+  // The overview mounts with no rows when the backend is down. Holding the
+  // first rows that arrive protects no reading position, and it left the
+  // panel saying "No blocks yet" until a reload.
+  it("shows the first rows that arrive without asking", () => {
+    render(<Harness first={[]} next={[{ id: "a" }, { id: "b" }]} />);
+    fireEvent.click(screen.getByText("poll"));
+    expect(screen.getByText("a")).toBeDefined();
+    expect(screen.getByText("b")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /new block/i })).toBeNull();
+  });
+});

@@ -50,6 +50,27 @@ test.describe("recovery when the API comes back", () => {
     expect(await sameDocument(page), "the page reloaded instead of recovering").toBe(true);
   });
 
+  /* The overview polls its own data, so it recovers through that poll rather
+   * than the refresh. The latest-blocks panel held back the first rows to
+   * arrive and kept saying "No blocks yet" until a reload. */
+  test("the overview's latest lists fill themselves in without a reload", async ({ page }) => {
+    await inject(page, "fail=all");
+    await page.goto("/");
+    await expect(page.getByText("Could not load recent blocks.")).toBeVisible();
+    await markDocument(page);
+
+    await inject(page, "fail=");
+
+    const blocks = page.locator("section", {
+      has: page.getByRole("heading", { name: "Latest blocks" }),
+    });
+    await expect(blocks.locator('a[href^="/block/"]').first()).toBeVisible({
+      timeout: RECOVERY_MS,
+    });
+    await expect(blocks.getByText("No blocks yet")).toHaveCount(0);
+    expect(await sameDocument(page), "the page reloaded instead of recovering").toBe(true);
+  });
+
   /* A record page catches the failure itself, as every page that reads the API
    * does, so an outage shows the same inline alert here and never reaches the
    * route's error boundary. The boundary is for defects, and retrying a defect

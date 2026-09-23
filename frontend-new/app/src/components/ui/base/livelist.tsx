@@ -16,6 +16,10 @@ export function useHeldList<T>(
   keyOf: (row: T) => string,
 ): { rows: readonly T[]; pending: number; apply: () => void } {
   const [shown, setShown] = useState<readonly T[]>(incoming);
+  // Holding protects the row a reader is looking at. With nothing on screen,
+  // as when the list mounted while the backend was down, there is nothing to
+  // protect, so the first rows to arrive are shown at once.
+  if (shown.length === 0 && incoming.length > 0) setShown(incoming);
   const pending = newRowCount(shown, incoming, keyOf);
   return { rows: shown, pending, apply: () => setShown(incoming) };
 }
