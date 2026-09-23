@@ -68,7 +68,9 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
   ),
   committed: e(
     "tx_lifecycle",
-    "success",
+    // In a block, not yet final: in progress, not concluded. A check here
+    // read as settled beside a Cardano column that said otherwise.
+    "info",
     "Committed",
     "Included in a Midgard block. Reversible until that block is final on Cardano.",
   ),
@@ -94,7 +96,7 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
   ),
   consumed: e(
     "bridge_status",
-    "success",
+    "info",
     "Consumed",
     // `bridge_status` is shared by deposits, withdrawals and forced
     // transactions, so this names the event UTxO rather than the deposit one.
@@ -106,7 +108,7 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "finalization",
     "neutral",
     "Pending submission",
-    "The finalization transaction has not been submitted to Cardano yet. Every transaction in this block remains reversible.",
+    "The node has not submitted the finalization transaction to Cardano yet. Every transaction in this block remains reversible.",
   ),
   submitted_local_finalization_pending: e(
     "finalization",
@@ -118,25 +120,25 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "finalization",
     "info",
     "Submitted (unconfirmed)",
-    "Finalization submitted to Cardano and not yet confirmed. The submission may still fail or be replaced.",
+    "The node reports the finalization submitted to Cardano and not yet confirmed. The submission may still fail or be replaced.",
   ),
   observed_waiting_stability: e(
     "finalization",
     "warning",
     "Awaiting stability",
-    "Seen on Cardano; waiting for the required chain-stability depth. A short rollback could still remove it.",
+    "The node reports seeing it on Cardano and is waiting for the required chain-stability depth. A short rollback could still remove it.",
   ),
   finalized: e(
     "finalization",
     "success",
     "Finalized",
-    "Settled on Cardano. The explorer now treats the containing Midgard block as irreversible.",
+    "The node reports this settled on Cardano. It treats the Midgard block and every transaction in it as irreversible.",
   ),
   abandoned: e(
     "finalization",
     "danger",
     "Abandoned",
-    "The finalization attempt was abandoned; this block did not settle. Its Midgard transactions must not be treated as final.",
+    "The node abandoned the finalization attempt; this block did not settle. Its Midgard transactions must not be treated as final.",
   ),
 
   // --- transaction validity --------------------------------------------

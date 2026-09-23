@@ -95,7 +95,11 @@ test.describe("layout gates", () => {
         const errors = watchForErrors(page);
         await page.setViewportSize(VIEWPORTS[width]);
         const hash = await txFor(page, status);
-        test.skip(hash === null, `no fixture transaction with status ${status}`);
+        // Asserted, not skipped. `data.mjs` deals every status in TX_STATUSES
+        // round-robin across 60 transactions, so each one is on page 1 by
+        // construction. A missing status means the fixture changed and took
+        // this coverage with it, which is a failure rather than a skip.
+        expect(hash, `the fixture has no transaction with status ${status}`).not.toBeNull();
         await page.goto(`/transaction/${hash}`);
         await page.getByRole("heading", { level: 1 }).first().waitFor();
 
@@ -169,6 +173,33 @@ test.describe("summary band fills its rows", () => {
       ["address", `/address/${deposits[0]!.ledger_address}`],
       ["asset", `/asset/${assets[0]!.policyId}${assets[0]!.assetName}`],
     ] as const;
+  }
+
+  // The block page's tabs were never measured here: this gate opens a detail
+  // route on its default tab, so the payload tab's own fields went unchecked
+  // and its two exact timestamps overlapped at phone width for as long as they
+  // had been there.
+  for (const width of ["narrow", "phone"] as const) {
+    test(`block payload fields fit their columns at ${width}`, async ({ page }) => {
+      await page.setViewportSize(VIEWPORTS[width]);
+      const blocks = await page.request
+        .get(`${FIXTURE}/api/blocks/1`)
+        .then(async (r) => ((await r.json()) as { rows: Array<{ header_hash: string }> }).rows);
+      await page.goto(`/block/${blocks[0]!.header_hash}?tab=details`);
+      await settle(page);
+      const measured = await page.getByRole("tabpanel").evaluate((panel) => {
+        const cells = [...panel.querySelectorAll<HTMLElement>("dd")];
+        return {
+          count: cells.length,
+          overflowing: cells
+            .filter((cell) => cell.scrollWidth > cell.clientWidth + 1)
+            .map((cell) => cell.textContent?.trim() ?? ""),
+        };
+      });
+      // A panel with no fields would pass the check below without measuring.
+      expect(measured.count).toBeGreaterThan(0);
+      expect(measured.overflowing, "fields wider than their column").toEqual([]);
+    });
   }
 
   for (const width of ["narrow", "phone", "tablet", "desktop"] as const) {

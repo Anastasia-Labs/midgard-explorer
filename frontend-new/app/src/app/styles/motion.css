@@ -1,0 +1,131 @@
+/* Motion is only used to explain state: page entry, live status, new rows, a
+ * value that changed. Nothing here decorates, and every animation comes to
+ * rest, because a page that never settles is a page nobody can read. */
+
+/* Motion is only used to explain state: page entry, live status, new rows,
+ * popovers, and loading. All of it is disabled under reduced-motion. */
+
+@keyframes mg-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Motion marks state changes, not navigation. A blanket fade on every child of
+   every page animated things that had not changed and delayed first paint of
+   things that had. */
+.mg-enter {
+  animation: mg-fade 0.24s ease-out both;
+}
+
+/* The page's opening band. Static and behind everything: no blur, no
+   translucency over a data surface, nothing that moves. */
+.mg-hero-field {
+  background-image: var(--mg-hero-glow);
+  background-repeat: no-repeat;
+}
+
+/* The chevron for `appearance-none` selects. Two triangles cut from gradients
+   rather than an SVG data URI, so the mark takes its colour from a theme token
+   instead of a hard-coded hex that would need duplicating per theme. */
+.mg-select {
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--mg-text-3) 50%),
+    linear-gradient(135deg, var(--mg-text-3) 50%, transparent 50%);
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-position:
+    right 15px center,
+    right 11px center;
+  background-repeat: no-repeat;
+}
+
+@keyframes mg-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Runs three times, not forever: a stable page should come to rest, and an
+   endless animation also blocks any tool that waits for animations to finish. */
+.mg-pulse {
+  animation: mg-pulse 1.6s ease-in-out 3;
+}
+
+@keyframes mg-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.mg-pop {
+  animation: mg-pop 0.13s ease-out both;
+}
+
+@keyframes mg-tint {
+  from {
+    background-color: color-mix(in oklab, var(--mg-accent) 14%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.mg-tint {
+  animation: mg-tint 1.6s ease-out both;
+}
+
+@keyframes mg-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.mg-shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--mg-surface-2) 40%,
+    var(--mg-surface-3) 50%,
+    var(--mg-surface-2) 60%
+  );
+  background-size: 200% 100%;
+  animation: mg-shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  /* The pressed transform is not a transition or an animation, so the rules
+     above do not reach it. Reset it explicitly rather than leave the only
+     movement on the site outside the preference that asks for none. */
+  button:active,
+  [role="button"]:active,
+  a:active,
+  summary:active {
+    transform: none;
+  }
+}

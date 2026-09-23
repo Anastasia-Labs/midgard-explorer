@@ -22,13 +22,12 @@ import {
   decodeTxsPage,
 } from "@midgard-explorer/contracts";
 import {
-  decodeL1BlockHeader,
-  decodeL1BlockHeaders,
-  decodeL1Deposits,
-  decodeL1Summary,
-  decodeL1Transaction,
-  decodeL1TxsPage,
+  decodeCardanoActivityPage,
+  decodeCardanoActivitySummary,
+  decodeCardanoReferences,
+  decodeDeploymentContext,
   decodeL1Validator,
+  decodeL1Validators,
 } from "@midgard-explorer/contracts";
 import { apiBase } from "./env";
 
@@ -174,9 +173,10 @@ export const api = {
       decodeTransactionResponse,
       init,
     ),
-  address: (address: string, page: number = 1, init?: FetchInit) =>
+  address: (address: string, page: number = 1, init?: FetchInit, utxoCursor?: string) =>
     fetchJson(
-      `/api/address?address=${encodeURIComponent(address)}&page=${page}`,
+      `/api/address?address=${encodeURIComponent(address)}&page=${page}` +
+        (utxoCursor ? `&utxo_cursor=${encodeURIComponent(utxoCursor)}` : ""),
       decodeAddressResponse,
       init,
     ),
@@ -216,62 +216,40 @@ export const api = {
       decodeForcedTxsPage,
       init,
     ),
-  l1TxsPage: (page: number, init?: FetchInit) =>
-    fetchJson(`/api/l1/transactions/${page}`, decodeL1TxsPage, init),
-  l1Transaction: (txHash: string, init?: FetchInit) =>
-    fetchJson(`/api/l1/transaction?txHash=${encodeURIComponent(txHash)}`, decodeL1Transaction, {
+  /** Which Midgard this is and which database the figures came from. Cheap,
+   * node-sourced, and read by the shell on every page. */
+  source: (init?: FetchInit) => fetchJson("/api/source", decodeDeploymentContext, init),
+  cardanoActivity: (page: number, init?: FetchInit) =>
+    fetchJson(`/api/l1/activity/${page}`, decodeCardanoActivityPage, init),
+  cardanoActivitySummary: (init?: FetchInit) =>
+    fetchJson("/api/l1/activity/summary", decodeCardanoActivitySummary, init),
+  cardanoReferences: (txHash: string, init?: FetchInit) =>
+    fetchJson(`/api/l1/reference?txHash=${encodeURIComponent(txHash)}`, decodeCardanoReferences, {
       ...init,
       revalidate: 30,
     }),
-  l1Summary: (init?: FetchInit) => fetchJson("/api/l1/summary", decodeL1Summary, init),
-  l1BlockHeaders: (limit = 100, init?: FetchInit) =>
-    fetchJson(`/api/l1/block-headers?limit=${limit}`, decodeL1BlockHeaders, init),
-  l1BlockHeader: (headerHash: string, init?: FetchInit) =>
-    fetchJson(
-      `/api/l1/block-header?headerHash=${encodeURIComponent(headerHash)}`,
-      decodeL1BlockHeader,
-      init,
-    ),
-  l1Deposits: (limit = 100, init?: FetchInit) =>
-    fetchJson(`/api/l1/deposits?limit=${limit}`, decodeL1Deposits, init),
-  l1Validator: (scriptHash: string, init?: FetchInit) =>
-    fetchJson(
-      `/api/l1/validator?scriptHash=${encodeURIComponent(scriptHash)}`,
-      decodeL1Validator,
-      init,
-    ),
+  validators: (init?: FetchInit) =>
+    fetchJson("/api/l1/validators", decodeL1Validators, { ...init, revalidate: 30 }),
+  validator: (scriptHash: string, init?: FetchInit) =>
+    fetchJson(`/api/l1/validator?scriptHash=${encodeURIComponent(scriptHash)}`, decodeL1Validator, {
+      ...init,
+      revalidate: 30,
+    }),
 };
 
-/** What the indexer has found on Cardano itself. Independent of the Midgard
- * node: this data survives the node being offline, which is exactly when the
- * overview's ledger figures go quiet and a reader most needs something real.
+/** Midgard's Cardano footprint, as the node recorded it.
  *
- * Decoded through the shared contract rather than by hand. The hand-written
- * version predated the L1 routes having a contract at all; that shortcut is
- * repaid now, and the app and the contract can no longer drift apart. */
+ * Decoded through the shared contract rather than by hand, so the app and the
+ * API cannot drift apart. Nothing under this name observes Cardano: the
+ * explorer-owned index that did is decommissioned, and these are the node's own
+ * records of what it submitted and read. */
 export type {
-  L1SourceIdentity,
-  L1SummaryResponse as L1Summary,
+  ActivityKind,
+  CardanoActivityPage,
+  CardanoActivityRow,
+  CardanoActivitySummary,
+  CardanoReferenceResponse,
   L1ValidatorIdentity,
-} from "@midgard-explorer/contracts";
-
-/** Cardano transactions that touch a Midgard validator address.
- *
- * These are indexed from preprod by the explorer's own indexer, scanning from
- * block height 0, so this list is complete from the deployment's first
- * transaction rather than from whenever a local node happened to be running.
- * That is the difference between this page and /transactions, which reads the
- * Midgard node's own ledger.
- */
-export type { L1TxRow } from "@midgard-explorer/contracts";
-export type { L1TxsPageResponse as L1TxsPage } from "@midgard-explorer/contracts";
-export type {
-  L1BlockHeader,
-  L1DepositObservation,
-  L1Event,
-  L1MidgardAction,
-  L1Redeemer,
-  L1TransactionResponse,
-  L1TxIo,
   L1ValidatorResponse,
+  L1ValidatorsResponse,
 } from "@midgard-explorer/contracts";

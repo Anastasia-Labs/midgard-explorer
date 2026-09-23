@@ -26,10 +26,49 @@ const PORT = Number(process.env.DEV_PORT ?? 3311);
 const BASE = `http://127.0.0.1:${PORT}`;
 
 /** One route per rendering shape, not one per page: the overview's client
- * queries, a server-rendered record page, the canvas behind a dynamic import,
- * and a list. Adding the remaining eighteen record pages would cost minutes and
- * exercise the same three code paths. */
-const ROUTES = ["/", "/blocks", "/transactions", "/l1"];
+ * queries, the canvas behind a dynamic import, and a list. Adding the remaining
+ * eighteen record pages would cost minutes and exercise the same code paths.
+ *
+ * The record page is not in this list because it needs a hash the API has. It
+ * is resolved below and the gate refuses to run without it: the comment here
+ * used to claim a server-rendered record page was covered while none of the
+ * four routes was one, and the only hydration warning this project has ever
+ * recorded was on a record page. */
+const STATIC_ROUTES = ["/", "/blocks", "/transactions", "/l1"];
+
+/**
+ * Both viewports, because the components differ between them.
+ *
+ * A table renders as a table above `sm` and as a list of cards below it, so a
+ * mismatch in the narrow branch is invisible at the default 1280. The one
+ * warning on record here was seen at 390.
+ */
+const VIEWPORTS = [
+  { name: "390", width: 390, height: 844 },
+  { name: "1280", width: 1280, height: 720 },
+];
+
+/** The API the development server will call, resolved the same way
+ * `require-backend.mjs` resolves it. */
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:3101").replace(/\/+$/, "");
+
+/** A real block hash, so the record shape is a record and not a 404. */
+async function recordRoute() {
+  try {
+    const res = await fetch(`${API_BASE}/api/blocks/1`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return { error: `${API_BASE}/api/blocks/1 answered ${res.status}` };
+    const body = await res.json();
+    const hash = body?.rows?.[0]?.header_hash;
+    if (typeof hash !== "string" || hash === "") {
+      return { error: `${API_BASE}/api/blocks/1 returned no block to open` };
+    }
+    return { route: `/block/${hash}` };
+  } catch (error) {
+    return { error: `${API_BASE}/api/blocks/1 could not be read: ${String(error)}` };
+  }
+}
 
 const env = {
   ...process.env,
@@ -157,38 +196,59 @@ const failures = [];
  * eventually filters the defect it exists to catch. */
 const DEV_SERVER_NOISE = /_next\/webpack-hmr/;
 
-for (const route of ROUTES) {
-  const page = await browser.newPage();
-  const errors = [];
-  page.on("console", (m) => {
-    if (m.type() === "error" && !DEV_SERVER_NOISE.test(m.text())) errors.push(m.text());
-  });
-  page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+const record = await recordRoute();
+if (record.error !== undefined) {
+  console.log(`The record page cannot be covered: ${record.error}`);
+  console.log("That is the shape the one recorded hydration warning was on, so this");
+  console.log("gate refuses rather than reporting the other routes clean.");
+  await browser.close();
+  await stopDev();
+  process.exit(1);
+}
 
-  try {
-    // `networkidle` rather than `load`: a hydration mismatch is reported after
-    // React takes over, which is after the document has finished loading.
-    await page.goto(`${BASE}${route}`, { waitUntil: "networkidle", timeout: 120_000 });
-    await page.waitForTimeout(2_000);
-  } catch (error) {
-    errors.push(`navigation: ${error instanceof Error ? error.message : String(error)}`);
-  }
+const routes = [...STATIC_ROUTES, record.route];
+let loads = 0;
 
-  if (errors.length === 0) {
-    console.log(`${route}: clean`);
-  } else {
-    failures.push({ route, errors });
-    console.log(`${route}: ${errors.length} error(s)`);
-    for (const e of errors) console.log(`  ${e.slice(0, 400)}`);
+for (const route of routes) {
+  for (const viewport of VIEWPORTS) {
+    const page = await browser.newPage({
+      viewport: { width: viewport.width, height: viewport.height },
+    });
+    const errors = [];
+    page.on("console", (m) => {
+      if (m.type() === "error" && !DEV_SERVER_NOISE.test(m.text())) errors.push(m.text());
+    });
+    page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+
+    try {
+      // `networkidle` rather than `load`: a hydration mismatch is reported after
+      // React takes over, which is after the document has finished loading.
+      await page.goto(`${BASE}${route}`, { waitUntil: "networkidle", timeout: 120_000 });
+      await page.waitForTimeout(2_000);
+    } catch (error) {
+      errors.push(`navigation: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    loads += 1;
+    const label = `${route} @${viewport.name}`;
+    if (errors.length === 0) {
+      console.log(`${label}: clean`);
+    } else {
+      failures.push({ route: label, errors });
+      console.log(`${label}: ${errors.length} error(s)`);
+      for (const e of errors) console.log(`  ${e.slice(0, 400)}`);
+    }
+    await page.close();
   }
-  await page.close();
 }
 
 await browser.close();
 await stopDev();
 
 if (failures.length > 0) {
-  console.log(`\n${failures.length} of ${ROUTES.length} routes logged errors in development.`);
+  console.log(`\n${failures.length} of ${loads} loads logged errors in development.`);
   process.exit(1);
 }
-console.log(`\nAll ${ROUTES.length} routes clean in development.`);
+console.log(
+  `\nAll ${loads} loads clean in development (${routes.length} routes x ${VIEWPORTS.length} viewports).`,
+);

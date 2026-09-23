@@ -1,4 +1,4 @@
-import type { IconName } from "../components/ui/icons";
+import type { IconName } from "../components/ui/base/icons";
 import type { GlossaryTerm } from "./glossary";
 
 export const SEMANTIC_ICONS = {

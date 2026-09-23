@@ -4,17 +4,17 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import type { MetricsResponse, RecentBlockRow, RecentTxRow } from "@midgard-explorer/contracts";
-import type { L1Summary } from "../../lib/api";
+import type { CardanoActivitySummary } from "../../lib/api";
+import { OverviewHeader } from "./OverviewHeader";
 import { SearchBox } from "../../components/search/SearchOverlay";
 import { BRIDGE } from "../../lib/nav";
-import { Icon } from "../../components/ui/icons";
-import { Identifier } from "../../components/ui/identifier";
-import { NewRowsBanner, useHeldList } from "../../components/ui/livelist";
-import { NetworkMetrics } from "../../components/ui/metrics";
-import { StatusCell } from "../../components/ui/status";
-import { EmptyState, ErrorState, L1L2Badge, Panel } from "../../components/ui/primitives";
-import { Timestamp } from "../../components/ui/timestamp";
-import { contractName } from "../../components/ui/validatorlabel";
+import { Icon } from "../../components/ui/base/icons";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { NewRowsBanner, useHeldList } from "../../components/ui/base/livelist";
+import { NetworkMetrics } from "../../components/ui/domain/metrics";
+import { StatusMark } from "../../components/ui/domain/status";
+import { EmptyState, ErrorState, L1L2Badge, Panel } from "../../components/ui/base/layout";
+import { Timestamp } from "../../components/ui/base/timestamp";
 import { cn, groupThousands } from "../../lib/format";
 
 /** A stable empty array: a fresh `[]` each render would make the held list
@@ -32,7 +32,7 @@ export type OverviewData = {
   totalBlocks: number | null;
   totalTxs: number | null;
   metrics: MetricsResponse | null;
-  l1: L1Summary | null;
+  l1: CardanoActivitySummary | null;
 };
 
 async function fetchOverview(): Promise<OverviewData> {
@@ -53,7 +53,7 @@ function RefreshMeta({ updatedAt }: { updatedAt: number }) {
   return (
     <span className="inline-flex items-center gap-1.5 mg-caption text-text-3">
       <Icon name="refresh" size={13} />
-      Updated {s < 5 ? "just now" : `${s}s ago`}
+      Checked {s < 5 ? "just now" : `${s}s ago`}
     </span>
   );
 }
@@ -101,7 +101,7 @@ function RecentList<T>({
           <li
             key={keyOf(r)}
             className={cn(
-              "flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-surface-2",
+              "flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5 transition-colors hover:bg-surface-2",
               !initialKeys.has(keyOf(r)) && "mg-tint",
             )}
           >
@@ -139,53 +139,17 @@ export function Overview({ initial }: { initial: OverviewData }) {
 
   return (
     <>
-      {/* Title and search on one line, and nothing else. A second row carried
-          an "Explorer API reachable" chip that the footer already renders from
-          the same query, and a freshness tag that describes the metrics rather
-          than the page; the tag moved to the panel it qualifies. `PageHeader` is
-          not used here: it stacks meta under the title at the left margin,
-          which is right for the eighteen record pages and wrong for this one.
+      <OverviewHeader>
+        <SearchBox variant="hero" />
+      </OverviewHeader>
 
-          Flex, not grid. A single implicit grid column is sized to max-content
-          and will not shrink, so the title held a 365px column inside a 288px
-          header and pushed the whole page past 320px. Flex items shrink. */}
-      {/* Bleeds to the shell's gutters so the wash starts at the page edge
-          rather than inside the content column. The insets mirror `main`'s
-          `px-4 lg:px-6` exactly; any other pair would push the page wider than
-          the viewport. */}
-      <header className="mg-hero-field -mx-4 mb-5 px-4 pt-2 pb-1 lg:-mx-6 lg:px-6">
-        <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
-          <h1 className="mg-brand-green min-w-0 font-display text-2xl font-semibold tracking-tight text-page-title sm:text-title">
-            Midgard Blockchain Explorer
-          </h1>
-          <div className="w-full sm:w-96 lg:w-112">
-            <SearchBox variant="hero" />
-          </div>
-        </div>
-      </header>
-
-      {/* The operations panel leads the page: an explorer's first question is
-          whether the chain is healthy right now, which two all-time totals in
-          a strip could never answer. Those totals are carried by the Blocks and
-          Transactions figures inside it. The chart, percentiles and node
-          columns sit behind this panel's own disclosure rather than a separate
-          route: a dedicated page for them was not worth a navigation when the
-          whole panel already fits here. */}
       <NetworkMetrics
         metrics={data.metrics}
         totalBlocks={data.totalBlocks}
         totalTxs={data.totalTxs}
         freshness={<RefreshMeta updatedAt={dataUpdatedAt} />}
       />
-
-      {/* Sits directly under the health verdict because it is the one part of
-          this page that stays true when the node is offline. The verdict above
-          tells a reader the ledger figures have gone quiet; without this they
-          would have no way to see that Midgard is nonetheless present on
-          Cardano, and would reasonably conclude the whole thing is dead. */}
-      <L1Activity summary={data.l1} />
-
-      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+      <div className="mb-4 grid items-start gap-4 lg:grid-cols-2">
         <Panel title="Latest blocks" actions={<ViewAll href="/blocks" label="View all" />}>
           <RecentList
             rows={data.recentBlocks}
@@ -199,23 +163,41 @@ export function Overview({ initial }: { initial: OverviewData }) {
             render={(r) => (
               <>
                 <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="flex items-center gap-2">
-                    <Identifier
-                      value={r.header_hash}
-                      href={`/block/${r.header_hash}`}
-                      head={8}
-                      tail={6}
-                    />
+                  {/* The number leads, as on the blocks list. A block with no
+                      number is named by its hash. */}
+                  <span className="flex flex-wrap items-center gap-2">
+                    {r.height === null ? (
+                      <Identifier
+                        value={r.header_hash}
+                        href={`/block/${r.header_hash}`}
+                        head={8}
+                        tail={6}
+                      />
+                    ) : (
+                      <Link
+                        href={`/block/${r.header_hash}`}
+                        className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
+                      >
+                        Block #{r.height}
+                      </Link>
+                    )}
+                    {/* No mark until the node records a settlement attempt. */}
                     {r.finalization_status === null ? null : (
-                      <StatusCell status={r.finalization_status} />
+                      <StatusMark status={r.finalization_status} />
                     )}
                   </span>
                   <span className="mg-caption text-text-3">
-                    {r.height === null ? null : `#${r.height} · `}
-                    {r.header_l2_transaction_count} tx · {r.header_deposit_count} deposits
+                    {r.height === null ? null : (
+                      <>
+                        <span className="font-mono">{`${r.header_hash.slice(0, 8)}…`}</span>
+                        {" · "}
+                      </>
+                    )}
+                    {r.header_l2_transaction_count} tx · {r.header_deposit_count}{" "}
+                    {r.header_deposit_count === 1 ? "deposit" : "deposits"}
                   </span>
                 </span>
-                <Timestamp iso={r.time_stamp_tz} />
+                <Timestamp iso={r.time_stamp_tz} wrap />
               </>
             )}
           />
@@ -236,111 +218,109 @@ export function Overview({ initial }: { initial: OverviewData }) {
             noun="transaction"
             render={(r) => (
               <>
-                <span className="flex min-w-0 flex-col gap-0.5">
+                {/* One line: the transaction, how far it got, and its block. */}
+                <span className="flex min-w-0 flex-wrap items-center gap-2">
                   <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={8} />
-                  <span className="flex items-center gap-2 mg-caption text-text-3">
-                    <StatusCell status={r.status} />
+                  <span className="flex flex-wrap items-center gap-2 mg-caption text-text-3">
+                    {/* How far it got: its block's Cardano settlement once the node
+                        recorded one, until then its state on Midgard. */}
+                    <StatusMark status={r.finalization_status ?? r.status} />
                     <Link
                       href={`/block/${r.header_hash}`}
                       className="tabular-nums text-link hover:text-link-hover hover:underline"
                     >
-                      {r.height === null ? `${r.header_hash.slice(0, 8)}…` : `#${r.height}`}
+                      {r.height === null
+                        ? `Block ${r.header_hash.slice(0, 8)}…`
+                        : `Block #${r.height}`}
                     </Link>
                   </span>
                 </span>
-                <Timestamp iso={r.time_stamp_tz} />
+                <Timestamp iso={r.time_stamp_tz} wrap />
               </>
             )}
           />
         </Panel>
       </div>
 
-      <div className="mb-4">
-        <Panel title="Bridge" subtitle="Assets moving in and out of Midgard">
-          <div className="grid sm:grid-cols-3">
-            {BRIDGE.map((b, i) => (
-              <Link
-                key={b.href}
-                href={b.href}
-                className={cn(
-                  "group flex items-center gap-3 px-4 py-4 transition-colors hover:bg-surface-2",
-                  i < BRIDGE.length - 1 && "border-b border-border sm:border-b-0 sm:border-r",
-                )}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-text">{b.label}</span>
-                  <span className="mt-1.5 inline-flex items-center gap-1.5">
-                    <L1L2Badge layer={b.from} />
-                    <Icon name="arrowRight" size={12} className="text-text-3" />
-                    <L1L2Badge layer={b.to} />
-                  </span>
-                </span>
-                <span className="text-text-3 transition-all group-hover:translate-x-0.5 group-hover:text-link">
-                  <Icon name="arrowRight" size={16} />
-                </span>
-              </Link>
-            ))}
-          </div>
-        </Panel>
-      </div>
+      <L1Activity summary={data.l1} onRetry={() => void refetch()} />
     </>
   );
 }
 
-/** Midgard's footprint on Cardano, summarised.
- *
- * Contract names are shown as-is from the manifest rather than prettified: a
- * reader matching this against the chain or the codebase needs the identifier
- * they will actually find there, not a nicer label for it.
- */
-function L1Activity({ summary }: { summary: L1Summary | null }) {
-  if (summary === null || summary.transactions === 0) return null;
-
-  const top = [...summary.byValidator].sort((a, b) => b.count - a.count).slice(0, 6);
-
+/** Cardano totals and bridge navigation share one panel without mixing their counts. */
+export function L1Activity({
+  summary,
+  onRetry,
+}: {
+  summary: CardanoActivitySummary | null;
+  onRetry: () => void;
+}) {
   return (
-    <section className="mb-4 rounded-lg border border-border bg-surface p-4 shadow-(--mg-shadow)">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-display text-body font-semibold text-text">
-          Midgard on Cardano preprod
-        </h2>
-        <ViewAll href="/l1" label="View all" />
-      </div>
-
-      {/* What Midgard has done on Cardano, not how the explorer came to know
-          it. The synced height is the one number here that qualifies the other
-          two rather than reporting activity, so it goes last and quietly. */}
-      <p className="mb-3 text-caption leading-relaxed text-text-2">
-        <strong className="font-semibold text-text tabular-nums">
-          {groupThousands(String(summary.transactions))}
-        </strong>{" "}
-        Cardano transactions carrying{" "}
-        <strong className="font-semibold text-text tabular-nums">
-          {groupThousands(String(summary.events))}
-        </strong>{" "}
-        Midgard contract events.
-      </p>
-
-      {/* Which mechanism drove the activity, not just how much of it there
-          was. Raw identifiers (`stateQueue`, `registeredOperators`) are the
-          contract's own vocabulary, not a reader's; `contractName` is the same
-          prettifier the L1 transaction list uses for the same identifiers. */}
-      <ul className="flex flex-wrap gap-x-4 gap-y-1.5">
-        {top.map((v) => (
-          <li key={v.validator} className="mg-caption text-text-3">
-            <span className="text-text-2">{contractName(v.validator)}</span>{" "}
-            <span className="tabular-nums">{v.count}</span>
-          </li>
-        ))}
-      </ul>
-
-      <p className="mt-3 mg-micro text-text-3">
-        Indexed through Cardano block{" "}
-        <span className="font-mono tabular-nums">
-          {groupThousands(String(summary.lastSyncedHeight))}
+    <Panel
+      title={
+        <span className="inline-flex items-center gap-2 text-info">
+          <L1L2Badge layer="L1" />
+          Cardano activity
         </span>
-        .
-      </p>
-    </section>
+      }
+      actions={<ViewAll href="/l1" label="View activity" />}
+      className="mb-4 border-l-2 border-l-info/60"
+    >
+      <div className="px-4 py-3">
+        {summary === null ? (
+          <ErrorState message="Could not load Cardano activity." onRetry={onRetry} />
+        ) : summary.total === 0 ? (
+          <p className="text-sm text-text-2">The node has recorded nothing on Cardano yet.</p>
+        ) : (
+          <>
+            <dl className="grid grid-cols-2 gap-4">
+              {summary.byKind
+                .filter((kind) => kind.kind === "settlement" || kind.kind === "deposit")
+                .map((kind) => (
+                  <div key={kind.kind} className="min-w-0">
+                    <dt className="mg-caption text-text-2">
+                      {kind.kind === "settlement" ? "Block settlements" : "Deposits"}
+                    </dt>
+                    <dd className="mt-1 text-2xl font-semibold tabular-nums text-text">
+                      {groupThousands(String(kind.count))}
+                    </dd>
+                  </div>
+                ))}
+            </dl>
+            {/* Whose records these are, said on the panel. They are the node's
+                own count of what it did on Cardano, not a scan of the chain. */}
+            <p className="mt-2 mg-micro text-text-3">
+              {groupThousands(String(summary.total))} records, as the node recorded them.
+            </p>
+          </>
+        )}
+      </div>
+      <nav aria-label="Bridge activity" className="border-t border-border">
+        <div className="grid sm:grid-cols-3">
+          {BRIDGE.map((b, i) => (
+            <Link
+              key={b.href}
+              href={b.href}
+              className={cn(
+                "group flex items-center gap-3 px-4 py-4 transition-colors hover:bg-surface-2",
+                i < BRIDGE.length - 1 && "border-b border-border sm:border-b-0 sm:border-r",
+              )}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-text">{b.label}</span>
+                <span className="mt-1.5 inline-flex items-center gap-1.5">
+                  <L1L2Badge layer={b.from} />
+                  <Icon name="arrowRight" size={12} className="text-text-3" />
+                  <L1L2Badge layer={b.to} />
+                </span>
+              </span>
+              <span className="text-text-3 transition-all group-hover:translate-x-0.5 group-hover:text-link">
+                <Icon name="arrowRight" size={16} />
+              </span>
+            </Link>
+          ))}
+        </div>
+      </nav>
+    </Panel>
   );
 }

@@ -14,6 +14,7 @@
 import { createServer } from "node:http";
 import {
   ADDRESSES,
+  PAGED_ADDRESS,
   BLOCKS,
   DEPOSITS,
   FORCED,
@@ -21,10 +22,10 @@ import {
   FLOW_UNEQUAL_TX,
   PAYMENT_TX,
   L1_VALIDATORS,
-  L1_TXS,
   TXS,
   WITHDRAWALS,
   addressResponse,
+  blockCommitments,
   blockDa,
   blockEvents,
   blockFinalization,
@@ -34,6 +35,146 @@ import {
   asset,
   assets,
 } from "./data.mjs";
+
+/* The deployment context and association every detail response now carries.
+ *
+ * Declared once here for the same reason it is declared once in the contracts:
+ * a fixture that spells the shape differently per route is how the fixture and
+ * the backend drift apart, which is exactly what let a broken block key ship
+ * behind a green end-to-end suite.
+ *
+ * The source kind is `fixture`, which is the honest answer and is what the
+ * frontend reads to suppress links to a live Cardano explorer. */
+const midgardContext = () => ({
+  deploymentId: "fixture0000000000000000000000000000000000000000000000000000000000",
+  network: "preprod",
+  networkMagic: null,
+  database: "midgard_fixture",
+  sourceKind: "fixture",
+  // Configured, not verified: the fixture names a deployment and nothing
+  // checks it, which is exactly the real backend's position.
+  identityState: "configured",
+  freshness: { state: "synthetic", observedAsOf: null, lagSeconds: null },
+});
+
+/**
+ * The states this build recognises, and the mapping the backend applies.
+ *
+ * `settlementState` in the backend turns a status it does not know into
+ * `unknown` while `rawState` keeps the node's own word. The fixture passed the
+ * raw status straight through as `state`, so its deliberate
+ * `some_future_finalization_stage` case produced a payload the real API cannot
+ * emit, and once the contract narrowed to the node's vocabulary the block page
+ * failed to decode. A fixture that can express what the API cannot is not
+ * testing the API.
+ */
+const SETTLEMENT_STATES = new Set([
+  "pending_submission",
+  "submitted_local_finalization_pending",
+  "submitted_unconfirmed",
+  "observed_waiting_stability",
+  "finalized",
+  "abandoned",
+  "orphaned",
+  "unknown",
+]);
+
+const settlementState = (raw) => (SETTLEMENT_STATES.has(raw) ? raw : "unknown");
+
+/* The settlement association, as the backend builds it from the node's record.
+ *
+ * Three verdicts, and the fixture reaches two of them. `node_reported` needs a
+ * hash, `none` is a record with none. `unavailable` is reached only when the
+ * Midgard source is not current, and this fixture's context is `synthetic`, so a
+ * block claiming it would be a payload no route can produce; its wording is
+ * covered in `test/association-panel.test.tsx`.
+ *
+ * The fixture used to spread seven verdicts across blocks, most of them
+ * comparisons with an explorer-owned Cardano index. That index is
+ * decommissioned, and so are they. */
+const blockAssociation = (headerHash, l1TxHash, status) => ({
+  kind: "block_settlement",
+  deploymentId: midgardContext().deploymentId,
+  network: "preprod",
+  reconciliation: l1TxHash === null ? "none" : "node_reported",
+  l2ObservedAsOf: null,
+  evidence:
+    l1TxHash === null && status === null
+      ? []
+      : [
+          {
+            source: "midgard_finalization_journal",
+            transactionHash: l1TxHash,
+            outputIndex: null,
+            blockHeight: null,
+            observedAt: null,
+            rawState: status,
+          },
+        ],
+  l2BlockHeaderHash: headerHash,
+  l1TxHash,
+  state: settlementState(status),
+});
+
+/* Midgard's Cardano footprint, as the node recorded it: the same union the
+ * backend reads from four tables, built from the fixture's own four sources. */
+const cardanoActivity = () =>
+  [
+    ...BLOCKS.map((block) => ({ block, fin: blockFinalization(block.number) }))
+      .filter(({ fin }) => fin !== null && fin.submitted_tx_hash !== null)
+      .map(({ block, fin }) => ({
+        kind: "settlement",
+        l1TxHash: fin.submitted_tx_hash,
+        outputIndex: null,
+        recordedAt: fin.updatedAt,
+        status: fin.status,
+        headerHash: block.header_hash,
+        recordId: null,
+      })),
+    ...DEPOSITS.map((row) => ({
+      kind: "deposit",
+      l1TxHash: row.deposit_l1_tx_hash,
+      outputIndex: null,
+      recordedAt: row.inclusion_time,
+      status: row.status,
+      headerHash: row.projected_header_hash,
+      recordId: row.event_id,
+    })),
+    ...WITHDRAWALS.map((row) => ({
+      kind: "withdrawal",
+      l1TxHash: row.withdrawal_l1_tx_hash,
+      outputIndex: row.withdrawal_l1_output_index,
+      recordedAt: row.inclusion_time,
+      status: row.status,
+      headerHash: row.projected_header_hash,
+      recordId: row.event_id,
+    })),
+    ...FORCED.map((row) => ({
+      kind: "forced_transaction",
+      l1TxHash: row.tx_order_l1_tx_hash,
+      outputIndex: row.tx_order_l1_output_index,
+      recordedAt: row.inclusion_time,
+      status: row.status,
+      headerHash: row.projected_header_hash,
+      recordId: row.tx_order_id,
+    })),
+  ].sort((a, b) =>
+    a.recordedAt === b.recordedAt
+      ? b.l1TxHash.localeCompare(a.l1TxHash)
+      : b.recordedAt.localeCompare(a.recordedAt),
+  );
+
+/* The manifest's validators, in the shape the backend serves. */
+const manifestValidators = () =>
+  L1_VALIDATORS.map((v) => ({
+    family: v.family,
+    purpose: v.entryName.endsWith("Mint") ? "Mint" : "Spend",
+    scriptHash: v.scriptHash,
+    address: v.address,
+    rewardAddress: null,
+    policyId: null,
+    placeholder: false,
+  }));
 
 const PORT = Number(process.env.FIXTURE_PORT ?? 3101);
 const LIMIT = 25;
@@ -71,6 +212,8 @@ const page = (rows, p) => {
     hasNextPage: start + LIMIT < rows.length,
     total: rows.length,
     limit: LIMIT,
+    // The page actually served, as the real API reports it.
+    page: safe,
   };
 };
 
@@ -164,7 +307,14 @@ const routes = [
       if (q.length < 6 || !/^[0-9a-f]+$/.test(q)) {
         return { hits: [], minPrefix: 6, tooShort: q.length < 6 };
       }
-      const blocks = BLOCKS.filter((b) => b.header_hash.startsWith(q)).map((b) => ({
+      // A block is found by its header hash or by the settlement hash the node
+      // recorded for it, which is how a Cardano hash still resolves without a
+      // chain index.
+      const blocks = BLOCKS.filter(
+        (b) =>
+          b.header_hash.startsWith(q) ||
+          (blockFinalization(b.number)?.submitted_tx_hash ?? "").startsWith(q),
+      ).map((b) => ({
         kind: "block",
         headerHash: b.header_hash,
         height: b.height,
@@ -174,11 +324,6 @@ const routes = [
         txId: t.tx_id,
         height: BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? null,
         headerHash: t.header_hash,
-      }));
-      const l1 = L1_TXS.filter((t) => t.txHash.startsWith(q)).map((t) => ({
-        kind: "l1Transaction",
-        txHash: t.txHash,
-        blockHeight: t.blockHeight,
       }));
       const validators = L1_VALIDATORS.filter((v) => v.scriptHash.startsWith(q)).map((v) => ({
         kind: "validator",
@@ -191,7 +336,7 @@ const routes = [
         txHash: row.deposit_l1_tx_hash,
       }));
       return {
-        hits: [...blocks, ...txs, ...l1, ...validators, ...deposits].slice(0, 10),
+        hits: [...blocks, ...txs, ...validators, ...deposits].slice(0, 10),
         minPrefix: 6,
         tooShort: false,
       };
@@ -242,13 +387,17 @@ const routes = [
     "transactions/recent",
     /^\/api\/transactions\/recent$/,
     () => ({
-      rows: TXS.slice(0, 7).map((t) => ({
-        height: BLOCKS.find((b) => b.header_hash === t.header_hash)?.height ?? null,
-        header_hash: t.header_hash,
-        tx_id: t.tx_id,
-        time_stamp_tz: t.time_stamp_tz,
-        status: t.status === "pending_commit" ? "pending_commit" : "committed",
-      })),
+      rows: TXS.slice(0, 7).map((t) => {
+        const block = BLOCKS.find((b) => b.header_hash === t.header_hash);
+        return {
+          height: block?.height ?? null,
+          header_hash: t.header_hash,
+          tx_id: t.tx_id,
+          time_stamp_tz: t.time_stamp_tz,
+          status: t.status === "pending_commit" ? "pending_commit" : "committed",
+          finalization_status: block ? (blockFinalization(block.number)?.status ?? null) : null,
+        };
+      }),
     }),
   ],
   ["transactions/total", /^\/api\/transactions\/total$/, () => ({ total: TXS.length })],
@@ -312,47 +461,42 @@ const routes = [
         Number(m[1]),
       ),
   ],
+  ["source", /^\/api\/source$/, () => midgardContext()],
   [
-    "l1/summary",
-    /^\/api\/l1\/summary$/,
-    () => ({
-      source: {
-        deployment: "fixture-deployment",
-        network: "preprod",
-        deployedAt: "2026-07-01T00:00:00.000Z",
-        l2Database: "midgard_fixture",
-        isFixture: true,
-        validators: L1_VALIDATORS,
-      },
-      transactions: L1_TXS.length,
-      events: L1_TXS.reduce((sum, tx) => sum + tx.events.length, 0),
-      blockHeaders: 18,
-      lastSyncedHeight: 5_120_000,
-      byValidator: [
-        { validator: "deposit", count: 11 },
-        { validator: "stateQueue", count: 1 },
-      ],
-    }),
+    "l1/activity/summary",
+    /^\/api\/l1\/activity\/summary$/,
+    () => {
+      const rows = cardanoActivity();
+      const byKind = ["settlement", "deposit", "withdrawal", "forced_transaction"].map((kind) => {
+        const own = rows.filter((row) => row.kind === kind);
+        return {
+          kind,
+          count: own.length,
+          newestRecordedAt: own[0]?.recordedAt ?? null,
+        };
+      });
+      return {
+        midgard: midgardContext(),
+        total: rows.length,
+        newestRecordedAt: rows[0]?.recordedAt ?? null,
+        byKind,
+      };
+    },
   ],
   [
-    "l1/transactions",
-    /^\/api\/l1\/transactions\/(\d+)$/,
-    (m) =>
-      page(
-        L1_TXS.map((tx) => ({
-          txHash: tx.txHash,
-          blockHeight: tx.blockHeight,
-          blockHash: tx.blockHash,
-          slot: tx.slot,
-          epoch: tx.epoch,
-          txTime: tx.txTime,
-          fee: tx.fee,
-          size: tx.size,
-          totalOutput: tx.totalOutput,
-          events: tx.events,
-        })),
-        Number(m[1]),
-      ),
+    "l1/activity",
+    /^\/api\/l1\/activity\/(\d+)$/,
+    (m) => ({ midgard: midgardContext(), ...page(cardanoActivity(), Number(m[1])) }),
+  ],
+  [
+    "l1/validators",
+    /^\/api\/l1\/validators$/,
+    () => ({
+      midgard: midgardContext(),
+      deploymentId: midgardContext().deploymentId,
+      network: "preprod",
+      validators: manifestValidators(),
+    }),
   ],
 ];
 
@@ -369,11 +513,21 @@ const handleBlock = (url, res) => {
     const b = BLOCKS[n];
     return b ? { height: b.height, header_hash: b.header_hash } : null;
   };
+  const fin = blockFinalization(found.number);
   return json(res, {
+    midgard: midgardContext(),
+    // Null status where the node has no finalization row, matching the
+    // backend, so an unfinalized block carries no evidence row at all.
+    cardano: blockAssociation(
+      found.header_hash,
+      fin?.submitted_tx_hash ?? null,
+      fin?.status ?? null,
+    ),
     header: blockHeader(found.number),
     rows: blockRows(found.number).map((row) => ({ ...row, height: found.height })),
     da: blockDa(found.number),
-    finalization: blockFinalization(found.number),
+    finalization: fin,
+    commitments: blockCommitments(found.number),
     events: blockEvents(found.number),
     neighbours: { prev: at(i + 1), next: at(i - 1) },
   });
@@ -399,11 +553,27 @@ const handleTransaction = (url, res) => {
           time_stamp_tz: found.time_stamp_tz,
         }
       : null;
+  const txFin = inclusion ? blockFinalization(inclusionBlock.number) : null;
   const envelope = {
     txId: found.tx_id,
     admission: found.admission,
     inclusion,
-    finalization: inclusion ? blockFinalization(inclusionBlock.number) : null,
+    finalization: txFin,
+    midgard: midgardContext(),
+    // Settlement travels through the block. Every transaction in one block
+    // reports the same hash here, which is the relationship the contract exists
+    // to state and the fixture has to be able to exercise.
+    cardano: {
+      // Every transaction in one block reports that block's settlement.
+      ...blockAssociation(
+        inclusion?.header_hash ?? null,
+        txFin?.submitted_tx_hash ?? null,
+        txFin?.status ?? null,
+      ),
+      kind: "l2_transaction_settlement",
+      l2TxId: found.tx_id,
+      l2BlockHeaderHash: inclusion?.header_hash ?? null,
+    },
   };
 
   // Lifecycle-only outcomes come first, matching the backend: a transaction
@@ -460,17 +630,14 @@ const handleAddress = (url, res) => {
   const page = rawPage === null ? 1 : Number(rawPage);
   if (!address) return fail(res, 400, "bad_request", "address");
   if (!Number.isInteger(page) || page < 1) return fail(res, 400, "bad_request", "page");
-  if (!ADDRESSES.includes(address)) return fail(res, 404, "not_found");
-  return json(res, addressResponse(address, page));
-};
-
-const handleL1Transaction = (url, res) => {
-  const hash = url.searchParams.get("txHash");
-  if (!hash || !/^[0-9a-f]{64}$/i.test(hash)) {
-    return fail(res, 400, "bad_request", "txHash");
+  if (!ADDRESSES.includes(address) && address !== PAGED_ADDRESS) {
+    return fail(res, 404, "not_found");
   }
-  const found = L1_TXS.find((tx) => tx.txHash === hash.toLowerCase());
-  return found ? json(res, found) : fail(res, 404, "not_found");
+  const utxoCursor = url.searchParams.get("utxo_cursor");
+  if (utxoCursor !== null && !/^(?:[0-9a-fA-F]{2})*$/.test(utxoCursor)) {
+    return fail(res, 400, "bad_request", "utxo_cursor");
+  }
+  return json(res, addressResponse(address, page, utxoCursor || null));
 };
 
 /** The last client address this fixture was told about, per path. The backend
@@ -496,18 +663,6 @@ const server = createServer(async (req, res) => {
   // leave a test asserting against a transaction that no longer has the case.
   if (req.method === "GET" && url.pathname === "/__payment-tx") {
     return json(res, { txId: PAYMENT_TX.tx_id });
-  }
-  if (req.method === "GET" && url.pathname === "/__l1-specimens") {
-    const withAction = (predicate) =>
-      L1_TXS.find((tx) => tx.actions.some(predicate))?.txHash ?? null;
-    return json(res, {
-      decodedDeposit: withAction((a) => a.userEvent?.kind === "deposit"),
-      decodedWithdrawal: withAction((a) => a.userEvent?.kind === "withdrawal"),
-      failedContract: withAction((a) => a.validContract === false),
-      // The one transaction carrying every UTxO section, found by the fact
-      // that distinguishes it rather than by the generator's index.
-      spentOutput: L1_TXS.find((tx) => tx.outputs.some((o) => o.spentBy))?.txHash ?? null,
-    });
   }
   if (url.pathname.startsWith("/api/")) {
     forwarded.set(url.pathname, req.headers["x-forwarded-for"] ?? null);
@@ -541,6 +696,16 @@ const server = createServer(async (req, res) => {
     return out === undefined ? undefined : json(res, out);
   }
 
+  /* The Web Vitals beacon's destination. The real API answers 204 and records
+     the sample; nothing in the suite reads it back, so this only has to exist:
+     without it the same-origin route handler forwards into a 404 and a test
+     that checks the beacon reaches the API cannot tell that from a handler
+     that was never mounted. */
+  if (req.method === "POST" && url.pathname === "/api/vitals") {
+    res.writeHead(204).end();
+    return;
+  }
+
   if (url.pathname === "/api/block") {
     if (state.fail === "all" || state.fail === "block") return fail(res, 500, "internal_error");
     return handleBlock(url, res);
@@ -550,116 +715,25 @@ const server = createServer(async (req, res) => {
       return fail(res, 500, "internal_error");
     return handleTransaction(url, res);
   }
-  if (url.pathname === "/api/l1/transaction") {
-    if (state.fail === "all" || state.fail === "l1/transaction") {
-      return fail(res, 500, "internal_error");
-    }
-    return handleL1Transaction(url, res);
-  }
-  if (url.pathname === "/api/l1/block-headers" || url.pathname === "/api/l1/block-header") {
-    const rows = BLOCKS.map((block) => {
-      const da = blockDa(block.number) ?? blockDa(1);
-      // The oldest block is left unattributed on purpose. A commit transaction
-      // re-outputs the previous queue node alongside the new head, so a header
-      // really can be seen carried forward before the transaction that
-      // committed it is observed, and the page has to say so rather than
-      // render an empty cell. Without one here that branch is never rendered.
-      const attributed = block.number > 1;
-      return {
-        headerHash: block.header_hash,
-        l1TxHash: attributed ? L1_TXS[block.number % L1_TXS.length].txHash : null,
-        blockHeight: attributed ? 5_120_000 - block.number : null,
-        prevUtxosRoot: "00".repeat(32),
-        utxosRoot: da.utxos_root,
-        withdrawalsRoot: da.withdrawals_root,
-        forcedTransactionsRoot: da.forced_transactions_root,
-        transactionsRoot: da.transactions_root,
-        depositsRoot: da.deposits_root,
-        transitionTraceRoot: da.transition_trace_root,
-        eventToStepRoot: da.event_to_step_root,
-        withdrawalCount: String(da.withdrawal_count),
-        forcedTransactionCount: String(da.forced_transaction_count),
-        l2TransactionCount: String(da.l2_transaction_count),
-        depositCount: String(da.deposit_count),
-        totalEventCount: String(da.total_event_count),
-        transitionStepCount: String(da.transition_step_count),
-        startTime: String(new Date(da.block_start_time).getTime()),
-        endTime: String(new Date(da.block_end_time).getTime()),
-        prevHeaderHash:
-          BLOCKS.find((candidate) => candidate.number === Math.max(1, block.number - 1))
-            ?.header_hash ?? block.header_hash,
-        operatorVkey: L1_VALIDATORS[1].scriptHash,
-        protocolVersion: "1",
-      };
+  if (url.pathname === "/api/l1/reference") {
+    const hash = (url.searchParams.get("txHash") ?? "").toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(hash)) return fail(res, 400, "bad_request", "txHash");
+    return json(res, {
+      midgard: midgardContext(),
+      txHash: hash,
+      references: cardanoActivity().filter((row) => row.l1TxHash === hash),
     });
-    if (url.pathname.endsWith("block-header")) {
-      const found = rows.find((row) => row.headerHash === url.searchParams.get("headerHash"));
-      return found ? json(res, found) : fail(res, 404, "not_found");
-    }
-    return json(res, rows.slice(0, Number(url.searchParams.get("limit") ?? 25)));
-  }
-  if (url.pathname === "/api/l1/deposits") {
-    const rows = L1_TXS.flatMap((tx) =>
-      tx.events
-        .filter((event) => event.validator === "deposit")
-        .map((event) => ({
-          ...event,
-          txHash: tx.txHash,
-          fundingAddresses: tx.inputs.flatMap((input) => (input.address ? [input.address] : [])),
-          tx,
-        })),
-    );
-    return json(res, rows.slice(0, Number(url.searchParams.get("limit") ?? 25)));
   }
   if (url.pathname === "/api/l1/validator") {
-    const validator = L1_VALIDATORS.find(
-      (row) => row.scriptHash === url.searchParams.get("scriptHash"),
-    );
+    const hash = (url.searchParams.get("scriptHash") ?? "").toLowerCase();
+    if (!/^[0-9a-f]{56}$/.test(hash)) return fail(res, 400, "bad_request", "scriptHash");
+    const validator = manifestValidators().find((v) => v.scriptHash === hash);
     if (!validator) return fail(res, 404, "not_found");
-    const rich = L1_TXS[0];
-    const history = L1_TXS.filter(
-      (tx) =>
-        tx.redeemers.some((row) => row.scriptHash === validator.scriptHash) ||
-        tx.outputs.some((row) => row.address === validator.address) ||
-        tx.events.some((row) => row.validator === validator.family),
-    ).map((tx) => ({
-      txHash: tx.txHash,
-      blockHeight: tx.blockHeight,
-      txTime: tx.txTime,
-      ioCount: tx.outputs.filter((row) => row.address === validator.address).length,
-      executionCount: tx.redeemers.filter((row) => row.scriptHash === validator.scriptHash).length,
-      eventCount: tx.events.filter((row) => row.validator === validator.family).length,
-    }));
-    const utxos = rich.outputs
-      .filter((row) => row.address === validator.address)
-      .map((row) => ({
-        ...row,
-        tx: { txHash: rich.txHash, blockHeight: rich.blockHeight, txTime: rich.txTime },
-      }));
-    const redeemers = L1_TXS.flatMap((tx) => tx.redeemers).filter(
-      (row) => row.scriptHash === validator.scriptHash,
-    );
     return json(res, {
-      deployment: "fixture-deployment",
+      midgard: midgardContext(),
+      deploymentId: midgardContext().deploymentId,
+      network: "preprod",
       validator,
-      coverage: { limitedTo: 100, truncated: false },
-      utxos,
-      history,
-      operations:
-        redeemers.length === 0
-          ? []
-          : [
-              {
-                purpose: "spend",
-                validContract: true,
-                count: redeemers.length,
-                memUnits: redeemers.reduce((sum, row) => sum + BigInt(row.memUnits), 0n).toString(),
-                stepUnits: redeemers
-                  .reduce((sum, row) => sum + BigInt(row.stepUnits), 0n)
-                  .toString(),
-                fee: redeemers.reduce((sum, row) => sum + BigInt(row.fee), 0n).toString(),
-              },
-            ],
     });
   }
   if (url.pathname === "/api/asset") {

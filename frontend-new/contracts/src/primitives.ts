@@ -44,18 +44,36 @@ export const IsoTimestamp = Schema.String.pipe(
 );
 export type IsoTimestamp = Schema.Schema.Type<typeof IsoTimestamp>;
 
+/** The two protocol hash widths, in hex characters. The backend states why in
+ * `src/utils.ts`; the two workspaces share no code, so the constants are
+ * restated here and the reasoning is not. */
+export const HASH28_HEX = 56;
+export const HASH32_HEX = 64;
+
+/** Either case, because a hash pasted from another explorer may be uppercase
+ * and refusing that is pedantry. Callers normalise; the backend stores and
+ * compares lowercase. */
+const hashPattern = (width: number) => new RegExp(`^[0-9a-fA-F]{${width}}$`);
+
+/** The single spelling both stores agree on. A hash reaching a query in any
+ * other form finds the node's `bytea` and misses the index's text. */
+export const canonicalHash = (value: string): string => value.trim().toLowerCase();
+
+export const isHash28 = (value: string): boolean => hashPattern(HASH28_HEX).test(value);
+export const isHash32 = (value: string): boolean => hashPattern(HASH32_HEX).test(value);
+
 /** A blake2b-224 hash: script hashes, policy ids, payment credentials, and a
  * Midgard L2 block header hash, which is 28 bytes and not 32. Measured on the
  * node's `blocks.header_hash`. */
 export const Hash28 = Schema.String.pipe(
-  Schema.pattern(/^[0-9a-fA-F]{56}$/),
+  Schema.pattern(hashPattern(HASH28_HEX)),
   Schema.brand("Hash28"),
 );
 export type Hash28 = Schema.Schema.Type<typeof Hash28>;
 
 /** A blake2b-256 hash: transaction ids, block header hashes, datum hashes. */
 export const Hash32 = Schema.String.pipe(
-  Schema.pattern(/^[0-9a-fA-F]{64}$/),
+  Schema.pattern(hashPattern(HASH32_HEX)),
   Schema.brand("Hash32"),
 );
 export type Hash32 = Schema.Schema.Type<typeof Hash32>;
@@ -84,10 +102,28 @@ export const ApiErrorBody = Schema.Struct({
 });
 export type ApiErrorBody = Schema.Schema.Type<typeof ApiErrorBody>;
 
+/**
+ * The deepest a single offset-paginated request may scan, in rows.
+ *
+ * Mirrors `MAX_PAGE_OFFSET_ROWS` in `backend/src/server/validate.ts`, where the
+ * reasoning is written out. The two are separate workspaces and neither
+ * imports the other, so this is a copy; the contract suite that runs against
+ * the real backend is what keeps the copy honest.
+ */
+export const MAX_PAGE_OFFSET_ROWS = 100_000;
+
+/** The last page a list with this page size will serve. */
+export const maxPageFor = (pageSize: number): number =>
+  Math.max(1, Math.floor(MAX_PAGE_OFFSET_ROWS / pageSize));
+
 export const paged = <A, I, R>(row: Schema.Schema<A, I, R>) =>
   Schema.Struct({
     rows: Schema.Array(row),
     hasNextPage: Schema.Boolean,
     total: Schema.Number,
     limit: Schema.Number,
+    /** The page the server actually served, which is not always the one that
+     * was asked for: a list that treats a page number as a navigation hint
+     * coerces a malformed one rather than refusing it. */
+    page: Schema.Number,
   });

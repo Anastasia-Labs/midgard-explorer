@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { Breadcrumbs } from "../../components/ui/breadcrumbs";
-import { PageHeader } from "../../components/ui/primitives";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { PageHeader } from "../../components/ui/base/layout";
 import { Tools } from "../../features/tools/Tools";
 
 export const metadata: Metadata = {
@@ -18,10 +18,7 @@ export default function ToolsPage() {
   return (
     <>
       <Breadcrumbs items={CRUMBS} />
-      <PageHeader
-        title="Tools"
-        subtitle="Decode a CBOR payload, convert between ada and lovelace, and split an asset unit into its policy and name. Everything here runs in your browser."
-      />
+      <PageHeader title="Tools" />
       <Tools />
     </>
   );

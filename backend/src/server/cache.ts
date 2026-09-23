@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { responseCache, routeLabel } from "../telemetry/metrics";
 import type { RequestHandler } from "express";
 
 /**
@@ -32,6 +34,52 @@ const entries = new Map<string, Entry>();
 const responses = new Map<string, ResponseEntry>();
 let cachedBytes = 0;
 
+/**
+ * Benchmark-only cache bypass.
+ *
+ * Every `/api/` route carries a five-second response cache, so a benchmark
+ * repeating one path measures the cache rather than the query. A `cold`
+ * database budget resting on a warm reading is not a weak measurement, it is
+ * the wrong one.
+ *
+ * Gated on a **secret**, not a bare header. Without `BENCH_CACHE_BYPASS_TOKEN`
+ * set, this code path does not exist: `bypassToken` stays null and every
+ * request is cached exactly as before. With it set, only a request presenting
+ * the matching token skips the cache. A bare header would let any client
+ * disable caching on a public deployment and turn the amplification these
+ * caches exist to prevent into a denial of service.
+ */
+const BYPASS_HEADER = "x-explorer-bench-bypass";
+let bypassToken: string | null = null;
+
+/** Called once at startup. A blank or absent token leaves the bypass off. */
+export function configureBenchBypass(token: string | null | undefined): void {
+  bypassToken = token && token.length >= 16 ? token : null;
+}
+
+/**
+ * Carries the bypass decision to the inner work cache.
+ *
+ * `AsyncLocalStorage`, not a module-level flag. The inner `cached(...)` wrapper
+ * has no access to the request, and a shared flag would leak: at concurrency 32
+ * one bypassed request in flight would make every other request skip the work
+ * cache too, so a warm-cache budget would silently measure cold work. The store
+ * is per async context, so each request sees only its own decision.
+ */
+const bypassStore = new AsyncLocalStorage<boolean>();
+
+/** True only when a bypass is configured and this request presents it. */
+function bypassed(req: { headers: Record<string, unknown> }): boolean {
+  if (bypassToken === null) return false;
+  const presented = req.headers[BYPASS_HEADER];
+  return typeof presented === "string" && presented === bypassToken;
+}
+
+/** Whether the bypass is configured at all. For readiness to report it. */
+export function benchBypassEnabled(): boolean {
+  return bypassToken !== null;
+}
+
 function drop(key: string): void {
   const entry = responses.get(key);
   if (!entry) return;
@@ -53,6 +101,10 @@ export function cached<A>(
   work: () => Promise<A>,
 ): () => Promise<A> {
   return () => {
+    // The inner work cache needs the same bypass as the response cache.
+    // `/api/metrics` and `/api/assets` have both, so bypassing only the outer
+    // one still measures a cached reading.
+    if (bypassStore.getStore() === true) return work();
     const hit = entries.get(key);
     if (hit && hit.expiresAt > Date.now()) return hit.value as Promise<A>;
 
@@ -77,6 +129,13 @@ export function cachePublicJson(
 ): RequestHandler {
   return (req, res, next) => {
     if (req.method !== "GET" || ttlMs <= 0) return next();
+    if (bypassed(req)) {
+      // Neither read nor written: a benchmark run must not warm the cache for
+      // the requests that follow it either.
+      res.setHeader("X-Explorer-Cache", "BYPASS");
+      responseCache.inc({ route: routeLabel(req), result: "bypass" });
+      return bypassStore.run(true, () => next());
+    }
 
     const now = Date.now();
     const key = req.originalUrl;
@@ -87,12 +146,14 @@ export function cachePublicJson(
       responses.set(key, hit);
       res.setHeader("Age", String(Math.floor((now - hit.createdAt) / 1_000)));
       res.setHeader("X-Explorer-Cache", "HIT");
+      responseCache.inc({ route: routeLabel(req), result: "hit" });
       setSharedCacheHeaders(res, ttlMs);
       return res.status(200).json(hit.body);
     }
     if (hit) drop(key);
 
     res.setHeader("X-Explorer-Cache", "MISS");
+    responseCache.inc({ route: routeLabel(req), result: "miss" });
     setSharedCacheHeaders(res, ttlMs);
     const sendJson = res.json.bind(res);
     res.json = ((body: unknown) => {

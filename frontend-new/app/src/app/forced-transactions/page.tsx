@@ -1,19 +1,20 @@
+import Link from "next/link";
 import type { Metadata } from "next";
-import { Breadcrumbs } from "../../components/ui/breadcrumbs";
-import { Icon } from "../../components/ui/icons";
-import { Identifier } from "../../components/ui/identifier";
-import { L1TxLink } from "../../components/ui/l1link";
-import { StatusLegend } from "../../components/ui/legend";
-import { PageError } from "../../components/ui/pageerror";
-import { L1L2Badge, PageHeader } from "../../components/ui/primitives";
-import { StatusBadge, StatusCell } from "../../components/ui/status";
-import { DataTable, Pagination } from "../../components/ui/table";
-import { Timestamp } from "../../components/ui/timestamp";
+import { Icon } from "../../components/ui/base/icons";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { L1TxLink } from "../../components/ui/domain/l1link";
+import { StatusLegend } from "../../components/ui/base/legend";
+import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
+import { StatusCell } from "../../components/ui/domain/status";
+import { DataTable, Pagination } from "../../components/ui/base/table";
+import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { ListError } from "../../components/ui/base/listerror";
 
 export const metadata: Metadata = {
   title: "Forced transactions",
@@ -38,11 +39,12 @@ export default async function ForcedTransactionsPage({
     data = await api.forcedTxsPage(page, await viewerInit(), id);
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="forcedTransaction" title="Forced transactions" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError
+        crumbs={CRUMBS}
+        entity="forcedTransaction"
+        title="Forced transactions"
+        message={listErrorMessage(e)}
+      />
     );
   }
 
@@ -52,7 +54,6 @@ export default async function ForcedTransactionsPage({
       <PageHeader
         entity="forcedTransaction"
         title="Forced transactions"
-        subtitle="Transaction orders submitted on Cardano for inclusion in Midgard."
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
@@ -78,11 +79,10 @@ export default async function ForcedTransactionsPage({
               cell: (r) => <Identifier value={r.tx_order_id} />,
             },
             {
-              header: "L1 tx",
-              headerNote: "on Cardano",
+              header: "Order on Cardano",
               cell: (r) => (
                 <span className="inline-flex items-center gap-1.5">
-                  <L1TxLink hash={r.tx_order_l1_tx_hash} destination="cardano" />
+                  <L1TxLink hash={r.tx_order_l1_tx_hash} destination="cardano" marker={false} />
                   <span className="font-mono text-micro text-text-3">
                     #{r.tx_order_l1_output_index}
                     <span className="sr-only"> (L1 output index)</span>
@@ -98,7 +98,7 @@ export default async function ForcedTransactionsPage({
             },
             {
               header: "Operator validity",
-              cell: (r) => <StatusBadge status={r.operator_validity} />,
+              cell: (r) => <StatusCell status={r.operator_validity} />,
               hideBelow: "sm",
             },
             {
@@ -131,7 +131,7 @@ export default async function ForcedTransactionsPage({
             ),
             status: <StatusCell status={r.status} />,
             meta: <Timestamp iso={r.inclusion_time} />,
-            secondary: <StatusBadge status={r.operator_validity} />,
+            secondary: <StatusCell status={r.operator_validity} />,
             details: [
               { label: "Order ID", value: <Identifier value={r.tx_order_id} head={8} tail={6} /> },
               {
@@ -162,8 +162,22 @@ export default async function ForcedTransactionsPage({
           })}
           rows={data.rows}
           keyOf={(r) => r.tx_order_id}
-          emptyTitle="No forced transactions yet"
-          emptyHint="These appear when a user escrows an order on Cardano for the operator to include."
+          emptyTitle={id ? "No matching forced transaction" : "No forced transactions yet"}
+          {...(id
+            ? {
+                emptyAction: (
+                  <Link
+                    href="/forced-transactions"
+                    className="text-link hover:text-link-hover hover:underline"
+                  >
+                    Clear filter
+                  </Link>
+                ),
+              }
+            : {
+                emptyHint:
+                  "These appear when a user escrows an order on Cardano for the operator to include.",
+              })}
         />
         <StatusLegend kinds={["bridge_status", "forced_validity"]} />
         <Pagination

@@ -3,6 +3,8 @@
  * (verified against backend route validation). Addresses: bech32 prefix,
  * charset, and BIP-173 checksum, so a mistyped address is rejected in place
  * instead of navigating to an empty result page. */
+import { canonicalHash, isHash28, isHash32 } from "@midgard-explorer/contracts";
+
 const BECH32_CHARSET = /^[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$/;
 const ADDRESS_PREFIXES = ["addr1", "addr_test1", "stake1", "stake_test1"];
 
@@ -60,8 +62,8 @@ const HEIGHT = /^#?\d{1,3}(?:,\d{3})*$|^#?\d+$/;
 export function classify(raw: string): Classification {
   const input = raw.trim();
   if (input.length === 0) return { kind: "invalid", reason: "Enter a search term." };
-  if (/^[0-9a-fA-F]{64}$/.test(input)) return { kind: "transaction", value: input.toLowerCase() };
-  if (/^[0-9a-fA-F]{56}$/.test(input)) return { kind: "block", value: input.toLowerCase() };
+  if (isHash32(input)) return { kind: "transaction", value: canonicalHash(input) };
+  if (isHash28(input)) return { kind: "block", value: canonicalHash(input) };
   if (HEIGHT.test(input)) {
     const digits = input.replace(/[#,]/g, "");
     // A 56- or 64-digit run is a hash typed without letters, not a height.

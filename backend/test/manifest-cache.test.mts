@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { writeFileSync, mkdtempSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadManifest } from "../src/indexer/manifest.js";
+import { loadManifest } from "../src/db/manifest.js";
 
 /**
  * `loadManifest` sits on request paths: `/api/withdrawals/:page` calls it to

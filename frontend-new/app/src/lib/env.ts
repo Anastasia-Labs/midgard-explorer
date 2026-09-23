@@ -5,10 +5,14 @@
 const stripTrailingSlash = (s: string): string => s.replace(/\/+$/, "");
 
 export const PUBLIC_API_BASE = stripTrailingSlash(
-  // The bundled reverse proxy is the default public origin. Reaching 3101
-  // directly bypasses shared caching and should be an explicit development
-  // choice, not the application's fallback.
-  process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:3102",
+  // The backend, directly. Development needs no generated file and no reverse
+  // proxy: `cd backend && pnpm dev` serves here, and nothing about the API's
+  // meaning changes when the cache is absent.
+  //
+  // Deployment still names both bases explicitly. `assertNetworkConfigured` in
+  // ./network.ts refuses a production build that leaves them unset, so this
+  // default cannot become a deployment's answer by accident.
+  process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:3101",
 );
 
 export const apiBase = (): string => {

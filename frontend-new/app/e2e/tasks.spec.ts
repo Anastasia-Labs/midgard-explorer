@@ -113,7 +113,30 @@ test.describe("task performance", () => {
       await page.waitForURL(new RegExp(`/transaction/${hash}$`));
       // The answer is the record header's badge. It used to be the journey's
       // own heading, one of three places this page stated a lifecycle.
-      return page.locator('[data-region="identity"]').getByText(/Committed|Final on Cardano/);
+      return page.locator('[data-region="identity"]').getByText(/Committed|Finalized/);
+    });
+    expect(r.steps).toBeLessThanOrEqual(3);
+  });
+
+  test('"has my transaction settled on Cardano?"', async ({ page }) => {
+    const hash = await page.request
+      .get(`${FIXTURE}/api/transactions/1`)
+      .then(async (r) => (await r.json()).rows[0].tx_id as string);
+
+    // Same three actions as the lookup. Settlement must be answered on the
+    // record's page, not only by following the block link.
+    const r = await measureTask(page, "Has my transaction settled?", 3, async () => {
+      await page.goto("/");
+      await openSearch(page);
+      const input = searchInput(page);
+      await input.fill(hash);
+      await input.press("Enter");
+      await page.waitForURL(new RegExp(`/transaction/${hash}$`));
+      return page
+        .getByText(
+          /Final on Cardano|Finalized|Pending submission|Submitted|Awaiting stability|Settlement/,
+        )
+        .first();
     });
     expect(r.steps).toBeLessThanOrEqual(3);
   });
@@ -128,9 +151,13 @@ test.describe("task performance", () => {
       await page.goto("/blocks");
       await rowRegion(page).getByRole("link").first().click();
       await page.waitForURL(/\/block\/[0-9a-f]{56}/);
-      return page.getByRole("region", { name: "Protocol journey" }).getByRole("heading", {
-        level: 2,
-      });
+      // The answer is the header's status, beside the block's number.
+      return page
+        .locator('[data-region="identity"]')
+        .getByText(
+          /^Finalized$|awaiting Cardano finality|No finalization record yet|Finalization abandoned|Settlement stage not recognized/,
+        )
+        .first();
     });
     expect(r.steps).toBeLessThanOrEqual(2);
   });

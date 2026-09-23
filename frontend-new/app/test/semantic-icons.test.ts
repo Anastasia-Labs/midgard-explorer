@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PATHS } from "../src/components/ui/icons";
+import { PATHS } from "../src/components/ui/base/icons";
 import { GLOSSARY } from "../src/lib/glossary";
 import { SEMANTIC_ICONS } from "../src/lib/semantic-icons";
 

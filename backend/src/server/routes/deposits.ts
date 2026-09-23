@@ -1,17 +1,17 @@
 import { Request, Response } from "express";
-import { getDepositsPage } from "../../db/deposits";
+import { LIMIT, getDepositsPage } from "../../db/deposits";
 import { computeBalance } from "../../decode/transaction";
 import { toHex } from "../../utils";
 import { parseOptionalHexQuery, parsePageParam } from "../validate";
 
 export async function getDepositsPageRoute(req: Request, res: Response) {
-  const parsedPage = parsePageParam(req.params.page);
+  const parsedPage = parsePageParam(req.params.page, LIMIT);
   if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
   const page = parsedPage.value;
   const parsedId = parseOptionalHexQuery(req.query.id);
   if (!parsedId.ok) return res.status(400).json({ error: parsedId.error });
   const id = parsedId.value;
-  const { rows, hasNextPage, total, limit } = await getDepositsPage(page, id);
+  const { rows, hasNextPage, total, limit, page: served } = await getDepositsPage(page, id);
   const payload = await Promise.all(
     rows.map(async (row) => {
       // Decode failure on this row: return null for value only.
@@ -33,5 +33,5 @@ export async function getDepositsPageRoute(req: Request, res: Response) {
       };
     }),
   );
-  return res.json({ rows: payload, hasNextPage, total, limit });
+  return res.json({ rows: payload, hasNextPage, total, limit, page: served });
 }

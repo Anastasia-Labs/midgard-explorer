@@ -1,9 +1,17 @@
 import { Request, Response } from "express";
-import { getAddressHistory, getAddressUtxos } from "../../db/address";
+import {
+  HISTORY_LIMIT,
+  getAddressHistory,
+  getAddressUtxos,
+  pageUtxoRows,
+  UTXO_PAGE_LIMIT,
+} from "../../db/address";
 import { computeBalance, decodeTransactionSafe, decodeUtxos } from "../../decode/transaction";
 import type { ValueView } from "../../decode/types";
 import { toHex } from "../../utils";
 import { parsePageQuery } from "../validate";
+import { readConsistently } from "../../db/consistent";
+import { transactionStatus } from "../../db/transactionStatus";
 
 function sumValues(values: ValueView[]): ValueView {
   let lovelace = 0n;
@@ -26,17 +34,28 @@ export async function getAddressRoute(req: Request, res: Response) {
   if (typeof address !== "string" || address.length === 0) {
     return res.status(400).json({ error: "Missing address query param." });
   }
-  const parsedPage = parsePageQuery(req.query.page);
+  const parsedPage = parsePageQuery(req.query.page, HISTORY_LIMIT);
   if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
   const page = parsedPage.value;
 
-  const [history, utxos] = await Promise.all([
-    getAddressHistory(address, page),
-    getAddressUtxos(address),
-  ]);
+  const rawCursor = req.query.utxo_cursor;
+  if (rawCursor !== undefined && (typeof rawCursor !== "string" || !/^(?:[0-9a-fA-F]{2})*$/.test(rawCursor))) {
+    return res.status(400).json({ error: "utxo_cursor must be an even-length hex string." });
+  }
+  const utxoCursor = typeof rawCursor === "string" && rawCursor.length > 0 ? rawCursor : undefined;
+
+  // One snapshot for the whole response. History and UTxOs were two, so a
+  // balance could be computed from a ledger the history beside it never saw.
+  const [history, utxos] = await readConsistently(async (db) =>
+    Promise.all([getAddressHistory(address, page, db), getAddressUtxos(address, db)]),
+  );
+  // The balance reads every UTxO; only a page of them is decoded into views
+  // and returned. Totalling the page instead would understate the balance, and
+  // an address page that quietly understates a balance is worse than a slow one.
+  const utxoPage = pageUtxoRows(utxos, utxoCursor);
   const [{ balance, undecodedOutputs }, utxoViews] = await Promise.all([
     computeBalance(utxos.map((row) => row.output)),
-    decodeUtxos(utxos),
+    decodeUtxos(utxoPage.page),
   ]);
   const payload = await Promise.all(
     history.rows.map(async (row) => {
@@ -56,14 +75,12 @@ export async function getAddressRoute(req: Request, res: Response) {
                 .map((i) => i.resolved!.value),
             )
           : null;
-      const status =
-        row.header_hash !== null || row.tx_source === "immutable" || row.tx_source === "journal"
-          ? "committed"
-          : row.tx_source === "processed_mempool"
-            ? "pending_commit"
-            : row.tx_source === "mempool"
-              ? "accepted"
-              : "unknown";
+      const status = transactionStatus({
+        // A history row with no recorded tier is one the derivation has no
+        // fact about, which `transactionStatus` answers as unknown.
+        source: row.tx_source ?? "",
+        hasHeaderHash: row.header_hash !== null,
+      });
       return {
         tx_id: toHex(row.tx_id),
         address: row.address,
@@ -83,8 +100,11 @@ export async function getAddressRoute(req: Request, res: Response) {
   return res.json({
     balance,
     undecodedOutputs,
-    utxoCount: utxos.length,
+    utxoCount: utxoPage.total,
     utxos: utxoViews,
+    utxoLimit: UTXO_PAGE_LIMIT,
+    utxoCursor: utxoPage.nextCursor,
+    hasMoreUtxos: utxoPage.nextCursor !== null,
     txCount: history.total,
     historyPage: page,
     hasNextPage: history.hasNextPage,

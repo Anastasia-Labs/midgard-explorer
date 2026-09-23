@@ -26,6 +26,7 @@ export type OpenApiOperation = {
     description: string;
     schema: Record<string, unknown>;
   }>;
+  requestBody?: Record<string, unknown>;
   responses: Record<string, unknown>;
 };
 
@@ -34,10 +35,12 @@ export type OpenApiDocument = {
   info: { title: string; version: string; description: string };
   servers: Array<{ url: string; description: string }>;
   tags: Array<{ name: string }>;
-  paths: Record<string, { get?: OpenApiOperation }>;
+  paths: Record<string, { get?: OpenApiOperation; post?: OpenApiOperation }>;
 };
 
 type CatalogueEntry = {
+  method: "get" | "post";
+  requestBody?: Record<string, unknown>;
   path: string;
   group: string;
   summary: string;
@@ -77,11 +80,12 @@ const templated = (path: string) => path.replace(/:(\w+)/g, "{$1}");
 export function buildOpenApiDocument(
   endpoints: readonly CatalogueEntry[],
 ): OpenApiDocument {
-  const paths: Record<string, { get?: OpenApiOperation }> = {};
+  const paths: Record<string, { get?: OpenApiOperation; post?: OpenApiOperation }> = {};
 
   for (const route of endpoints) {
+    const write = route.method === "post";
     paths[templated(route.path)] = {
-      get: {
+      [route.method]: {
         tags: [route.group],
         summary: route.summary,
         operationId: operationId(route.group, route.summary),
@@ -89,9 +93,19 @@ export function buildOpenApiDocument(
           ...parameter,
           required: parameter.in === "path",
         })),
+        ...(route.requestBody ? { requestBody: route.requestBody } : {}),
         responses: {
-          "200": response("Successful response."),
-          "400": response("Malformed identifier or parameter."),
+          ...(write
+            ? { "204": { description: "Recorded." } }
+            : { "200": response("Successful response.") }),
+          "400": response(
+            write
+              ? "Not a sample this route accepts."
+              : "Malformed identifier or parameter, or a page past the depth this " +
+                "route serves. The bound is on rows scanned, so the last page " +
+                "depends on the page size: see MAX_PAGE_OFFSET_ROWS.",
+          ),
+          ...(write ? { "413": response("Body over 1 KB.") } : {}),
           ...(route.notFound
             ? { "404": response("The requested record was not found.") }
             : {}),
@@ -108,7 +122,7 @@ export function buildOpenApiDocument(
       title: "Midgard Explorer API",
       version: "1.0.0",
       description:
-        "Read-only JSON access to the Midgard L2 ledger and the explorer's Cardano L1 index. Integer ledger quantities are returned as decimal strings when precision must be preserved. Public API routes are rate limited per client and answer 429 with Retry-After.",
+        "Read-only JSON access to the Midgard L2 ledger and the explorer's Cardano L1 index. The one write, /api/vitals, records anonymous Web Vitals samples from the explorer's own pages. Integer ledger quantities are returned as decimal strings when precision must be preserved. Public API routes are rate limited per client and answer 429 with Retry-After.",
     },
     servers: [{ url: "/", description: "This explorer backend" }],
     tags: [...new Set(endpoints.map((route) => route.group))].map((name) => ({

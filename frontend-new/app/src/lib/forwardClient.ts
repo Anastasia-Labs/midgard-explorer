@@ -36,3 +36,17 @@ export function forwardedFrom(source: HeaderSource): Record<string, string> {
 export function forwardedForHeader(request: Request): Record<string, string> {
   return forwardedFrom(request.headers);
 }
+
+/**
+ * The benchmark's cache-bypass header, passed through when a request carries it.
+ *
+ * The overview route calls six backend routes, and a benchmark measuring it
+ * cold must reach them cold too, or it measures the backend's response cache.
+ * Forwarding it grants nothing: the backend has no bypass unless it was started
+ * with a benchmark token, and then only a request carrying that secret skips a
+ * cache.
+ */
+export function benchBypassHeader(request: Request): Record<string, string> {
+  const token = request.headers.get("x-explorer-bench-bypass");
+  return token === null ? {} : { "x-explorer-bench-bypass": token };
+}

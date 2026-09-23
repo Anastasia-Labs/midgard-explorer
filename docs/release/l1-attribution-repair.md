@@ -1,5 +1,11 @@
 # Release record: L1 deployment-attribution repair
 
+> **Superseded, 2026-09-18.** This records the deployment attribution repair for the explorer-owned Cardano
+> index, which is decommissioned: see
+> [ADR 0009](../decisions/0009-node-reported-settlement.md). The commands below
+> no longer exist, and the database it migrated is retained, stopped, for
+> rollback. Kept as the record of what was done and why.
+
 The evidence for the indexer correctness work on `wip/remediation`, kept in the
 repository because the local `.git/gate-evidence/` directory is never pushed and
 a reviewer cannot read it. Every figure here was produced by a command named

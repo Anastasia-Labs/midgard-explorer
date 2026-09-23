@@ -1,0 +1,94 @@
+/* The few places a component needs a rule Tailwind cannot express: the flow
+ * canvas's third-party classes, the brand mark, and the two named sizes below
+ * body text. */
+
+.mg-overline {
+  font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mg-text-3);
+}
+
+/* Two named sizes below body, not three. Still two.
+ *
+ * The small band had drifted to 12px, 12.5px and 13px, which is three tiers a
+ * reader cannot tell apart and a writer cannot choose between. `caption` is
+ * secondary prose: explanations, confidence notes, row subtitles. `micro` is
+ * provenance: source columns, footnotes, the things that must be present and
+ * must not compete. Naming them is what stops a fourth appearing.
+ *
+ * The 2026-08-18 rescale moved caption 12.5 -> 13 and micro stayed at 12, so
+ * the gap between the two tiers doubled and the rule above survives intact.
+ * That is the whole reason the proposed third token for code viewers was
+ * dropped: at 12.5px it would have rebuilt the exact 12/12.5/13 ladder this
+ * paragraph exists to prevent, and it would have done it in the name of
+ * legibility. The CBOR and script viewers use `caption` like everything else.
+ * `overline` is no longer a size either: it was 11.5px, the floor took it to
+ * 12, and at 12 it is `micro` wearing weight, tracking and uppercase. A tier
+ * that differs from another only in treatment does not need its own number.
+ *
+ * Declared in the components layer so a `leading-*` utility alongside either
+ * one still wins; the token sets a default line height, not a fixed one. */
+@layer components {
+  .mg-caption {
+    font-size: var(--text-caption);
+    line-height: 1.5;
+  }
+
+  .mg-micro {
+    font-size: var(--text-micro);
+    line-height: 1.45;
+  }
+}
+
+/* In the light theme, the product name carries the established Midgard green
+ * while the Fjord blue remains contextual ink for page titles and navigation.
+ * Dark mode keeps its quieter white/muted wordmark hierarchy. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .mg-brand-green {
+    color: var(--mg-accent);
+  }
+}
+
+:root[data-theme="light"] .mg-brand-green {
+  color: var(--mg-accent);
+}
+
+.mg-flow-canvas {
+  --xy-background-color: transparent;
+  --xy-background-pattern-dots-color: var(--mg-border-strong);
+  --xy-edge-stroke: var(--mg-border-strong);
+  --xy-edge-stroke-selected: var(--mg-accent);
+  --xy-minimap-background-color: var(--mg-surface);
+  --xy-minimap-mask-background-color: color-mix(in oklab, var(--mg-bg) 65%, transparent);
+  --xy-controls-button-background-color: var(--mg-surface);
+  --xy-controls-button-background-color-hover: var(--mg-surface-3);
+  --xy-controls-button-color: var(--mg-text-2);
+  --xy-controls-button-border-color: var(--mg-border);
+}
+
+.mg-flow-canvas .react-flow__node {
+  transition: transform 240ms ease-out;
+}
+
+.mg-flow-canvas .react-flow__node:focus-visible .mg-flow-node,
+.mg-flow-canvas .react-flow__node.selected .mg-flow-node {
+  box-shadow: 0 0 0 2px var(--mg-focus);
+}
+
+.mg-flow-canvas .react-flow__handle {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--mg-surface);
+  background: var(--mg-border-strong);
+}
+
+.mg-flow-canvas .react-flow__attribution {
+  background: color-mix(in oklab, var(--mg-surface) 88%, transparent);
+  color: var(--mg-text-3);
+}
+
+.mg-flow-canvas .react-flow__attribution a {
+  color: inherit;
+}

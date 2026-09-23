@@ -1,0 +1,18 @@
+{
+  "$comment": [
+    "Recorded dispositions for this workspace's production dependency advisories.",
+    "The audit gate fails on any advisory that is not listed here, so a new one",
+    "has to be looked at rather than accumulating in a report nobody reads.",
+    "Every entry needs an owner and an expiresOn date. The gate fails once that",
+    "date passes, so an acceptance is a decision with an end rather than a",
+    "permanent exemption nobody revisits. Owners are roles, never people.",
+    "",
+    "Empty on purpose. The three advisories this gate found on the day it was",
+    "added were fixed rather than accepted: Next 16.2.11 to 16.3.3 for two",
+    "critical unauthenticated remote-code-execution advisories, and the sharp",
+    "override from 0.35.0 to 0.35.4 for a high one in libheif. An empty list is",
+    "the better outcome, and it is not the same as no gate: the gate still runs,",
+    "and the next advisory stops it."
+  ],
+  "accepted": []
+}

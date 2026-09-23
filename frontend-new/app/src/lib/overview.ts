@@ -9,7 +9,7 @@ export async function getOverviewData(init?: FetchInit) {
     api.totalBlocks(init),
     api.totalTxs(init),
     api.metrics(init),
-    api.l1Summary(init),
+    api.cardanoActivitySummary(init),
   ]);
   return {
     recentBlocks: blocks.status === "fulfilled" ? blocks.value.rows : null,

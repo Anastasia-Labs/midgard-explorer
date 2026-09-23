@@ -1,34 +1,41 @@
 import type { Metadata } from "next";
+import { isHash32 } from "@midgard-explorer/contracts";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LifecyclePoller } from "../../../features/transaction/LifecyclePoller";
-import { ApiExample } from "../../../components/ui/apiexample";
-import { AdaAmount, ValueCell } from "../../../components/ui/amount";
-import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
-import { IdentityBar } from "../../../components/ui/identitybar";
-import { PageError } from "../../../components/ui/pageerror";
-import { Callout, PageHeader } from "../../../components/ui/primitives";
-import { RawData } from "../../../components/ui/rawdata";
-import { DatumPanel, RawCbor, WitnessPanel } from "../../../components/ui/scriptdata";
-import { Journey } from "../../../components/ui/journey";
-import { StatusBadge, ToneBadge } from "../../../components/ui/status";
-import { Tabs } from "../../../components/ui/tabs";
-import { Timestamp } from "../../../components/ui/timestamp";
-import { TransactionEvents } from "../../../components/ui/transactionevents";
+import { ApiExample } from "../../../components/ui/domain/apiexample";
+import { AdaAmount, ValueCell } from "../../../components/ui/domain/amount";
+import { Breadcrumbs } from "../../../components/ui/base/breadcrumbs";
+import { IdentityBar } from "../../../components/ui/domain/identitybar";
+import { PageError } from "../../../components/ui/base/pageerror";
+import { Callout } from "../../../components/ui/base/layout";
+import { RawData } from "../../../components/ui/base/rawdata";
+import { DatumPanel, RawCbor, WitnessPanel } from "../../../components/ui/domain/scriptdata";
+import { Journey } from "../../../components/ui/domain/journey";
+import {
+  CardanoAssociation,
+  hasRecordedSettlement,
+} from "../../../components/ui/domain/association";
+import { StatusBadge, ToneBadge } from "../../../components/ui/domain/status";
+import { Tabs } from "../../../components/ui/base/tabs";
+import { Timestamp } from "../../../components/ui/base/timestamp";
+import { TransactionEvents } from "../../../components/ui/domain/transactionevents";
 import { api } from "../../../lib/api";
+import { transactionForDisplay } from "../../../lib/transactionDisplay";
 import { OUTCOME_TONE, transactionJourney } from "../../../lib/journey";
-import { formatTimestamp, truncateId } from "../../../lib/format";
+import { truncateId } from "../../../lib/format";
 import { TERMINAL_TX_STATUSES } from "../../../lib/txStatus";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
 import { statusOf } from "../../../lib/status-registry";
 import { viewerInit } from "../../../lib/viewerInit";
-import { OverviewTab } from "../../../features/transaction/tabs/OverviewTab";
+import { DetailsTab, ReferenceInputs } from "../../../features/transaction/tabs/OverviewTab";
+import { SettlementDetails } from "../../../components/ui/domain/settlementdetails";
+import { L1TxLink } from "../../../components/ui/domain/l1link";
+import { MintPanel } from "../../../features/transaction/MintPanel";
 import { StateTab } from "../../../features/transaction/tabs/StateTab";
-import { ActionSummary, totalOutputValue } from "../../../features/transaction/ActionSummary";
+import { totalOutputValue } from "../../../features/transaction/ActionSummary";
 
 export const dynamic = "force-dynamic";
-
-const isTxHash = (s: string) => /^[0-9a-fA-F]{64}$/.test(s);
 
 export async function generateMetadata({
   params,
@@ -50,7 +57,7 @@ const CRUMBS = [
 
 export default async function TransactionPage({ params }: { params: Promise<{ txHash: string }> }) {
   const { txHash } = await params;
-  if (!isTxHash(txHash)) notFound();
+  if (!isHash32(txHash)) notFound();
   const hash = txHash.toLowerCase();
 
   let data;
@@ -60,8 +67,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="transaction" title="Midgard transaction" />
-        <IdentityBar overline="Transaction hash" value={hash} />
+        <IdentityBar title="Midgard transaction" overline="Transaction hash" value={hash} />
         <PageError message={listErrorMessage(e)} />
       </>
     );
@@ -92,27 +98,34 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
     />
   );
   const journey = (
-    <Journey model={journeyModel} showHeadline={false}>
-      {data.admission ? (
-        <p className="font-mono mg-micro text-text-3">
-          Node admission record · {data.admission.attemptCount} validation attempt
-          {data.admission.attemptCount === 1 ? "" : "s"} · {data.admission.requestCount} request
-          {data.admission.requestCount === 1 ? "" : "s"} · source: {data.admission.submitSource}
-        </p>
-      ) : null}
-    </Journey>
+    <>
+      <Journey model={journeyModel} showHeadline={false}>
+        {data.admission ? (
+          <p className="font-mono mg-micro text-text-3">
+            Node admission record · {data.admission.attemptCount} validation attempt
+            {data.admission.attemptCount === 1 ? "" : "s"} · {data.admission.requestCount} request
+            {data.admission.requestCount === 1 ? "" : "s"} · source: {data.admission.submitSource}
+          </p>
+        ) : null}
+      </Journey>
+    </>
   );
 
   if (data.transaction === null) {
     return (
       <>
         <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="transaction" title="Midgard transaction" />
         {/* The same one lifecycle answer this page states when the body decodes.
             A body that could not be decoded changes what can be shown below, not
             where the transaction is in its life. */}
-        <IdentityBar overline="Transaction hash" value={hash} badges={lifecycle} />
+        <IdentityBar
+          title="Midgard transaction"
+          overline="Transaction hash"
+          value={hash}
+          badges={lifecycle}
+        />
         {journey}
+        <CardanoAssociation association={data.cardano} context={data.midgard} />
         {data.decodeError ? (
           <Callout tone="warning" title="This transaction's body could not be decoded.">
             <p>
@@ -143,7 +156,9 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
                 row's own timestamp when there is no timeline to carry it, so
                 the page never shows two different rejection times. */}
             {data.rejection.rejectedAt && !data.admission ? (
-              <p className="mt-1.5">At: {formatTimestamp(data.rejection.rejectedAt)}</p>
+              <p className="mt-1.5">
+                At: <Timestamp exact iso={data.rejection.rejectedAt} />
+              </p>
             ) : null}
           </Callout>
         ) : data.decodeError ? null : (
@@ -170,8 +185,8 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
   return (
     <>
       <Breadcrumbs items={CRUMBS} />
-      <PageHeader entity="transaction" title="Midgard transaction" />
       <IdentityBar
+        title="Midgard transaction"
         overline="Transaction hash"
         value={tx.txId}
         badges={lifecycle}
@@ -189,7 +204,28 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
               "Pending"
             ),
           },
-          { label: "Time", value: <Timestamp exact iso={tx.timestamp} /> },
+          // The Cardano transaction the node recorded, beside the block it
+          // settles. It is evidence, not the verdict: the badge above says
+          // which state the settlement is in.
+          ...(hasRecordedSettlement(data.cardano) &&
+          "l1TxHash" in data.cardano &&
+          data.cardano.l1TxHash !== null
+            ? [
+                {
+                  label: "Settlement",
+                  value: (
+                    <L1TxLink
+                      hash={data.cardano.l1TxHash}
+                      destination="midgard"
+                      marker={false}
+                      head={6}
+                      tail={6}
+                    />
+                  ),
+                },
+              ]
+            : []),
+          { label: "Time", value: <Timestamp stacked iso={tx.timestamp} /> },
           { label: "Total output", value: <ValueCell value={totalOutputValue(tx)} /> },
           { label: "Fee", term: "fee", value: <AdaAmount lovelace={tx.fee} /> },
           {
@@ -202,61 +238,85 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
             ),
           },
         ]}
-      />
+      ></IdentityBar>
+      {tx.validity === "TxIsValid" ? null : (
+        <div className="mb-4">
+          <Callout tone="danger" title={statusOf(tx.validity).label}>
+            {statusOf(tx.validity).explain}
+          </Callout>
+        </div>
+      )}
 
-      <ActionSummary tx={tx} />
-
-      {journey}
       {!terminal ? <LifecyclePoller /> : null}
+      {journeyModel.outcome !== "complete" ? journey : null}
+      {/* The prominent notice is for a record that needs one. A settled record
+          does not, in either deployment shape: reading `matched` alone put a
+          full-width panel above every settled transaction the moment the
+          second source went away. */}
+      {hasRecordedSettlement(data.cardano) ? null : (
+        <CardanoAssociation association={data.cardano} context={data.midgard} />
+      )}
 
       <Tabs
+        aliases={{ utxo: "summary", datums: "scripts", events: "scripts" }}
         tabs={[
-          // Named from what the reference explorers call these sections rather
-          // than from our own vocabulary: "State" is what Etherscan, Blockscout
-          // and cexplorer all call "what this transaction changed", which is
-          // exactly what the ledger equation and per-address movement answer.
-          { id: "summary", label: "Overview", content: <OverviewTab tx={tx} /> },
           {
-            id: "utxo",
-            label: "State",
-            count: tx.inputs.length + tx.outputs.length,
-            content: <StateTab tx={tx} />,
+            id: "summary",
+            label: "Overview",
+            content: (
+              <>
+                {tx.mint && (tx.mint.assets.length > 0 || tx.mint.policyIds.length > 0) ? (
+                  <MintPanel mint={tx.mint} />
+                ) : null}
+                <StateTab tx={tx} proposed={data.inclusion === null} />
+              </>
+            ),
           },
-          ...(datums.length + tx.witnesses.scripts.length + tx.witnesses.redeemers.length > 0
+          ...(datums.length +
+            tx.witnesses.scripts.length +
+            tx.witnesses.redeemers.length +
+            tx.referenceInputs.length >
+          0
             ? [
                 {
-                  id: "datums",
-                  label: "Datums & redeemers",
-                  count:
-                    datums.length + tx.witnesses.scripts.length + tx.witnesses.redeemers.length,
+                  id: "scripts",
+                  label: "Scripts",
                   content: (
                     <div className="space-y-5">
+                      {tx.witnesses.redeemers.length > 0 ? <TransactionEvents tx={tx} /> : null}
+                      <WitnessPanel scripts={tx.witnesses.scripts} redeemers={[]} />
                       <DatumPanel datums={datums} />
-                      <WitnessPanel
-                        scripts={tx.witnesses.scripts}
-                        redeemers={tx.witnesses.redeemers}
-                      />
+                      <ReferenceInputs tx={tx} />
                     </div>
                   ),
                 },
               ]
             : []),
-          ...(tx.witnesses.redeemers.length > 0
-            ? [
-                {
-                  id: "events",
-                  label: "Events",
-                  count: tx.witnesses.redeemers.length,
-                  content: <TransactionEvents tx={tx} />,
-                },
-              ]
-            : []),
+          {
+            id: "details",
+            label: "Details",
+            content: (
+              <DetailsTab
+                tx={tx}
+                settlement={
+                  <SettlementDetails
+                    association={data.cardano}
+                    context={data.midgard}
+                    journey={journeyModel}
+                  />
+                }
+              />
+            ),
+          },
           {
             id: "raw",
             label: "Raw",
             content: (
               <div className="space-y-4">
-                <ApiExample path={`/api/transaction?tx_hash=${tx.txId}`} />
+                <ApiExample
+                  path={`/api/transaction?tx_hash=${tx.txId}`}
+                  note="Returns the full API response, including the explorer's source and settlement records."
+                />
                 {tx.cborHex === null ? null : (
                   <RawCbor
                     cborHex={tx.cborHex}
@@ -265,7 +325,16 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
                     txId={tx.txId}
                   />
                 )}
-                <RawData data={data} filename={`tx-${tx.txId}.json`} />
+                <RawData
+                  title="Transaction JSON"
+                  data={transactionForDisplay({
+                    tx,
+                    status,
+                    inclusion: data.inclusion,
+                    cardano: data.cardano,
+                  })}
+                  filename={`tx-${tx.txId}.json`}
+                />
               </div>
             ),
           },

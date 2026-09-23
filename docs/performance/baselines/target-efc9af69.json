@@ -1,0 +1,458 @@
+{
+  "mode": "baseline",
+  "hardware": "existing-minimum-2-core",
+  "profile": "target",
+  "environment": {
+    "postgresVersion": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "settings": {
+      "shared_buffers": "327688kB",
+      "work_mem": "4096kB",
+      "effective_cache_size": "1310728kB",
+      "max_parallel_workers_per_gather": "2",
+      "random_page_cost": "4",
+      "track_io_timing": "on",
+      "block_size": "8192"
+    },
+    "cpuCount": 2,
+    "cpuModel": "12th Gen Intel(R) Core(TM) i7-12700H",
+    "totalMemoryBytes": 12544897024,
+    "freeDiskBytes": 35040862208,
+    "nodeVersion": "v24.14.1",
+    "gitCommit": "efc9af69931d3eaca122e7fc27bc9ac39aec4bf2",
+    "gitDirty": false,
+    "buildHash": "e1dd97cccb0d8df42c6a55e50bdd44305f6d8912fed8737045bde3bff3cbbc7e",
+    "capturedAt": "2026-09-05T06:25:27.127Z"
+  },
+  "warnings": [],
+  "datasetChecksum": {
+    "digest": "af2e13744187e353822e0ca26bfb2e847489bfe4c47a95b6da67e2b2bfd76f8e",
+    "tables": {
+      "address_history": 99284,
+      "blocks": 37011,
+      "confirmed_ledger": 30481,
+      "da_payloads": 5000,
+      "deposits_utxos": 3741,
+      "forced_transaction_utxos": 276,
+      "immutable": 37016,
+      "mempool": 200,
+      "mempool_ledger": 30479,
+      "mempool_tx_deltas": 37011,
+      "pending_block_finalization_deposits": 3741,
+      "pending_block_finalization_event_to_step": 42715,
+      "pending_block_finalization_forced_transactions": 276,
+      "pending_block_finalization_transition_trace": 42715,
+      "pending_block_finalization_txs": 37011,
+      "pending_block_finalization_utxos": 82432,
+      "pending_block_finalization_withdrawals": 1687,
+      "pending_block_finalizations": 5000,
+      "processed_mempool": 80,
+      "tx_admissions": 37011,
+      "tx_rejections": 2958,
+      "withdrawal_utxos": 1687
+    },
+    "rows": 537812
+  },
+  "indexChecksum": {
+    "digest": "8d89c4a60216cece7a36818b473d7a0b9092b536c974b24b875062ee982bbea5",
+    "tables": {
+      "index_binding": 0,
+      "l1_block_header": 9,
+      "l1_event": 297,
+      "l1_protocol_params": 9,
+      "l1_redeemer": 312,
+      "l1_tx": 281,
+      "l1_tx_asset": 1714,
+      "l1_tx_io": 2767,
+      "sync_cursor": 3
+    },
+    "rows": 5392
+  },
+  "iterations": 1000,
+  "serverConfig": {
+    "apiRateLimitMax": 1000000
+  },
+  "scope": "backend-only",
+  "build": {
+    "commit": "efc9af69931d3eaca122e7fc27bc9ac39aec4bf2",
+    "builtAt": "2026-09-05T06:25:27.075Z"
+  },
+  "peakRssBytes": 773140480,
+  "coverage": {
+    "measured": [
+      "blocks-list-page-1",
+      "blocks-list-page-deep",
+      "transactions-list-page-1",
+      "transactions-list-page-deep",
+      "block-detail",
+      "transaction-detail",
+      "search-prefix",
+      "metrics",
+      "metrics-cached",
+      "asset-roster",
+      "address-history",
+      "blocks-list-saturation"
+    ],
+    "excluded": [
+      {
+        "workload": "overview-aggregate",
+        "reason": "origin is frontend: not served by the backend under test"
+      }
+    ]
+  },
+  "results": [
+    {
+      "workload": "blocks-list-page-1",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 35.927954000013415,
+        "p95Ms": 40.23077399999602,
+        "p99Ms": 48.297890999994706,
+        "maxMs": 158.737924999994,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 27.222677939318373,
+        "wireBytes": 9294,
+        "uncompressedBytes": 9294,
+        "encodedBytes": 9294
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 4586.012,
+        "tempBytes": 0,
+        "execMs": 29.721744413999957
+      }
+    },
+    {
+      "workload": "blocks-list-page-deep",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 36.5106550000055,
+        "p95Ms": 40.45685700001195,
+        "p99Ms": 49.79456399999617,
+        "maxMs": 148.62938299999223,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 26.805257960521413,
+        "wireBytes": 9295,
+        "uncompressedBytes": 9295,
+        "encodedBytes": 9295
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 4586,
+        "tempBytes": 0,
+        "execMs": 30.259149582000006
+      }
+    },
+    {
+      "workload": "transactions-list-page-1",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 58.25569200000609,
+        "p95Ms": 65.18025399997714,
+        "p99Ms": 73.49343700001191,
+        "maxMs": 904.5558730000048,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 16.662967446791495,
+        "wireBytes": 68261,
+        "uncompressedBytes": 68261,
+        "encodedBytes": 68261
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 4940,
+        "tempBytes": 0,
+        "execMs": 47.35749882399999
+      }
+    },
+    {
+      "workload": "transactions-list-page-deep",
+      "verdict": "FAIL",
+      "breaches": [
+        "temp bytes 3538.2 KB over 0.0 KB"
+      ],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 61.72308900000644,
+        "p95Ms": 75.01983800000744,
+        "p99Ms": 93.69632800002,
+        "maxMs": 164.78764799999772,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 15.533844880544507,
+        "wireBytes": 49946,
+        "uncompressedBytes": 49946,
+        "encodedBytes": 49946
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 7648,
+        "tempBytes": 3623067.648,
+        "execMs": 54.065831105
+      }
+    },
+    {
+      "workload": "block-detail",
+      "verdict": "FAIL",
+      "breaches": [
+        "route statements 10 over 8"
+      ],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 24.849849999998696,
+        "p95Ms": 33.69400400001905,
+        "p99Ms": 46.647056999994675,
+        "maxMs": 86.80284100002609,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 38.28011914627523,
+        "wireBytes": 7476,
+        "uncompressedBytes": 31301,
+        "encodedBytes": 31301
+      },
+      "dbWork": {
+        "statements": 19.006,
+        "routeStatements": 10.006,
+        "transactionControl": 6,
+        "metadataStatements": 3,
+        "sharedBlocks": 2674.31,
+        "tempBytes": 0,
+        "execMs": 12.557751650000002
+      }
+    },
+    {
+      "workload": "transaction-detail",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 15.464151000021957,
+        "p95Ms": 20.200026999984402,
+        "p99Ms": 26.046410000009928,
+        "maxMs": 65.14962799998466,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 61.45549356639052,
+        "wireBytes": 5071,
+        "uncompressedBytes": 4367,
+        "encodedBytes": 4367
+      },
+      "dbWork": {
+        "statements": 16.003,
+        "routeStatements": 7.003,
+        "transactionControl": 6,
+        "metadataStatements": 3,
+        "sharedBlocks": 1083.787,
+        "tempBytes": 0,
+        "execMs": 5.373892118
+      }
+    },
+    {
+      "workload": "search-prefix",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 21.229699999967124,
+        "p95Ms": 24.899047999992035,
+        "p99Ms": 29.267376000003424,
+        "maxMs": 37.20037900004536,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 46.02164529811974,
+        "wireBytes": 145,
+        "uncompressedBytes": 145,
+        "encodedBytes": 145
+      },
+      "dbWork": {
+        "statements": 9,
+        "routeStatements": 6,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 5384.006,
+        "tempBytes": 0,
+        "execMs": 14.118333040999994
+      }
+    },
+    {
+      "workload": "metrics",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 58.3154499999946,
+        "p95Ms": 66.38042200001655,
+        "p99Ms": 72.14443400001619,
+        "maxMs": 109.3271470000036,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 16.84698714237551,
+        "wireBytes": 3181,
+        "uncompressedBytes": 3181,
+        "encodedBytes": 3181
+      },
+      "dbWork": {
+        "statements": 12,
+        "routeStatements": 9,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 12550.008,
+        "tempBytes": 15278080,
+        "execMs": 46.816607883999964
+      }
+    },
+    {
+      "workload": "metrics-cached",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 0.5653959999908693,
+        "p95Ms": 0.8108510000165552,
+        "p99Ms": 1.6015710000065155,
+        "maxMs": 10.318175000022165,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 1497.7404368853915,
+        "wireBytes": 3181,
+        "uncompressedBytes": 3181,
+        "encodedBytes": 3181
+      },
+      "dbWork": {
+        "statements": 0,
+        "routeStatements": 0,
+        "transactionControl": 0,
+        "metadataStatements": 0,
+        "sharedBlocks": 0,
+        "tempBytes": 0,
+        "execMs": 0
+      }
+    },
+    {
+      "workload": "asset-roster",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 218.16256799997063,
+        "p95Ms": 247.13763299997663,
+        "p99Ms": 269.73714400001336,
+        "maxMs": 306.6577539999853,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 4.521120421947263,
+        "wireBytes": 18837,
+        "uncompressedBytes": 18837,
+        "encodedBytes": 18837
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 2616,
+        "tempBytes": 14745600,
+        "execMs": 73.86580348499999
+      }
+    },
+    {
+      "workload": "address-history",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 206.04672899993602,
+        "p95Ms": 236.66756500001065,
+        "p99Ms": 278.99355600005947,
+        "maxMs": 515.935354999965,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 4.770471605458447,
+        "wireBytes": 87595,
+        "uncompressedBytes": 1865290,
+        "encodedBytes": 1865290
+      },
+      "dbWork": {
+        "statements": 6,
+        "routeStatements": 3,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 21764.353,
+        "tempBytes": 99021479.936,
+        "execMs": 185.06056984400013
+      }
+    },
+    {
+      "workload": "blocks-list-saturation",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 659.7805749999825,
+        "p95Ms": 719.0253879999509,
+        "p99Ms": 741.638842000044,
+        "maxMs": 775.4380420000525,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 48.542992794422396,
+        "wireBytes": 9294,
+        "uncompressedBytes": 9294,
+        "encodedBytes": 9294
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 4586.084,
+        "tempBytes": 0,
+        "execMs": 141.79879001000012
+      }
+    }
+  ],
+  "startedAt": "2026-09-05T06:25:23.675Z",
+  "finishedAt": "2026-09-05T06:38:50.626Z"
+}

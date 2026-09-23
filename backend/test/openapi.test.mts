@@ -16,6 +16,12 @@ import { openApiDocument } from "../src/server/catalogue.js";
 
 describe("OpenAPI document", () => {
   const document = openApiDocument();
+  /** Every operation, whatever its method: a check that read only `get` would
+   * pass vacuously on the one write. */
+  const operations = () =>
+    Object.entries(document.paths).flatMap(([path, item]) =>
+      [item.get, item.post].filter((op) => op !== undefined).map((op) => ({ path, op: op! })),
+    );
 
   it("carries the envelope a generator or client needs", () => {
     expect(document.openapi).toBe("3.1.0");
@@ -29,15 +35,16 @@ describe("OpenAPI document", () => {
    * silently drops the group. */
   it("declares every tag its operations use", () => {
     const declared = new Set(document.tags.map((tag) => tag.name));
-    for (const [path, item] of Object.entries(document.paths)) {
-      for (const tag of item.get?.tags ?? []) {
+    for (const { path, op } of operations()) {
+      for (const tag of op.tags ?? []) {
         expect(declared.has(tag), `${path} uses undeclared tag ${tag}`).toBe(true);
       }
     }
   });
 
   it("gives every operation a unique operationId", () => {
-    const ids = Object.values(document.paths).map((item) => item.get?.operationId);
+    const ids = operations().map(({ op }) => op.operationId);
+    expect(ids.length).toBe(Object.keys(document.paths).length);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -49,8 +56,8 @@ describe("OpenAPI document", () => {
   });
 
   it("documents the retry contract wherever it answers 429", () => {
-    for (const [path, item] of Object.entries(document.paths)) {
-      const limited = item.get?.responses?.["429"] as
+    for (const { path, op } of operations()) {
+      const limited = op.responses?.["429"] as
         | { headers?: Record<string, unknown> }
         | undefined;
       if (limited === undefined) continue;
@@ -61,8 +68,8 @@ describe("OpenAPI document", () => {
   });
 
   it("marks path parameters required and query parameters optional", () => {
-    for (const [path, item] of Object.entries(document.paths)) {
-      for (const parameter of item.get?.parameters ?? []) {
+    for (const { path, op } of operations()) {
+      for (const parameter of op.parameters ?? []) {
         expect(parameter.required, `${path} ${parameter.name}`).toBe(
           parameter.in === "path",
         );

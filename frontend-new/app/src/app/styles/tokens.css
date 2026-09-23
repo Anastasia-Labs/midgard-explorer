@@ -1,0 +1,86 @@
+/* What every rule is written in terms of.
+ *
+ * Tailwind reads its palette from here; the values themselves live in the ui
+ * package's tokens.css, so one change reaches both. The type scale is tokens
+ * rather than literals at the call site, which is what makes an arbitrary font
+ * size something the lint can find. */
+
+/* Tailwind reads its palette from these; the values live in tokens.css so the
+ * theme can switch without regenerating utilities. */
+@theme inline {
+  --color-bg: var(--mg-bg);
+  --color-surface: var(--mg-surface);
+  --color-surface-2: var(--mg-surface-2);
+  --color-surface-3: var(--mg-surface-3);
+  --color-border: var(--mg-border);
+  --color-border-strong: var(--mg-border-strong);
+  --color-text: var(--mg-text);
+  --color-text-2: var(--mg-text-2);
+  --color-text-3: var(--mg-text-3);
+  --color-page-title: var(--mg-page-title);
+  --color-page-copy: var(--mg-page-copy);
+  --color-accent: var(--mg-accent);
+  --color-accent-hover: var(--mg-accent-hover);
+  --color-on-accent: var(--mg-on-accent);
+  --color-link: var(--mg-link);
+  --color-link-hover: var(--mg-link-hover);
+  --color-info: var(--mg-info);
+  --color-graph-script: var(--mg-graph-script);
+  --color-graph-key: var(--mg-graph-key);
+  --color-success: var(--mg-success);
+  --color-warning: var(--mg-warning);
+  --color-danger: var(--mg-danger);
+
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-platypi);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* The type scale, as tokens rather than as literals at the call site.
+ *
+ * The colour system has been tokenised since the beginning and the type system
+ * never was: the block above names twenty colours and zero sizes, so a writer
+ * reaching for a size had nowhere to reach and typed `text-[11px]`. That is the
+ * whole mechanism behind the sixteen distinct arbitrary sizes now in the tree.
+ * Removing the instances without naming the steps just resets the counter.
+ *
+ * This is deliberately not a parallel scale. Tailwind already ships xs/sm/base/
+ * lg/xl and the app already uses them 100 times; inventing `--text-section` at
+ * 20px next to `text-xl` at 20px would be a second vocabulary for one size.
+ * Only two gaps are real, and only they are filled:
+ *
+ *   --text-body   15px is the body size set below, and Tailwind has no step
+ *                 between sm (14) and base (16). Hence 23 hand-typed
+ *                 `text-[15px]`, every one of them restating the default.
+ *   --text-title  28px sits between 2xl (24) and 3xl (30). Page titles land
+ *                 here and had no name.
+ *
+ * Below body the sizes are role names, not measurements, because the roles are
+ * what a writer chooses between: see the `mg-caption` / `mg-micro` note further
+ * down. `.mg-caption`, `.mg-micro` and `.mg-overline` all read their size from
+ * these tokens, so a tier's size is defined exactly once and the utility and
+ * the `text-*` class can no longer drift apart.
+ *
+ * Everything above 15px is Tailwind's, unchanged: lg 18, xl 20, 2xl 24, 3xl 30.
+ * The overview's metric figures are `text-2xl sm:text-3xl` rather than a named
+ * step, because 26px was one component's private size and nothing else in the
+ * app ever reached for it.
+ *
+ * There is no floor token, deliberately. A minimum is a property of what got
+ * rendered, not of what was declared, and a size can still arrive by
+ * inheritance or from a UA default that no token here governs. That claim is
+ * held by `e2e/type-scale.spec.ts`, which measures it; this block only makes
+ * the sizes nameable, and `scripts/type-scale-check.mjs` keeps them named. */
+@theme {
+  --text-title: 28px;
+  --text-title--line-height: 1.2;
+
+  --text-body: 15px;
+  --text-body--line-height: 1.5;
+
+  --text-caption: 13px;
+  --text-caption--line-height: 1.5;
+
+  --text-micro: 12px;
+  --text-micro--line-height: 1.45;
+}

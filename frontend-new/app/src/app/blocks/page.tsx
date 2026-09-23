@@ -1,18 +1,19 @@
+import Link from "next/link";
 import type { Metadata } from "next";
-import { Breadcrumbs } from "../../components/ui/breadcrumbs";
-import { Identifier } from "../../components/ui/identifier";
-import { StatusCell } from "../../components/ui/status";
-import { ListTools } from "../../components/ui/listtools";
-import { PageError } from "../../components/ui/pageerror";
-import { Count, PageHeader } from "../../components/ui/primitives";
-import { DataTable, Pagination } from "../../components/ui/table";
-import { Timestamp } from "../../components/ui/timestamp";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { StatusCell } from "../../components/ui/domain/status";
+import { ListTools } from "../../components/ui/base/listtools";
+import { Count, PageHeader } from "../../components/ui/base/layout";
+import { DataTable, Pagination } from "../../components/ui/base/table";
+import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { legendFor } from "../../lib/status-registry";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { ListError } from "../../components/ui/base/listerror";
 
 export const metadata: Metadata = {
   title: "Blocks",
@@ -37,11 +38,7 @@ export default async function BlocksPage({
     data = await api.blocksPage(page, status, await viewerInit());
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="block" title="Blocks" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError crumbs={CRUMBS} entity="block" title="Blocks" message={listErrorMessage(e)} />
     );
   }
 
@@ -51,7 +48,6 @@ export default async function BlocksPage({
       <PageHeader
         entity="block"
         title="Blocks"
-        subtitle="Blocks produced on Midgard, newest first. Open a block to see whether it has settled on Cardano, and what it carries."
         meta={
           <span>
             <strong className="font-semibold text-text tabular-nums">
@@ -85,17 +81,23 @@ export default async function BlocksPage({
           caption="Midgard blocks, newest first"
           columns={[
             {
+              header: "Block",
+              cell: (r) => <BlockRef height={r.height} hash={r.header_hash} />,
+            },
+            {
               header: "Header hash",
-              cell: (r) => <Identifier value={r.header_hash} href={`/block/${r.header_hash}`} />,
-            },
-            {
-              header: "Height",
+              // A block with no number is already named by its hash in the
+              // first column.
               cell: (r) =>
-                r.height === null ? <span className="text-text-3">—</span> : `#${r.height}`,
-              hideBelow: "lg",
+                r.height === null ? (
+                  <span className="text-text-3">—</span>
+                ) : (
+                  <Identifier value={r.header_hash} href={`/block/${r.header_hash}`} />
+                ),
+              hideBelow: "md",
             },
             {
-              header: "L2 txs",
+              header: "Transactions",
               cell: (r) => <Count value={r.header_l2_transaction_count} />,
               align: "right",
             },
@@ -127,27 +129,14 @@ export default async function BlocksPage({
               hideBelow: "sm",
             },
             {
-              header: "Time range",
-              cell: (r) => (
-                <span className="inline-flex items-center gap-1">
-                  <Timestamp iso={r.block_start_time} />
-                  <span className="text-text-3">→</span>
-                  <Timestamp iso={r.block_end_time} />
-                </span>
-              ),
+              header: "Time",
+              cell: (r) => <Timestamp iso={r.block_end_time} />,
               align: "right",
               hideBelow: "md",
             },
           ]}
           mobileRow={(r) => ({
-            primary: (
-              <Identifier
-                value={r.header_hash}
-                href={`/block/${r.header_hash}`}
-                head={10}
-                tail={6}
-              />
-            ),
+            primary: <BlockRef height={r.height} hash={r.header_hash} />,
             status:
               r.finalization_status === null ? null : <StatusCell status={r.finalization_status} />,
             meta: <Timestamp iso={r.block_end_time} />,
@@ -159,25 +148,23 @@ export default async function BlocksPage({
             ),
             details: [
               {
-                label: "Height",
-                value: r.height === null ? "Not assigned" : `#${r.height}`,
-              },
-              {
-                label: "Time range",
-                value: (
-                  <span className="inline-flex items-center gap-1">
-                    <Timestamp iso={r.block_start_time} />
-                    <span>→</span>
-                    <Timestamp iso={r.block_end_time} />
-                  </span>
-                ),
+                label: "Header hash",
+                value: <Identifier value={r.header_hash} head={8} tail={6} />,
               },
             ],
           })}
           rows={data.rows}
           keyOf={(r) => r.header_hash}
-          emptyTitle="No blocks yet"
-          emptyHint="Blocks appear once the node's operator starts committing."
+          emptyTitle={status ? "No matching blocks" : "No blocks yet"}
+          {...(status
+            ? {
+                emptyAction: (
+                  <Link href="/blocks" className="text-link hover:text-link-hover hover:underline">
+                    Clear filter
+                  </Link>
+                ),
+              }
+            : { emptyHint: "Blocks appear once the node's operator starts committing." })}
         />
         <Pagination
           page={page}
@@ -190,5 +177,18 @@ export default async function BlocksPage({
         />
       </section>
     </>
+  );
+}
+
+/** A block by its number, or by its header hash when it has none. */
+function BlockRef({ height, hash }: { height: number | null; hash: string }) {
+  if (height === null) return <Identifier value={hash} href={`/block/${hash}`} head={8} tail={6} />;
+  return (
+    <Link
+      href={`/block/${hash}`}
+      className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
+    >
+      Block #{height}
+    </Link>
   );
 }

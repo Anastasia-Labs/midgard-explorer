@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Icon } from "../ui/icons";
+import { Icon } from "../ui/base/icons";
 import { cn } from "../../lib/format";
 import { BRIDGE, TOP } from "../../lib/nav";
 

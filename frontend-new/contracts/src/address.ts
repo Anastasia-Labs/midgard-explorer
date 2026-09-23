@@ -44,8 +44,13 @@ export type AddressUtxo = Schema.Schema.Type<typeof AddressUtxo>;
 export const AddressResponse = Schema.Struct({
   balance: ValueView,
   undecodedOutputs: Schema.Number,
+  /** Every UTxO at the address. `utxos` carries one page of them. */
   utxoCount: Schema.Number,
   utxos: Schema.Array(AddressUtxo),
+  /** Optional: a backend from before UTxO paging sends none of these three. */
+  utxoLimit: Schema.optional(Schema.Number),
+  utxoCursor: Schema.optional(Schema.NullOr(HexString)),
+  hasMoreUtxos: Schema.optional(Schema.Boolean),
   txCount: Schema.Number,
   historyPage: Schema.Number,
   hasNextPage: Schema.Boolean,

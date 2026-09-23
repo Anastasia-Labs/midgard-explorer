@@ -60,24 +60,64 @@ test.describe("transaction concepts keep one semantic glyph", () => {
     await settle(page);
     await expect(page.locator('[data-semantic-icon="input"]').first()).toBeVisible();
     await expect(page.locator('[data-semantic-icon="output"]').first()).toBeVisible();
-    await page.getByText("Credentials").first().click();
+    await page.getByRole("button", { name: "Payment credential", exact: true }).first().click();
     await expect(page.locator('[data-semantic-icon="paymentCredential"]').first()).toBeVisible();
-    await expect(page.locator('[data-semantic-icon="stakeCredential"]').first()).toBeVisible();
+    // The stake glyph is conditional on the address carrying a stake credential.
+    // Every address this fixture builds is a 29-byte enterprise address, which
+    // has none, so the glyph must be absent rather than shown as an empty slot.
+    await expect(page.locator('[data-semantic-icon="stakeCredential"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Stake credential", exact: true })).toHaveCount(
+      0,
+    );
 
-    await page.getByRole("tab", { name: "Overview" }).click();
-    for (const kind of ["requiredSigner", "requiredObserver", "script", "metadata"]) {
-      await expect(page.locator(`[data-semantic-icon="${kind}"]:visible`).first()).toBeVisible();
-    }
+    // Evidence rows render only when the transaction declares them: an empty
+    // optional declaration is not shown as "Not declared".
+    await page.getByRole("tab", { name: "Details" }).click();
+    const details = page.locator("#panel-details");
+    await expect(details.getByText("Required signers")).toBeVisible();
+    await expect(details.getByText("Not declared")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Protocol availability" })).toHaveCount(0);
   });
 
-  test("keeps Cardano detail focused on Midgard actions", async ({ page }) => {
-    const rows = await page.request
-      .get(`${FIXTURE}/api/l1/transactions/1`)
-      .then(async (response) => (await response.json()).rows as Array<{ txHash: string }>);
-    await page.goto(`/l1/transaction/${rows[0]!.txHash}`);
+  test("an address with a stake credential gets the glyph, and it opens and dismisses", async ({
+    page,
+  }) => {
+    // A dedicated transaction rather than the shared address pool: the pool is
+    // load-bearing for other specs, and this one is discovered from the fixture
+    // so the case cannot drift out from under the assertion.
+    const { txId } = await page.request.get(`${FIXTURE}/__payment-tx`).then((r) => r.json());
+    await page.goto(`/transaction/${txId}?tab=utxo`);
     await settle(page);
-    await expect(page.getByRole("heading", { name: "Midgard activity" })).toBeVisible();
+
+    await expect(page.locator('[data-semantic-icon="stakeCredential"]').first()).toBeVisible();
+    const trigger = page.getByRole("button", { name: "Stake credential", exact: true }).first();
+    const panel = page.getByRole("dialog").first();
+
+    // Hover reveals what the glyph stands for.
+    await trigger.hover();
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText(/Stake credential/);
+
+    // A pointer press outside dismisses it. The suite pins the browser clock,
+    // so the hide delay never elapses on its own and the dismissal has to be
+    // the one a reader performs.
+    await page.mouse.click(2, 2);
+    await expect(panel).toBeHidden();
+
+    // Focus reaches the same content, so it is not hover-only, and Escape is
+    // the keyboard reader's way out.
+    await trigger.focus();
+    await expect(page.getByRole("dialog").first()).toBeVisible();
+    await trigger.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
+  test("keeps Cardano detail focused on what Midgard recorded", async ({ page }) => {
+    const rows = await page.request
+      .get(`${FIXTURE}/api/l1/activity/1`)
+      .then(async (response) => (await response.json()).rows as Array<{ l1TxHash: string }>);
+    await page.goto(`/l1/transaction/${rows[0]!.l1TxHash}`);
+    await settle(page);
     await expect(page.getByRole("link", { name: "View on CExplorer" })).toBeVisible();
     await expect(page.getByRole("tab")).toHaveCount(0);
   });

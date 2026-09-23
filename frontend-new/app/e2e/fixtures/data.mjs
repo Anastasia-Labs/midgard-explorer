@@ -68,6 +68,17 @@ export const ADDRESSES = [
   bech32Encode("addr_test", addrBytes(3)),
 ];
 
+/**
+ * An address holding more UTxOs than one page, for reviewing the paging
+ * controls. Kept out of ADDRESSES because transactions pick their addresses
+ * with `n % ADDRESSES.length`, so a fourth entry would reshuffle which address
+ * appears where across the whole fixture.
+ */
+export const PAGED_ADDRESS = bech32Encode("addr_test", addrBytes(4));
+
+/** Mirrors UTXO_PAGE_LIMIT in the backend. */
+export const UTXO_PAGE_LIMIT = 50;
+
 const value = (lovelace, assets = {}) => ({ lovelace: String(lovelace), assets });
 
 const sumValues = (values) => {
@@ -355,6 +366,9 @@ export const blockRows = (height) =>
     };
   });
 
+/** A header with nothing in one of its trees commits to the empty tree's root. */
+const EMPTY_TREE_ROOT = hex(0xe3b0, 64);
+
 export const blockDa = (height) =>
   height === 9
     ? null
@@ -363,7 +377,7 @@ export const blockDa = (height) =>
         transactions_root: hex(height * 11 + 2, 64),
         deposits_root: hex(height * 11 + 3, 64),
         withdrawals_root: hex(height * 11 + 4, 64),
-        forced_transactions_root: hex(height * 11 + 5, 64),
+        forced_transactions_root: height % 4 === 0 ? hex(height * 11 + 5, 64) : EMPTY_TREE_ROOT,
         transition_trace_root: hex(height * 11 + 6, 64),
         event_to_step_root: hex(height * 11 + 7, 64),
         l2_transaction_count: txCountForBlock(height),
@@ -426,6 +440,31 @@ export const blockFinalization = (height) => {
     createdAt: new Date(createdMs).toISOString(),
     updatedAt: new Date(updatedMs).toISOString(),
     observedConfirmedAt: observed,
+  };
+};
+
+/** The twelve journal roots. A header's `base` roots are the ones the header
+ * before it committed to, so each base here is the previous height's expected
+ * root. A block and its predecessor that both carry no forced transactions
+ * commit to the same empty-tree root, which gives the page its "same" case.
+ * No journal row, no commitments. */
+export const blockCommitments = (height) => {
+  if (blockFinalization(height) === null) return null;
+  const root = (h, k) => hex(h * 11 + k, 64);
+  const forced = (h) => (h % 4 === 0 ? root(h, 5) : EMPTY_TREE_ROOT);
+  const pair = (base, expected) => ({
+    base,
+    expected,
+    changed: base === null ? null : base !== expected,
+  });
+  return {
+    utxos: pair(root(height - 1, 1), root(height, 1)),
+    transactions: pair(root(height - 1, 2), root(height, 2)),
+    deposits: pair(root(height - 1, 3), root(height, 3)),
+    withdrawals: pair(root(height - 1, 4), root(height, 4)),
+    forced_transactions: pair(forced(height - 1), forced(height)),
+    transition_trace: pair(null, root(height, 6)),
+    event_to_step: pair(null, root(height, 7)),
   };
 };
 
@@ -656,14 +695,6 @@ export const FORCED = Array.from({ length: 28 }, (_, i) => ({
   projected_header_hash: i % 4 === 0 ? null : blockHash(40 - (i % 40)),
 }));
 
-const l1Asset = (n, quantity, kind = "output") => ({
-  kind,
-  policyId: hex(700 + n, 56),
-  assetName: utf8Hex(n % 2 === 0 ? "MIDGARD" : `TOKEN${n}`),
-  fingerprint: `asset1fixture${String(n).padStart(4, "0")}`,
-  quantity: String(quantity),
-});
-
 /** Mirrors validators derived from the fixture deployment manifest. Addresses
  * were produced by the backend's own `scriptHashToAddress` encoder. */
 export const L1_VALIDATORS = [
@@ -681,222 +712,7 @@ export const L1_VALIDATORS = [
   },
 ];
 
-const l1Io = (n, kind, position, txHash, quantity = "1") => ({
-  kind,
-  position,
-  sourceTxHash: txHash,
-  sourceIndex: position,
-  address: ADDRESSES[n % ADDRESSES.length],
-  paymentCred: hex(900 + n, 56),
-  stakeAddr: n % 3 === 0 ? `stake_test1fixture${n}` : null,
-  lovelace: String(3_000_000 + n * 17_000),
-  datumHash: n % 2 === 0 ? hex(1000 + n, 64) : null,
-  inlineDatum: n % 2 === 0 ? { constructor: 0, fields: [{ int: String(n) }] } : null,
-  refScriptHash: n % 4 === 0 ? hex(1100 + n, 56) : null,
-  assets: n % 3 === 0 ? [l1Asset(n, quantity)] : [],
-});
-
-/** Cardano-side transactions are deliberately richer than the L2 fixtures.
- * The first record exercises every detail section; the rest make paging and
- * list navigation representative without repeating the large payload. */
-export const L1_TXS = Array.from({ length: 31 }, (_, i) => {
-  const n = i + 1;
-  const hash = l1TxHash(n);
-  const inputHash = l1TxHash(n + 100);
-  const rich = i === 0;
-  const events = rich
-    ? [
-        {
-          validator: "deposit",
-          eventType: "deposit",
-          outputIndex: 0,
-          lovelace: "12500000",
-          datum: { constructor: 0, fields: [{ bytes: hex(20, 56) }] },
-          deployment: "fixture-deployment",
-          decoded: {
-            l2PaymentCredential: hex(20, 56),
-            inclusionTime: "1785238320000",
-          },
-        },
-        {
-          validator: "stateQueue",
-          eventType: "blockCommit",
-          outputIndex: 1,
-          lovelace: "4000000",
-          datum: { constructor: 1, fields: [] },
-          deployment: "fixture-deployment",
-          decoded: { blockHeight: 8401, transactionCount: 18 },
-        },
-      ]
-    : n % 3 === 0
-      ? [
-          {
-            validator: "deposit",
-            eventType: "deposit",
-            outputIndex: 0,
-            lovelace: String(4_000_000 + n * 1000),
-            datum: null,
-            deployment: "fixture-deployment",
-            decoded: null,
-          },
-        ]
-      : [];
-  return {
-    txHash: hash,
-    blockHeight: 5_120_000 - i,
-    blockHash: hex(1200 + n, 64),
-    slot: 141_200_000 - i * 20,
-    epoch: 318,
-    txTime: new Date(Date.UTC(2026, 6, 28, 12, 52, 0) - i * 79_000).toISOString(),
-    fee: String(193_000 + n * 1_111),
-    size: 744 + n * 7,
-    totalOutput: String(22_000_000 + n * 91_000),
-    blockIndex: n % 9,
-    certDeposit: rich ? "2000000" : "0",
-    invalidBefore: rich ? "141199000" : null,
-    invalidAfter: rich ? "141205000" : null,
-    metadata: rich ? { 674: { msg: ["Midgard fixture settlement"], source: "e2e" } } : null,
-    actions: rich
-      ? [
-          {
-            kind: "deposit",
-            family: "deposit",
-            outputIndex: 0,
-            lovelace: "12500000",
-            operation: null,
-            // The rich transaction carries a deposit-validator redeemer, so a
-            // verdict exists for it.
-            validContract: true,
-            operator: null,
-            startTime: null,
-            userEvent: {
-              kind: "deposit",
-              l2PaymentCredential: hex(20, 56),
-              l2StakeCredential: hex(21, 56),
-              l2NetworkId: 0,
-              inclusionTime: "1785238320000",
-            },
-            headerHash: null,
-          },
-          {
-            kind: "block_commitment",
-            family: "stateQueue",
-            outputIndex: 1,
-            lovelace: null,
-            operation: null,
-            // Paying to a script address runs no script, so nothing checked
-            // this one and null is the honest answer.
-            validContract: null,
-            operator: null,
-            startTime: null,
-            userEvent: null,
-            headerHash: BLOCKS[0].header_hash,
-          },
-        ]
-      : n % 3 === 0
-        ? [
-            {
-              kind: "deposit",
-              family: "deposit",
-              outputIndex: 0,
-              lovelace: String(4_000_000 + n * 1000),
-              operation: null,
-              // One deposit in the list failed its script, so the verdict has
-              // something to report and the row that reports it is exercised.
-              // The rest ran no script at all, which is null, not success.
-              validContract: n === 3 ? false : null,
-              operator: null,
-              startTime: null,
-              userEvent: {
-                kind: "deposit",
-                l2PaymentCredential: hex(30 + n, 56),
-                l2StakeCredential: null,
-                l2NetworkId: 0,
-                inclusionTime: String(1785238320000 + n * 1000),
-              },
-              headerHash: null,
-            },
-            // A withdrawal proves the other half of the decoder: an owner and
-            // the Midgard UTxO leaving, where a deposit proves a destination.
-            ...(n === 6
-              ? [
-                  {
-                    kind: "withdrawal",
-                    family: "withdrawal",
-                    outputIndex: 1,
-                    lovelace: null,
-                    operation: null,
-                    validContract: null,
-                    operator: null,
-                    startTime: null,
-                    userEvent: {
-                      kind: "withdrawal",
-                      l2Owner: hex(60, 56),
-                      l2OutRef: { txHash: txId(46), index: 1 },
-                      inclusionTime: "1785238326000",
-                    },
-                    headerHash: null,
-                  },
-                ]
-              : []),
-          ]
-        : [],
-    events,
-    inputs: [l1Io(n, "input", 0, inputHash, "8")],
-    outputs: [
-      {
-        ...l1Io(n + 10, "output", 0, hash, "8"),
-        ...(rich
-          ? {
-              address: L1_VALIDATORS[0].address,
-              paymentCred: L1_VALIDATORS[0].scriptHash,
-              // One output has a spender this index holds. The rest have none,
-              // which is the ordinary case: the index covers Midgard-related
-              // transactions, so most spenders are outside it.
-              spentBy: l1TxHash(2),
-            }
-          : {}),
-      },
-      ...(rich
-        ? [
-            {
-              ...l1Io(n + 11, "output", 1, hash),
-              address: L1_VALIDATORS[1].address,
-              paymentCred: L1_VALIDATORS[1].scriptHash,
-            },
-          ]
-        : []),
-    ],
-    referenceInputs: rich ? [l1Io(n + 20, "reference", 0, l1TxHash(222))] : [],
-    collateral: rich ? [l1Io(n + 30, "collateral", 0, l1TxHash(223))] : [],
-    collateralOutput: rich ? l1Io(n + 31, "collateral_output", 0, hash) : null,
-    mints: rich ? [l1Asset(41, "2500000", "mint"), l1Asset(42, "-19", "mint")] : [],
-    redeemers: rich
-      ? [
-          {
-            scriptHash: L1_VALIDATORS[0].scriptHash,
-            address: L1_VALIDATORS[0].address,
-            purpose: "spend",
-            memUnits: "3210456",
-            stepUnits: "899321001",
-            fee: "77421",
-            datumHash: hex(1501, 64),
-            datum: { constructor: 0, fields: [{ bytes: hex(1502, 16) }] },
-            validContract: true,
-            scriptSize: 4128,
-          },
-        ]
-      : [],
-    // Preprod's real values, read from Koios on 2026-08-18. The fixture
-    // redeemer above lands at 18.3% of memory and 9.0% of steps against them,
-    // which is what the budget bars are asserted on.
-    protocolParams: rich
-      ? { epochNo: 318, maxTxExMem: "17500000", maxTxExSteps: "10000000000" }
-      : null,
-  };
-});
-
-export const addressResponse = (address, page = 1) => {
+export const addressResponse = (address, page = 1, utxoCursor = null) => {
   const history = TXS.filter((t) => t.transaction).slice(0, 9);
   const undecodedOutputs = address === ADDRESSES[1] ? 3 : 0;
   const rows = history.map((t, i) => {
@@ -934,7 +750,8 @@ export const addressResponse = (address, page = 1) => {
   // The UTxOs behind the balance, including one the codec cannot read: an
   // address holding six entries of which one is unreadable must show six rows
   // and a warning, not five rows and a quietly smaller total.
-  const utxos = Array.from({ length: 6 }, (_, i) => {
+  const utxoTotal = address === PAGED_ADDRESS ? 60 : 6;
+  const utxos = Array.from({ length: utxoTotal }, (_, i) => {
     const broken = undecodedOutputs > 0 && i === 4;
     return {
       txId: broken ? null : txId(700 + i),
@@ -949,11 +766,24 @@ export const addressResponse = (address, page = 1) => {
 
   const limit = 25;
   const start = (Math.max(1, page) - 1) * limit;
+
+  // The balance and utxoCount describe every UTxO; `utxos` carries one page.
+  const ordered = [...utxos].sort((a, b) =>
+    a.outRefHex < b.outRefHex ? -1 : a.outRefHex > b.outRefHex ? 1 : 0,
+  );
+  const at = utxoCursor ? ordered.findIndex((u) => u.outRefHex > utxoCursor) : 0;
+  const utxoFrom = at === -1 ? ordered.length : at;
+  const utxoPage = ordered.slice(utxoFrom, utxoFrom + UTXO_PAGE_LIMIT);
+  const moreUtxos = utxoFrom + utxoPage.length < ordered.length;
+
   return {
     balance: value(184_250_000, MULTI_ASSET),
     undecodedOutputs,
-    utxoCount: utxos.length,
-    utxos,
+    utxoCount: ordered.length,
+    utxos: utxoPage,
+    utxoLimit: UTXO_PAGE_LIMIT,
+    utxoCursor: moreUtxos ? utxoPage[utxoPage.length - 1].outRefHex : null,
+    hasMoreUtxos: moreUtxos,
     txCount: rows.length,
     historyPage: page,
     hasNextPage: start + limit < rows.length,

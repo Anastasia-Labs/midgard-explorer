@@ -2,9 +2,11 @@
   /* The production build. `tsconfig.json` stays the typecheck config so it can
    * keep covering tests and scripts; this one compiles only what the server
    * runs. `rootDir` is `src`, so `dist` sits at the same depth under `backend/`
-   * that `src` does and the relative imports of the generated Prisma clients
-   * (`../prisma/explorer-client`, `../../prisma-indexer/indexer-client`)
-   * resolve from the emitted files unchanged. */
+   * that `src` does and the relative import of the generated Prisma client
+   * (`../prisma/explorer-client`) resolves from the emitted files unchanged.
+   * The indexer client that used to sit beside it is no longer generated or
+   * imported; `prisma-indexer/` keeps only the schema and migrations, as the
+   * rollback record. */
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "rootDir": "src",

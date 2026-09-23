@@ -33,7 +33,18 @@ const SUPPORTED_VERSION = 1n;
  * `includeCbor` is off by default so list routes never inline a transaction's
  * own bytes into every row. The single-transaction route turns it on.
  */
-export type DecodeOptions = { includeCbor?: boolean };
+export type DecodeOptions = {
+  includeCbor?: boolean;
+  /**
+   * Resolves many outrefs at once, so the decoder can answer every input from
+   * one round trip instead of one per input.
+   *
+   * Optional, and the decoder works without it: a caller that supplies nothing
+   * gets the previous behaviour. Supplying it changes cost, never meaning, and
+   * anything the batch missed still falls back to the single lookup.
+   */
+  bulkLookup?: (outrefs: Uint8Array[]) => Promise<Map<string, { address: string; output: Uint8Array }>>;
+};
 
 /**
  * Cap on the transaction CBOR returned inline.
@@ -242,11 +253,14 @@ export async function decodeTransaction(
     return { txId: toHex(txId), index: Number(index) };
   };
 
-  const resolveInput = async (item: Uint8Array): Promise<InputView> => {
+  const resolveInputWith = async (
+    resolver: OutRefLookup | undefined,
+    item: Uint8Array,
+  ): Promise<InputView> => {
     const ref = decodeOutRef(item);
-    if (!lookup) return { ...ref, resolved: null };
+    if (!resolver) return { ...ref, resolved: null };
     // The raw preimage item is the canonical outref key used by the ledger.
-    const hit = await lookup(item);
+    const hit = await resolver(item);
     if (!hit) return { ...ref, resolved: null };
     const output = codec.decodeMidgardTxOutput(Buffer.from(hit.output));
     return {
@@ -261,24 +275,62 @@ export async function decodeTransaction(
     };
   };
 
-  const inputs = await mapBounded(
-    codec.decodeMidgardNativeByteListPreimage(
-      full.body.spendInputsPreimageCbor,
-    ),
-    resolveInput,
+  const spendItems = codec.decodeMidgardNativeByteListPreimage(
+    full.body.spendInputsPreimageCbor,
   );
-
-  const referenceInputs = await mapBounded(
-    codec.decodeMidgardNativeByteListPreimage(
-      full.body.referenceInputsPreimageCbor,
-    ),
-    resolveInput,
+  const referenceItems = codec.decodeMidgardNativeByteListPreimage(
+    full.body.referenceInputsPreimageCbor,
   );
 
   const txIdBytes = codec.computeMidgardNativeTxId(full);
+  const outputItems = codec.decodeMidgardNativeByteListPreimage(
+    full.body.outputsPreimageCbor,
+  );
+
+  // One round trip for everything this transaction will ask about: its inputs,
+  // its reference inputs, AND the outref of each of its own outputs, which is
+  // consulted to say whether that output has since been spent.
+  //
+  // The outputs were the larger half and were missed by the first version of
+  // this: a transaction with two inputs and twenty outputs still cost twenty
+  // one-row queries. The test asserts the total call count for exactly that
+  // reason, and it is what caught the omission.
+  const outputOutrefs = outputItems.map((_, index) =>
+    codec.encodeCbor([txIdBytes, BigInt(index)]),
+  );
+  const prefetched =
+    options?.bulkLookup && lookup
+      ? await options.bulkLookup([...spendItems, ...referenceItems, ...outputOutrefs])
+      : null;
+  // The batch is AUTHORITATIVE for what it was asked about. A miss means the
+  // UTxO is absent, which is the common case for a historical transaction whose
+  // inputs have long since been spent, and re-querying each one would make
+  // batching slower than not batching at all. Only an outref outside the
+  // prefetched set falls through, which cannot happen while the set is built
+  // from the same three lists that are resolved below.
+  const requested = new Set(
+    [...spendItems, ...referenceItems, ...outputOutrefs].map((o) =>
+      Buffer.from(o).toString("hex"),
+    ),
+  );
+  const resolve: OutRefLookup | undefined =
+    prefetched === null
+      ? lookup
+      : async (outref) => {
+          const key = Buffer.from(outref).toString("hex");
+          const hit = prefetched.get(key);
+          if (hit) return hit;
+          return requested.has(key) ? null : lookup ? await lookup(outref) : null;
+        };
+
+  const inputs = await mapBounded(spendItems, (item) => resolveInputWith(resolve, item));
+  const referenceInputs = await mapBounded(referenceItems, (item) =>
+    resolveInputWith(resolve, item),
+  );
+
   const txId = toHex(txIdBytes);
   const outputs: OutputView[] = await mapBounded(
-    codec.decodeMidgardNativeByteListPreimage(full.body.outputsPreimageCbor),
+    outputItems,
     async (item, index) => {
       const output = codec.decodeMidgardTxOutput(item);
       const address = codec.encodeMidgardAddressText(output.address);
@@ -304,8 +356,8 @@ export async function decodeTransaction(
               source: "reference_output",
               hashVerified: true,
             };
-      const outref = codec.encodeCbor([txIdBytes, BigInt(index)]);
-      const current = lookup ? await lookup(outref) : null;
+      const outref = outputOutrefs[index]!;
+      const current = resolve ? await resolve(outref) : null;
       return {
         index,
         address,

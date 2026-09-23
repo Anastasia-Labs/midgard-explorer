@@ -1,9 +1,8 @@
-import {
-  Data,
-  credentialToAddress,
-  type Credential,
-  type Network,
-} from "@lucid-evolution/lucid";
+/** Narrow imports rather than the `@lucid-evolution/lucid` barrel, for the
+ * reason `db/bech32.ts` records. */
+import { type Credential, type Network } from "@lucid-evolution/core-types";
+import { Data } from "@lucid-evolution/plutus";
+import { credentialToAddress } from "@lucid-evolution/utils";
 import { decodeDatumResult } from "./datum";
 import type { AssetMap, ValueView } from "./types";
 

@@ -1,12 +1,5 @@
-import { readdirSync } from "node:fs";
-import { join } from "node:path";
 import { prisma } from "../db";
-import {
-  indexerPrisma,
-  SYNC_SOURCES,
-  UNATTRIBUTED_DEPLOYMENT,
-} from "../indexer/db";
-import { loadManifest } from "../indexer/manifest";
+import { loadManifest } from "../db/manifest";
 import { config } from "../config";
 
 /**
@@ -50,17 +43,6 @@ export const NODE_TABLES = [
   "withdrawal_utxos",
 ] as const;
 
-/** Tables in the explorer's own index. */
-export const INDEX_TABLES = [
-  "sync_cursor",
-  "l1_tx",
-  "l1_tx_io",
-  "l1_tx_asset",
-  "l1_redeemer",
-  "l1_event",
-  "l1_block_header",
-  "l1_protocol_params",
-] as const;
 
 export type Queryable = {
   $queryRawUnsafe: <T>(sql: string, ...values: unknown[]) => Promise<T>;
@@ -107,137 +89,9 @@ export async function probeNodeDatabase(): Promise<void> {
  * Resolved relative to this file so it works the same from `src` under ts-node
  * and from `dist` after a build, both of which sit two levels below the backend
  * root. */
-const MIGRATIONS_DIR = join(__dirname, "..", "..", "prisma-indexer", "migrations");
 
-export function shippedMigrations(dir: string = MIGRATIONS_DIR): string[] {
-  return readdirSync(dir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
-}
 
-/**
- * The explorer's own index, including that its migrations match this build.
- *
- * A schema one migration behind the code answers most queries and fails the one
- * that touches the new column, which reads as an intermittent bug rather than a
- * deployment that was never finished.
- *
- * Both halves are needed and only one was here. Counting unfinished rows in
- * `_prisma_migrations` finds a migration that started and broke; a migration
- * that was never applied at all has NO row there, so the count is zero and
- * readiness went green. That is the exact state this deployment was in: the
- * corrective attribution migration sat on disk, unapplied, while `/readyz`
- * reported ready. What ships is compared against what is recorded.
- */
-export async function probeIndexDatabase(): Promise<void> {
-  const client = indexerPrisma as unknown as Queryable;
-  await assertTables(client, "the explorer index", INDEX_TABLES);
 
-  const rows = await client.$queryRawUnsafe<
-    Array<{ migration_name: string; finished_at: Date | null; rolled_back_at: Date | null }>
-  >(
-    `SELECT migration_name, finished_at, rolled_back_at FROM _prisma_migrations;`,
-  );
-
-  const broken = rows.filter(
-    (row) => row.finished_at === null || row.rolled_back_at !== null,
-  );
-  if (broken.length > 0) {
-    throw new Error(
-      `the explorer index has ${broken.length} unfinished or rolled-back ` +
-        `migrations: ${broken.map((row) => row.migration_name).join(", ")}`,
-    );
-  }
-
-  const applied = new Set(rows.map((row) => row.migration_name));
-  const unapplied = shippedMigrations().filter((name) => !applied.has(name));
-  if (unapplied.length > 0) {
-    throw new Error(
-      `the explorer index is missing ${unapplied.length} ` +
-        `${unapplied.length === 1 ? "migration" : "migrations"} this build ` +
-        `ships: ${unapplied.join(", ")}. Run \`pnpm indexer:deploy\`.`,
-    );
-  }
-}
-
-/**
- * That the index has finished a full reconciliation, and holds nothing the read
- * path cannot reach.
- *
- * Schema and migration state say the index is SHAPED correctly. They say
- * nothing about whether it holds the chain. The attribution repair makes the
- * gap concrete: the moment its migration lands, the schema is current, every
- * relation exists, every migration is recorded, and the index is at its worst.
- * The cursors are zero, the rows still carry the sentinel attribution, and
- * every validator query filtered by the manifest identity returns empty. A
- * probe that passed there puts a process into rotation to serve empty pages as
- * though they were the truth, which is the failure this whole repair exists to
- * end.
- *
- * Two conditions, both durable, both readable from the index alone:
- *
- * 1. No row carries `default`. That value is not an identity; it is what was
- *    written when nothing wrote one, so a row holding it is unreachable by
- *    construction. Rows under some OTHER deployment are left alone on purpose:
- *    a redeployed protocol legitimately leaves its predecessor's rows behind,
- *    and refusing traffic forever for that would be wrong.
- *
- * 2. Every cursor has advanced past zero AND all three agree. `syncOnce` writes
- *    the three cursors inside one transaction, from one `observedTip`, only in
- *    a pass where every source completed. So the invariant a reconciled index
- *    satisfies is not "non-zero", it is "non-zero and equal", and both halves
- *    are needed. Equality alone passes the state the migration leaves behind,
- *    because zero equals zero. Non-zero alone passes three cursors written by
- *    different passes, which is an index whose sources have covered different
- *    windows: the mint cursor trailing the primary one by 100,000 blocks means
- *    every mint in that range is missing, and the count of rows looks healthy.
- *
- * An index that has never indexed therefore reports NOT READY rather than
- * ready-and-empty. That is the intended answer: it cannot serve an L1 page.
- */
-export async function probeIndexReconciled(
-  client: Queryable = indexerPrisma as unknown as Queryable,
-): Promise<void> {
-  const [stale] = await client.$queryRawUnsafe<Array<{ count: bigint }>>(
-    `SELECT count(*)::bigint AS count FROM l1_event WHERE deployment = $1;`,
-    UNATTRIBUTED_DEPLOYMENT,
-  );
-  if (Number(stale?.count ?? 0) > 0) {
-    throw new Error(
-      `the explorer index holds ${stale.count} events under ` +
-        `"${UNATTRIBUTED_DEPLOYMENT}", which no query can reach. A full ` +
-        `re-index under the manifest identity has not finished.`,
-    );
-  }
-
-  const rows = await client.$queryRawUnsafe<
-    Array<{ source: string; last_block_height: number }>
-  >(
-    `SELECT source, last_block_height FROM sync_cursor WHERE source = ANY($1::text[]);`,
-    [...SYNC_SOURCES],
-  );
-  const heights = new Map(rows.map((row) => [row.source, Number(row.last_block_height)]));
-  const pending = SYNC_SOURCES.filter((source) => !((heights.get(source) ?? 0) > 0));
-  if (pending.length > 0) {
-    throw new Error(
-      `the explorer index has no completed reconciliation for ` +
-        `${pending.length} of ${SYNC_SOURCES.length} sources: ` +
-        `${pending.join(", ")}. The indexer has not finished a pass in which ` +
-        `every source completed.`,
-    );
-  }
-
-  const distinct = new Set(heights.values());
-  if (distinct.size > 1) {
-    throw new Error(
-      `the explorer index's cursors disagree, so its sources have covered ` +
-        `different windows: ` +
-        `${SYNC_SOURCES.map((source) => `${source}=${heights.get(source)}`).join(", ")}. ` +
-        `One reconciled pass writes all three to the same height.`,
-    );
-  }
-}
 
 /**
  * The deployment manifest.
@@ -250,3 +104,4 @@ export async function probeIndexReconciled(
 export async function probeManifest(): Promise<void> {
   loadManifest(config.MIDGARD_MANIFEST_PATH);
 }
+

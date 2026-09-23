@@ -1,4 +1,4 @@
-import type { IconName } from "../components/ui/icons";
+import type { IconName } from "../components/ui/base/icons";
 
 /**
  * What each record type is called, which glyph stands for it, and what hue it

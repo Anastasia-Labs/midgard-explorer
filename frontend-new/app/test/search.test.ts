@@ -42,9 +42,25 @@ describe("ambiguous inputs are offered, never guessed", () => {
     expect(r.ok && r.ambiguous).toBe(true);
   });
 
-  it("offers both readings of 64 hex", () => {
-    // Transaction hash, or a policy plus a four-byte asset name.
-    expect(kinds(TX)).toEqual(["transaction", "asset"]);
+  it("offers every reading of 64 hex", () => {
+    // A Midgard transaction, the same hash looked up in the Cardano index, or a
+    // policy plus a four-byte asset name.
+    expect(kinds(TX)).toEqual(["transaction", "l1Transaction", "asset"]);
+  });
+
+  /* An L2 transaction id and a Cardano transaction hash are both 32 bytes and
+   * cannot be told apart by shape, so the Cardano reading is offered as the
+   * INTERNAL page, which holds the answer, rather than as a link straight out to
+   * a block explorer. Sending an unproven hash to CExplorer produced live links
+   * to transactions that do not exist on Cardano. */
+  it("never sends a bare 64-hex value straight to an external explorer", () => {
+    const hits = searchCandidates(TX);
+    expect(hits.ok).toBe(true);
+    if (!hits.ok) return;
+    for (const candidate of hits.candidates) {
+      expect(candidate.external ?? false).toBe(false);
+      expect(candidate.href.startsWith("/")).toBe(true);
+    }
   });
 
   it("ranks the likelier reading first, so Enter still works", () => {

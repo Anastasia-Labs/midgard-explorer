@@ -26,16 +26,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
-/** Lower this, never raise it.
- *
- * 2, not 0. The two survivors are the network verdict headline in
- * `components/ui/metrics.tsx`, at 26/30. Tailwind has no step between 24 and
- * 30, and that headline is required by test to stay larger than the 24px
- * figures beneath it at every width, so the pair cannot be expressed in stock
- * steps without breaking something. The comment at the call site carries the
- * full reasoning. Sitting in the baseline is the honest place for it: an
- * allowlist would hide it, and 0-with-an-exception is a number that lies. */
-const BASELINE = 2;
+/** All font sizes use the shared scale. Keep this at zero. */
+const BASELINE = 0;
 
 /** Sizes only. `text-[color:…]`, `text-balance` and the like are not what this
  * is about, and a rule that fires on them would be turned off. */

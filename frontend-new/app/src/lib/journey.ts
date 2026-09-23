@@ -69,6 +69,17 @@ const UNKNOWN_STAGE_EXPLANATION =
 /** The only finalization status that means settled on L1. */
 const L1_TERMINAL_SUCCESS = "finalized";
 
+/**
+ * The headline over a settled record, and the strongest claim either page
+ * makes.
+ *
+ * Every stage behind it comes from `pending_block_finalizations`, the node's
+ * own journal. Midgard is the explorer's only source, so naming it on the
+ * badge said nothing the whole site does not; the Details tab says once that
+ * the node reported it. "Finalized" is the same word the lists use.
+ */
+const SETTLED_HEADLINE = "Finalized";
+
 /** Finalization statuses that mean the node gave up. */
 const L1_TERMINAL_FAILURE = "abandoned";
 
@@ -342,7 +353,7 @@ export function transactionJourney(input: {
     : hasUnknownStage
       ? "Settlement stage not recognized"
       : settled
-        ? "Final on Cardano"
+        ? SETTLED_HEADLINE
         : abandoned
           ? "Finalization abandoned"
           : inclusion !== null
@@ -456,7 +467,7 @@ export function blockJourney(
   // The headline answers "is this block final?" rather than restating the
   // status code, which the badge beside the title already carries.
   const headline = settled
-    ? "Final on Cardano"
+    ? SETTLED_HEADLINE
     : abandoned
       ? "Finalization abandoned"
       : finalization === null

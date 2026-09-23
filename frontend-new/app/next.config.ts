@@ -4,11 +4,27 @@ import type { NextConfig } from "next";
 const workspaceRoot = path.join(import.meta.dirname, "..");
 
 const nextConfig: NextConfig = {
+  // The documented local URL uses this loopback host, including dev WebSockets.
+  allowedDevOrigins: ["127.0.0.1"],
   // The workspace packages ship TypeScript source, not build output.
   transpilePackages: ["@midgard-explorer/contracts", "@midgard-explorer/ui"],
   turbopack: { root: workspaceRoot },
   outputFileTracingRoot: workspaceRoot,
   typescript: { ignoreBuildErrors: false },
+  /**
+   * Routes that used to exist and now answer somewhere else.
+   *
+   * `/l1/commitments` listed the Midgard block headers the explorer's own chain
+   * index had observed on Cardano. The index is decommissioned, and the
+   * question it answered — which blocks are committed, and when — is what
+   * `/blocks` has always answered from the node's own records, including the
+   * settlement transaction for each one. A permanent redirect rather than a
+   * removal, because the link is in the wild and a 404 would tell a reader
+   * nothing.
+   */
+  async redirects() {
+    return [{ source: "/l1/commitments", destination: "/blocks", permanent: true }];
+  },
   async headers() {
     return [
       {

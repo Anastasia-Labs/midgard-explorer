@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { Breadcrumbs } from "../../components/ui/breadcrumbs";
-import { Icon } from "../../components/ui/icons";
-import { Callout, PageHeader } from "../../components/ui/primitives";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { Icon } from "../../components/ui/base/icons";
+import { Callout, PageHeader } from "../../components/ui/base/layout";
 import { endpointCount, openApiToGroups, type OpenApiDocument } from "../../lib/apiDocs";
 import { apiBase, PUBLIC_API_BASE } from "../../lib/env";
 import { viewerInit } from "../../lib/viewerInit";
@@ -45,7 +45,7 @@ export default async function ApiDocsPage() {
       <Breadcrumbs items={CRUMBS} />
       <PageHeader
         title="API reference"
-        subtitle="Read-only JSON access to Midgard and the explorer's Cardano index."
+        subtitle="Read-only JSON access to the Midgard data this explorer shows."
         meta={
           document === null ? (
             <span>Contract unavailable</span>

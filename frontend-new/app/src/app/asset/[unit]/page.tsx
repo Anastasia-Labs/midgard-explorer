@@ -6,22 +6,22 @@ import {
   AssetName,
   AssetQuantity,
   CoverageNote,
-} from "../../../components/ui/asset";
-import { ApiExample } from "../../../components/ui/apiexample";
-import { Breadcrumbs } from "../../../components/ui/breadcrumbs";
-import { Identifier } from "../../../components/ui/identifier";
-import { IdentityBar } from "../../../components/ui/identitybar";
-import { PageError } from "../../../components/ui/pageerror";
-import { Callout, Card, EmptyState, PageHeader } from "../../../components/ui/primitives";
-import { RawData } from "../../../components/ui/rawdata";
-import { SummaryBand } from "../../../components/ui/summary";
-import { DataTable } from "../../../components/ui/table";
-import { Tabs } from "../../../components/ui/tabs";
+} from "../../../components/ui/domain/asset";
+import { ApiExample } from "../../../components/ui/domain/apiexample";
+import { Breadcrumbs } from "../../../components/ui/base/breadcrumbs";
+import { Identifier } from "../../../components/ui/domain/identifier";
+import { IdentityBar } from "../../../components/ui/domain/identitybar";
+import { PageError } from "../../../components/ui/base/pageerror";
+import { Callout, Card, EmptyState } from "../../../components/ui/base/layout";
+import { RawData } from "../../../components/ui/base/rawdata";
+import { DataTable } from "../../../components/ui/base/table";
+import { Tabs } from "../../../components/ui/base/tabs";
 import { api } from "../../../lib/api";
 import { assetLabel, parseAssetUnit } from "../../../lib/asset";
 import { listErrorMessage, orNotFound } from "../../../lib/serverErrors";
-import { AddressLink } from "../../../components/ui/address";
+import { AddressLink } from "../../../components/ui/domain/address";
 import { viewerInit } from "../../../lib/viewerInit";
+import { groupThousands } from "../../../lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -58,8 +58,7 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
     return (
       <>
         <Breadcrumbs items={crumbs} />
-        <PageHeader entity="asset" title="Asset" />
-        <IdentityBar overline="Asset unit" value={unit} />
+        <IdentityBar title="Asset" overline="Asset unit" value={unit} />
         <PageError message={listErrorMessage(e)} />
       </>
     );
@@ -70,14 +69,25 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
   return (
     <>
       <Breadcrumbs items={crumbs} />
-      <PageHeader entity="asset" title={label} subtitle="A native asset on the Midgard ledger." />
-      <IdentityBar overline="Asset unit (policy + name)" value={unit} />
-
       {/* Identity leads, because the first question about an asset is which
           asset this actually is. A display name does not answer it: two assets
           can share one, and the fingerprint is the only unique short form. */}
-      <Card className="mb-4">
-        <dl className="grid gap-x-8 gap-y-3 p-4 sm:grid-cols-2">
+      <IdentityBar
+        title={label}
+        overline="Asset unit (policy + name)"
+        value={unit}
+        summary={[
+          {
+            label: "On the ledger",
+            value: <AssetQuantity quantity={data.ledgerQuantity} />,
+            emphasis: true,
+            ...(data.coverage.truncated ? { sub: "Lower bound" } : { sub: "Current ledger" }),
+          },
+          { label: "Holders", value: data.holderCount },
+          { label: "UTxOs scanned", value: groupThousands(String(data.coverage.scanned)) },
+        ]}
+      >
+        <dl className="mt-4 grid gap-x-8 gap-y-3 border-t border-border pt-4 sm:grid-cols-2">
           <Field label="Fingerprint (CIP-14)">
             <AssetFingerprint policyId={policyId} nameHex={nameHex} />
           </Field>
@@ -86,6 +96,11 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
           </Field>
           <Field label="Name">
             <AssetName nameHex={nameHex} />
+            {assetLabel(nameHex).canonical ? null : (
+              <span className="mt-0.5 block mg-micro text-text-3">
+                Decoded from its bytes. Names are not unique, so compare the fingerprint.
+              </span>
+            )}
           </Field>
           <Field label="Name bytes (hex)">
             <span className="font-mono mg-caption break-all">
@@ -93,31 +108,14 @@ export default async function AssetPage({ params }: { params: Promise<{ unit: st
             </span>
           </Field>
         </dl>
-        {assetLabel(nameHex).canonical ? null : (
-          <p className="border-t border-border px-4 py-2.5 mg-micro text-text-3">
-            The name above was decoded from its bytes and re-encoded to check it round-trips. It is
-            what the ledger holds, not a label this explorer assigned, and it is not unique. Compare
-            the fingerprint.
-          </p>
-        )}
-      </Card>
+      </IdentityBar>
 
-      <SummaryBand
-        items={[
-          {
-            label: "On the ledger",
-            value: <AssetQuantity quantity={data.ledgerQuantity} />,
-            emphasis: true,
-            ...(data.coverage.truncated ? { sub: "Lower bound" } : { sub: "Current ledger" }),
-          },
-          { label: "Holders", value: data.holderCount },
-          { label: "UTxOs scanned", value: data.coverage.scanned.toLocaleString() },
-        ]}
-      />
-
-      <div className="mb-4">
-        <CoverageNote coverage={data.coverage} subject="This asset's total" />
-      </div>
+      {/* A complete scan is already stated by the figures above. */}
+      {!data.coverage.truncated && data.coverage.undecoded === 0 ? null : (
+        <div className="mb-4">
+          <CoverageNote coverage={data.coverage} subject="This asset's total" />
+        </div>
+      )}
 
       <Tabs
         tabs={[

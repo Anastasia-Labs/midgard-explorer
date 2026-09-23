@@ -37,6 +37,14 @@ Status values:
 
 ## Explorer-owned Cardano L1 index
 
+> `header_hash` in this table means a 28-byte Midgard block header hash, and
+> `utxos_root` the 32-byte Merkle root. Until ADR 6 the indexer wrote the root
+> into the key, so this row read `shown` while the block page's Cardano evidence
+> resolved for no block in the deployment. A status here is only as good as a
+> test that reads BOTH sources: `cross-source-identity` is what now backs this
+> one, and a row whose only evidence reads one database should not claim `shown`.
+
+
 | Source DB · table.column | API endpoint.field | Page + section | Test | Status |
 |---|---|---|---|---|
 | L1 index · `sync_cursor.source,last_block_height,updated_at` | `/api/l1/summary.lastSyncedHeight` | Cardano L1 source status | `l1-routes`, populated L1 tests | shown |
@@ -45,7 +53,7 @@ Status values:
 | L1 index · `l1_tx_asset.kind,policy_id,asset_name,fingerprint,quantity` | `/api/l1/transaction.mints` and nested UTxO assets | L1 transaction · UTxOs/Mint & burn | `l1-routes`, `l1-transaction` | shown |
 | L1 index · `l1_redeemer.script_hash,address,purpose,mem_units,step_units,fee,datum_hash,datum,valid_contract,script_size` | `/api/l1/transaction.redeemers`, `/api/l1/validator.operations` | L1 transaction · Contracts; Validator · Operations/History | `l1-routes`, `l1-transaction`, validator tests | shown |
 | L1 index · `l1_event.tx_hash,validator,event_type,output_index,lovelace,datum,deployment,decoded` | `/api/l1/transaction.events`, `/api/l1/deposits`, validator history | L1 transaction · Events; Deposits · Cardano evidence; Validator · History | indexer/event/L1 route tests | shown |
-| L1 index · `l1_block_header.header_hash,l1_tx_hash,block_height` | `/api/l1/block-headers`, `/api/l1/block-header` | Block · Cardano evidence | state-queue/indexer/L1 route tests | shown |
+| L1 index · `l1_block_header.header_hash,l1_tx_hash,block_height` | `/api/l1/block-headers`, `/api/l1/block-header` | Block · Cardano evidence | `state-queue-asset`, `cross-source-identity`, `l1-routes` | shown |
 | L1 index · `l1_block_header.prev_utxos_root,utxos_root,withdrawals_root,forced_transactions_root,transactions_root,deposits_root,transition_trace_root,event_to_step_root` | `/api/l1/block-header` roots | Block · Cardano evidence | state-queue + block E2E tests | shown |
 | L1 index · `l1_block_header.withdrawal_count,forced_transaction_count,l2_transaction_count,deposit_count,total_event_count,transition_step_count,start_time,end_time` | `/api/l1/block-header` counts/window | Block · Cardano evidence | state-queue + block E2E tests | shown |
 | L1 index · `l1_block_header.prev_header_hash,operator_vkey,protocol_version` | `/api/l1/block-header` | Block · Cardano evidence | state-queue + block E2E tests | shown |

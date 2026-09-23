@@ -19,28 +19,26 @@ import { getForcedTransactionsPageRoute } from "./routes/forcedTransactions";
 import { getMetricsRoute } from "./routes/metrics";
 import { getAssetRoute, getAssetsRoute } from "./routes/asset";
 import { getSearchRoute } from "./routes/search";
+import { postVitalsRoute } from "./routes/vitals";
 import { prisma } from "../db";
-import { indexerPrisma } from "../indexer/db";
 import { logger } from "../logger";
 import { readinessRoute } from "./readiness";
 import {
-  probeIndexDatabase,
-  probeIndexReconciled,
   probeManifest,
   probeNodeDatabase,
 } from "./probes";
 import {
-  getL1SummaryRoute,
-  getL1TransactionsPageRoute,
-  getL1TransactionRoute,
-  getL1BlockHeadersRoute,
-  getL1BlockHeaderRoute,
-  getL1DepositsRoute,
-  getL1ValidatorRoute,
+  getCardanoActivityRoute,
+  getCardanoActivitySummaryRoute,
+  getCardanoReferenceRoute,
+  getValidatorRoute,
+  getValidatorsRoute,
 } from "./routes/l1";
+import { getSourceRoute } from "./routes/source";
 import { buildOpenApiDocument, type OpenApiDocument } from "./openapi";
 import { cachePublicJson } from "./cache";
 import { config } from "../config";
+import { HASH28_HEX, HASH32_HEX } from "../utils";
 
 /**
  * The one place a public route exists.
@@ -70,7 +68,8 @@ export type EndpointParameter = {
 };
 
 export type Endpoint = {
-  method: "get";
+  /** `post` only for the one route that accepts browser telemetry. */
+  method: "get" | "post";
   /** Express form, with `:param` segments. `documentationPath` converts it. */
   path: string;
   group: string;
@@ -81,6 +80,8 @@ export type Endpoint = {
   rateLimited: boolean;
   /** Shared-cache lifetime. Zero means do not cache this route. */
   cacheSeconds: number;
+  /** The OpenAPI request body, for a `post` route. */
+  requestBody?: Record<string, unknown>;
   handler: RequestHandler;
 };
 
@@ -89,8 +90,8 @@ export type Endpoint = {
 // client that followed the schema got a 400 the schema said was valid. Cardano
 // hashes are canonically lowercase and stored that way, so widening the routes
 // instead would turn a clear rejection into a silent miss.
-const hex64 = { type: "string", pattern: "^[0-9a-f]{64}$" };
-const hex56 = { type: "string", pattern: "^[0-9a-f]{56}$" };
+const hex64 = { type: "string", pattern: `^[0-9a-f]{${HASH32_HEX}}$` };
+const hex56 = { type: "string", pattern: `^[0-9a-f]{${HASH28_HEX}}$` };
 const pageSchema = { type: "integer", minimum: 1 };
 const limitSchema = { type: "integer", minimum: 1, maximum: 100, default: 25 };
 
@@ -114,13 +115,15 @@ const endpoint = (
   summary: string,
   handler: RequestHandler,
   options: {
+    method?: "get" | "post";
     parameters?: EndpointParameter[];
     notFound?: boolean;
     rateLimited?: boolean;
     cacheSeconds?: number;
+    requestBody?: Record<string, unknown>;
   } = {},
 ): Endpoint => ({
-  method: "get",
+  method: options.method ?? "get",
   path,
   group,
   summary,
@@ -132,7 +135,12 @@ const endpoint = (
   // All API responses are public. Five seconds protects the node from bursts
   // while keeping mutable lifecycle state fresh; immutable/expensive routes
   // override this below.
-  cacheSeconds: options.cacheSeconds ?? (path.startsWith("/api/") ? 5 : 0),
+  // A write is never a cached response.
+  cacheSeconds:
+    options.method === "post"
+      ? 0
+      : (options.cacheSeconds ?? (path.startsWith("/api/") ? 5 : 0)),
+  requestBody: options.requestBody,
   handler,
 });
 
@@ -140,25 +148,26 @@ const healthRoute: RequestHandler = (_req, res) => {
   res.json({ status: "ok", now: new Date().toISOString() });
 };
 
-/* Both databases and the manifest, because the explorer serves nothing useful
- * without any of them. These probes check the relations each query path needs
- * and that the index's migrations finished. `SELECT 1` proved only that the
- * pool could hand out a connection, so an empty generic PostgreSQL with none of
- * the tables reported ready, which is what CI provisioned. */
+const onFailure = (name: string, error: unknown) =>
+  logger.error(`Readiness probe failed for ${name}: ${String(error)}`);
+
+/**
+ * Can this process serve the explorer?
+ *
+ * The Midgard node's database, which every page reads, and the deployment
+ * manifest, which is how a response says which Midgard it describes. Serving
+ * figures that cannot be attributed to a deployment is the failure this whole
+ * area exists to prevent, so an unreadable manifest is not a degraded mode.
+ *
+ * There was a second scope, `/readyz/l1`, for the explorer-owned Cardano index,
+ * and `/readyz/full` for both. The index is decommissioned, so a split that
+ * kept an L1 outage from taking the L2 pages down now has one side. Both are
+ * removed rather than kept as aliases: a gate calling `/readyz/full` and
+ * getting the L2 answer would believe it had checked something it had not.
+ */
 const readyRoute = readinessRoute(
-  {
-    "midgard-node": probeNodeDatabase,
-    "explorer-index": probeIndexDatabase,
-    // Separate from the check above, because the two fail for different
-    // reasons and an operator needs to read which. The index can be shaped
-    // correctly and hold nothing reachable.
-    "index-reconciled": probeIndexReconciled,
-    manifest: probeManifest,
-  },
-  {
-    onFailure: (name, error) =>
-      logger.error(`Readiness probe failed for ${name}: ${String(error)}`),
-  },
+  { "midgard-node": probeNodeDatabase, manifest: probeManifest },
+  { onFailure },
 );
 
 /* Lazy on purpose: the document is generated from this array, so it cannot be
@@ -174,7 +183,7 @@ export const ENDPOINTS: readonly Endpoint[] = [
   endpoint(
     "/readyz",
     "System",
-    "Report whether both databases can serve a request",
+    "Report whether the Midgard node database can serve a request",
     readyRoute,
   ),
   endpoint(
@@ -193,6 +202,36 @@ export const ENDPOINTS: readonly Endpoint[] = [
     {
       rateLimited: true,
       cacheSeconds: 10,
+    },
+  ),
+  endpoint(
+    "/api/vitals",
+    "Telemetry",
+    "Record one Web Vitals sample from a page load",
+    postVitalsRoute,
+    {
+      method: "post",
+      rateLimited: true,
+      requestBody: {
+        required: true,
+        description:
+          "One sample, sent by the explorer's pages with navigator.sendBeacon as text/plain. LCP and INP are milliseconds; CLS has no unit.",
+        content: {
+          "text/plain": {
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["name", "value", "routeClass", "deviceClass"],
+              properties: {
+                name: { type: "string", enum: ["LCP", "INP", "CLS"] },
+                value: { type: "number", minimum: 0 },
+                routeClass: { type: "string", enum: ["overview", "list", "detail", "other"] },
+                deviceClass: { type: "string", enum: ["mobile", "desktop"] },
+              },
+            },
+          },
+        },
+      },
     },
   ),
   endpoint(
@@ -241,6 +280,13 @@ export const ENDPOINTS: readonly Endpoint[] = [
           minimum: 1,
           default: 1,
         }),
+        query(
+          "utxo_cursor",
+          "Last `outref` already held, as hex. Omit for the first UTxO page; " +
+            "pass the response's `utxoCursor` for the next. Balance and " +
+            "`utxoCount` always describe the whole address, not the page.",
+          { type: "string", pattern: "^(?:[0-9a-fA-F]{2})*$", default: "" },
+        ),
       ],
       notFound: true,
       rateLimited: true,
@@ -366,69 +412,54 @@ export const ENDPOINTS: readonly Endpoint[] = [
   ),
 
   endpoint(
-    "/api/l1/summary",
-    "Cardano L1",
-    "Return index and deployment summary",
-    getL1SummaryRoute,
+    "/api/source",
+    "System",
+    "Report which Midgard deployment and database the figures come from",
+    getSourceRoute,
+    { cacheSeconds: 5 },
+  ),
+
+  endpoint(
+    "/api/l1/activity/summary",
+    "Cardano",
+    "Count what the node recorded on Cardano, by kind",
+    getCardanoActivitySummaryRoute,
+    { cacheSeconds: 30 },
   ),
   endpoint(
-    "/api/l1/transaction",
-    "Cardano L1",
-    "Return one Cardano transaction touching Midgard",
-    getL1TransactionRoute,
+    "/api/l1/activity/:page",
+    "Cardano",
+    "List what the node recorded on Cardano, newest first",
+    getCardanoActivityRoute,
+    { parameters: [pageParam] },
+  ),
+  endpoint(
+    "/api/l1/reference",
+    "Cardano",
+    "Return the Midgard records that name one Cardano transaction",
+    getCardanoReferenceRoute,
     {
-      parameters: [
-        query("txHash", "64-character Cardano transaction hash.", hex64),
-      ],
-      notFound: true,
+      parameters: [query("txHash", "64-character Cardano transaction hash.", hex64)],
       rateLimited: true,
-    },
-  ),
-  endpoint(
-    "/api/l1/block-headers",
-    "Cardano L1",
-    "List indexed Midgard block headers",
-    getL1BlockHeadersRoute,
-    {
-      parameters: [query("limit", "Maximum rows; capped at 100.", limitSchema)],
-    },
-  ),
-  endpoint(
-    "/api/l1/block-header",
-    "Cardano L1",
-    "Return one Midgard header observed on Cardano",
-    getL1BlockHeaderRoute,
-    {
-      parameters: [query("headerHash", "56-character Midgard header hash.", hex56)],
-      notFound: true,
       cacheSeconds: 30,
     },
   ),
   endpoint(
+    "/api/l1/validators",
+    "Cardano",
+    "List the validators this deployment's manifest declares",
+    getValidatorsRoute,
+    { cacheSeconds: 30 },
+  ),
+  endpoint(
     "/api/l1/validator",
-    "Cardano L1",
-    "Return indexed evidence for one Midgard validator",
-    getL1ValidatorRoute,
+    "Cardano",
+    "Return one validator this deployment's manifest declares",
+    getValidatorRoute,
     {
       parameters: [query("scriptHash", "56-character validator script hash.", hex56)],
       notFound: true,
       cacheSeconds: 30,
-    },
-  ),
-  endpoint(
-    "/api/l1/transactions/:page",
-    "Cardano L1",
-    "List Cardano transactions by page",
-    getL1TransactionsPageRoute,
-    { parameters: [pageParam] },
-  ),
-  endpoint(
-    "/api/l1/deposits",
-    "Cardano L1",
-    "List Cardano deposit events",
-    getL1DepositsRoute,
-    {
-      parameters: [query("limit", "Maximum rows; capped at 100.", limitSchema)],
     },
   ),
 ];
@@ -440,6 +471,10 @@ export function documentationPath(path: string): string {
 
 export function registerCatalogue(app: Express): void {
   for (const route of ENDPOINTS) {
+    if (route.method === "post") {
+      app.post(route.path, route.handler);
+      continue;
+    }
     app.get(
       route.path,
       cachePublicJson(

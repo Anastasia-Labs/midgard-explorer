@@ -1,0 +1,892 @@
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import { readFileSync, readdirSync } from "node:fs";
+import { Client } from "pg";
+import { assertEnoughHashes, readSettledHashes, type SettledHashes } from "./settledHashes.mjs";
+import { startEdge, type EdgeHandle } from "./edge.mjs";
+import { buildFrontend, startFrontend, type FrontendHandle } from "./frontend.mjs";
+import { createServer as createNetServer } from "node:net";
+import { captureEnvironment, environmentWarnings, type EnvironmentReport } from "./environment.mjs";
+import { generateDataset, streamDataset, LOAD_ORDER } from "./generate.mjs";
+import { judge, type Judgement } from "./judge.mjs";
+import { encodedSize, identitySize, runRequests, summarise } from "./measure.mjs";
+import { createDbProbe, ZERO_WORK, type DbWork } from "./pgStats.mjs";
+import { PROFILES, type Profile } from "./profiles.mjs";
+import { analyzeTables, seedBatch, seedDataset } from "./seedShaped.mjs";
+import { WORKLOADS, type SeededIds, type Workload } from "./workloads.mjs";
+import {
+  adminUrl,
+  checksum,
+  createDatabase,
+  dropDatabase,
+  stripPsqlMeta,
+  type Checksum,
+} from "../test/helpers/throwawayDb.mjs";
+import { readFile } from "node:fs/promises";
+
+/**
+ * The benchmark orchestrator.
+ *
+ * Builds an isolated environment, runs the workload catalogue against a real
+ * server, and judges each result. Everything it produces is JSON, so a run can
+ * be compared with a later one rather than remembered.
+ *
+ * One database, on the dedicated benchmark server: the seeded node schema. It
+ * used to be two, the second a frozen copy of the explorer's Cardano index,
+ * because routes then read both and a "statements per request" figure had to
+ * span them. The index is decommissioned and no route reads it, so the second
+ * database would be a database nothing under measurement connects to.
+ */
+
+const FIXTURE = "test/fixtures/schema/midgard-node.sql";
+
+export type BenchSetup = {
+  nodeDb: string;
+  nodeUrl: string;
+  datasetChecksum: Checksum;
+  settled: SettledHashes;
+  /** A pool, not one row: unique-key workloads rotate through it. */
+  ids: SeededIds[];
+  cleanup: () => Promise<void>;
+};
+
+/**
+ * Identifiers taken from the seeded data, never invented.
+ *
+ * A hand-written hash 404s, and a 404 is fast, confident and meaningless. The
+ * pool is drawn in the same order every time so a run is reproducible.
+ */
+export async function resolveSeededIds(
+  node: Client,
+  size = 50,
+): Promise<SeededIds[]> {
+  const blocks = await node.query<{ h: string }>(
+    `SELECT encode(header_hash, 'hex') AS h FROM pending_block_finalizations
+      ORDER BY block_end_time DESC, encode(header_hash, 'hex') DESC LIMIT $1`,
+    [size],
+  );
+  const txs = await node.query<{ t: string }>(
+    `SELECT encode(tx_id, 'hex') AS t FROM immutable
+      WHERE octet_length(tx) < 65536 ORDER BY encode(tx_id, 'hex') LIMIT $1`,
+    [size],
+  );
+  const addresses = await node.query<{ a: string }>(
+    // Busiest first: a uniformly drawn address has one entry and its page
+    // measures nothing. The hot addresses are the pages that hurt.
+    `SELECT address AS a FROM address_history
+      GROUP BY address ORDER BY count(*) DESC, address ASC LIMIT $1`,
+    [size],
+  );
+  if (blocks.rowCount === 0 || txs.rowCount === 0 || addresses.rowCount === 0) {
+    throw new Error("seeded database has no blocks, transactions or addresses");
+  }
+  // As many entries as the scarcest column can fill WITHOUT repeating. The old
+  // form padded to `size` with modulo, so a pool of 50 served 1,000 requests by
+  // cycling twenty times. Only the first pass missed the five-second response
+  // cache, so 95% of a `unique-key` run measured cache hits and every statement
+  // count came out at exactly 5% of its true value. A short pool must be short,
+  // and visible as such, rather than quietly repeating.
+  const length = Math.min(size, blocks.rows.length, txs.rows.length, addresses.rows.length);
+  const pages = Math.max(1, Math.floor(blocks.rows.length / 2));
+  return Array.from({ length }, (_, i) => ({
+    blockHash: blocks.rows[i].h,
+    txId: txs.rows[i].t,
+    address: addresses.rows[i].a,
+    // Deep enough to be a real page, bounded by what was seeded. Pages repeat
+    // where the pool outruns them; only cache-bypassing workloads use this.
+    page: 1 + (i % pages),
+  }));
+}
+
+export type SetupOptions = {
+  profile: Profile;
+  /** Distinct ids to resolve. A `unique-key` run needs one per request. */
+  poolSize?: number;
+  /** The dedicated benchmark server. Never the live node. */
+  benchUrl: string;
+  /** A Midgard node database, read-only, for its real settled header hashes. */
+  sourceNodeUrl: string;
+};
+
+export async function setupBench(options: SetupOptions): Promise<BenchSetup> {
+  const { profile, benchUrl, sourceNodeUrl } = options;
+
+  const source = new Client({ connectionString: sourceNodeUrl });
+  await source.connect();
+  const settled = await readSettledHashes(source, sourceNodeUrl).finally(() => source.end());
+  assertEnoughHashes(settled, profile.settledBlocks);
+
+  const nodeDb = await createDatabase(benchUrl);
+  const nodeClient = new Client({ connectionString: adminUrl(nodeDb, benchUrl) });
+  await nodeClient.connect();
+  await nodeClient.query(stripPsqlMeta(await readFile(FIXTURE, "utf8")));
+
+  // The node's own header hashes settle the generated blocks, so a settled
+  // block in the dataset carries a hash a Midgard node really committed.
+  // Above this size the dataset does not fit in memory: `stress` is 50,000
+  // blocks carrying about 370,000 transactions, and holding every CBOR body at
+  // once exhausted the machine. The streaming path writes each batch and drops
+  // it, and emits identical rows, which `bench-stream-dataset.test.mts` checks
+  // row for row. Below it the in-memory path keeps its genesis calibration,
+  // which needs the finished ledger and so cannot run while streaming.
+  const STREAM_ABOVE_BLOCKS = 10_000;
+  if (profile.blocks > STREAM_ABOVE_BLOCKS) {
+    await streamDataset(
+      profile,
+      { settledHashes: settled.hashes },
+      async (tables) => {
+        await seedBatch(nodeClient, tables);
+      },
+    );
+    await analyzeTables(nodeClient);
+  } else {
+    const dataset = generateDataset(profile, {
+      settledHashes: settled.hashes,
+    });
+    await seedDataset(nodeClient, dataset);
+  }
+  const datasetChecksum = await checksum(nodeClient, [...LOAD_ORDER]);
+  const ids = await resolveSeededIds(nodeClient, options.poolSize ?? 50);
+
+  return {
+    nodeDb,
+    nodeUrl: adminUrl(nodeDb, benchUrl),
+    datasetChecksum,
+    settled,
+    ids,
+    cleanup: async () => {
+      await nodeClient.end().catch(() => {});
+      await dropDatabase(nodeDb, benchUrl);
+    },
+  };
+}
+
+/**
+ * The start and the end of a server's output.
+ *
+ * A configuration failure prints its reason first. A server that dies in the
+ * middle of a run prints its reason last, and keeping only the first twelve
+ * lines lost that reason on two `target` replays that exited with code 1.
+ */
+export function outputExcerpt(output: string, head = 12, tail = 40): string {
+  const lines = output.trim().split("\n");
+  if (lines.length <= head + tail) return lines.join("\n");
+  return [
+    ...lines.slice(0, head),
+    `[${lines.length - head - tail} lines omitted]`,
+    ...lines.slice(-tail),
+  ].join("\n");
+}
+
+export type ServerHandle = {
+  base: string;
+  bypassToken: string;
+  /** The server process, so a diagnostic can read its `/proc` entry. */
+  pid: number;
+  /** Highest resident memory the server reached, in bytes. */
+  peakRssBytes: () => number;
+  /** `null` while the process is alive, the exit code once it is not. */
+  exitCode: () => number | null;
+  /** Whatever the server printed. The reason a mid-run death is explainable. */
+  output: () => string;
+  stop: () => Promise<void>;
+};
+
+/**
+ * Starts the built backend against the benchmark databases.
+ *
+ * A child process rather than an in-process import: `config` and the Prisma
+ * clients are module singletons read at import time, so pointing them at other
+ * databases from inside a test that has already imported them is not possible
+ * without leaking that state into every other test in the worker.
+ */
+/**
+ * The per-client request allowance given to the benchmark server.
+ *
+ * High enough that no run can reach it: `stress` is twelve workloads and the
+ * iteration count is a parameter, so this must not become a new invisible
+ * ceiling. Recorded in the report, because a latency number means nothing
+ * without the configuration it was measured under.
+ */
+export const BENCH_RATE_LIMIT_MAX = 1_000_000;
+
+/**
+ * Builds the backend the harness is about to measure.
+ *
+ * A baseline runs `dist/index.js`, and an unbuilt change is measured as if it
+ * were absent while the commit claims otherwise. Timestamps could not settle
+ * this: an artifact carried in from another checkout is newer than every source
+ * file here and still wrong. So the baseline builds, and records what it built
+ * from. Throws on a failed build rather than measuring the previous artifact.
+ */
+export function buildBackend(): { commit: string; builtAt: string } {
+  execFileSync("pnpm", ["build"], { stdio: "pipe", encoding: "utf8" });
+  const commit = execFileSync("git", ["rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
+  return { commit, builtAt: new Date().toISOString() };
+}
+
+/**
+ * The node flags `pnpm start` runs the server with.
+ *
+ * Production starts the backend through that script, so a flag there, such as a
+ * heap cap, is part of what a baseline must measure. Read from the script
+ * rather than repeated here, where the two would drift.
+ */
+export function startScriptNodeFlags(
+  packageJson = readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+): string[] {
+  const start: unknown = JSON.parse(packageJson).scripts?.start;
+  const match = typeof start === "string" ? /^node((?:\s+--?\S+)*)\s+dist\/index\.js$/.exec(start.trim()) : null;
+  if (!match) {
+    throw new Error(`the start script is not "node [flags] dist/index.js": ${String(start)}`);
+  }
+  return match[1].trim().split(/\s+/).filter((flag) => flag.length > 0);
+}
+
+export async function startServer(
+  setup: BenchSetup,
+  port: number,
+  extraEnv: Record<string, string> = {},
+  nodeFlags: readonly string[] = startScriptNodeFlags(),
+): Promise<ServerHandle> {
+  const bypassToken = randomBytes(24).toString("hex");
+  const child: ChildProcess = spawn(process.execPath, [...nodeFlags, "dist/index.js"], {
+    env: {
+      ...process.env,
+      POSTGRES_URL: setup.nodeUrl,
+      BACKEND_PORT: String(port),
+      BENCH_CACHE_BYPASS_TOKEN: bypassToken,
+      // Production mode on purpose: logging verbosity and error handling
+      // differ, and measuring the development configuration would measure
+      // something nobody deploys. That makes the production CORS guard apply,
+      // which refuses a wildcard, so the harness names its own origin.
+      CORS_ORIGIN: `http://127.0.0.1:${port}`,
+      NODE_ENV: "production",
+      // The server rate-limits per client at 120 requests a minute. A run is
+      // twelve workloads of 40 requests from one address, so the first three
+      // workloads consumed the whole allowance and every workload after them
+      // measured a 429: sub-millisecond, zero bytes, no database work. The
+      // limiter middleware still runs and its per-request cost is still in the
+      // numbers; only the threshold moves, because the benchmark client is not
+      // a viewer and throttling it measures the limiter rather than the route.
+      API_RATE_LIMIT_MAX: String(BENCH_RATE_LIMIT_MAX),
+      ...extraEnv,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  // Peak resident memory, sampled from /proc rather than by spawning `ps`:
+  // a benchmark must not pay for its own instrument. The backend is one
+  // process with no worker pool, but children are followed anyway so a future
+  // pool cannot silently fall outside the figure. This replaces a documented
+  // `backend/scripts/measure.mjs` that never existed, and measures the peak
+  // during the run that produces the baseline rather than in a separate one.
+  let peakRss = 0;
+  const rssOf = (pid: number): number => {
+    try {
+      const match = /VmRSS:\s+(\d+)\s+kB/.exec(readFileSync(`/proc/${pid}/status`, "utf8"));
+      return match ? Number(match[1]) * 1024 : 0;
+    } catch {
+      return 0;
+    }
+  };
+  const treeRss = (pid: number, seen = new Set<number>()): number => {
+    if (seen.has(pid)) return 0;
+    seen.add(pid);
+    let total = rssOf(pid);
+    try {
+      for (const task of readdirSync(`/proc/${pid}/task`)) {
+        const children = readFileSync(`/proc/${pid}/task/${task}/children`, "utf8").trim();
+        for (const child of children ? children.split(/\s+/) : []) {
+          total += treeRss(Number(child), seen);
+        }
+      }
+    } catch {
+      // The process ended, or /proc is unavailable. Whatever was read stands.
+    }
+    return total;
+  };
+  const sampler = setInterval(() => {
+    if (child.pid !== undefined) peakRss = Math.max(peakRss, treeRss(child.pid));
+  }, 500);
+  sampler.unref();
+
+  const base = `http://127.0.0.1:${port}`;
+  // `/healthz`, taken from `catalogue.ts:212`. An earlier version probed
+  // `/api/health`, which the backend does not serve, so the wait timed out
+  // against a server that was already up. This is the same defect the workload
+  // catalogue exists to prevent: a hand-written path that 404s.
+  const healthPath = "/healthz";
+  // Liveness first, then readiness. `/healthz` answers as soon as the process
+  // is up, which is several seconds before Prisma can serve a data route: a
+  // run that started on liveness alone recorded three workloads of 100% errors
+  // in under two seconds and called them measurements. `/readyz` checks the
+  // databases, so it is the signal that the server can answer what the
+  // benchmark is about to ask.
+  const readyPath = "/readyz";
+  const deadline = Date.now() + 60_000;
+  // Accumulated, not overwritten: a config failure prints its reason first and
+  // the stack last, so keeping only the final chunk loses the reason.
+  let stderr = "";
+  let lastStatus: number | string = "no response";
+  child.stderr?.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+  child.stdout?.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+  const failure = () => outputExcerpt(stderr);
+
+  for (;;) {
+    if (child.exitCode !== null) {
+      throw new Error(`server exited with ${child.exitCode}:\n${failure()}`);
+    }
+    try {
+      const probe = await fetch(`${base}${healthPath}`);
+      lastStatus = probe.status;
+      if (probe.ok) break;
+    } catch {
+      // Not listening yet.
+    }
+    if (Date.now() > deadline) {
+      child.kill("SIGKILL");
+      throw new Error(
+        `server did not become healthy in 60s; last ${healthPath} status: ${lastStatus}\n${failure()}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  const readyBy = Date.now() + 120_000;
+  for (;;) {
+    if (child.exitCode !== null) {
+      throw new Error(`server exited with ${child.exitCode}:\n${failure()}`);
+    }
+    try {
+      const probe = await fetch(`${base}${readyPath}`);
+      lastStatus = probe.status;
+      if (probe.ok) break;
+    } catch {
+      // Not answering yet.
+    }
+    if (Date.now() > readyBy) {
+      child.kill("SIGKILL");
+      throw new Error(
+        `server was live but never became ready in 120s; last ${readyPath} ` +
+          `status: ${lastStatus}. Measuring here records errors as latency.\n${failure()}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  return {
+    base,
+    bypassToken,
+    pid: child.pid ?? 0,
+    peakRssBytes: () => peakRss,
+    exitCode: () => child.exitCode,
+    output: failure,
+    stop: async () => {
+      clearInterval(sampler);
+      child.kill("SIGTERM");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      if (child.exitCode === null) child.kill("SIGKILL");
+    },
+  };
+}
+
+export type RunOptions = {
+  /** Requests per workload. Enough for a p99 to mean something. */
+  iterations?: number;
+  timeoutMs?: number;
+};
+
+/**
+ * Runs one workload and judges it.
+ *
+ * The cache mode decides how requests are shaped, and it is the difference
+ * between measuring a route and measuring a five-second cache:
+ *
+ *   - `cold` sends the bypass token, so neither cache layer is read or written;
+ *   - `warm` primes once and then measures, which is the cache on purpose;
+ *   - `unique-key` rotates the seeded id pool, so every request is a distinct
+ *     cache key and the cache never serves one. That is realistic detail-page
+ *     traffic, and it is not the same as bypassing.
+ */
+export async function runWorkload(
+  workload: Workload,
+  setup: BenchSetup,
+  server: ServerHandle,
+  probe: Awaited<ReturnType<typeof createDbProbe>>,
+  options: RunOptions = {},
+  /** Where the size probes are sent: the edge proxy when one runs. */
+  sizeBase: string = server.base,
+): Promise<Judgement> {
+  const iterations = options.iterations ?? (workload.concurrency > 1 ? 200 : 40);
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  const pool = setup.ids;
+
+  const pathFor = (i: number) => {
+    const ids = workload.cacheMode === "unique-key" ? pool[i % pool.length] : pool[0];
+    return workload.buildPath(ids);
+  };
+  const urlFor = (i: number) => `${server.base}${pathFor(i)}`;
+
+  // Counted from the paths actually issued, so this cannot drift from what ran.
+  const distinctPaths =
+    workload.cacheMode === "unique-key"
+      ? new Set(Array.from({ length: iterations }, (_, i) => urlFor(i))).size
+      : iterations;
+
+  if (workload.cacheMode === "warm") {
+    // Prime, so the measured requests are the cached path this row is about.
+    await runRequests(urlFor, 2, 1, timeoutMs);
+  }
+
+  const headers =
+    workload.cacheMode === "cold" ? { bypass: server.bypassToken } : undefined;
+
+  await probe.reset();
+  const { samples, elapsedMs } = await runRequests(
+    urlFor,
+    iterations,
+    workload.concurrency,
+    timeoutMs,
+    headers,
+  );
+  const totals = probe.available ? await probe.read() : ZERO_WORK;
+
+  // Budgets are per request. Cluster totals divided by the requests that
+  // produced them, which is why nothing else may touch this server during a run.
+  const per = Math.max(1, samples.length);
+  const perRequest: DbWork = {
+    statements: totals.statements / per,
+    routeStatements: totals.routeStatements / per,
+    transactionControl: totals.transactionControl / per,
+    metadataStatements: totals.metadataStatements / per,
+    sharedBlocks: totals.sharedBlocks / per,
+    tempBytes: totals.tempBytes / per,
+    execMs: totals.execMs / per,
+  };
+
+  // Always, not only where a budget names it. Two register rows ask whether
+  // compression ever enlarges a response and what it saves across the route
+  // set, and neither can be answered from a report that recorded the identity
+  // size for two rows out of twelve. One extra request per workload.
+  // Through the edge when one runs, because that is where a client's bytes are
+  // decided: the origin sends identity bytes whatever it is offered.
+  const sizeUrl = `${sizeBase}${pathFor(0)}`;
+  const identity = await identitySize(sizeUrl, timeoutMs);
+  // The same url, offered compression, so the pair is comparable.
+  const encoded = await encodedSize(sizeUrl, timeoutMs);
+
+  return judge({
+    workload,
+    stats: { ...summarise(samples, elapsedMs, identity), encodedBytes: encoded },
+    dbWork: perRequest,
+    dbProbeAvailable: probe.available,
+    distinctPaths,
+    requested: iterations,
+  });
+}
+
+/**
+ * The hardware a result was taken on, stamped onto every report.
+ *
+ * `existing-minimum-2-core` is the accepted minimum supported runtime profile:
+ * `docs/resource-requirements.md:47` states two cores are enough for `demo` and
+ * `existing`, and every measurement there was taken on two. Runtime latency,
+ * database work, payload and concurrency budgets may be judged on it, because
+ * scheduler pressure is part of performance on the supported minimum. It is
+ * **not** universal production hardware, which is why results carry the stamp
+ * rather than being presented as unqualified.
+ */
+export type HardwareProfile = "existing-minimum-2-core" | "unclassified";
+
+export function hardwareProfileOf(environment: EnvironmentReport): HardwareProfile {
+  return environment.cpuCount <= 2 ? "existing-minimum-2-core" : "unclassified";
+}
+
+/**
+ * Budgets that may never be judged on the minimum profile.
+ *
+ * Suite wall time is a property of the developer and CI runner, not of the
+ * supported runtime, so it needs a quiet standardised machine and stays
+ * deferred. Runtime budgets do not: the minimum is a machine users actually
+ * run on.
+ */
+export const EXCLUDED_ON_MINIMUM_HARDWARE = [
+  "backend test suite wall time",
+] as const;
+
+export type HarnessReport = {
+  /** `smoke` proves the harness works. `baseline` is the measurement of record. */
+  mode: "smoke" | "baseline";
+  /** Stamped on every result. See `HardwareProfile`. */
+  hardware: HardwareProfile;
+  profile: string;
+  environment: EnvironmentReport;
+  warnings: string[];
+  datasetChecksum: Checksum;
+  /** Which node database the dataset's real settled header hashes came from,
+   * and how many it took. Earlier artifacts carry `indexChecksum` instead: a
+   * digest over nine tables of the decommissioned Cardano index, which was
+   * cloned into a second database no route reads any more. */
+  settledHashSource: string;
+  settledHashCount: number;
+  iterations: number;
+  /** What the measured server was configured with, so a number can be read. */
+  serverConfig: {
+    apiRateLimitMax: number;
+    /** The node flags the server ran with, and the ones `pnpm start` uses. */
+    nodeFlags: string[];
+    startScriptNodeFlags: string[];
+  };
+  /**
+   * Which part of the catalogue this run covers.
+   *
+   * `backend-only` is the honest name for what a harness run measures: the
+   * catalogue holds frontend-origin rows the backend does not serve. The first
+   * `target` run reported twelve of thirteen workloads with no mention of the
+   * thirteenth, which read as full coverage.
+   */
+  scope: "backend-only" | "full" | "subset";
+  /** The build this run performed, `null` for a smoke run that did not build. */
+  build: { commit: string; builtAt: string } | null;
+  /** The production frontend build a `full` run measured, `null` otherwise. */
+  frontendBuild: { buildId: string; builtAt: string } | null;
+  /** Highest resident memory the measured server reached, in bytes. */
+  peakRssBytes: number;
+  /** Every catalogue workload, either measured or excluded with a reason. */
+  coverage: {
+    measured: string[];
+    excluded: { workload: string; reason: string }[];
+  };
+  results: Judgement[];
+  /** Where the identity and encoded sizes were measured. */
+  payload: PayloadSource;
+  startedAt: string;
+  finishedAt: string;
+};
+
+/**
+ * `edge` is the deployed proxy image in front of the server under test. `origin`
+ * means no edge could be started, and says why.
+ */
+export type PayloadSource =
+  | { at: "edge"; image: string }
+  | { at: "origin"; reason: string };
+
+/**
+ * Conditions under which a run may be recorded as a baseline.
+ *
+ * Returned as reasons rather than a boolean, because "not a baseline" is only
+ * useful if it says why. A smoke run ignores these; a baseline run must not.
+ */
+export function baselineGate(
+  environment: EnvironmentReport,
+  results: readonly Judgement[],
+  coverage?: {
+    scope: "backend-only" | "full" | "subset";
+    excluded: readonly { workload: string; reason: string }[];
+  },
+  /** The build this run performed, `null` when it measured whatever was there. */
+  build?: { commit: string; builtAt: string } | null,
+  payload?: PayloadSource,
+  /** The server's node flags against the start script's. */
+  nodeFlags?: { used: readonly string[]; startScript: readonly string[] },
+): string[] {
+  const blocking: string[] = [];
+  const GB = 1024 ** 3;
+
+  // Provenance. The first `target` run was taken from a working tree carrying
+  // uncommitted harness and generator changes, and recorded only the HEAD
+  // commit, so the artifact named a state that never produced it.
+  if (environment.gitDirty) {
+    blocking.push(
+      "the working tree is dirty: a baseline must name the exact commit that " +
+        "produced it, and HEAD does not describe uncommitted changes",
+    );
+  }
+  if (build === null) {
+    blocking.push(
+      "the baseline did not build the backend: it measured whatever artifact " +
+        "was already in dist, which no commit describes",
+    );
+  }
+  if (build && build.commit !== environment.gitCommit) {
+    blocking.push(
+      `built from ${build.commit.slice(0, 8)} but running at ` +
+        `${environment.gitCommit.slice(0, 8)}: the artifact and the commit disagree`,
+    );
+  }
+
+  // A subset is a diagnostic run. A baseline is a backend sweep, or a full one
+  // that also runs the frontend's own routes.
+  if (coverage?.scope === "subset") {
+    blocking.push(
+      "only a subset of the catalogue ran: a baseline covers every " +
+        "backend-origin workload",
+    );
+  }
+
+  // Coverage is checked against the catalogue, not taken on trust. Recording an
+  // exclusion list and never validating it would leave exactly the hole this
+  // closes: a workload can go missing and the report still reads complete.
+  if (coverage) {
+    const known = new Set(WORKLOADS.map((w) => w.name));
+    const expected = WORKLOADS.filter(
+      (w) => coverage.scope === "full" || w.origin === "backend",
+    ).map((w) => w.name);
+    const measured = results.map((r) => r.workload);
+    const seen = new Map<string, number>();
+    for (const name of measured) seen.set(name, (seen.get(name) ?? 0) + 1);
+
+    for (const [name, times] of seen) {
+      if (!known.has(name)) {
+        blocking.push(`measured "${name}", which is not in the catalogue`);
+      }
+      if (times > 1) {
+        blocking.push(`"${name}" was measured ${times} times: a workload appears once`);
+      }
+    }
+    if (coverage.scope !== "subset") {
+      for (const name of expected) {
+        if (!seen.has(name)) {
+          const origin = WORKLOADS.find((w) => w.name === name)?.origin ?? "backend";
+          blocking.push(`${origin} workload "${name}" is missing from the results`);
+        }
+      }
+    }
+
+    const excludedNames = new Set<string>();
+    for (const entry of coverage.excluded) {
+      if (!known.has(entry.workload)) {
+        blocking.push(`excluded "${entry.workload}", which is not in the catalogue`);
+      }
+      if (entry.reason.trim() === "") {
+        blocking.push(`exclusion of "${entry.workload}" gives no reason`);
+      }
+      if (seen.has(entry.workload)) {
+        blocking.push(`"${entry.workload}" is both measured and excluded`);
+      }
+      excludedNames.add(entry.workload);
+    }
+
+    // Every catalogue row lands in exactly one of the two sets.
+    for (const workload of WORKLOADS) {
+      if (!seen.has(workload.name) && !excludedNames.has(workload.name)) {
+        blocking.push(
+          `"${workload.name}" is neither measured nor excluded: the report does ` +
+            `not account for it`,
+        );
+      }
+    }
+  }
+  if (environment.freeDiskBytes >= 0 && environment.freeDiskBytes < 30 * GB) {
+    blocking.push(
+      `needs 30 GB free before starting, found ${(environment.freeDiskBytes / GB).toFixed(1)} GB: PostgreSQL needs WAL and temp headroom, and a starved filesystem is what the timing would describe`,
+    );
+  }
+  // Core count is deliberately NOT blocking. Two cores is the accepted minimum
+  // supported runtime profile, and scheduler pressure there is part of
+  // performance rather than a distortion of it. The result carries
+  // `hardware: "existing-minimum-2-core"` so nobody reads it as universal
+  // production hardware. Suite wall time is the exception and is excluded by
+  // EXCLUDED_ON_MINIMUM_HARDWARE, not by this gate.
+  for (const result of results) {
+    if (result.unmeasured.length > 0) {
+      blocking.push(`${result.workload} has unmeasured budgets: ${result.unmeasured[0]}`);
+    }
+    // Distinct from a failing budget. A workload where nothing succeeded
+    // measured nothing, and a FAIL verdict would misread it as "too slow"
+    // rather than "never ran". This gate previously passed such a run with no
+    // warnings at all.
+    if (result.stats.errorRate >= 1) {
+      blocking.push(
+        `${result.workload} produced no successful responses: the run measured nothing`,
+      );
+    }
+  }
+  // A heap cap or any other flag changes what is measured. A comparison run may
+  // override them; the measurement of record uses what deploys.
+  if (nodeFlags && nodeFlags.used.join(" ") !== nodeFlags.startScript.join(" ")) {
+    blocking.push(
+      `the server ran with node flags "${nodeFlags.used.join(" ")}", but pnpm start uses ` +
+        `"${nodeFlags.startScript.join(" ")}": a baseline measures the deployed configuration`,
+    );
+  }
+  // Public traffic reaches the API through the edge proxy, which compresses.
+  // Sizes taken at the origin describe bytes no client receives.
+  if (payload?.at === "origin") {
+    blocking.push(
+      `payload sizes were measured at the origin, not through the edge proxy: ${payload.reason}`,
+    );
+  }
+  return blocking;
+}
+
+/** Runs the catalogue end to end and writes a JSON report. */
+/** A port nothing is listening on, taken from the kernel and released. */
+async function freePort(): Promise<number> {
+  const probe = createNetServer();
+  await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", () => resolve()));
+  const address = probe.address();
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  if (address === null || typeof address === "string") throw new Error("no free port");
+  return address.port;
+}
+
+export async function runHarness(options: {
+  profileName: keyof typeof PROFILES;
+  benchUrl: string;
+  sourceNodeUrl: string;
+  port: number;
+  mode: "smoke" | "baseline";
+  only?: readonly string[];
+  outFile?: string;
+  run?: RunOptions;
+  /** Also build and start the production frontend and measure its routes. */
+  withFrontend?: boolean;
+  /** Node flags for the server instead of the start script's, for a comparison run. */
+  serverNodeFlags?: readonly string[];
+}): Promise<HarnessReport> {
+  const startedAt = new Date().toISOString();
+  const profile = PROFILES[options.profileName];
+  // Before the environment capture, so `buildHash` describes what will run.
+  const build = options.mode === "baseline" ? buildBackend() : null;
+  // Before the database is seeded, while memory is free: `next build` is the
+  // heaviest step of a run on a two-core machine.
+  const frontendBuild = options.withFrontend ? buildFrontend() : null;
+  const scriptFlags = startScriptNodeFlags();
+  const nodeFlags = options.serverNodeFlags ?? scriptFlags;
+  const control = new Client({ connectionString: options.benchUrl });
+  await control.connect();
+  const environment = await captureEnvironment(control);
+  const probe = await createDbProbe(control);
+
+  const setup = await setupBench({
+    profile,
+    benchUrl: options.benchUrl,
+    sourceNodeUrl: options.sourceNodeUrl,
+    // One distinct key per request, so a `unique-key` workload measures the
+    // route rather than the response cache serving a repeated key.
+    poolSize: options.run?.iterations ?? 40,
+  });
+  let server: ServerHandle | null = null;
+  let edge: EdgeHandle | null = null;
+  let frontend: FrontendHandle | null = null;
+  try {
+    server = await startServer(setup, options.port, {}, nodeFlags);
+    let payload: PayloadSource;
+    try {
+      edge = await startEdge(options.port);
+      payload = { at: "edge", image: edge.image };
+    } catch (error) {
+      payload = { at: "origin", reason: error instanceof Error ? error.message : String(error) };
+    }
+    if (options.withFrontend) {
+      frontend = await startFrontend(server.base, await freePort());
+    }
+    const wanted = options.only;
+    const selected = wanted
+      ? WORKLOADS.filter((w) => wanted.includes(w.name))
+      : WORKLOADS.filter((w) => w.origin === "backend" || frontend !== null);
+    // Every catalogue row is accounted for, so a missing one is a stated
+    // exclusion rather than an absence nobody can see in the report.
+    const excluded = WORKLOADS.filter((w) => !selected.includes(w)).map((w) => ({
+      workload: w.name,
+      reason: wanted
+        ? "not in the requested subset"
+        : `origin is ${w.origin}: not served by the backend under test`,
+    }));
+    const scope = wanted ? ("subset" as const) : frontend ? ("full" as const) : ("backend-only" as const);
+    const results: Judgement[] = [];
+    for (const workload of selected) {
+      if (workload.origin === "frontend" && frontend === null) {
+        throw new Error(`"${workload.name}" is a frontend route: run with --with-frontend`);
+      }
+      // A frontend route is requested from the Next server, which compresses
+      // its own responses; the API edge proxy never sees it.
+      const target = workload.origin === "frontend" && frontend ? { ...server, base: frontend.base } : server;
+      results.push(
+        await runWorkload(
+          workload,
+          setup,
+          target,
+          probe,
+          options.run,
+          workload.origin === "frontend" ? frontend?.base : edge?.base,
+        ),
+      );
+      const frontendCode = frontend?.exitCode() ?? null;
+      if (frontendCode !== null) {
+        throw new Error(
+          `the frontend exited with ${frontendCode} during "${workload.name}":\n${frontend?.output()}`,
+        );
+      }
+      // A dead server answers every request in under a millisecond with a
+      // refused connection, which reads as a fast workload with a 100% error
+      // rate. Without this check a crash after the third workload produced nine
+      // more rows of numbers that described nothing, and the report gave no
+      // reason. Stop at the first one and carry the server's own output.
+      const code = server.exitCode();
+      if (code !== null) {
+        throw new Error(
+          `the server exited with ${code} during "${workload.name}". Results up ` +
+            `to that point are not a measurement:\n${server.output()}`,
+        );
+      }
+    }
+
+    const report: HarnessReport = {
+      mode: options.mode,
+      hardware: hardwareProfileOf(environment),
+      profile: profile.name,
+      environment,
+      warnings: [
+        ...environmentWarnings(environment),
+        ...(options.mode === "baseline"
+          ? baselineGate(environment, results, { scope, excluded }, build, payload, {
+              used: nodeFlags,
+              startScript: scriptFlags,
+            })
+          : []),
+        ...(options.mode === "smoke" && payload.at === "origin"
+          ? [`payload sizes measured at the origin: ${payload.reason}`]
+          : []),
+      ],
+      datasetChecksum: setup.datasetChecksum,
+      settledHashSource: setup.settled.source,
+      settledHashCount: setup.settled.hashes.length,
+      iterations: options.run?.iterations ?? 0,
+      serverConfig: {
+        apiRateLimitMax: BENCH_RATE_LIMIT_MAX,
+        nodeFlags: [...nodeFlags],
+        startScriptNodeFlags: scriptFlags,
+      },
+      scope,
+      build,
+      frontendBuild,
+      peakRssBytes: server.peakRssBytes(),
+      coverage: { measured: results.map((r) => r.workload), excluded },
+      results,
+      payload,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+    };
+    if (options.outFile) {
+      await writeFile(options.outFile, JSON.stringify(report, null, 2));
+    }
+    return report;
+  } finally {
+    await frontend?.stop();
+    await edge?.stop();
+    await server?.stop();
+    await setup.cleanup();
+    await control.end().catch(() => {});
+  }
+}

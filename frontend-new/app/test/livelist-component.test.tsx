@@ -1,7 +1,8 @@
+// @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { useState } from "react";
-import { NewRowsBanner, useHeldList } from "../src/components/ui/livelist";
+import { NewRowsBanner, useHeldList } from "../src/components/ui/base/livelist";
 
 afterEach(cleanup);
 
@@ -68,5 +69,18 @@ describe("a polled list", () => {
     expect(screen.getByRole("button", { name: /1 new block/i }).getAttribute("aria-live")).toBe(
       "polite",
     );
+  });
+});
+
+describe("a polled list that started empty", () => {
+  // The overview mounts with no rows when the backend is down. Holding the
+  // first rows that arrive protects no reading position, and it left the
+  // panel saying "No blocks yet" until a reload.
+  it("shows the first rows that arrive without asking", () => {
+    render(<Harness first={[]} next={[{ id: "a" }, { id: "b" }]} />);
+    fireEvent.click(screen.getByText("poll"));
+    expect(screen.getByText("a")).toBeDefined();
+    expect(screen.getByText("b")).toBeDefined();
+    expect(screen.queryByRole("button", { name: /new block/i })).toBeNull();
   });
 });

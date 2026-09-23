@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { readConsistently } from "./consistent";
 import { toHex } from "../utils";
 
 /** Operational metrics for the overview.
@@ -107,22 +108,22 @@ export async function getMetrics(): Promise<MetricsResponse> {
 
   const [
     tipRows,
-    firstRows,
     throughputRows,
     intervalRows,
-    admissionLatencyRows,
-    admissionCountRows,
-    queueRows,
-    settlementRows,
-    finalityCountRows,
+    admissionRows,
+    finalizationScalars,
     oldestRows,
     finalizationBreakdown,
     admissionBreakdown,
     seriesRows,
-  ] = await Promise.all([
+  ] = await readConsistently(async (db) =>
+    // One snapshot for the whole panel. These nine read the same two tables and
+    // are shown side by side, so a block finalised between two of them made the
+    // tip newer than the backlog it was counted against.
+    Promise.all([
     // A chain tip is finalized journal evidence, not merely the newest
     // transaction row. Height remains a nullable legacy aid.
-    prisma.$queryRaw<
+    db.$queryRaw<
       Array<{
         header_hash: Uint8Array | null;
         height: number | null;
@@ -139,11 +140,7 @@ export async function getMetrics(): Promise<MetricsResponse> {
        ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC
        LIMIT 1;`,
 
-    prisma.$queryRaw<Array<{ at: Date | null }>>`
-      SELECT MIN(block_end_time) AS at
-        FROM pending_block_finalizations WHERE status = 'finalized';`,
-
-    prisma.$queryRaw<Array<{ txs: bigint; blocks: bigint }>>`
+    db.$queryRaw<Array<{ txs: bigint; blocks: bigint }>>`
       SELECT COUNT(j.member_id)::bigint AS txs,
              COUNT(DISTINCT f.header_hash)::bigint AS blocks
         FROM pending_block_finalizations AS f
@@ -152,7 +149,7 @@ export async function getMetrics(): Promise<MetricsResponse> {
        WHERE f.status = 'finalized' AND f.block_end_time >= ${start};`,
 
     // Interval between consecutive finalized header closes.
-    prisma.$queryRaw<
+    db.$queryRaw<
       Array<{ p50: number | null; p95: number | null; n: bigint }>
     >`
       WITH gaps AS (
@@ -167,72 +164,82 @@ export async function getMetrics(): Promise<MetricsResponse> {
              COUNT(gap)::bigint AS n
         FROM gaps WHERE gap IS NOT NULL;`,
 
-    // Admission latency: first seen to terminal decision, for rows that reached
-    // one. Rows still queued or validating have no latency yet and must not be
-    // counted as fast ones.
-    prisma.$queryRaw<
-      Array<{ p50: number | null; p95: number | null; n: bigint }>
+    // Admission latency, terminal counts and queue depth in ONE pass.
+    //
+    // These were three statements over `tx_admissions`, each with its own scan.
+    // FILTER lets one scan answer all three, and it preserves the differing
+    // predicates exactly: latency and the accepted/rejected split are windowed
+    // on `terminal_at`, while queue depth is a standing figure over rows that
+    // have not reached a decision at all. Merging those windows would have been
+    // the bug, not the optimisation.
+    db.$queryRaw<
+      Array<{
+        p50: number | null;
+        p95: number | null;
+        n: bigint;
+        accepted: bigint;
+        rejected: bigint;
+        depth: bigint;
+      }>
     >`
       SELECT percentile_cont(0.5) WITHIN GROUP (
-               ORDER BY EXTRACT(EPOCH FROM terminal_at - first_seen_at) * 1000) AS p50,
+               ORDER BY EXTRACT(EPOCH FROM terminal_at - first_seen_at) * 1000)
+               FILTER (WHERE terminal_at IS NOT NULL AND terminal_at >= ${start}) AS p50,
              percentile_cont(0.95) WITHIN GROUP (
-               ORDER BY EXTRACT(EPOCH FROM terminal_at - first_seen_at) * 1000) AS p95,
-             COUNT(*)::bigint AS n
-        FROM tx_admissions
-       WHERE terminal_at IS NOT NULL AND terminal_at >= ${start};`,
+               ORDER BY EXTRACT(EPOCH FROM terminal_at - first_seen_at) * 1000)
+               FILTER (WHERE terminal_at IS NOT NULL AND terminal_at >= ${start}) AS p95,
+             COUNT(*) FILTER (
+               WHERE terminal_at IS NOT NULL AND terminal_at >= ${start})::bigint AS n,
+             COUNT(*) FILTER (
+               WHERE status = 'accepted' AND terminal_at IS NOT NULL
+                 AND terminal_at >= ${start})::bigint AS accepted,
+             COUNT(*) FILTER (
+               WHERE status = 'rejected' AND terminal_at IS NOT NULL
+                 AND terminal_at >= ${start})::bigint AS rejected,
+             COUNT(*) FILTER (WHERE status IN ('queued', 'validating'))::bigint AS depth
+        FROM tx_admissions;`,
 
-    prisma.$queryRaw<Array<{ accepted: bigint; rejected: bigint }>>`
-      SELECT COUNT(*) FILTER (WHERE status = 'accepted')::bigint AS accepted,
-             COUNT(*) FILTER (WHERE status = 'rejected')::bigint AS rejected
-        FROM tx_admissions
-       WHERE terminal_at IS NOT NULL AND terminal_at >= ${start};`,
-
-    prisma.$queryRaw<Array<{ depth: bigint }>>`
-      SELECT COUNT(*)::bigint AS depth
-        FROM tx_admissions
-       WHERE status IN ('queued', 'validating');`,
-
-    // Settlement latency: block close to the node recording finalization. Only
-    // finalized rows have a completed settlement to measure.
+    // Every standing figure over `pending_block_finalizations` in one pass.
     //
-    // Not windowed, matching the backlog counts directly below. Windowing this
-    // one while counting finalizations over all time put "No data" beside
-    // "8 settled" in the same panel, which reads as a broken explorer rather
-    // than a quiet day. The same reasoning applies as for the backlog: how long
-    // settlement takes on this node is a standing fact, and it does not stop
-    // being true because nothing settled today.
+    // Three statements became one. They differed in what they computed and not
+    // in which rows they read: none of them is windowed, which is deliberate and
+    // was argued over before. Backlog is a standing figure because a block stuck
+    // for three days is exactly what an operator needs to see, and windowing
+    // settlement latency while counting finalizations over all time once put
+    // "No data" beside "8 settled" in one panel, which reads as a broken
+    // explorer rather than a quiet day.
     //
-    // Non-positive durations are excluded. Every finalized row currently on
-    // this node records `updated_at` five to eight minutes BEFORE
-    // `block_end_time`, which yields a negative elapsed time. That is a data
-    // problem in the node, not a fast settlement, and a panel that printed
-    // "-7.8m" would be the confidently wrong figure this file exists to
-    // prevent. Excluding them means the tile reads "No data" until the node
-    // records timestamps that can be subtracted, which is the honest answer.
-    prisma.$queryRaw<
-      Array<{ p50: number | null; p95: number | null; n: bigint }>
+    // Non-positive settlement durations stay excluded. Every finalized row on
+    // this node currently records `updated_at` five to eight minutes BEFORE
+    // `block_end_time`, which is a data problem in the node rather than a fast
+    // settlement, and a panel printing "-7.8m" would be the confidently wrong
+    // figure this file exists to prevent.
+    db.$queryRaw<
+      Array<{
+        at: Date | null;
+        p50: number | null;
+        p95: number | null;
+        n: bigint;
+        finalized: bigint;
+        pending: bigint;
+        abandoned: bigint;
+      }>
     >`
-      SELECT percentile_cont(0.5) WITHIN GROUP (
-               ORDER BY EXTRACT(EPOCH FROM updated_at - block_end_time) * 1000) AS p50,
+      SELECT MIN(block_end_time) FILTER (WHERE status = 'finalized') AS at,
+             percentile_cont(0.5) WITHIN GROUP (
+               ORDER BY EXTRACT(EPOCH FROM updated_at - block_end_time) * 1000)
+               FILTER (WHERE status = 'finalized' AND updated_at > block_end_time) AS p50,
              percentile_cont(0.95) WITHIN GROUP (
-               ORDER BY EXTRACT(EPOCH FROM updated_at - block_end_time) * 1000) AS p95,
-             COUNT(*)::bigint AS n
-        FROM pending_block_finalizations
-       WHERE status = 'finalized'
-         AND updated_at > block_end_time;`,
-
-    // Backlog is a standing figure, not a windowed one: a block stuck for three
-    // days is exactly what an operator needs to see, and a 24 hour filter would
-    // hide it.
-    prisma.$queryRaw<
-      Array<{ finalized: bigint; pending: bigint; abandoned: bigint }>
-    >`
-      SELECT COUNT(*) FILTER (WHERE status = 'finalized')::bigint AS finalized,
+               ORDER BY EXTRACT(EPOCH FROM updated_at - block_end_time) * 1000)
+               FILTER (WHERE status = 'finalized' AND updated_at > block_end_time) AS p95,
+             COUNT(*) FILTER (
+               WHERE status = 'finalized' AND updated_at > block_end_time)::bigint AS n,
+             COUNT(*) FILTER (WHERE status = 'finalized')::bigint AS finalized,
              COUNT(*) FILTER (WHERE status NOT IN ('finalized', 'abandoned'))::bigint AS pending,
              COUNT(*) FILTER (WHERE status = 'abandoned')::bigint AS abandoned
         FROM pending_block_finalizations;`,
 
-    prisma.$queryRaw<
+    db.$queryRaw<
       Array<{ header_hash: Uint8Array; status: string; block_end_time: Date }>
     >`
       SELECT header_hash, status, block_end_time
@@ -241,12 +248,12 @@ export async function getMetrics(): Promise<MetricsResponse> {
        ORDER BY block_end_time ASC
        LIMIT 1;`,
 
-    prisma.$queryRaw<Array<{ status: string; count: bigint }>>`
+    db.$queryRaw<Array<{ status: string; count: bigint }>>`
       SELECT status, COUNT(*)::bigint AS count
         FROM pending_block_finalizations
        GROUP BY status ORDER BY count DESC;`,
 
-    prisma.$queryRaw<Array<{ status: string; count: bigint }>>`
+    db.$queryRaw<Array<{ status: string; count: bigint }>>`
       SELECT status::text AS status, COUNT(*)::bigint AS count
         FROM tx_admissions
        WHERE first_seen_at >= ${start}
@@ -254,7 +261,7 @@ export async function getMetrics(): Promise<MetricsResponse> {
 
     // generate_series keeps empty hours in the result. Without it a quiet hour
     // would vanish and the chart would draw a straight line across an outage.
-    prisma.$queryRaw<Array<{ hour: Date; blocks: bigint; txs: bigint }>>`
+    db.$queryRaw<Array<{ hour: Date; blocks: bigint; txs: bigint }>>`
       WITH hours AS (
         SELECT generate_series(
           date_trunc('hour', ${start}::timestamptz),
@@ -272,23 +279,24 @@ export async function getMetrics(): Promise<MetricsResponse> {
           ON j.header_hash = f.header_hash
        GROUP BY h.hour
        ORDER BY h.hour ASC;`,
-  ]);
+  ]),
+  );
 
   const tip = tipRows[0] ?? { header_hash: null, height: null, at: null };
-  const observedFrom = firstRows[0]?.at ?? null;
+  const observedFrom = finalizationScalars[0]?.at ?? null;
   const throughput = throughputRows[0] ?? { txs: 0n, blocks: 0n };
   const interval = intervalRows[0] ?? { p50: null, p95: null, n: 0n };
-  const admissionLatency = admissionLatencyRows[0] ?? {
+  const admissionLatency = admissionRows[0] ?? {
     p50: null,
     p95: null,
     n: 0n,
   };
-  const admissionCounts = admissionCountRows[0] ?? {
+  const admissionCounts = admissionRows[0] ?? {
     accepted: 0n,
     rejected: 0n,
   };
-  const settlement = settlementRows[0] ?? { p50: null, p95: null, n: 0n };
-  const finalityCounts = finalityCountRows[0] ?? {
+  const settlement = finalizationScalars[0] ?? { p50: null, p95: null, n: 0n };
+  const finalityCounts = finalizationScalars[0] ?? {
     finalized: 0n,
     pending: 0n,
     abandoned: 0n,
@@ -342,7 +350,7 @@ export async function getMetrics(): Promise<MetricsResponse> {
       accepted,
       rejected,
       rejectionRate: terminalTotal === 0 ? null : rejected / terminalTotal,
-      queueDepth: Number(queueRows[0]?.depth ?? 0n),
+      queueDepth: Number(admissionRows[0]?.depth ?? 0n),
       source: "tx_admissions.status, tx_admissions.terminal_at",
     },
     finality: {

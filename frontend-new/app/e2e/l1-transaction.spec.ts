@@ -1,149 +1,128 @@
-import { expect, test, FIXTURE, isNarrow } from "./helpers";
+import { expect, test, FIXTURE, rowRegion } from "./helpers";
 
-test("navigates from Cardano activity into its Midgard summary", async ({ page }) => {
+/**
+ * The Cardano pages, built from what the Midgard node recorded.
+ *
+ * These pages used to render the explorer's own Cardano index: every
+ * transaction touching a validator, its inputs, outputs, scripts and datums.
+ * The index is decommissioned. What remains is the question this explorer can
+ * still answer, which is what Midgard did with a Cardano transaction, and a
+ * link out for everything about the transaction itself.
+ */
+
+type ActivityRow = {
+  kind: "settlement" | "deposit" | "withdrawal" | "forced_transaction";
+  l1TxHash: string;
+  headerHash: string | null;
+  recordId: string | null;
+};
+
+/** Every row, with the page each one is on. The list is newest first and the
+ * fixture's settlements are its newest records, so a kind can start several
+ * pages in; a test that only read page 1 would conclude the kind was missing. */
+const activity = async (
+  request: import("@playwright/test").APIRequestContext,
+): Promise<Array<ActivityRow & { page: number }>> => {
+  const rows: Array<ActivityRow & { page: number }> = [];
+  for (let page = 1; page <= 20; page += 1) {
+    const body = await request.get(`${FIXTURE}/api/l1/activity/${page}`).then((r) => r.json());
+    rows.push(...(body.rows as ActivityRow[]).map((row) => ({ ...row, page })));
+    if (!body.hasNextPage) break;
+  }
+  return rows;
+};
+
+test("lists what the node recorded, and says it is not a chain scan", async ({ page }) => {
   await page.goto("/l1");
   await expect(page.getByRole("heading", { name: "Cardano activity" })).toBeVisible();
+  await expect(page.getByText(/The node's records, not a chain scan\./)).toBeVisible();
+  // The rows, not a table cell: below `sm` the table is replaced by a list, so
+  // a cell-role assertion passes on desktop and finds nothing on a phone.
+  await expect(rowRegion(page).getByText("Block settlement").first()).toBeVisible();
+});
 
-  const first = page.locator('a[href^="/l1/transaction/"]:visible').first();
-  await expect(first).toBeVisible();
-  await first.click();
+/** Every kind the node records reaches the one list, each on the page the
+ * ordering puts it. A union that dropped a kind would look like a deployment
+ * that had none of it. */
+test("brings every kind of record into the one list", async ({ page }) => {
+  const rows = await activity(page.request);
+  const labels = {
+    settlement: "Block settlement",
+    deposit: "Deposit",
+    withdrawal: "Withdrawal",
+    forced_transaction: "Forced transaction",
+  } as const;
+  for (const [kind, label] of Object.entries(labels)) {
+    const first = rows.find((row) => row.kind === kind);
+    expect(first, `the list holds no ${kind}`).toBeTruthy();
+    await page.goto(`/l1?page=${first!.page}`);
+    await expect(rowRegion(page).getByText(label).first()).toBeVisible();
+  }
+});
 
-  await expect(page).toHaveURL(/\/l1\/transaction\/[0-9a-f]{64}$/);
+test("opens a transaction on the Midgard context the node holds for it", async ({ page }) => {
+  const settlement = (await activity(page.request)).find((row) => row.kind === "settlement");
+  expect(settlement, "the fixture records no settlement").toBeTruthy();
+  await page.goto(`/l1/transaction/${settlement!.l1TxHash}`);
+
   await expect(page.getByRole("heading", { name: "Cardano transaction" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Midgard activity" })).toBeVisible();
-  await expect(page.getByText("Deposited funds into Midgard.")).toBeVisible();
-  await expect(page.getByText("Committed a Midgard header to Cardano.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Block settlement" })).toBeVisible();
+  // The Midgard record it belongs to, one click away.
+  await expect(page.locator(`a[href="/block/${settlement!.headerHash}"]`).first()).toBeVisible();
+  // And the transaction itself, on the configured Cardano explorer.
   await expect(page.getByRole("link", { name: "View on CExplorer" })).toHaveAttribute(
     "href",
     /preprod\.cexplorer\.io\/tx\/[0-9a-f]{64}$/,
   );
-
-  for (const generic of ["UTxOs", "Contracts", "Collateral", "Mint / burn", "Raw"]) {
-    await expect(page.getByRole("tab", { name: generic })).toHaveCount(0);
+  await expect(page.getByText(/Its inputs, outputs and scripts are on Cardano/)).toBeVisible();
+  // No decoded transaction body: that came from the decommissioned index.
+  for (const section of ["UTxOs", "Contracts", "Collateral", "Raw"]) {
+    await expect(page.getByRole("tab", { name: section })).toHaveCount(0);
   }
 });
 
-/** The datum names a destination, an owner, and the UTxO leaving. All three
- * were decoded at ingest and none of them reached the page, which is the same
- * defect as an unindexed field from a reader's side. */
-test("shows what a user event's datum proved", async ({ page }) => {
-  const specimens = await page.request.get(`${FIXTURE}/__l1-specimens`).then((r) => r.json());
-
-  await page.goto(`/l1/transaction/${specimens.decodedDeposit}`);
-  await expect(page.getByText("Midgard payment credential")).toBeVisible();
-  await expect(page.getByText("Inclusion time").first()).toBeVisible();
-
-  await page.goto(`/l1/transaction/${specimens.decodedWithdrawal}`);
-  await expect(page.getByText("Owner", { exact: true })).toBeVisible();
-  await expect(page.getByText("Midgard UTxO")).toBeVisible();
+test("a bridge record links back to its own list, filtered to it", async ({ page }) => {
+  const deposit = (await activity(page.request)).find((row) => row.kind === "deposit");
+  expect(deposit, "the fixture records no deposit").toBeTruthy();
+  await page.goto(`/l1/transaction/${deposit!.l1TxHash}`);
+  await expect(page.getByRole("heading", { name: "Deposit" })).toBeVisible();
+  await expect(page.locator(`a[href="/deposits?id=${deposit!.recordId}"]`).first()).toBeVisible();
 });
 
-/** A deposit whose script failed used to read exactly like one that succeeded:
- * the row reported success for every classified action, with nothing having
- * checked. */
-test("says when a Midgard contract failed to validate", async ({ page }) => {
-  const specimens = await page.request.get(`${FIXTURE}/__l1-specimens`).then((r) => r.json());
-  await page.goto(`/l1/transaction/${specimens.failedContract}`);
-  await expect(page.getByText("Script validation failed")).toBeVisible();
-
-  // And says nothing where nothing ran: an absent verdict is not a pass.
-  await page.goto(`/l1/transaction/${specimens.decodedWithdrawal}`);
-  await expect(page.getByText("Script validation failed")).toHaveCount(0);
+/** A hash no Midgard record names is a fact about Midgard's records, and the
+ * page must not turn it into a claim about Cardano. */
+test("a hash no Midgard record names is not called missing from Cardano", async ({ page }) => {
+  await page.goto(`/l1/transaction/${"e".repeat(64)}`);
+  await expect(page.getByText("Midgard has no record of this transaction")).toBeVisible();
+  await expect(page.getByText(/not about Cardano/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "View on CExplorer" })).toBeVisible();
 });
 
-test("rejects an identifier that is not a transaction hash", async ({ page }) => {
-  await page.goto("/l1/transaction/not-a-hash");
-  await expect(page.getByRole("heading", { name: /not found/i })).toBeVisible();
-});
-
-/* A well-formed hash we hold nothing about is a different answer from a
- * malformed one. It is usually a real Cardano transaction, so the page says
- * which case it is and delegates, rather than making the reader discover the
- * internal/external distinction by hitting a dead end. */
-test("delegates a hash it holds no Midgard record for", async ({ page }) => {
-  await page.goto(`/l1/transaction/${"f".repeat(64)}`);
-
+test("a validator page describes the manifest and links its address out", async ({ page }) => {
+  const validators = (await page.request.get(`${FIXTURE}/api/l1/validators`).then((r) => r.json()))
+    .validators as Array<{ scriptHash: string; address: string }>;
+  const first = validators[0]!;
+  await page.goto(`/l1/validator/${first.scriptHash}`);
+  await expect(page.getByText("Declared by the manifest")).toBeVisible();
+  // Operator setup instructions are not reader copy.
+  await expect(page.getByText(/Configure/)).toHaveCount(0);
   await expect(
-    page.getByRole("heading", { name: "No Midgard record for this transaction" }),
-  ).toBeVisible();
-  await expect(page.getByRole("heading", { name: /not found/i })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "View on CExplorer" })).toHaveAttribute(
-    "href",
-    `https://preprod.cexplorer.io/tx/${"f".repeat(64)}`,
-  );
+    page.getByRole("link", { name: new RegExp(`View ${first.address} on CExplorer`) }),
+  ).toHaveAttribute("href", /preprod\.cexplorer\.io\/address\//);
+  // Configuration, never evidence: nothing says verified.
+  await expect(page.getByText(/verified/i)).toHaveCount(0);
 });
 
-test("sends bridge Cardano references directly to CExplorer", async ({ page }) => {
-  await page.goto("/deposits");
-  // Below `sm` the ledger row carries the L1 hash behind its Details
-  // disclosure rather than in a column, so the link exists but is not yet
-  // rendered. Opening it asserts the same rule on the layout a phone gets.
-  if (await isNarrow(page)) {
-    await page.getByText("Details", { exact: true }).first().click();
-  }
-  const record = page.locator('a[href*="cexplorer.io/tx/"]:visible').first();
-  await expect(record).toBeVisible();
-  await expect(record).toHaveAttribute("target", "_blank");
+test("a script hash the manifest does not declare is not found", async ({ page }) => {
+  const response = await page.goto(`/l1/validator/${"0".repeat(56)}`);
+  expect(response?.status()).toBe(404);
 });
 
-test("opens a manifest validator's indexed UTxOs, history, and operations", async ({ page }) => {
-  const summary = await page.request
-    .get(`${FIXTURE}/api/l1/summary`)
-    .then(
-      async (response) =>
-        (await response.json()) as { source: { validators: Array<{ scriptHash: string }> } },
-    );
-  await page.goto(`/l1/validator/${summary.source.validators[0]!.scriptHash}`);
-  await expect(page).toHaveURL(/\/l1\/validator\/[0-9a-f]{56}$/);
-  await expect(page.getByRole("heading", { name: /Deposit validator/ })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /UTxOs/ })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /History/ })).toBeVisible();
-  await expect(page.getByRole("tab", { name: /Operations/ })).toBeVisible();
-});
-
-/** The indexer has written redeemers since it first ran and no page read them,
- * so a reader could see that a Midgard contract executed but not what it cost.
- * The share is the part that needs a denominator, and the denominator is
- * Cardano's limit for this transaction's own epoch. */
-test("states what a script execution cost and what share of the limit that was", async ({
-  page,
-}) => {
-  const specimens = await page.request.get(`${FIXTURE}/__l1-specimens`).then((r) => r.json());
-  await page.goto(`/l1/transaction/${specimens.decodedDeposit}`);
-
-  await expect(page.getByRole("heading", { name: "Script executions" })).toBeVisible();
-  await expect(page.getByText(/share of the per-transaction limit/)).toBeVisible();
-  await expect(page.getByText("18.3%")).toBeVisible();
-  await expect(page.getByText("9.0%")).toBeVisible();
-});
-
-/** The indexer has stored every UTxO of every Midgard-related transaction
- * since it was written, and none of it reached this page. An address arrived
- * with a copy button and nothing beside it: its payment credential, its stake
- * address, the UTxO it sits in and the transaction that spent it were all held
- * in the index and none were shown. */
-test("shows the Cardano UTxOs with credentials, references and spenders", async ({ page }) => {
-  const specimens = await page.request.get(`${FIXTURE}/__l1-specimens`).then((r) => r.json());
-  await page.goto(`/l1/transaction/${specimens.spentOutput}`);
-
-  await expect(page.getByRole("heading", { name: /^Inputs \(\d+\)/ })).toBeVisible();
-  const outputs = page.getByRole("heading", { name: /^Outputs \(\d+\)/ });
-  await expect(outputs).toBeVisible();
-
-  // The address is a link out, not text with a copy button beside it.
-  const address = page.getByRole("link", { name: /View this address on CExplorer/ }).first();
-  await expect(address).toHaveAttribute("href", /preprod\.cexplorer\.io\/address\/addr_test1/);
-
-  // Each UTxO names itself, and an input names the transaction that made it.
-  await expect(page.locator('a[href^="/l1/transaction/"]').first()).toBeVisible();
-
-  // The spender, where this index holds it, and the limit of that answer.
-  const consumed = page.getByText("Consumed by");
-  await expect(consumed).toHaveCount(1);
-  await expect(page.getByText(/no spender here does not mean unspent/i)).toBeVisible();
-
-  // Credentials open on demand, the way the Midgard transaction page shows them.
-  await page.getByText("Credentials").first().click();
-  await expect(page.getByText("Payment credential").first()).toBeVisible();
-  await expect(page.getByText("Stake address").first()).toBeVisible();
+/** The old commitments list answered a question `/blocks` answers from the
+ * node's own records, so its address redirects there rather than going dead. */
+test("the retired commitments page redirects to the blocks list", async ({ page }) => {
+  const response = await page.goto("/l1/commitments");
+  await expect(page).toHaveURL(/\/blocks$/);
+  expect(response?.ok()).toBe(true);
+  await expect(page.getByRole("heading", { name: "Blocks" }).first()).toBeVisible();
 });

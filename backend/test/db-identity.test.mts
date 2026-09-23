@@ -26,13 +26,16 @@ describe("reportDatabaseIdentity", () => {
     const out = await captureLogs();
     // current_database() is answered by the server, so this is the real name
     // even when the configured URL says something else.
-    expect(out).toContain("Explorer database:");
-    expect(out).toMatch(/Explorer database: "[a-z0-9_]+"/);
+    expect(out).toContain("Node database:");
+    expect(out).toMatch(/Node database: "[a-z0-9_]+"/);
   });
 
-  it("reports how much the explorer database holds, so a wrong one is obvious", async () => {
+  /** The line that makes a wrong database obvious. A name alone is easy to
+   * skim past; a name beside "9 blocks, newest three weeks ago" is not. */
+  it("reports how much the database holds and how old it is", async () => {
     const out = await captureLogs();
-    expect(out).toMatch(/indexed L1 transactions/);
+    expect(out).toMatch(/with \d+ blocks/);
+    expect(out).toMatch(/newest (none|\d{4}-\d{2}-\d{2})/);
   });
 
   // The discriminating case. A boot line that dumps the connection URL would
@@ -42,13 +45,6 @@ describe("reportDatabaseIdentity", () => {
     const password = process.env.POSTGRES_PASSWORD ?? "";
     if (password.length > 0) expect(out).not.toContain(password);
 
-    // Only checked when the value is long enough to be a real secret. The
-    // local explorer database uses a short dev password that is also a
-    // substring of its own database name, so a plain "does not contain"
-    // assertion fails on a correct log line and would have to be deleted,
-    // taking the real protection with it.
-    const indexerPassword = new URL(config.INDEXER_POSTGRES_URL).password;
-    if (indexerPassword.length >= 16) expect(out).not.toContain(indexerPassword);
 
     // The assertion that holds regardless of password strength: no connection
     // string, and no user:secret@host anywhere. This is what actually catches

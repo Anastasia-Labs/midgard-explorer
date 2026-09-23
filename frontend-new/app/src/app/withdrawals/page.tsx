@@ -1,22 +1,23 @@
+import Link from "next/link";
 import type { Metadata } from "next";
-import { ValueCell } from "../../components/ui/amount";
-import { Breadcrumbs } from "../../components/ui/breadcrumbs";
-import { Icon } from "../../components/ui/icons";
-import { AddressLink } from "../../components/ui/address";
-import { Identifier } from "../../components/ui/identifier";
-import { L1TxLink } from "../../components/ui/l1link";
-import { InfoTip } from "../../components/ui/infotip";
-import { StatusLegend } from "../../components/ui/legend";
-import { PageError } from "../../components/ui/pageerror";
-import { L1L2Badge, PageHeader } from "../../components/ui/primitives";
-import { StatusBadge, StatusCell } from "../../components/ui/status";
-import { DataTable, Pagination } from "../../components/ui/table";
-import { Timestamp } from "../../components/ui/timestamp";
+import { ValueCell } from "../../components/ui/domain/amount";
+import { Icon } from "../../components/ui/base/icons";
+import { AddressLink } from "../../components/ui/domain/address";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { L1TxLink } from "../../components/ui/domain/l1link";
+import { InfoTip } from "../../components/ui/base/infotip";
+import { StatusLegend } from "../../components/ui/base/legend";
+import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
+import { StatusCell } from "../../components/ui/domain/status";
+import { DataTable, Pagination } from "../../components/ui/base/table";
+import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { ListError } from "../../components/ui/base/listerror";
 
 export const metadata: Metadata = {
   title: "Withdrawals",
@@ -41,11 +42,12 @@ export default async function WithdrawalsPage({
     data = await api.withdrawalsPage(page, await viewerInit(), id);
   } catch (e) {
     return (
-      <>
-        <Breadcrumbs items={CRUMBS} />
-        <PageHeader entity="withdrawal" title="Withdrawals" />
-        <PageError message={listErrorMessage(e)} />
-      </>
+      <ListError
+        crumbs={CRUMBS}
+        entity="withdrawal"
+        title="Withdrawals"
+        message={listErrorMessage(e)}
+      />
     );
   }
 
@@ -55,7 +57,6 @@ export default async function WithdrawalsPage({
       <PageHeader
         entity="withdrawal"
         title="Withdrawals"
-        subtitle="Funds leaving Midgard for Cardano."
         meta={
           <>
             <span className="inline-flex items-center gap-1.5">
@@ -77,11 +78,10 @@ export default async function WithdrawalsPage({
           caption="Withdrawals from Midgard to Cardano"
           columns={[
             {
-              header: "L1 tx",
-              headerNote: "on Cardano",
+              header: "Request on Cardano",
               cell: (r) => (
                 <span className="inline-flex items-center gap-1.5">
-                  <L1TxLink hash={r.withdrawal_l1_tx_hash} destination="cardano" />
+                  <L1TxLink hash={r.withdrawal_l1_tx_hash} destination="cardano" marker={false} />
                   <span className="font-mono text-micro text-text-3">
                     #{r.withdrawal_l1_output_index}
                     <span className="sr-only"> (L1 output index)</span>
@@ -90,8 +90,7 @@ export default async function WithdrawalsPage({
               ),
             },
             {
-              header: "L2 outref",
-              headerNote: "stored output reference",
+              header: "L2 output",
               cell: (r) => <Identifier value={r.l2_outref} />,
               hideBelow: "lg",
             },
@@ -135,18 +134,11 @@ export default async function WithdrawalsPage({
             },
             {
               header: "Validity",
-              headerNote: "whether the node accepted it",
               cell: (r) =>
                 r.validity === null ? (
-                  <span className="inline-flex items-center gap-1 text-text-3">
-                    Not yet
-                    <InfoTip
-                      subject="validity"
-                      explain="The node has not validated this withdrawal yet, so it has no validity result. It can still become valid or fail a specific check."
-                    />
-                  </span>
+                  <span className="text-text-3">Not validated yet</span>
                 ) : (
-                  <StatusBadge status={r.validity} />
+                  <StatusCell status={r.validity} />
                 ),
               hideBelow: "sm",
             },
@@ -203,7 +195,7 @@ export default async function WithdrawalsPage({
                 ),
               },
               {
-                label: "L2 outref",
+                label: "L2 output",
                 value: <Identifier value={r.l2_outref} head={8} tail={6} />,
               },
               {
@@ -212,7 +204,7 @@ export default async function WithdrawalsPage({
                   r.validity === null ? (
                     <span className="text-text-3">Not validated yet</span>
                   ) : (
-                    <StatusBadge status={r.validity} />
+                    <StatusCell status={r.validity} />
                   ),
               },
               {
@@ -232,8 +224,22 @@ export default async function WithdrawalsPage({
           })}
           rows={data.rows}
           keyOf={(r) => r.event_id}
-          emptyTitle="No withdrawals yet"
-          emptyHint="Withdrawals appear once an address sends funds from the Midgard ledger back to Cardano."
+          emptyTitle={id ? "No matching withdrawal" : "No withdrawals yet"}
+          {...(id
+            ? {
+                emptyAction: (
+                  <Link
+                    href="/withdrawals"
+                    className="text-link hover:text-link-hover hover:underline"
+                  >
+                    Clear filter
+                  </Link>
+                ),
+              }
+            : {
+                emptyHint:
+                  "Withdrawals appear once an address sends funds from the Midgard ledger back to Cardano.",
+              })}
         />
         <StatusLegend kinds={["bridge_status", "withdrawal_validity"]} />
         <Pagination
