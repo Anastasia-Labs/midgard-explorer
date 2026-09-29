@@ -80,7 +80,6 @@ so there is one way to start the explorer rather than two that must agree.
 |---|---|
 | `backend/` | The API. Reads the Midgard node's PostgreSQL, and nothing else. |
 | `frontend-new/` | The current explorer web app: a pnpm workspace of `app` (Next.js), `contracts` (response schemas) and `ui` (design tokens and primitives). |
-| `frontend/` | The previous Vite client. Kept and still buildable; no longer the app being developed. |
 | `docs/` | Production data path, data-coverage audit, design audits, and the feedback implementation plan. |
 | `docs/decisions/` | Numbered records of structural decisions, including why each root is its own pnpm workspace. |
 | `infra/` | The Nginx API cache template used by `docker-compose.yml`. |
