@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CI parity for frontend-new. Run this before proposing any commit; a
+# CI parity for frontend. Run this before proposing any commit; a
 # from-memory subset of checks is not a gate.
 #
 #   ./scripts/ci-local.sh          full gate

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { outputExcerpt } from "./harness.mjs";
 
 /** The Next app the explorer deploys. */
-export const FRONTEND_APP = fileURLToPath(new URL("../../frontend-new/app/", import.meta.url));
+export const FRONTEND_APP = fileURLToPath(new URL("../../frontend/app/", import.meta.url));
 
 /**
  * A production build of the frontend.

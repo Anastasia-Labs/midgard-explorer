@@ -8,7 +8,7 @@
  * docker, prisma, or a script that generates a file in another directory:
  *
  *   cd backend      && pnpm dev
- *   cd frontend-new && pnpm dev
+ *   cd frontend && pnpm dev
  *
  * Commands, each behind a pnpm script of the same name:
  *   setup [--force]      write backend/.env
@@ -231,7 +231,7 @@ const commandDev = async () => {
   say("");
   say(`API:       http://127.0.0.1:${port}`);
   say(`Mode:      serving reads from the Midgard node's database`);
-  say(`Frontend:  cd ../frontend-new && pnpm dev`);
+  say(`Frontend:  cd ../frontend && pnpm dev`);
   await serve();
 };
 

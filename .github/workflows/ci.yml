@@ -187,7 +187,7 @@ jobs:
             cat gate-evidence/backend-for-contracts.log
             exit 1
           }
-          cd ../frontend-new
+          cd ../frontend
           pnpm install --frozen-lockfile
           BACKEND_URL=http://127.0.0.1:3101 REQUIRE_BACKEND=1 \
             pnpm --filter @midgard-explorer/app exec vitest run test/backend-contract.test.ts \
@@ -293,7 +293,7 @@ jobs:
     timeout-minutes: 45
     defaults:
       run:
-        working-directory: frontend-new
+        working-directory: frontend
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -306,7 +306,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: frontend-new/pnpm-lock.yaml
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
 
@@ -368,8 +368,8 @@ jobs:
         with:
           name: frontend-gate-evidence
           path: |
-            frontend-new/gate-evidence
-            frontend-new/app/test-results
+            frontend/gate-evidence
+            frontend/app/test-results
           retention-days: 30
 
   documented-workflow:
@@ -408,7 +408,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: |
             backend/pnpm-lock.yaml
-            frontend-new/pnpm-lock.yaml
+            frontend/pnpm-lock.yaml
 
       - name: pnpm install leaves nothing to generate by hand
         working-directory: backend
@@ -449,8 +449,8 @@ jobs:
           pnpm setup
           grep -q '^POSTGRES_HOST=localhost' .env
           # Nothing outside this package may be written.
-          test ! -f ../frontend-new/app/.env.local || {
-            echo "setup wrote into frontend-new"; exit 1; }
+          test ! -f ../frontend/app/.env.local || {
+            echo "setup wrote into frontend"; exit 1; }
 
       - name: pnpm dev
         # `set -m` puts the command in its own process group, which is what a
@@ -471,8 +471,8 @@ jobs:
           curl -sf http://127.0.0.1:3101/healthz >/dev/null || { cat ../backend.log; exit 1; }
           cat ../backend.log
 
-      - name: pnpm dev, in frontend-new
-        working-directory: frontend-new
+      - name: pnpm dev, in frontend
+        working-directory: frontend
         run: |
           set -euo pipefail
           pnpm install --frozen-lockfile

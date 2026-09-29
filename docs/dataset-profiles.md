@@ -181,7 +181,7 @@ Per ADR 0008, the artifacts are a chain, not three independent generators:
 canonical records  ->  SQL seed  ->  real backend routes  ->  contract-validated snapshots  ->  demo server
 ```
 
-Nothing hand-writes a response body, and every captured response is validated against `frontend-new/contracts/src/` before it is written. A fixture therefore cannot describe a response the real route would never produce.
+Nothing hand-writes a response body, and every captured response is validated against `frontend/contracts/src/` before it is written. A fixture therefore cannot describe a response the real route would never produce.
 
 ## Open questions
 

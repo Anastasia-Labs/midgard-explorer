@@ -9,7 +9,7 @@ own tables.
 Use it when a Midgard node has run somewhere and its PostgreSQL is reachable.
 
 Two terminals. The [backend guide](../backend/README.md) and the
-[frontend guide](../frontend-new/README.md) cover each package's commands in
+[frontend guide](../frontend/README.md) cover each package's commands in
 full; this page covers the mode.
 
 ## What you need
@@ -70,7 +70,7 @@ pnpm dev
 ```text
 API:       http://127.0.0.1:3101
 Mode:      serving L2 reads
-Frontend:  cd ../frontend-new && pnpm dev
+Frontend:  cd ../frontend && pnpm dev
 ```
 
 `pnpm dev` checks that it can serve, then runs the API in the foreground. It
@@ -78,7 +78,7 @@ starts no container: the explorer reads Midgard's database and owns none of its
 own. In the second terminal:
 
 ```sh
-cd frontend-new
+cd frontend
 pnpm install
 pnpm dev
 ```

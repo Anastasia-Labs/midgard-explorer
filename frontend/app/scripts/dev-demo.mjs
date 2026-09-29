@@ -6,7 +6,7 @@
  * secrets. The fixture server answers the same routes as the real API, so the
  * whole interface can be developed and reviewed from a clean clone.
  *
- *   cd frontend-new && pnpm dev:demo
+ *   cd frontend && pnpm dev:demo
  *
  * The records shown are labelled as demo data, because an explorer full of
  * plausible transactions that describe nothing is worse than an empty one.

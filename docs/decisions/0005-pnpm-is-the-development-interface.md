@@ -10,8 +10,8 @@ starts. The repository root carries no command of its own.
 
 | To do this | Run |
 |---|---|
-| the explorer against a Midgard database | `cd backend && pnpm dev`, then `cd frontend-new && pnpm dev` |
-| the explorer with no backend at all | `cd frontend-new && pnpm dev:demo` |
+| the explorer against a Midgard database | `cd backend && pnpm dev`, then `cd frontend && pnpm dev` |
+| the explorer with no backend at all | `cd frontend && pnpm dev:demo` |
 | find out what is wrong | `cd backend && pnpm doctor` |
 | stop the containers | `cd backend && pnpm services:down` |
 
@@ -55,7 +55,7 @@ script.
 ## Consequences
 
 `backend/scripts/` holds the lifecycle, the setup, the doctor and its checks,
-the compatibility pin and the documentation gate. `frontend-new/app/scripts/`
+the compatibility pin and the documentation gate. `frontend/app/scripts/`
 holds demo mode and the resource measurement. Each is reachable only through
 the pnpm script that names it.
 

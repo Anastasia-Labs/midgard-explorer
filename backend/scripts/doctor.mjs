@@ -150,7 +150,7 @@ if (json) {
     process.stdout.write(`\nFix the failures above, then run: ${again}\n`);
   } else if (!UNBUILT.has(mode)) {
     process.stdout.write(
-      `\nReady. Start it with: ${mode === "demo" ? "cd frontend-new && pnpm dev:demo" : "pnpm dev"}\n`,
+      `\nReady. Start it with: ${mode === "demo" ? "cd frontend && pnpm dev:demo" : "pnpm dev"}\n`,
     );
   } else {
     process.stdout.write(

@@ -6,7 +6,7 @@ because they are not the same kind and cannot be compared as though they were.
 - **Hard floor**: the mode was run inside a container with `--cpus 2`,
   `--memory N`, and `--memory-swap N`, so the ceiling was enforced rather than
   requested. The floor is the smallest ceiling at which the task still
-  completed. Reproduce with `cd frontend-new && pnpm measure limit <MB>`.
+  completed. Reproduce with `cd frontend && pnpm measure limit <MB>`.
 
   The image is `node:24-bookworm-slim`, and the choice is load-bearing. The host
   install resolves the glibc build of the SWC binary, so `next` on a musl image

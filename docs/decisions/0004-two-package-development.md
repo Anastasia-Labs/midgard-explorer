@@ -8,7 +8,7 @@ The normal way to run the explorer is two commands in two directories:
 
 ```sh
 cd backend      && pnpm dev
-cd frontend-new && pnpm dev
+cd frontend && pnpm dev
 ```
 
 A reachable Midgard node PostgreSQL is the only external prerequisite. Nothing
@@ -20,7 +20,7 @@ Each package owns everything it needs.
 | Package | Owns |
 |---|---|
 | `backend/` | The Midgard connection, the explorer's index, both Prisma clients, the migrations, the L1 indexer, readiness, and the lifecycle of all of it |
-| `frontend-new/` | The pages, the demo fixture, and the browser suite |
+| `frontend/` | The pages, the demo fixture, and the browser suite |
 
 ## `pnpm install` leaves nothing to run by hand
 
@@ -60,7 +60,7 @@ The rules that decide whether a command is safe are each implemented once:
 | Which containers a stop may touch | `backend/scripts/lib/compose.mjs` |
 | How configuration is read and validated | `backend/scripts/lib/env.mjs` |
 | Whether this instance can serve | `backend/scripts/probe-readiness.ts` |
-| How demo mode starts | `frontend-new/app/scripts/dev-demo.mjs` |
+| How demo mode starts | `frontend/app/scripts/dev-demo.mjs` |
 
 This record originally kept a `./dev` command at the repository root as a second
 entry point onto those rules.

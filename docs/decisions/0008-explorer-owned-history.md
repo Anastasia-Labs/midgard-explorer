@@ -163,7 +163,7 @@ canonical records  ->  SQL seed  ->  real backend routes  ->  contract-validated
 - **Canonical records** are the single source, satisfying the invariants in `docs/dataset-profiles.md`.
 - **SQL seed** is generated from them and loaded into a throwaway database.
 - **Real backend routes** are then exercised against that database. Nothing hand-writes a response body.
-- **Contract-validated snapshots** are the captured responses, each validated against the schema in `frontend-new/contracts/src/` before it is written. A response that fails its contract fails the build.
+- **Contract-validated snapshots** are the captured responses, each validated against the schema in `frontend/contracts/src/` before it is written. A response that fails its contract fails the build.
 - **Demo server** replays those snapshots.
 
 The property this buys, which the three-generator design did not: a fixture cannot describe a response the real route would never produce. Contract drift, route changes and codec changes all break the fixture build rather than being discovered later against a stale artifact.

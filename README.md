@@ -28,7 +28,7 @@ pnpm dev
 ```
 
 ```sh
-cd frontend-new
+cd frontend
 pnpm install
 pnpm dev
 ```
@@ -46,7 +46,7 @@ One terminal, no backend, no Docker, no database and no secrets. The records are
 committed fixtures, and the interface says so.
 
 ```sh
-cd frontend-new
+cd frontend
 pnpm install
 pnpm dev:demo
 ```
@@ -65,7 +65,7 @@ It names the check that failed and the command that fixes it.
 | Guide | What it covers |
 |---|---|
 | [Backend](backend/README.md) | Every backend command, its configuration, and the database-safety rules |
-| [Frontend](frontend-new/README.md) | Every frontend command, the demo mode, and the end-to-end suite |
+| [Frontend](frontend/README.md) | Every frontend command, the demo mode, and the end-to-end suite |
 | [Running the full Midgard stack](docs/running-full-midgard.md) | Producing live L2 activity, by hand: Cardano Node, Kupo, Ogmios and funded wallets |
 | [Troubleshooting](docs/troubleshooting.md) | Keyed by the names `pnpm doctor` prints |
 | [Resource requirements](docs/resource-requirements.md) | Measured memory floors per mode |
@@ -79,7 +79,7 @@ so there is one way to start the explorer rather than two that must agree.
 | Path | What it is |
 |---|---|
 | `backend/` | The API. Reads the Midgard node's PostgreSQL, and nothing else. |
-| `frontend-new/` | The current explorer web app: a pnpm workspace of `app` (Next.js), `contracts` (response schemas) and `ui` (design tokens and primitives). |
+| `frontend/` | The current explorer web app: a pnpm workspace of `app` (Next.js), `contracts` (response schemas) and `ui` (design tokens and primitives). |
 | `docs/` | Production data path, data-coverage audit, design audits, and the feedback implementation plan. |
 | `docs/decisions/` | Numbered records of structural decisions, including why each root is its own pnpm workspace. |
 | `infra/` | The Nginx API cache template used by `docker-compose.yml`. |
@@ -110,7 +110,7 @@ pnpm start     # node dist/index.js
 The frontend builds and serves with Next:
 
 ```bash
-cd frontend-new
+cd frontend
 pnpm build
 pnpm start
 ```
@@ -170,7 +170,7 @@ appear at all.
 
 ```bash
 cd backend       && pnpm check && pnpm run audit:gate && pnpm build
-cd frontend-new  && ./scripts/ci-local.sh          # add --fast to skip the e2e suite
+cd frontend  && ./scripts/ci-local.sh          # add --fast to skip the e2e suite
 ```
 
 `pnpm check` in `backend/` is the type check, the documentation gate, the Vitest
@@ -229,7 +229,7 @@ the network could present itself as the edge and state any client identity it
 liked.
 
 On a machine too small to hold the whole end-to-end suite in one process,
-`frontend-new/scripts/e2e-by-file.sh` runs the same tests one spec file at a
+`frontend/scripts/e2e-by-file.sh` runs the same tests one spec file at a
 time against a single production build, and reports per file.
 
 ## Production data path

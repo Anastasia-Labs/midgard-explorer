@@ -49,7 +49,7 @@ const relativeToRepo = (absolute) => relative(repoRoot, absolute).split("\\").jo
 const PAGES = [
   "README.md",
   "backend/README.md",
-  "frontend-new/README.md",
+  "frontend/README.md",
   "docs/running-demo.md",
   "docs/running-existing-midgard.md",
   "docs/running-full-midgard.md",
@@ -82,11 +82,11 @@ const PAGES = [
  * stale `npx ts-node scripts/probe-readiness.ts` sit in the root README. */
 const PACKAGE_OF = {
   "backend/README.md": "backend",
-  "frontend-new/README.md": "frontend-new",
+  "frontend/README.md": "frontend",
 };
 
 /** The packages a page may send a reader into. */
-const PACKAGES = ["backend", "frontend-new"];
+const PACKAGES = ["backend", "frontend"];
 
 const problems = [];
 
@@ -231,9 +231,9 @@ const SCRIPT_DIRS = [
   "",
   "backend/",
   "backend/scripts/",
-  "frontend-new/",
-  "frontend-new/app/",
-  "frontend-new/app/scripts/",
+  "frontend/",
+  "frontend/app/",
+  "frontend/app/scripts/",
   "scripts/",
 ];
 

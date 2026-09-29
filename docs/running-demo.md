@@ -3,7 +3,7 @@
 One terminal, in the foreground:
 
 ```sh
-cd frontend-new
+cd frontend
 pnpm install
 pnpm dev:demo
 ```
@@ -43,7 +43,7 @@ development lock, so one is never left behind by the other.
 
 ## What the data is
 
-Every record comes from `frontend-new/app/e2e/fixtures/`, the same fixture the
+Every record comes from `frontend/app/e2e/fixtures/`, the same fixture the
 end-to-end suite runs against. The network label reads `Demo`. Nothing here
 describes a real deployment, and no page in this mode is evidence about one.
 

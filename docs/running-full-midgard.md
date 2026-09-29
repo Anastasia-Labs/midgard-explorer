@@ -21,9 +21,9 @@ dominate the total and no figure is offered for them here.
 | Midgard node HTTP API | Docker (`midgard-node`) | 3000 |
 | Midgard PostgreSQL | Docker (`postgres`) | host 5433, container 5432 |
 | Explorer backend | `cd backend && pnpm dev` | 3101 |
-| Explorer web app | `cd frontend-new && pnpm dev` | 3011 |
+| Explorer web app | `cd frontend && pnpm dev` | 3011 |
 
-The web app is `frontend-new/`. The explorer's ports avoid 3000, which the
+The web app is `frontend/`. The explorer's ports avoid 3000, which the
 node's HTTP API holds, and 3100, which the node's monitoring stack holds. The
 previous Vite client in `frontend/` is kept and still buildable, but it is not
 the app these steps run.
@@ -171,7 +171,7 @@ This checks that the node's database can answer the queries the read path makes,
 then runs the API in the foreground. In a second terminal:
 
 ```sh
-cd frontend-new
+cd frontend
 pnpm install
 pnpm dev
 ```

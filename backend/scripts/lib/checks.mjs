@@ -233,7 +233,7 @@ export const CHECKS = [
       const major = Number(process.versions.node.split(".")[0]);
       return major >= 24
         ? pass(`Node ${process.versions.node}`)
-        : fail(`Node ${process.versions.node}; frontend-new requires 24`, "Run: nvm use 24");
+        : fail(`Node ${process.versions.node}; frontend requires 24`, "Run: nvm use 24");
     },
   },
   {
@@ -318,15 +318,15 @@ export const CHECKS = [
   },
   {
     id: "workspace.frontend-install",
-    title: "frontend-new dependencies",
+    title: "frontend dependencies",
     modes: ALL,
     run: async (ctx) => {
       const installed =
-        existsSync(join(ctx.repoRoot, "frontend-new", "node_modules")) &&
-        existsSync(join(ctx.repoRoot, "frontend-new", "app", "node_modules"));
+        existsSync(join(ctx.repoRoot, "frontend", "node_modules")) &&
+        existsSync(join(ctx.repoRoot, "frontend", "app", "node_modules"));
       return installed
         ? pass("installed")
-        : warn("not installed", "Run: cd frontend-new && pnpm install");
+        : warn("not installed", "Run: cd frontend && pnpm install");
     },
   },
 
@@ -336,20 +336,20 @@ export const CHECKS = [
     title: "Fixture backend",
     modes: ["demo"],
     run: async (ctx) => {
-      const path = join(ctx.repoRoot, "frontend-new", "app", "e2e", "fixtures", "server.mjs");
-      return existsSync(path) ? pass("present") : fail("frontend-new/app/e2e/fixtures/server.mjs is missing");
+      const path = join(ctx.repoRoot, "frontend", "app", "e2e", "fixtures", "server.mjs");
+      return existsSync(path) ? pass("present") : fail("frontend/app/e2e/fixtures/server.mjs is missing");
     },
   },
   {
     id: "dev.next-lock",
     title: "No other Next dev server",
-    // Both modes serve frontend-new/app, so both compete for the one lock Next
+    // Both modes serve frontend/app, so both compete for the one lock Next
     // allows on it. Reading only demo's recorded pid reported existing mode's
     // own server as a conflict.
     modes: ALL,
     run: async (ctx) => {
-      const lock = devLock(join(ctx.repoRoot, "frontend-new", "app"));
-      if (lock === null) return pass("frontend-new/app is free");
+      const lock = devLock(join(ctx.repoRoot, "frontend", "app"));
+      if (lock === null) return pass("frontend/app is free");
       const where = lock.appUrl ?? `port ${lock.port}`;
       // A server `dev` started is that mode working, not a conflict. Reporting
       // it as a failure would train the reader to ignore this check in exactly
@@ -367,13 +367,13 @@ export const CHECKS = [
           return mode === ctx.mode
             ? pass(`${mode} mode is running on ${where} (pid ${lock.pid})`)
             : fail(
-                `${mode} mode holds frontend-new/app on ${where} (pid ${lock.pid})`,
+                `${mode} mode holds frontend/app on ${where} (pid ${lock.pid})`,
                 "One dev server per project directory. Stop the one that holds it.",
               );
         }
       }
       return fail(
-        `a Next dev server holds frontend-new/app on ${where} (pid ${lock.pid})`,
+        `a Next dev server holds frontend/app on ${where} (pid ${lock.pid})`,
         `Next allows one dev server per project directory. Stop it with: kill ${lock.pid}`,
       );
     },

@@ -189,7 +189,7 @@ describe("the setup sequence the README documents", () => {
   it("carries the values a person filled in, on the second run", () => {
     const root = fixtureRoot();
     mkdirSync(join(root, "backend"), { recursive: true });
-    mkdirSync(join(root, "frontend-new", "app"), { recursive: true });
+    mkdirSync(join(root, "frontend", "app"), { recursive: true });
 
     const first = setup(root);
     assert.match(first, /Still needed/);
@@ -220,9 +220,9 @@ describe("the setup sequence the README documents", () => {
   it("writes nothing outside the backend when scoped to it", () => {
     const root = fixtureRoot();
     mkdirSync(join(root, "backend"), { recursive: true });
-    mkdirSync(join(root, "frontend-new", "app"), { recursive: true });
+    mkdirSync(join(root, "frontend", "app"), { recursive: true });
     setup(root);
-    assert.equal(existsSync(join(root, "frontend-new", "app", ".env.local")), false);
+    assert.equal(existsSync(join(root, "frontend", "app", ".env.local")), false);
   });
 });
 

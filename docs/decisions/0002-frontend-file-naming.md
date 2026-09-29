@@ -4,7 +4,7 @@ Accepted 2026-08-28.
 
 ## Decision
 
-Within `frontend-new/app/src`:
+Within `frontend/app/src`:
 
 | Location | Name | Example |
 |---|---|---|

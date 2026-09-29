@@ -39,10 +39,10 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: frontend-new/pnpm-lock.yaml
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: Install the dependencies the ceilings are measured against
-        working-directory: frontend-new
+        working-directory: frontend
         run: pnpm install --frozen-lockfile
 
       - name: Measure the floors
@@ -54,10 +54,10 @@ jobs:
           set -uo pipefail
           mkdir -p gate-evidence
           for mb in 512 768 896 1024 1536 2048; do
-            node frontend-new/app/scripts/measure.mjs "$PWD/frontend-new" limit "$mb" 2>&1 | tail -1 | tee -a gate-evidence/matrix.txt || true
+            node frontend/app/scripts/measure.mjs "$PWD/frontend" limit "$mb" 2>&1 | tail -1 | tee -a gate-evidence/matrix.txt || true
           done
           for mb in 1024 1536 2048; do
-            node frontend-new/app/scripts/measure.mjs "$PWD/frontend-new" limit "$mb" --build 2>&1 | tail -1 | tee -a gate-evidence/matrix.txt || true
+            node frontend/app/scripts/measure.mjs "$PWD/frontend" limit "$mb" --build 2>&1 | tail -1 | tee -a gate-evidence/matrix.txt || true
           done
           cat gate-evidence/matrix.txt
 

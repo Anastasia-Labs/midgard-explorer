@@ -14,8 +14,8 @@ starts, what it needs, and what it can show.
 
 | Mode | Starts | Needs | Shows |
 |---|---|---|---|
-| `demo` | the fixture API and `frontend-new/app` | Node 24 and pnpm 11 | fixture data, labeled as fixture data |
-| `existing` | explorer PostgreSQL, its migrations, the backend, and `frontend-new/app` | the above, Docker, and a reachable Midgard PostgreSQL | real L2 blocks, transactions, addresses and UTxOs |
+| `demo` | the fixture API and `frontend/app` | Node 24 and pnpm 11 | fixture data, labeled as fixture data |
+| `existing` | explorer PostgreSQL, its migrations, the backend, and `frontend/app` | the above, Docker, and a reachable Midgard PostgreSQL | real L2 blocks, transactions, addresses and UTxOs |
 | `existing` with L1 sync | the same, plus the L1 indexer | the above, a deployment manifest and a Koios URL | the same, plus L1 transactions, deposits and validator activity |
 | `full` (by hand) | the Midgard node stack as well | the above, Cardano Node, Kupo, Ogmios, and funded Preprod wallets | live L2 activity as it is produced |
 
@@ -34,10 +34,10 @@ Ogmios, the node checkout or wallet funding. Those are configured outside this
 repository, which has no address to reach them at, so a check claiming to have
 looked would be reporting on nothing.
 
-## The supported frontend is `frontend-new/`
+## The supported frontend is `frontend/`
 
 Every frontend command, mode, document and continuous-integration job described
-here targets `frontend-new/`. `frontend/` is the previous Vite client. It stays
+here targets `frontend/`. `frontend/` is the previous Vite client. It stays
 in the tree and stays buildable, and nothing in this record moves, edits, tests
 or gates it.
 
@@ -82,7 +82,7 @@ reconciliation, not the index. `demo` is the only Docker-free mode.
 
 ## An absent L1 index degrades fields, it does not refuse routes
 
-`/api/l1/summary` reports the sync state, and `frontend-new` reads it to tell "no
+`/api/l1/summary` reports the sync state, and `frontend` reads it to tell "no
 L1 activity yet" apart from "the L1 index has not been built". The L1 list routes
 keep answering `200` with empty results.
 

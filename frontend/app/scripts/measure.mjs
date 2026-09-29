@@ -40,7 +40,7 @@ const fail = (message) => {
   process.stderr.write(`${message}\n`);
   process.exit(1);
 };
-if (!frontendRoot) fail("measure.mjs needs the frontend-new directory");
+if (!frontendRoot) fail("measure.mjs needs the frontend directory");
 
 /** Resident memory of a process and every descendant, in megabytes.
  *
