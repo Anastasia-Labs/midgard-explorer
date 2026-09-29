@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BlockRef } from "../../components/ui/domain/blockref";
 import type { Metadata } from "next";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { StatusCell } from "../../components/ui/domain/status";
@@ -8,7 +9,7 @@ import { DataTable, Pagination } from "../../components/ui/base/table";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { HourlyChart } from "../../components/ui/domain/metrics";
 import { api } from "../../lib/api";
-import { groupThousands } from "../../lib/format";
+import { countNoun, groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { legendFor } from "../../lib/status-registry";
 import { listErrorMessage } from "../../lib/serverErrors";
@@ -65,7 +66,7 @@ export default async function BlocksPage({
             <strong className="font-semibold text-text tabular-nums">
               {groupThousands(String(data.total))}
             </strong>{" "}
-            total blocks
+            {countNoun(data.total, "block", "blocks")}
           </span>
         }
       />
@@ -159,8 +160,11 @@ export default async function BlocksPage({
             meta: <Timestamp iso={r.block_end_time} />,
             secondary: (
               <span className="tabular-nums">
-                {r.header_l2_transaction_count} tx · {r.header_deposit_count} deposits ·{" "}
-                {r.header_withdrawal_count} withdrawals · {r.header_forced_transaction_count} forced
+                {r.header_l2_transaction_count} tx · {r.header_deposit_count}{" "}
+                {countNoun(r.header_deposit_count ?? 0, "deposit", "deposits")} ·{" "}
+                {r.header_withdrawal_count}{" "}
+                {countNoun(r.header_withdrawal_count ?? 0, "withdrawal", "withdrawals")} ·{" "}
+                {r.header_forced_transaction_count} forced
               </span>
             ),
             details: [
@@ -194,18 +198,5 @@ export default async function BlocksPage({
         />
       </section>
     </>
-  );
-}
-
-/** A block by its number, or by its header hash when it has none. */
-function BlockRef({ height, hash }: { height: number | null; hash: string }) {
-  if (height === null) return <Identifier value={hash} href={`/block/${hash}`} head={8} tail={6} />;
-  return (
-    <Link
-      href={`/block/${hash}`}
-      className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
-    >
-      Block #{height}
-    </Link>
   );
 }

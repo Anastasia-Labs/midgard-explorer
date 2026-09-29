@@ -1,3 +1,4 @@
+import { countNoun } from "../../lib/format";
 import type { Metadata } from "next";
 import {
   AssetFingerprint,
@@ -50,7 +51,7 @@ export default async function AssetsPage() {
         meta={
           <span>
             <strong className="font-semibold text-text tabular-nums">{data.total}</strong> distinct{" "}
-            {data.total === 1 ? "asset" : "assets"}
+            {countNoun(data.total, "asset", "assets")}
           </span>
         }
       />
@@ -113,7 +114,7 @@ export default async function AssetsPage() {
             meta: <AssetFingerprint policyId={r.policyId} nameHex={r.assetName} />,
             secondary: <AssetQuantity quantity={r.ledgerQuantity} />,
             details: [
-              { label: "Policy", value: r.policyId },
+              { label: "Policy", value: <Identifier value={r.policyId} head={8} tail={6} /> },
               { label: "Holders", value: String(r.holderCount) },
               { label: "UTxOs", value: String(r.utxoCount) },
             ],

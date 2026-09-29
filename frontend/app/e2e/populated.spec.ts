@@ -30,7 +30,7 @@ test.describe("populated lists", () => {
   test("blocks list shows rows and a total", async ({ page }) => {
     await page.goto("/blocks");
     await expect(rowRegion(page)).toBeVisible();
-    await expect(page.getByText(/total blocks/)).toBeVisible();
+    await expect(page.getByText(/^[\d,]+ blocks?$/)).toBeVisible();
     await expect(rowRegion(page).locator("tr, li")).not.toHaveCount(0);
   });
 
@@ -61,11 +61,15 @@ test.describe("populated lists", () => {
     await expect(rowRegion(page).getByText("Partial decode").first()).toBeVisible();
   });
 
-  test("deposits list shows the L1 to L2 direction and a status key", async ({ page }) => {
+  test("deposits list shows the L1 to L2 direction without a status key", async ({ page }) => {
     await page.goto("/deposits");
     await expect(page.getByText("L1", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("L2", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("Status key")).toBeVisible();
+    await expect(rowRegion(page).locator("tr, li").first()).toBeVisible();
+    await expect(page.getByText("Status key")).toHaveCount(0);
+    await expect(rowRegion(page).getByRole("button", { name: /^About (?!.*decode)/ })).toHaveCount(
+      0,
+    );
   });
 
   test("deposit ledger IDs are not linked as ordinary Midgard transactions", async ({ page }) => {
@@ -242,7 +246,7 @@ test.describe("list filtering and export", () => {
   test("a status filter narrows the whole list, not just the page in view", async ({ page }) => {
     await page.goto("/blocks");
     const total = async () => {
-      const text = await page.getByText(/total blocks/).textContent();
+      const text = await page.getByText(/^[\d,]+ blocks?$/).textContent();
       return Number((text ?? "").replace(/[^0-9]/g, ""));
     };
     const before = await total();
@@ -550,7 +554,7 @@ test.describe("block detail", () => {
     // settlement transaction, with the stages one tab away.
     const identity = page.locator('[data-region="identity"]');
     await expect(identity.getByText("Finalized", { exact: true })).toBeVisible();
-    await expect(identity.locator('a[href^="/l1/transaction/"]')).toBeVisible();
+    await expect(identity.locator('a[href^="https://preprod.cexplorer.io/tx/"]')).toBeVisible();
 
     await page.getByRole("tab", { name: "Details" }).click();
     await expect(page).toHaveURL(/tab=details/);
@@ -781,7 +785,9 @@ test.describe("transaction lifecycle", () => {
     const journey = page.getByRole("region", { name: "Protocol journey" });
     await expect(journey).toBeVisible();
     await journey.getByText("Stage timings and evidence").click();
-    await expect(journey.getByText("Node admission record", { exact: false })).toBeVisible();
+    await expect(
+      journey.getByText("Node admission record", { exact: false }).first(),
+    ).toBeVisible();
   });
 
   test("a committed transaction links to its block and its L1 settlement state", async ({
@@ -794,7 +800,7 @@ test.describe("transaction lifecycle", () => {
     // The identity header carries the block and the lifecycle outcome, and stage
     // history sits behind its own disclosure. This used to be scoped to a
     // "Protocol journey" region, which the page no longer declares.
-    const blockLink = page.getByRole("link", { name: /^#\d+$/ }).first();
+    const blockLink = page.getByRole("link", { name: /^Block #\d+$/ }).first();
     await expect(blockLink).toBeVisible();
     await expect(blockLink).toHaveAttribute("href", /^\/block\/[0-9a-f]{56}$/);
     await expect(page.getByText("Finalized", { exact: true }).first()).toBeVisible();
@@ -832,8 +838,10 @@ test.describe("address detail", () => {
   test("shows settlement and native-asset movement in activity", async ({ page }) => {
     await page.goto(`/address/${await fixtureAddress(page, 0)}`);
     if (await isNarrow(page)) {
-      await page.getByText("Details", { exact: true }).first().click();
-      await expect(page.getByText("L1 settlement", { exact: true }).first()).toBeVisible();
+      // Settlement shows in the row's status slot, beside the Midgard status.
+      await expect(
+        rowRegion(page).locator("li").first().getByText("L1", { exact: true }),
+      ).toBeVisible();
     } else {
       await expect(page.getByRole("columnheader", { name: "L1 settlement" })).toBeVisible();
     }

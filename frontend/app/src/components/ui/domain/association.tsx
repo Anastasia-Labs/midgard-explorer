@@ -4,6 +4,8 @@ import { Identifier } from "./identifier";
 import { L1TxLink } from "./l1link";
 import { Timestamp } from "../base/timestamp";
 import { formatDuration } from "../../../lib/format";
+import { FRESHNESS_LABEL, SOURCE_KIND_LABEL, networkName } from "../../../lib/labels";
+import { StatusBadge } from "./status";
 
 /**
  * What the Midgard node recorded about a record's Cardano side, and whose word
@@ -118,11 +120,12 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
  * replica measures against itself and true lag needs the primary. Configured,
  * not verified: nothing checks the deployment against Cardano. */
 export function sourceText(context: DeploymentContext): string {
+  const state = FRESHNESS_LABEL[context.freshness.state] ?? context.freshness.state;
   const freshness =
     context.freshness.lagSeconds === null
-      ? context.freshness.state
-      : `${context.freshness.state} by ${formatDuration(context.freshness.lagSeconds * 1000)}`;
-  return `${context.sourceKind} on ${context.network}, ${freshness}${
+      ? state
+      : `${state} (lag ${formatDuration(context.freshness.lagSeconds * 1000)})`;
+  return `${SOURCE_KIND_LABEL[context.sourceKind] ?? context.sourceKind} on ${networkName(context.network)}, ${freshness}${
     context.identityState === "configured" ? ", deployment as configured" : ""
   }`;
 }
@@ -178,7 +181,7 @@ export function CardanoAssociation({
       <dl className="flex flex-col gap-3 border-t border-border p-4">
         {settled === null ? null : (
           <Row label="Settlement transaction">
-            <L1TxLink hash={settled} destination="midgard" />
+            <L1TxLink hash={settled} destination="cardano" />
           </Row>
         )}
 
@@ -192,14 +195,14 @@ export function CardanoAssociation({
               <Identifier value={item.transactionHash} head={10} tail={6} />
             )}
             {item.rawState === null ? null : (
-              <span className="ml-2 font-mono mg-micro text-text-3">{item.rawState}</span>
+              <StatusBadge status={item.rawState} variant="text" explain={false} className="ml-2" />
             )}
           </Row>
         ))}
 
         {association.l2ObservedAsOf === null ? null : (
           <Row label="Midgard data as of">
-            <Timestamp iso={association.l2ObservedAsOf} />
+            <Timestamp iso={association.l2ObservedAsOf} exact />
           </Row>
         )}
 

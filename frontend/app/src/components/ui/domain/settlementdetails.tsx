@@ -29,7 +29,7 @@ export function SettlementDetails({
         {hash === null ? (
           <span className="text-text-3">None recorded</span>
         ) : (
-          <L1TxLink hash={hash} destination="midgard" />
+          <L1TxLink hash={hash} destination="cardano" />
         )}
       </FactRow>
       {node?.rawState ? (
@@ -44,7 +44,7 @@ export function SettlementDetails({
       ) : null}
       {association?.l2ObservedAsOf ? (
         <FactRow label="Midgard data as of">
-          <Timestamp iso={association.l2ObservedAsOf} />
+          <Timestamp iso={association.l2ObservedAsOf} exact />
         </FactRow>
       ) : null}
       {context ? <FactRow label="Source">{sourceText(context)}</FactRow> : null}

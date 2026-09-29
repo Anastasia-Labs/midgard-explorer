@@ -69,7 +69,7 @@ function Reference({ row }: { row: CardanoActivityRow }) {
     <Card className="mb-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border p-4">
         <h2 className="text-body font-semibold text-text">{KIND_LABEL[row.kind]}</h2>
-        {row.status === null ? null : <StatusBadge status={row.status} />}
+        {row.status === null ? null : <StatusBadge status={row.status} variant="text" />}
       </div>
       <dl className="flex flex-col gap-3 p-4">
         <p className="text-sm text-text-2">{KIND_DETAIL[row.kind]}</p>
@@ -95,14 +95,14 @@ function Reference({ row }: { row: CardanoActivityRow }) {
         )}
         {row.outputIndex === null ? null : (
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <dt className="text-sm text-text-3">Output</dt>
-            <dd className="min-w-0 font-mono text-sm">#{row.outputIndex}</dd>
+            <dt className="text-sm text-text-3">Output index</dt>
+            <dd className="min-w-0 font-mono text-sm tabular-nums">{row.outputIndex}</dd>
           </div>
         )}
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <dt className="text-sm text-text-3">Recorded by the node</dt>
           <dd className="min-w-0 text-sm">
-            <Timestamp iso={row.recordedAt} />
+            <Timestamp iso={row.recordedAt} exact />
           </dd>
         </div>
       </dl>

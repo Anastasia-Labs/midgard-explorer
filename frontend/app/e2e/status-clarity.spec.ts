@@ -77,3 +77,62 @@ test.describe("status clarity", () => {
     await expect(page).toHaveURL(/\/withdrawals$/);
   });
 });
+
+for (const path of [
+  "/blocks",
+  "/transactions",
+  "/deposits",
+  "/withdrawals",
+  "/forced-transactions",
+  "/l1",
+]) {
+  test(`${path} shows list statuses without per-row help or a status key`, async ({ page }) => {
+    await page.goto(path);
+    // Rows with a status must be on screen, or a count of zero proves nothing.
+    await expect(
+      rowRegion(page)
+        .getByText(/^(Committed|Finalized|Awaiting|Consumed|Projected|Valid|Accepted)$/)
+        .first(),
+    ).toBeVisible();
+    await expect(page.getByText("Status key", { exact: true })).toHaveCount(0);
+    await expect(rowRegion(page).getByRole("button", { name: /^About (?!.*decode)/ })).toHaveCount(
+      0,
+    );
+  });
+}
+
+test("phone address activity exposes settlement without expanding details", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const deposits = await page.request.get(`${FIXTURE}/api/deposits/1`).then((r) => r.json());
+  await page.goto(`/address/${deposits.rows[0].ledger_address}`);
+  const line = rowRegion(page).locator("li").first();
+  await expect(line.getByText("L1", { exact: true })).toBeVisible();
+  await expect(line.locator("details[open]")).toHaveCount(0);
+});
+
+test("a filtered deposit list says so while it has results", async ({ page }) => {
+  const deposits = await page.request.get(`${FIXTURE}/api/deposits/1`).then((r) => r.json());
+  const id = deposits.rows[0].event_id as string;
+  await page.goto(`/deposits?id=${id}`);
+  // The note sits above the table, outside rowRegion, so look for it on the page.
+  await expect(page.getByText(/Filtered by record/)).toBeVisible();
+  await expect(rowRegion(page)).toBeVisible();
+  await page.getByRole("link", { name: "Clear filter" }).click();
+  await expect(page).toHaveURL(/\/deposits$/);
+  await expect(page.getByText(/Filtered by record/)).toHaveCount(0);
+});
+
+test("a malformed filter says it was ignored instead of passing as filtered", async ({ page }) => {
+  await page.goto("/deposits?id=zzz");
+  await expect(page.getByText(/Ignored filter/)).toBeVisible();
+  await expect(page.getByText(/Filtered by record/)).toHaveCount(0);
+  await expect(rowRegion(page)).toBeVisible();
+});
+
+test("a repeated filter uses its first value", async ({ page }) => {
+  const deposits = await page.request.get(`${FIXTURE}/api/deposits/1`).then((r) => r.json());
+  const id = deposits.rows[0].event_id as string;
+  await page.goto(`/deposits?id=${id}&id=zzz`);
+  await expect(page.getByText(/Filtered by record/)).toBeVisible();
+  await expect(page.getByText(/Ignored filter/)).toHaveCount(0);
+});

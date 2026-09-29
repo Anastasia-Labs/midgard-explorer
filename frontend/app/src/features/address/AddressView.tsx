@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BlockRef } from "../../components/ui/domain/blockref";
 import { AdaAmount, ValueCell } from "../../components/ui/domain/amount";
 import { ApiExample } from "../../components/ui/domain/apiexample";
 import { AssetHierarchy } from "../../components/ui/domain/asset";
@@ -7,7 +8,7 @@ import { Identifier } from "../../components/ui/domain/identifier";
 import { IdentityBar } from "../../components/ui/domain/identitybar";
 import { Callout, Card, Chip, EmptyState } from "../../components/ui/base/layout";
 import { RawData } from "../../components/ui/base/rawdata";
-import { StatusCell } from "../../components/ui/domain/status";
+import { StatusCell, StatusPair } from "../../components/ui/domain/status";
 import { Tabs } from "../../components/ui/base/tabs";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { DataTable, DecodeWarn, Pagination } from "../../components/ui/base/table";
@@ -77,20 +78,8 @@ export function AddressView({
             cell: (r) =>
               r.header_hash === null ? (
                 <span className="text-text-3">Not in a block</span>
-              ) : r.height === null ? (
-                <Identifier
-                  value={r.header_hash}
-                  href={`/block/${r.header_hash}`}
-                  head={8}
-                  tail={6}
-                />
               ) : (
-                <Link
-                  href={`/block/${r.header_hash}`}
-                  className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
-                >
-                  Block #{r.height}
-                </Link>
+                <BlockRef hash={r.header_hash} height={r.height} />
               ),
             hideBelow: "md",
           },
@@ -139,7 +128,7 @@ export function AddressView({
           ),
           status: (
             <span className="inline-flex items-center gap-1.5">
-              <StatusCell status={r.status} />
+              <StatusPair l2={r.status} l1={r.finalization_status} />
               {r.decodeError ? <DecodeWarn error={r.decodeError} /> : null}
             </span>
           ),
@@ -165,26 +154,8 @@ export function AddressView({
               value:
                 r.header_hash === null ? (
                   "Not in a block"
-                ) : r.height === null ? (
-                  <Identifier
-                    value={r.header_hash}
-                    href={`/block/${r.header_hash}`}
-                    head={8}
-                    tail={6}
-                  />
                 ) : (
-                  <Link href={`/block/${r.header_hash}`} className="text-link hover:underline">
-                    Block #{r.height}
-                  </Link>
-                ),
-            },
-            {
-              label: "L1 settlement",
-              value:
-                r.finalization_status === null ? (
-                  "Not recorded"
-                ) : (
-                  <StatusCell status={r.finalization_status} />
+                  <BlockRef hash={r.header_hash} height={r.height} />
                 ),
             },
           ],

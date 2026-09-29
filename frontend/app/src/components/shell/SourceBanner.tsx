@@ -1,5 +1,6 @@
 import { api } from "../../lib/api";
 import type { DeploymentContext } from "@midgard-explorer/contracts";
+import { networkName } from "../../lib/labels";
 
 /**
  * Says which Midgard deployment the figures describe and which database they
@@ -99,7 +100,7 @@ export async function DeploymentNote() {
   return (
     <p className="text-sm text-text-3">
       Deployment <code className="font-mono text-text-2">{source.deploymentId.slice(0, 12)}</code>{" "}
-      on {source.network}, as configured. Reading Midgard from{" "}
+      on {networkName(source.network)}, as configured. Reading Midgard from{" "}
       <code className="font-mono text-text-2">{source.database}</code>.
     </p>
   );

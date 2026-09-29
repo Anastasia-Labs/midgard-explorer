@@ -163,7 +163,7 @@ export default async function HealthPage() {
                 >
                   <ShortId value={finality.oldestUnsettled.headerHash} head={12} tail={10} />
                 </Link>
-                <StatusBadge status={finality.oldestUnsettled.status} />
+                <StatusBadge status={finality.oldestUnsettled.status} variant="text" />
                 <span className="text-text-3">
                   waiting {formatDuration(finality.oldestUnsettled.waitingSeconds * 1000)}
                 </span>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BlockRef } from "../../components/ui/domain/blockref";
 import Link from "next/link";
 import { ValueCell } from "../../components/ui/domain/amount";
 import { Identifier } from "../../components/ui/domain/identifier";
@@ -10,7 +11,7 @@ import { DataTable, DecodeWarn, Pagination } from "../../components/ui/base/tabl
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { HourlyChart } from "../../components/ui/domain/metrics";
 import { api } from "../../lib/api";
-import { groupThousands } from "../../lib/format";
+import { countNoun, groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { legendFor } from "../../lib/status-registry";
 import { listErrorMessage } from "../../lib/serverErrors";
@@ -66,7 +67,7 @@ export default async function TransactionsPage({
             <strong className="font-semibold text-text tabular-nums">
               {groupThousands(String(data.total))}
             </strong>{" "}
-            total transactions
+            {countNoun(data.total, "transaction", "transactions")}
           </span>
         }
       />
@@ -121,14 +122,7 @@ export default async function TransactionsPage({
             },
             {
               header: "Block",
-              cell: (r) => (
-                <Link
-                  href={`/block/${r.header_hash}`}
-                  className="font-mono font-semibold tabular-nums text-link hover:text-link-hover hover:underline"
-                >
-                  {r.height === null ? `${r.header_hash.slice(0, 8)}…` : `Block #${r.height}`}
-                </Link>
-              ),
+              cell: (r) => <BlockRef hash={r.header_hash} height={r.height} />,
               hideBelow: "sm",
             },
             {
@@ -178,12 +172,14 @@ export default async function TransactionsPage({
             ) : null,
             details: [
               {
+                label: "In / out",
+                value: r.transaction
+                  ? `${r.transaction.inputs.length} → ${r.transaction.outputs.length}`
+                  : "Unknown",
+              },
+              {
                 label: "Block",
-                value: (
-                  <Link href={`/block/${r.header_hash}`} className="tabular-nums text-link">
-                    {r.height === null ? `${r.header_hash.slice(0, 8)}…` : `Block #${r.height}`}
-                  </Link>
-                ),
+                value: <BlockRef hash={r.header_hash} height={r.height} />,
               },
             ],
           })}

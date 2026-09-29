@@ -1,3 +1,4 @@
+import { truncateId } from "./format";
 import type { BlockFinalization, TxAdmission, TxInclusion } from "@midgard-explorer/contracts";
 import { statusOf, type StatusTone } from "./status-registry";
 
@@ -299,7 +300,7 @@ function settlementStages(
     stage(
       "included",
       inclusion.height === null
-        ? `Header ${inclusion.header_hash.slice(0, 8)}…`
+        ? `Header ${truncateId(inclusion.header_hash, 8, 6)}`
         : `Block #${inclusion.height}`,
       "reached",
       "pending_block_finalizations",
@@ -442,7 +443,7 @@ export function blockJourney(
   const stages = [
     stage(
       "closed",
-      height === null ? `Header ${headerHash.slice(0, 8)}…` : `Block #${height}`,
+      height === null ? `Header ${truncateId(headerHash, 8, 6)}` : `Block #${height}`,
       "reached",
       "pending_block_finalizations",
       closedAt,

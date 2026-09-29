@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { Icon } from "../../components/ui/base/icons";
 import { GLOSSARY, type GlossaryEntry, type GlossaryTerm } from "../../lib/glossary";
+import { STATUS_GLOSSARY } from "../../lib/statusGlossary";
 
 const CATEGORIES: readonly GlossaryEntry["category"][] = [
   "Ledger",
   "Transaction",
   "Script",
   "Asset",
+  "Status",
   "Explorer",
 ];
 
@@ -20,14 +22,18 @@ const MAX_QUERY_LENGTH = 120;
  * adds discovery and stable fragment identifiers. The query is compared as
  * plain text and is never interpolated into markup, a selector, or a request.
  */
-const ENTRIES = (
-  Object.entries(GLOSSARY) as Array<[GlossaryTerm, (typeof GLOSSARY)[GlossaryTerm]]>
-).map(([term, entry]) => ({ term, entry }));
+const ENTRIES: Array<{ term: string; entry: GlossaryEntry }> = [
+  ...(Object.entries(GLOSSARY) as Array<[GlossaryTerm, GlossaryEntry]>).map(([term, entry]) => ({
+    term,
+    entry,
+  })),
+  ...STATUS_GLOSSARY,
+];
 
 const categoryId = (category: GlossaryEntry["category"]) =>
   `glossary-category-${category.toLowerCase()}`;
 
-const termId = (term: GlossaryTerm) => `glossary-term-${term}`;
+const termId = (term: string) => `glossary-term-${term}`;
 
 export function GlossaryIndex() {
   const [query, setQuery] = useState("");
@@ -169,7 +175,7 @@ export function GlossaryIndex() {
                       </a>
                     </dt>
                     <dd className="text-sm leading-relaxed text-text-2">
-                      {entry.meaning} {entry.consequence}
+                      {entry.consequence ? `${entry.meaning} ${entry.consequence}` : entry.meaning}
                     </dd>
                   </div>
                 ))}

@@ -24,6 +24,10 @@ export function groupThousands(digits: string): string {
  * ". . ." rather than one tight ellipsis. */
 export const ID_GAP = "...";
 
+/** The noun for a count: singular for exactly one, plural otherwise. */
+export const countNoun = (n: number, singular: string, plural: string): string =>
+  n === 1 ? singular : plural;
+
 export function truncateId(id: string, head = 8, tail = 8): string {
   if (id.length <= head + tail + ID_GAP.length) return id;
   return `${id.slice(0, head)}${ID_GAP}${id.slice(-tail)}`;

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
+import { BlockRef } from "../../../components/ui/domain/blockref";
 import { isHash32 } from "@midgard-explorer/contracts";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LifecyclePoller } from "../../../features/transaction/LifecyclePoller";
 import { ApiExample } from "../../../components/ui/domain/apiexample";
@@ -143,7 +143,7 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
           <Callout tone="danger" title="Rejected by the node">
             {data.rejection.reasonCode ? (
               <p>
-                Reason: <StatusBadge status={data.rejection.reasonCode} />
+                Reason: <StatusBadge status={data.rejection.reasonCode} variant="text" />
               </p>
             ) : null}
             {data.rejection.reasonDetail ? (
@@ -194,12 +194,13 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
           {
             label: "Block",
             value: data.inclusion ? (
-              <Link
-                href={`/block/${data.inclusion.header_hash}`}
-                className="text-link hover:text-link-hover hover:underline"
-              >
-                {data.inclusion.height === null ? "View header" : `#${data.inclusion.height}`}
-              </Link>
+              <BlockRef
+                hash={data.inclusion.header_hash}
+                height={data.inclusion.height}
+                head={5}
+                tail={4}
+                copy={false}
+              />
             ) : (
               "Pending"
             ),
@@ -216,10 +217,10 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
                   value: (
                     <L1TxLink
                       hash={data.cardano.l1TxHash}
-                      destination="midgard"
+                      destination="cardano"
                       marker={false}
-                      head={5}
-                      tail={4}
+                      head={4}
+                      tail={3}
                     />
                   ),
                 },

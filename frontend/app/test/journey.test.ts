@@ -7,6 +7,7 @@ import {
   type JourneyModel,
 } from "../src/lib/journey";
 import { STATUS_REGISTRY } from "../src/lib/status-registry";
+import { truncateId } from "../src/lib/format";
 
 /** Contract types are branded; fixtures build the shapes without decoding. */
 const admission = (over: Partial<TxAdmission> = {}): TxAdmission =>
@@ -312,5 +313,15 @@ describe("every known status is handled", () => {
     const m = blockJourney(null, 40, "ab".repeat(28));
     expect(m.outcome).toBe("unknown");
     expect(m.stages.every((s) => s.state !== "reached" || s.key === "closed")).toBe(true);
+  });
+});
+
+describe("numberless block labels", () => {
+  it("names a numberless block by its hash in the site's shortened form", () => {
+    const hash = "ab".repeat(28);
+    const m = blockJourney(null, null, hash);
+    const closed = m.stages.find((s) => s.key === "closed");
+    expect(closed?.label).toBe(`Header ${truncateId(hash, 8, 6)}`);
+    expect(closed?.label).not.toContain("…");
   });
 });

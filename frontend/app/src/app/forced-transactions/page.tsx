@@ -3,13 +3,14 @@ import type { Metadata } from "next";
 import { Icon } from "../../components/ui/base/icons";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { L1TxLink } from "../../components/ui/domain/l1link";
-import { StatusLegend } from "../../components/ui/base/legend";
 import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
 import { StatusCell } from "../../components/ui/domain/status";
+import { FilterNote } from "../../components/ui/base/filternote";
+import { recordIdParam } from "../../lib/recordIdParam";
 import { DataTable, Pagination } from "../../components/ui/base/table";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
-import { groupThousands } from "../../lib/format";
+import { countNoun, groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
@@ -28,11 +29,11 @@ const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Forced transactions"
 export default async function ForcedTransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; id?: string }>;
+  searchParams: Promise<{ page?: string; id?: string | string[] }>;
 }) {
   const query = await searchParams;
   const page = parsePage(query.page);
-  const id = /^[0-9a-f]+$/i.test(query.id ?? "") ? query.id?.toLowerCase() : undefined;
+  const { id, ignored } = recordIdParam(query.id);
 
   let data;
   try {
@@ -65,12 +66,18 @@ export default async function ForcedTransactionsPage({
               <strong className="font-semibold text-text tabular-nums">
                 {groupThousands(String(data.total))}
               </strong>{" "}
-              total orders
+              {countNoun(data.total, "order", "orders")}
             </span>
           </>
         }
       />
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
+        {id && data.rows.length > 0 ? (
+          <FilterNote label="record" value={id} clearHref="/forced-transactions" />
+        ) : null}
+        {ignored ? (
+          <FilterNote label="record" value={ignored} clearHref="/forced-transactions" ignored />
+        ) : null}
         <DataTable
           caption="Forced transaction orders, newest first"
           columns={[
@@ -179,7 +186,6 @@ export default async function ForcedTransactionsPage({
                   "These appear when a user escrows an order on Cardano for the operator to include.",
               })}
         />
-        <StatusLegend kinds={["bridge_status", "forced_validity"]} />
         <Pagination
           page={page}
           hasNextPage={data.hasNextPage}

@@ -84,6 +84,7 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
           header: "Time",
           cell: (r) => <Timestamp iso={r.time_stamp_tz} />,
           hideBelow: "md",
+          align: "right",
         },
       ]}
       mobileRow={(r) => ({
@@ -161,10 +162,10 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
                   value: (
                     <L1TxLink
                       hash={settlementHash}
-                      destination="midgard"
+                      destination="cardano"
                       marker={false}
-                      head={5}
-                      tail={4}
+                      head={4}
+                      tail={3}
                     />
                   ),
                 },

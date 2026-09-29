@@ -6,13 +6,14 @@ import { AddressLink } from "../../components/ui/domain/address";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { L1TxLink } from "../../components/ui/domain/l1link";
 import { InfoTip } from "../../components/ui/base/infotip";
-import { StatusLegend } from "../../components/ui/base/legend";
 import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
 import { StatusCell } from "../../components/ui/domain/status";
+import { FilterNote } from "../../components/ui/base/filternote";
+import { recordIdParam } from "../../lib/recordIdParam";
 import { DataTable, Pagination } from "../../components/ui/base/table";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
-import { groupThousands } from "../../lib/format";
+import { countNoun, groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
@@ -31,11 +32,11 @@ const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Withdrawals" }];
 export default async function WithdrawalsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; id?: string }>;
+  searchParams: Promise<{ page?: string; id?: string | string[] }>;
 }) {
   const query = await searchParams;
   const page = parsePage(query.page);
-  const id = /^[0-9a-f]+$/i.test(query.id ?? "") ? query.id?.toLowerCase() : undefined;
+  const { id, ignored } = recordIdParam(query.id);
 
   let data;
   try {
@@ -68,12 +69,18 @@ export default async function WithdrawalsPage({
               <strong className="font-semibold text-text tabular-nums">
                 {groupThousands(String(data.total))}
               </strong>{" "}
-              total withdrawals
+              {countNoun(data.total, "withdrawal", "withdrawals")}
             </span>
           </>
         }
       />
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
+        {id && data.rows.length > 0 ? (
+          <FilterNote label="record" value={id} clearHref="/withdrawals" />
+        ) : null}
+        {ignored ? (
+          <FilterNote label="record" value={ignored} clearHref="/withdrawals" ignored />
+        ) : null}
         <DataTable
           caption="Withdrawals from Midgard to Cardano"
           columns={[
@@ -241,7 +248,6 @@ export default async function WithdrawalsPage({
                   "Withdrawals appear once an address sends funds from the Midgard ledger back to Cardano.",
               })}
         />
-        <StatusLegend kinds={["bridge_status", "withdrawal_validity"]} />
         <Pagination
           page={page}
           hasNextPage={data.hasNextPage}

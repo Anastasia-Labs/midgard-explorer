@@ -14,6 +14,7 @@ import { truncateId } from "../../../../lib/format";
 import { L1_EXPLORER_NAME, l1AddressUrl } from "../../../../lib/network";
 import { listErrorMessage } from "../../../../lib/serverErrors";
 import { viewerInit } from "../../../../lib/viewerInit";
+import { networkName, purposeLabel } from "../../../../lib/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +93,7 @@ export default async function ValidatorPage({
             label: "Deployment",
             value: <Identifier value={data.deploymentId} head={10} tail={6} />,
           },
-          { label: "Network", value: data.network },
+          { label: "Network", value: networkName(data.network) },
         ]}
       />
 
@@ -108,7 +109,7 @@ export default async function ValidatorPage({
       <Card className="mb-4">
         <FactGroup title="Declared by the manifest">
           <FactRow label="Family">{contractName(validator.family)}</FactRow>
-          <FactRow label="Purpose">{validator.purpose}</FactRow>
+          <FactRow label="Purpose">{purposeLabel(validator.purpose)}</FactRow>
           <FactRow label="Payment address">
             {addressHref === null ? (
               <Identifier value={validator.address} head={12} tail={8} />

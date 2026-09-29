@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ID_GAP, cn } from "../../../lib/format";
 import { Icon } from "../base/icons";
+import { ID_LINK_CLASS } from "../base/linkstyles";
 
 /** `xs` is 390px, the width where the longer phone length first fits one row; the rest are Tailwind's. */
 const BREAKPOINTS = ["xs", "sm", "lg", "xl"] as const;
@@ -108,9 +109,6 @@ export function Identifier({
       {display}
     </span>
   );
-  const linkClass =
-    "inline-flex min-h-9 items-center gap-1 text-text underline decoration-border-strong " +
-    "underline-offset-2 transition-colors hover:text-link hover:decoration-link sm:min-h-0";
 
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -121,14 +119,14 @@ export function Identifier({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className={linkClass}
+          className={ID_LINK_CLASS}
           aria-label={externalLabel ?? `Open ${display} in a new tab`}
         >
           {text}
           <Icon name="external" size={12} />
         </a>
       ) : (
-        <Link href={href} prefetch={false} className={linkClass}>
+        <Link href={href} prefetch={false} className={ID_LINK_CLASS}>
           {text}
         </Link>
       )}

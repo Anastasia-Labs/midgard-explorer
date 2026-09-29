@@ -5,9 +5,10 @@ import {
   type JourneyStage,
   type JourneyStageState,
 } from "../../../lib/journey";
-import { cn, formatDuration, formatTimestamp } from "../../../lib/format";
+import { cn, formatDuration, formatTimestamp, truncateId } from "../../../lib/format";
 import { Icon } from "../base/icons";
 import { L1TxLink } from "./l1link";
+import { JOURNEY_SOURCE_LABEL } from "../../../lib/labels";
 
 /** One visual grammar for every path through the protocol.
  *
@@ -201,7 +202,7 @@ export function Journey({
                     className="inline-flex items-center gap-1 text-link hover:text-link-hover hover:underline"
                   >
                     {s.evidence.blockHeight === undefined
-                      ? `${s.evidence.blockHash.slice(0, 8)}…`
+                      ? truncateId(s.evidence.blockHash, 6, 4)
                       : `Block #${s.evidence.blockHeight}`}
                     <Icon name="arrowRight" size={11} />
                   </Link>
@@ -209,10 +210,12 @@ export function Journey({
               ) : null}
               {s.evidence?.l1TxHash ? (
                 <dd className="mt-1 mg-micro">
-                  L1 tx: <L1TxLink hash={s.evidence.l1TxHash} destination="midgard" />
+                  L1 tx: <L1TxLink hash={s.evidence.l1TxHash} destination="cardano" />
                 </dd>
               ) : null}
-              <dd className="mt-1 font-mono text-micro text-text-3">source: {s.source}</dd>
+              <dd className="mt-1 text-micro text-text-3">
+                Source: {JOURNEY_SOURCE_LABEL[s.source]}
+              </dd>
             </div>
           ))}
         </dl>

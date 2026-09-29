@@ -289,3 +289,46 @@ test.describe("summary band fills its rows", () => {
     });
   }
 });
+
+/* Every list right-aligns its Time column, so times line up down the page. */
+test("the block page's transaction times align right, like every list", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 900 });
+  const blocks = await page.request.get(`${FIXTURE}/api/blocks/1`).then((r) => r.json());
+  const withTxs = (
+    blocks.rows as Array<{ header_hash: string; header_l2_transaction_count: number | null }>
+  ).find((b) => (b.header_l2_transaction_count ?? 0) > 0);
+  expect(withTxs, "page 1 of the fixture has no block with transactions").toBeTruthy();
+  await page.goto(`/block/${withTxs!.header_hash}`);
+  const time = page
+    .locator("div.overflow-x-auto > table")
+    .getByRole("columnheader", { name: "Time" });
+  await expect(time).toBeVisible();
+  expect(await time.evaluate((el) => getComputedStyle(el).textAlign)).toBe("right");
+});
+
+/* Page surfaces share one corner radius: a record header, a card and a list
+ * card are the same kind of surface. Floating layers (menus, search) may differ. */
+test("record headers, cards and list cards share one corner radius", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 900 });
+  const radius = (selector: string) =>
+    page
+      .locator(selector)
+      .first()
+      .evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
+  await page.goto("/transactions");
+  const list = await radius("main section.overflow-hidden");
+  const txs = await page.request.get(`${FIXTURE}/api/transactions/1`).then((r) => r.json());
+  await page.goto(`/transaction/${txs.rows[0].tx_id}`);
+  const header = await radius('[data-region="identity"]');
+  expect(header).toBe(list);
+  await page.goto(
+    `/address/${(await page.request.get(`${FIXTURE}/api/deposits/1`).then((r) => r.json())).rows[0].ledger_address}`,
+  );
+  await page.getByRole("tab", { name: /Activity/ }).click();
+  const card = await page
+    .locator("main section.overflow-hidden")
+    .filter({ has: page.locator("table, ul") })
+    .first()
+    .evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
+  expect(card).toBe(list);
+});

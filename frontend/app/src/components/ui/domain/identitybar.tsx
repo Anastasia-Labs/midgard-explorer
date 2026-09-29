@@ -43,7 +43,7 @@ export function IdentityBar({
     <div
       data-region="identity"
       className={cn(
-        "mb-4 overflow-hidden rounded-xl border border-border bg-surface px-4 py-3.5 shadow-(--mg-shadow)",
+        "mb-4 overflow-hidden rounded-lg border border-border bg-surface px-4 py-3.5 shadow-(--mg-shadow)",
         title && "border-t-2 border-t-accent/50",
       )}
     >

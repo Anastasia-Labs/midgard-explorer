@@ -1,6 +1,6 @@
 export type GlossaryEntry = {
   label: string;
-  category: "Ledger" | "Transaction" | "Script" | "Asset" | "Explorer";
+  category: "Ledger" | "Transaction" | "Script" | "Asset" | "Explorer" | "Status";
   meaning: string;
   consequence: string;
   /** One line a reader wants on hover, where the label sits beside a figure:

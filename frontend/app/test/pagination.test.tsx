@@ -80,6 +80,21 @@ describe("Pagination", () => {
     expect(screen.getByText("Showing 126–130 of 130")).toBeDefined();
   });
 
+  it("renders nothing for an empty result, since the empty state already says so", () => {
+    const { container } = render(
+      <Pagination page={1} hasNextPage={false} total={0} limit={25} hrefFor={hrefFor} />,
+    );
+    expect(container.textContent).toBe("");
+  });
+
+  it("explains an out-of-range page and keeps a route back to results", () => {
+    render(<Pagination page={9} hasNextPage={false} total={130} limit={25} hrefFor={hrefFor} />);
+    expect(screen.getByText("No results on page 9 · 130 total")).toBeDefined();
+    expect(screen.getByRole("link", { name: "Last page" }).getAttribute("href")).toBe(
+      "/blocks?page=6",
+    );
+  });
+
   it("falls back to the page number when totals are unknown", () => {
     render(<Pagination page={3} hasNextPage hrefFor={hrefFor} />);
     expect(screen.getByText("Page 3")).toBeDefined();

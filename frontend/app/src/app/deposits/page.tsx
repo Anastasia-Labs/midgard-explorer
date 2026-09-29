@@ -4,13 +4,14 @@ import { ValueCell } from "../../components/ui/domain/amount";
 import { Icon } from "../../components/ui/base/icons";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { L1TxLink } from "../../components/ui/domain/l1link";
-import { StatusLegend } from "../../components/ui/base/legend";
 import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
 import { StatusCell } from "../../components/ui/domain/status";
+import { FilterNote } from "../../components/ui/base/filternote";
+import { recordIdParam } from "../../lib/recordIdParam";
 import { DataTable, Pagination } from "../../components/ui/base/table";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
-import { groupThousands } from "../../lib/format";
+import { countNoun, groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { AddressLink } from "../../components/ui/domain/address";
@@ -30,11 +31,11 @@ const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Deposits" }];
 export default async function DepositsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; id?: string }>;
+  searchParams: Promise<{ page?: string; id?: string | string[] }>;
 }) {
   const query = await searchParams;
   const page = parsePage(query.page);
-  const id = /^[0-9a-f]+$/i.test(query.id ?? "") ? query.id?.toLowerCase() : undefined;
+  const { id, ignored } = recordIdParam(query.id);
 
   let data;
   const init = await viewerInit();
@@ -63,12 +64,18 @@ export default async function DepositsPage({
               <strong className="font-semibold text-text tabular-nums">
                 {groupThousands(String(data.total))}
               </strong>{" "}
-              total deposits
+              {countNoun(data.total, "deposit", "deposits")}
             </span>
           </>
         }
       />
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
+        {id && data.rows.length > 0 ? (
+          <FilterNote label="record" value={id} clearHref="/deposits" />
+        ) : null}
+        {ignored ? (
+          <FilterNote label="record" value={ignored} clearHref="/deposits" ignored />
+        ) : null}
         <DataTable
           caption="Deposits from Cardano into Midgard"
           columns={[
@@ -175,7 +182,6 @@ export default async function DepositsPage({
                   "Deposits appear once funds are locked on Cardano for an address on this network.",
               })}
         />
-        <StatusLegend kinds={["bridge_status"]} />
         <Pagination
           page={page}
           hasNextPage={data.hasNextPage}

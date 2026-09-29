@@ -91,20 +91,18 @@ test("a settled block names the node as the source of the hash", async ({ page }
   await expect(details.getByText(/deployment as configured/)).toBeVisible();
 });
 
-/** The relationship between a Midgard block and the Cardano transaction the
- * node recorded for it links to the explorer's own page for that hash, which
- * says what Midgard did with it. The bridge tables link their hashes straight
- * out, which is a separate and older decision. */
-test("a settled block keeps its settlement link inside the explorer", async ({ page }) => {
+/** A block's settlement transaction opens on the Cardano explorer, like every
+ * other Cardano hash; the internal page is reached from search. (Decided
+ * 2026-09-29, reversing the earlier inside-the-explorer rule.) */
+test("a settled block links its settlement to CExplorer", async ({ page }) => {
   await gotoBlock(page, "node_reported");
   const identity = page.locator('[data-region="identity"]');
-  await expect(identity.locator('a[href^="/l1/transaction/"]')).toBeVisible();
+  await expect(identity.locator('a[href^="https://preprod.cexplorer.io/tx/"]')).toBeVisible();
+  await expect(identity.locator('a[href^="/l1/transaction/"]')).toHaveCount(0);
   await page.getByRole("tab", { name: "Details" }).click();
   const details = page.locator("#panel-details");
-  await expect(details.locator('a[href^="/l1/transaction/"]')).toHaveCount(1);
-  await expect(
-    page.locator('main a[href*="cexplorer.io"], main a[href*="cardanoscan.io"]'),
-  ).toHaveCount(0);
+  await expect(details.locator('a[href^="https://preprod.cexplorer.io/tx/"]')).toHaveCount(1);
+  await expect(details.locator('a[href^="/l1/transaction/"]')).toHaveCount(0);
 });
 
 test("a settled block claims no independent confirmation anywhere on the page", async ({
@@ -127,7 +125,7 @@ test("a block with no node record says so without inventing evidence", async ({ 
   const panel = panelOf(page);
   await expect(panel.getByText("No settlement transaction recorded")).toBeVisible();
   await expect(panel.getByText(/reported by the node/)).toHaveCount(0);
-  await expect(panel.locator('a[href^="/l1/transaction/"]')).toHaveCount(0);
+  await expect(panel.locator('a[href^="https://preprod.cexplorer.io/tx/"]')).toHaveCount(0);
 });
 
 test("a settled transaction carries its settlement hash in the header and its evidence below", async ({
@@ -138,7 +136,7 @@ test("a settled transaction carries its settlement hash in the header and its ev
   // The hash sits in the header beside the block, under the badge it supports.
   const identity = page.locator('[data-region="identity"]');
   await expect(identity.getByText("Settlement", { exact: true })).toBeVisible();
-  await expect(identity.locator('a[href^="/l1/transaction/"]')).toBeVisible();
+  await expect(identity.locator('a[href^="https://preprod.cexplorer.io/tx/"]')).toBeVisible();
   await expect(identity.getByText("Finalized", { exact: true })).toBeVisible();
 
   // The Details tab lists the settlement once: the Cardano transaction, the
@@ -147,5 +145,20 @@ test("a settled transaction carries its settlement hash in the header and its ev
   const details = page.locator("#panel-details");
   await expect(details.getByText("Settlement", { exact: true })).toBeVisible();
   await expect(details.getByText(/reported by the Midgard node/)).toBeVisible();
-  await expect(details.locator('a[href^="/l1/transaction/"]')).toHaveCount(1);
+  await expect(details.locator('a[href^="https://preprod.cexplorer.io/tx/"]')).toHaveCount(1);
+});
+
+test("a settled transaction's Settlement figure opens CExplorer in a new tab", async ({ page }) => {
+  const list = await page.request.get(`${FIXTURE}/api/transactions/1`).then((r) => r.json());
+  const tx = (list.rows as Array<{ tx_id: string; finalization_status: string | null }>).find(
+    (r) => r.finalization_status === "finalized",
+  );
+  expect(tx).toBeTruthy();
+  await page.goto(`/transaction/${tx!.tx_id}`);
+  const link = page.locator('[data-region="identity"]').getByRole("link", { name: /on CExplorer/ });
+  await expect(link).toHaveAttribute(
+    "href",
+    /^https:\/\/preprod\.cexplorer\.io\/tx\/[0-9a-f]{64}$/,
+  );
+  await expect(link).toHaveAttribute("target", "_blank");
 });

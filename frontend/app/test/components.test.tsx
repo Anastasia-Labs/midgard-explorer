@@ -2,6 +2,8 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdaAmount, ValueCell } from "../src/components/ui/domain/amount";
+import { BlockRef } from "../src/components/ui/domain/blockref";
+import { FilterNote } from "../src/components/ui/base/filternote";
 import { Journey } from "../src/components/ui/domain/journey";
 import { LedgerRow } from "../src/components/ui/base/mobilerow";
 import { NetworkMetrics } from "../src/components/ui/domain/metrics";
@@ -13,7 +15,7 @@ import {
   StatusPair,
 } from "../src/components/ui/domain/status";
 import { SummaryBand } from "../src/components/ui/domain/summary";
-import { DecodeWarn } from "../src/components/ui/base/table";
+import { DataTable, DecodeWarn } from "../src/components/ui/base/table";
 import { blockJourney, transactionJourney } from "../src/lib/journey";
 import type {
   BlockFinalization,
@@ -324,7 +326,7 @@ describe("NetworkMetrics", () => {
     render(<NetworkMetrics metrics={base} totalBlocks={40} totalTxs={60} />);
     const verdict = screen.getByText("Nothing awaiting a block");
     expect(verdict).toBeDefined();
-    const figure = screen.getByText("#40");
+    const figure = screen.getByText("Block #40");
     expect(verdict.compareDocumentPosition(figure) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -651,5 +653,83 @@ describe("StatusBadge on a detail page", () => {
   it("keeps its explanation by default", () => {
     render(<StatusBadge status="pending_commit" />);
     expect(screen.getByRole("button", { name: "About Pending commit" })).toBeDefined();
+  });
+});
+
+describe("FilterNote", () => {
+  it("names the active filter and links back to the full list", () => {
+    render(<FilterNote label="record" value={"ab".repeat(40)} clearHref="/deposits" />);
+    expect(screen.getByText(/Filtered by record/)).toBeDefined();
+    expect(screen.getByRole("link", { name: "Clear filter" }).getAttribute("href")).toBe(
+      "/deposits",
+    );
+    expect(screen.getByRole("button", { name: "Copy to clipboard" })).toBeDefined();
+  });
+});
+
+describe("DataTable stacking", () => {
+  const columns = [
+    { header: "A", cell: () => "a" },
+    { header: "B", cell: () => "b", hideBelow: "lg" as const },
+  ];
+  it("shows the row list up to the widest breakpoint a column hides at", () => {
+    const { container } = render(
+      <DataTable
+        caption="t"
+        rows={[{ id: "a" }]}
+        keyOf={(r) => r.id}
+        columns={columns}
+        mobileRow={() => ({ primary: "a", details: [{ label: "B", value: "b" }] })}
+      />,
+    );
+    expect(container.querySelector("ul")?.className).toContain("lg:hidden");
+    expect(container.querySelector("table")?.closest("div")?.className).toContain("lg:block");
+  });
+  it("keeps the phone breakpoint when no column hides above it", () => {
+    const { container } = render(
+      <DataTable
+        caption="t"
+        rows={[{ id: "a" }]}
+        keyOf={(r) => r.id}
+        columns={[{ header: "A", cell: () => "a" }]}
+      />,
+    );
+    expect(container.querySelector("ul")?.className).toContain("sm:hidden");
+    expect(container.querySelector("table")?.closest("div")?.className).toContain("sm:block");
+  });
+});
+
+describe("BlockRef", () => {
+  const HASH = "fd0d00c13cc47c4bdf32d5646201a0c7939e9185d66f6d289ac52eea";
+  it("names a numbered block and copies its hash", () => {
+    render(<BlockRef hash={HASH} height={42} />);
+    expect(screen.getByRole("link", { name: "Block #42" }).getAttribute("href")).toBe(
+      `/block/${HASH}`,
+    );
+    expect(screen.getByRole("button", { name: "Copy to clipboard" })).toBeDefined();
+  });
+  it("shows a numberless block as a shortened hash in the site form", () => {
+    const { container } = render(<BlockRef hash={HASH} height={null} />);
+    expect(container.textContent).toContain("fd0d00c1...c52eea");
+    expect(container.textContent).not.toContain("…");
+  });
+  it("honors copy={false} in both forms", () => {
+    render(<BlockRef hash={HASH} height={null} copy={false} />);
+    render(<BlockRef hash={HASH} height={7} copy={false} />);
+    expect(screen.queryByRole("button", { name: "Copy to clipboard" })).toBeNull();
+    expect(screen.getAllByRole("link")).toHaveLength(2);
+  });
+});
+
+describe("FilterNote for a malformed filter", () => {
+  it("says the value was ignored, shows it as text, and offers the full list", () => {
+    render(<FilterNote label="record" value="zzz<b>" clearHref="/deposits" ignored />);
+    expect(screen.getByText(/Ignored filter/)).toBeDefined();
+    expect(screen.getByText(/not a record ID/)).toBeDefined();
+    expect(screen.getByText(/zzz<b>/)).toBeDefined();
+    expect(screen.getByRole("link", { name: "Clear filter" }).getAttribute("href")).toBe(
+      "/deposits",
+    );
+    expect(screen.queryByRole("button", { name: "Copy to clipboard" })).toBeNull();
   });
 });

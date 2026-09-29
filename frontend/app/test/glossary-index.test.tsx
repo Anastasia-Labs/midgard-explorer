@@ -3,13 +3,14 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { GlossaryIndex } from "../src/features/glossary/GlossaryIndex";
 import { GLOSSARY } from "../src/lib/glossary";
+import { STATUS_REGISTRY } from "../src/lib/status-registry";
 
 afterEach(cleanup);
 
 describe("GlossaryIndex", () => {
   it("derives its complete index and category counts from the shared glossary", () => {
     render(<GlossaryIndex />);
-    const total = Object.keys(GLOSSARY).length;
+    const total = Object.keys(GLOSSARY).length + Object.keys(STATUS_REGISTRY).length;
     expect(screen.getByRole("status").textContent).toContain(`${total} terms`);
     expect(screen.getByRole("navigation", { name: "Glossary categories" })).toBeDefined();
     expect(screen.getByRole("link", { name: /^Ledger, \d+ terms$/ }).getAttribute("href")).toBe(
@@ -51,5 +52,23 @@ describe("GlossaryIndex", () => {
     expect(screen.getByRole("link", { name: "Reference input" }).getAttribute("href")).toBe(
       "#glossary-term-referenceInput",
     );
+  });
+
+  it("finds a status by searching, from the registry's own explanation", () => {
+    render(<GlossaryIndex />);
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search glossary" }), {
+      target: { value: "projected" },
+    });
+    expect(screen.getByRole("heading", { name: "Status" })).toBeDefined();
+    expect(screen.getByRole("link", { name: /^Projected/ }).getAttribute("href")).toBe(
+      "#glossary-term-status-projected",
+    );
+    expect(screen.getByRole("status").textContent).not.toMatch(/^0 terms/);
+  });
+
+  it("tells apart statuses that share a label", () => {
+    render(<GlossaryIndex />);
+    expect(screen.getByRole("link", { name: "Valid (transaction)" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "Valid (withdrawal)" })).toBeDefined();
   });
 });

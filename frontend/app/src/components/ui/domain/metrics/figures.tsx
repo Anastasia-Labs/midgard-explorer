@@ -165,7 +165,7 @@ export function CoreFigures({
                     <ShortId value={tip.headerHash} head={12} tail={10} />
                   </span>
                 ) : (
-                  `#${groupThousands(String(tip.height))}`
+                  `Block #${groupThousands(String(tip.height))}`
                 ),
               sub:
                 tip.ageSeconds === null

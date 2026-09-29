@@ -307,7 +307,7 @@ export function Card({
     <section
       {...(region ? { "data-region": region } : {})}
       className={cn(
-        "overflow-hidden rounded-xl border border-border bg-surface shadow-(--mg-shadow)",
+        "overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)",
         // A one-pixel lit top edge. Cheap, static, and the difference between
         // a card that sits on the page and an outline drawn on it.
         "border-t-(--mg-bevel)",

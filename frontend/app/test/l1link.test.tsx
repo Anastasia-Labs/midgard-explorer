@@ -41,7 +41,9 @@ describe("L1TxLink", () => {
 
   it("names the destination, so a reader knows before clicking", () => {
     render(<L1TxLink hash={HASH} destination="cardano" />);
-    expect(screen.getByRole("link").getAttribute("aria-label")).toMatch(/CExplorer/);
+    expect(screen.getByRole("link").getAttribute("aria-label")).toMatch(/CExplorer.*new tab/);
+    // Named for every reader, not by a hover-only title (the lint rule bans those).
+    expect(screen.getByRole("link").getAttribute("title")).toBeNull();
   });
 
   it("opens an external destination in a new tab, safely", () => {
@@ -60,18 +62,43 @@ describe("L1TxLink", () => {
 
   /* A hash that silently loses its link is a small failure; a hash that
    * silently vanishes is a large one. */
-  it("still shows the hash when no explorer is configured", async () => {
+  /* A valid hash still leads somewhere when no explorer is configured: the
+   * internal page, which says what the node recorded about it. */
+  it("falls back to the internal page when no explorer is configured", async () => {
     const previous = process.env.NEXT_PUBLIC_L1_EXPLORER_TX_URL;
     delete process.env.NEXT_PUBLIC_L1_EXPLORER_TX_URL;
     vi.resetModules();
     const unconfigured = await import("../src/components/ui/domain/l1link");
 
-    const { container } = render(<unconfigured.L1TxLink hash={HASH} destination="cardano" />);
-    expect(screen.queryByRole("link")).toBeNull();
-    expect(container.textContent).toContain("aaaa");
+    render(<unconfigured.L1TxLink hash={HASH} destination="cardano" />);
+    const link = screen.getByRole("link");
+    expect(link.getAttribute("href")).toBe(`/l1/transaction/${HASH}`);
+    expect(link.getAttribute("target")).toBeNull();
 
     process.env.NEXT_PUBLIC_L1_EXPLORER_TX_URL = previous;
     vi.resetModules();
+  });
+
+  it("falls back to the internal page for synthetic data", async () => {
+    const previous = process.env.NEXT_PUBLIC_L1_EXPLORER_SUPPRESS;
+    process.env.NEXT_PUBLIC_L1_EXPLORER_SUPPRESS = "1";
+    vi.resetModules();
+    const synthetic = await import("../src/components/ui/domain/l1link");
+
+    render(<synthetic.L1TxLink hash={HASH} destination="cardano" />);
+    expect(screen.getByRole("link").getAttribute("href")).toBe(`/l1/transaction/${HASH}`);
+
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_L1_EXPLORER_SUPPRESS;
+    else process.env.NEXT_PUBLIC_L1_EXPLORER_SUPPRESS = previous;
+    vi.resetModules();
+  });
+
+  /* A hash that silently loses its link is a small failure; a value that is not
+   * a Cardano hash turned into a link is a large one. */
+  it("never links a value that is not a Cardano transaction hash", () => {
+    const { container } = render(<L1TxLink hash="not-a-hash" destination="cardano" />);
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(container.textContent).toContain("not-a-hash");
   });
 
   /* An unconfigured explorer must not take the internal page away too: that

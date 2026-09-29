@@ -9,7 +9,7 @@ import { StatusCell } from "../../components/ui/domain/status";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { api } from "../../lib/api";
 import type { CardanoActivityRow } from "@midgard-explorer/contracts";
-import { groupThousands, truncateId } from "../../lib/format";
+import { countNoun, groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
@@ -91,13 +91,12 @@ export default async function L1Page({
       <PageHeader
         entity="transaction"
         title="Cardano activity"
-        subtitle="The node's records, not a chain scan. The explorer does not read Cardano, so nothing here confirms that Cardano accepted a transaction."
         meta={
           <span>
             <strong className="font-semibold text-text tabular-nums">
               {groupThousands(String(data.total))}
             </strong>{" "}
-            records
+            {countNoun(data.total, "record", "records")}
           </span>
         }
       />
@@ -112,7 +111,7 @@ export default async function L1Page({
           columns={[
             {
               header: "Transaction",
-              cell: (r) => <L1TxLink hash={r.l1TxHash} destination="midgard" marker={false} />,
+              cell: (r) => <L1TxLink hash={r.l1TxHash} destination="cardano" marker={false} />,
             },
             {
               header: "Record",
@@ -122,20 +121,9 @@ export default async function L1Page({
               header: "Midgard record",
               cell: (r) => {
                 const href = recordHref(r);
-                const label =
-                  r.kind === "settlement"
-                    ? r.headerHash === null
-                      ? null
-                      : `Block ${truncateId(r.headerHash)}`
-                    : r.recordId === null
-                      ? null
-                      : truncateId(r.recordId);
-                if (label === null) return <span className="text-text-3">None recorded</span>;
-                return href === null ? (
-                  <span className="font-mono text-sm">{label}</span>
-                ) : (
-                  <Identifier value={label} href={href} />
-                );
+                const id = r.kind === "settlement" ? r.headerHash : r.recordId;
+                if (id === null) return <span className="text-text-3">None recorded</span>;
+                return <Identifier value={id} href={href ?? undefined} />;
               },
               hideBelow: "sm",
             },
@@ -159,31 +147,19 @@ export default async function L1Page({
              is what every other list on the site shows on a phone. */
           mobileRow={(r) => {
             const href = recordHref(r);
-            const label =
-              r.kind === "settlement"
-                ? r.headerHash === null
-                  ? null
-                  : `Block ${truncateId(r.headerHash)}`
-                : r.recordId === null
-                  ? null
-                  : truncateId(r.recordId);
+            const id = r.kind === "settlement" ? r.headerHash : r.recordId;
             return {
-              primary: <L1TxLink hash={r.l1TxHash} destination="midgard" marker={false} />,
+              primary: <L1TxLink hash={r.l1TxHash} destination="cardano" marker={false} />,
               status: r.status === null ? undefined : <StatusCell status={r.status} />,
               meta: <Timestamp iso={r.recordedAt} />,
               secondary: <span className="text-text-2">{KIND_LABEL[r.kind]}</span>,
               details:
-                label === null
+                id === null
                   ? []
                   : [
                       {
                         label: "Midgard record",
-                        value:
-                          href === null ? (
-                            <span className="font-mono text-sm">{label}</span>
-                          ) : (
-                            <Identifier value={label} href={href} />
-                          ),
+                        value: <Identifier value={id} href={href ?? undefined} />,
                       },
                     ],
             };

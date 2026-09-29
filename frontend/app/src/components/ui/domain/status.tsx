@@ -151,7 +151,7 @@ export function StatusBadge({
 }
 
 /** A status in a list row: coloured text and its mark, no pill. The
- * explanation lives on the record's page and in the Status key. */
+ * explanation lives on the record's page and in the glossary. */
 export function StatusCell({ status }: { status: string }) {
   return (
     <span className="inline-flex min-w-0 max-w-full items-center">

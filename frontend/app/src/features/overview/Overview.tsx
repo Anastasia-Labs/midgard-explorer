@@ -9,7 +9,7 @@ import { OverviewHeader } from "./OverviewHeader";
 import { SearchBox } from "../../components/search/SearchOverlay";
 import { BRIDGE } from "../../lib/nav";
 import { Icon } from "../../components/ui/base/icons";
-import { Identifier } from "../../components/ui/domain/identifier";
+import { Identifier, ShortId } from "../../components/ui/domain/identifier";
 import { NewRowsBanner, useHeldList } from "../../components/ui/base/livelist";
 import { HourlyChart, NetworkMetrics } from "../../components/ui/domain/metrics";
 import { Missing } from "../../components/ui/domain/metrics/figures";
@@ -250,7 +250,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
                       are on the block page. */}
                   {r.height === null ? null : (
                     <span className="mg-caption font-mono text-text-3">
-                      {`${r.header_hash.slice(0, 8)}…`}
+                      <ShortId value={r.header_hash} head={8} tail={6} />
                     </span>
                   )}
                 </span>

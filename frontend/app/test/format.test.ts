@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AssetMap } from "@midgard-explorer/contracts";
 import {
   assetCount,
+  countNoun,
   cn,
   formatAda,
   formatDuration,
@@ -177,5 +178,13 @@ describe("assetCount", () => {
 describe("cn", () => {
   it("drops falsy parts and joins the rest", () => {
     expect(cn("a", false, undefined, null, "b")).toBe("a b");
+  });
+});
+
+describe("countNoun", () => {
+  it("picks the singular for one and the plural otherwise", () => {
+    expect(countNoun(1, "withdrawal", "withdrawals")).toBe("withdrawal");
+    expect(countNoun(0, "withdrawal", "withdrawals")).toBe("withdrawals");
+    expect(countNoun(5, "transaction", "transactions")).toBe("transactions");
   });
 });

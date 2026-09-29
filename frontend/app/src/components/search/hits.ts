@@ -1,5 +1,6 @@
 import { truncateId } from "../../lib/format";
 import { type Candidate } from "../../lib/search";
+import { contractName } from "../ui/domain/validatorlabel";
 
 /**
  * What the backend's prefix search can answer with, and how each answer becomes
@@ -53,7 +54,7 @@ export const hitCandidate = (hit: PrefixHit): Candidate => {
     case "validator":
       return {
         kind: "validator",
-        label: `${hit.family} validator`,
+        label: `${contractName(hit.family)} validator`,
         detail: truncateId(hit.scriptHash, 12, 8),
         href: `/l1/validator/${hit.scriptHash}`,
       };

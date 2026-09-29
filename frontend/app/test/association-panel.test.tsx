@@ -72,12 +72,21 @@ describe("a settlement the node reported", () => {
     }
   });
 
-  it("keeps the settlement link and the node's raw state", () => {
+  it("keeps the settlement link and states the node's state in the reader's words", () => {
     const { container } = render(
       <CardanoAssociation association={association()} context={context} />,
     );
     expect(container.querySelector(`a[href="/l1/transaction/${NODE_HASH}"]`)).toBeTruthy();
-    expect(container.textContent).toContain("finalized");
+    expect(container.textContent).toContain("Finalized");
+    expect(container.textContent).not.toContain("finalized");
+  });
+
+  it("names the source in words, not codes", () => {
+    const { container } = render(
+      <CardanoAssociation association={association()} context={context} />,
+    );
+    expect(container.textContent).toContain("Node database on Preprod, up to date (lag 3s)");
+    expect(container.textContent).not.toMatch(/primary on preprod/);
   });
 
   it("shows one timestamp, for the one source", () => {

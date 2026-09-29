@@ -15,6 +15,7 @@ type ActivityRow = {
   l1TxHash: string;
   headerHash: string | null;
   recordId: string | null;
+  status: string | null;
 };
 
 /** Every row, with the page each one is on. The list is newest first and the
@@ -32,10 +33,10 @@ const activity = async (
   return rows;
 };
 
-test("lists what the node recorded, and says it is not a chain scan", async ({ page }) => {
+test("lists what the node recorded, without a defensive subtitle", async ({ page }) => {
   await page.goto("/l1");
   await expect(page.getByRole("heading", { name: "Cardano activity" })).toBeVisible();
-  await expect(page.getByText(/The node's records, not a chain scan\./)).toBeVisible();
+  await expect(page.getByText(/not a chain scan/)).toHaveCount(0);
   // The rows, not a table cell: below `sm` the table is replaced by a list, so
   // a cell-role assertion passes on desktop and finds nothing on a phone.
   await expect(rowRegion(page).getByText("Block settlement").first()).toBeVisible();
@@ -125,4 +126,80 @@ test("the retired commitments page redirects to the blocks list", async ({ page 
   await expect(page).toHaveURL(/\/blocks$/);
   expect(response?.ok()).toBe(true);
   await expect(page.getByRole("heading", { name: "Blocks" }).first()).toBeVisible();
+});
+
+test("activity transaction hashes open CExplorer and record copies preserve the full ID", async ({
+  page,
+}) => {
+  const row = (await activity(page.request)).find((r) => r.kind === "settlement");
+  expect(row).toBeTruthy();
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          document.documentElement.dataset.copied = value;
+        },
+      },
+    });
+  });
+  await page.goto(`/l1?page=${row!.page}`);
+  const region = rowRegion(page);
+  const external = region
+    .locator(`a[href="https://preprod.cexplorer.io/tx/${row!.l1TxHash}"]`)
+    .first();
+  await expect(external).toBeVisible();
+  await expect(external).toHaveAttribute("target", "_blank");
+  await expect(external).toHaveAttribute("aria-label", /on CExplorer \(opens in a new tab\)$/);
+  await expect(region.locator('a[href^="/l1/transaction/"]')).toHaveCount(0);
+
+  const line = region
+    .locator("tr, li", {
+      has: page.locator(`a[href="https://preprod.cexplorer.io/tx/${row!.l1TxHash}"]`),
+    })
+    .first();
+  const details = line.locator("summary");
+  if (await details.isVisible()) await details.click();
+  const record = line.locator(`a[href="/block/${row!.headerHash}"]`);
+  await expect(record).toBeVisible();
+  await record.locator("..").getByRole("button", { name: "Copy to clipboard" }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-copied", row!.headerHash!);
+});
+
+/* A pill is for the record header; a status inside a record card reads as
+ * coloured text and its mark, with no filled background. */
+test("a record card states its status as text, not a pill", async ({ page }) => {
+  const settlement = (await activity(page.request)).find(
+    (row) => row.kind === "settlement" && row.status !== null,
+  );
+  expect(settlement, "the fixture records no settlement with a status").toBeTruthy();
+  await page.goto(`/l1/transaction/${settlement!.l1TxHash}`);
+  const card = page.getByRole("heading", { name: "Block settlement" }).locator("xpath=../..");
+  const status = card
+    .getByText(/^(Pending submission|Submitted \(.*\)|Awaiting stability|Finalized|Abandoned)$/)
+    .first();
+  await expect(status).toBeVisible();
+  const background = await status.evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(background).toBe("rgba(0, 0, 0, 0)");
+});
+
+/* Detail pages show when as well as how long ago; lists stay relative. */
+test("a record card shows the exact instant beside the relative time", async ({ page }) => {
+  const settlement = (await activity(page.request)).find((row) => row.kind === "settlement");
+  await page.goto(`/l1/transaction/${settlement!.l1TxHash}`);
+  const row = page.getByText("Recorded by the node").first().locator("xpath=..");
+  // The sr-only copy always carries the instant; what matters is the visible text.
+  await expect(
+    row.locator("[aria-hidden]", { hasText: /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC/ }),
+  ).toHaveCount(1);
+});
+
+/* A lone output index is a number under its own label; "#N" beside a hash is an
+ * output reference, and there is no hash beside it here. */
+test("a bridge record names its output index without a bare #", async ({ page }) => {
+  const withdrawal = (await activity(page.request)).find((row) => row.kind === "withdrawal");
+  expect(withdrawal, "the fixture records no withdrawal").toBeTruthy();
+  await page.goto(`/l1/transaction/${withdrawal!.l1TxHash}`);
+  const row = page.getByText("Output index", { exact: true }).first().locator("xpath=..");
+  await expect(row.getByText(/^\d+$/)).toBeVisible();
 });

@@ -12,6 +12,32 @@ const HIDE_CLASS = {
   "2xl": "hidden 2xl:table-cell",
 } as const;
 
+type Breakpoint = keyof typeof HIDE_CLASS;
+const ORDER: readonly Breakpoint[] = ["sm", "md", "lg", "xl", "2xl"];
+/* Written out whole so Tailwind finds every class in the source. */
+const LIST_HIDE: Record<Breakpoint, string> = {
+  sm: "sm:hidden",
+  md: "md:hidden",
+  lg: "lg:hidden",
+  xl: "xl:hidden",
+  "2xl": "2xl:hidden",
+};
+const TABLE_SHOW: Record<Breakpoint, string> = {
+  sm: "hidden sm:block",
+  md: "hidden md:block",
+  lg: "hidden lg:block",
+  xl: "hidden xl:block",
+  "2xl": "hidden 2xl:block",
+};
+
+/** The row list shows until every column fits, so a hidden column is never
+ * unreachable: below this width its value is in the row instead. */
+const stackBelow = (hidden: ReadonlyArray<Breakpoint | undefined>): Breakpoint =>
+  hidden.reduce<Breakpoint>(
+    (widest, at) => (at !== undefined && ORDER.indexOf(at) > ORDER.indexOf(widest) ? at : widest),
+    "sm",
+  );
+
 export type Column<T> = {
   header: string;
   /** A short qualifier rendered under the header, always visible.
@@ -57,12 +83,13 @@ export function DataTable<T>({
   }
   if (rows.length === 0)
     return <EmptyState title={emptyTitle} hint={emptyHint} action={emptyAction} />;
+  const at = stackBelow(columns.map((c) => c.hideBelow));
 
   return (
     <>
       {mobileRow ? (
-        /* Mobile (<sm): prioritized ledger rows separated by dividers. */
-        <ul className="divide-y divide-border sm:hidden">
+        /* Below the stacking width: prioritized ledger rows separated by dividers. */
+        <ul className={`divide-y divide-border ${LIST_HIDE[at]}`}>
           {rows.map((row) => (
             <li key={keyOf(row)}>
               <LedgerRow spec={mobileRow(row)} />
@@ -72,7 +99,7 @@ export function DataTable<T>({
       ) : (
         /* Fallback: each row as a card with EVERY column's label/value,
            nothing is lost to hidden columns on small screens. */
-        <ul className="space-y-3 p-4 sm:hidden">
+        <ul className={`space-y-3 p-4 ${LIST_HIDE[at]}`}>
           {rows.map((row) => (
             <li
               key={keyOf(row)}
@@ -100,7 +127,7 @@ export function DataTable<T>({
           even though the table itself is clipped here. That is what pushed
           /deposits 106 px and /withdrawals 195 px sideways at 1280: the table
           scrolled correctly inside this box and the page scrolled too. */}
-      <div className="relative hidden overflow-x-auto sm:block">
+      <div className={`relative overflow-x-auto ${TABLE_SHOW[at]}`}>
         <table className="w-full text-sm">
           <caption className="sr-only">{caption}</caption>
           <thead>
@@ -161,6 +188,8 @@ export function Pagination({
   total?: number;
   limit?: number;
 }) {
+  // An empty list shows its empty state alone: no range, no dead page buttons.
+  if (total === 0 && page === 1) return null;
   const totalPages =
     total !== undefined && limit !== undefined && limit > 0
       ? Math.max(1, Math.ceil(total / limit))
@@ -182,7 +211,9 @@ export function Pagination({
     >
       <span className="text-text-3 tabular-nums">
         {from !== undefined && to !== undefined && total !== undefined
-          ? `Showing ${from}–${to} of ${total.toLocaleString("en-US")}`
+          ? from > total
+            ? `No results on page ${page} · ${total.toLocaleString("en-US")} total`
+            : `Showing ${from}–${to} of ${total.toLocaleString("en-US")}`
           : `Page ${page}`}
       </span>
       <div className="flex items-center gap-1">
