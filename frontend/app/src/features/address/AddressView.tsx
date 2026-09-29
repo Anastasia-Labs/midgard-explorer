@@ -44,15 +44,15 @@ export function AddressView({
   const assets = assetCount(data.balance.assets);
   const undecodableUtxos = data.utxos.filter((u) => u.decodeError !== null).length;
 
-  const pruned = data.history.some((r) => !r.spentComplete || r.spent === null);
+  const spentUnknown = data.history.some((r) => !r.spentComplete || r.spent === null);
 
   const activityTab = (
     <Card>
       {/* Said once for the page. Each affected row keeps its own label. */}
-      {pruned ? (
+      {spentUnknown ? (
         <p className="border-b border-border px-4 py-3 mg-caption text-text-3">
-          Inputs pruned: some inputs are no longer in the ledger, so the amount spent from this
-          address is unknown, not zero.
+          The amount spent from this address is unknown because this response does not resolve every
+          input.
         </p>
       ) : null}
       <DataTable
@@ -120,7 +120,7 @@ export function AddressView({
               r.spentComplete && r.spent !== null ? (
                 <ValueCell value={r.spent} />
               ) : (
-                <span className="text-text-3">Inputs pruned</span>
+                <span className="text-text-3">Spent unknown</span>
               ),
             hideBelow: "lg",
             align: "right",
@@ -157,7 +157,7 @@ export function AddressView({
                 r.spentComplete && r.spent !== null ? (
                   <ValueCell value={r.spent} />
                 ) : (
-                  <span className="text-text-3">Inputs pruned</span>
+                  <span className="text-text-3">Spent unknown</span>
                 ),
             },
             {

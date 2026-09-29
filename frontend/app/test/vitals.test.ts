@@ -35,6 +35,7 @@ const EXPECTED: Record<string, RouteClass> = {
   "/l1/transaction/[txHash]": "detail",
   "/l1/validator/[scriptHash]": "detail",
   "/glossary": "other",
+  "/health": "other",
   "/tools": "other",
   "/api-docs": "other",
 };

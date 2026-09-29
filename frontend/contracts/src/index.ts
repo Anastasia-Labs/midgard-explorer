@@ -1,3 +1,4 @@
+// Generated from backend/contracts by `pnpm contracts:write` in backend/. Edit the source, not this copy.
 export * from "./primitives";
 export * from "./transaction-view";
 export * from "./block";

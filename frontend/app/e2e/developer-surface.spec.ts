@@ -199,7 +199,7 @@ test.describe("state", () => {
     // The asset name renders beside its policy in Balance changes, which
     // ada-only movement never showed.
     const movement = page.locator('[data-region="balance-changes"]');
-    await expect(movement.getByText(/^[0-9a-f]{6}…[0-9a-f]{4}$/).first()).toBeVisible();
+    await expect(movement.getByText(/^[0-9a-f]{6}\.\.\.[0-9a-f]{4}$/).first()).toBeVisible();
   });
 });
 

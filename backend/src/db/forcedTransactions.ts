@@ -1,4 +1,3 @@
-import { prisma } from "../db";
 import { readConsistently } from "./consistent";
 
 /** Rows per page. Exported so the route can bound the page depth it accepts

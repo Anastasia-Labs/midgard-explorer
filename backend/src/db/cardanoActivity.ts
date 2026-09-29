@@ -150,7 +150,13 @@ export async function getCardanoActivityPage(page: number, db?: NodeReader) {
 export type CardanoActivitySummary = {
   total: number;
   newestRecordedAt: string | null;
-  byKind: Array<{ kind: ActivityKind; count: number; newestRecordedAt: string | null }>;
+  byKind: Array<{
+    kind: ActivityKind;
+    count: number;
+    newestRecordedAt: string | null;
+    /** The node's own status words, largest count first. */
+    byStatus: Array<{ status: string | null; count: number }>;
+  }>;
 };
 
 /** Counts per kind, and how recent the newest record of each is. The age is
@@ -159,21 +165,29 @@ export async function getCardanoActivitySummary(
   db?: NodeReader,
 ): Promise<CardanoActivitySummary> {
   const read = async (tx: NodeReader) =>
-    tx.$queryRaw<Array<{ kind: string; count: bigint; newest: Date | null }>>`
+    tx.$queryRaw<
+      Array<{ kind: string; status: string | null; count: bigint; newest: Date | null }>
+    >`
       WITH activity AS (${ACTIVITY})
-      SELECT kind, COUNT(*) AS count, MAX(recorded_at) AS newest
-        FROM activity GROUP BY kind;`;
+      SELECT kind, status, COUNT(*) AS count, MAX(recorded_at) AS newest
+        FROM activity GROUP BY kind, status
+       ORDER BY count DESC, status ASC;`;
   const grouped = db ? await read(db) : await readConsistently(read);
-  const found = new Map(grouped.map((row) => [row.kind, row]));
   const byKind = ACTIVITY_KINDS.map((kind) => {
-    const row = found.get(kind);
+    const rows = grouped.filter((row) => row.kind === kind);
+    const newest = rows
+      .map((row) => row.newest)
+      .filter((at): at is Date => at !== null)
+      .sort((a, b) => a.getTime() - b.getTime())
+      .at(-1);
     return {
       kind,
       // Every kind, always, including the ones with nothing in them. A kind
       // that disappears from the list when it is empty reads as a kind this
       // deployment does not have.
-      count: Number(row?.count ?? 0),
-      newestRecordedAt: row?.newest?.toISOString() ?? null,
+      count: rows.reduce((sum, row) => sum + Number(row.count), 0),
+      newestRecordedAt: newest?.toISOString() ?? null,
+      byStatus: rows.map((row) => ({ status: row.status, count: Number(row.count) })),
     };
   });
   const newest = byKind

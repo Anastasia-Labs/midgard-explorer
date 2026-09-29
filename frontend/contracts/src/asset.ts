@@ -1,3 +1,4 @@
+// Generated from backend/contracts by `pnpm contracts:write` in backend/. Edit the source, not this copy.
 import { Schema } from "effect";
 import { DecimalString, HexString } from "./primitives";
 

@@ -22,7 +22,7 @@ import { formatDuration } from "./format";
  *      it replaced. Disagreeing with the judgement should be easy.
  */
 
-export type HealthState = "healthy" | "degraded" | "stalled" | "unknown";
+export type HealthState = "healthy" | "idle" | "degraded" | "stalled" | "unknown";
 
 export type NetworkHealth = {
   state: HealthState;
@@ -45,114 +45,153 @@ const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 const seconds = (n: number) =>
   n < 60 ? `${Math.round(n)}s` : n < 3600 ? `${Math.round(n / 60)}m` : `${(n / 3600).toFixed(1)}h`;
 
+const WAITING_NOUNS = [
+  ["transactions", "transaction", "transactions"],
+  ["deposits", "deposit", "deposits"],
+  ["withdrawals", "withdrawal", "withdrawals"],
+  ["forcedTransactions", "forced transaction", "forced transactions"],
+] as const;
+
+/** What is waiting for a block. `parts` is the breakdown by kind ("4
+ * transactions", "1 withdrawal"); `noun` names the whole: the kind when there
+ * is one, "items" when kinds are mixed. */
+export function waitingPhrase(waiting: MetricsResponse["waiting"]): {
+  count: number;
+  noun: string;
+  parts: string[];
+} {
+  const present = WAITING_NOUNS.filter(([key]) => waiting[key] > 0);
+  const parts = present.map(
+    ([key, one, many]) => `${waiting[key]} ${waiting[key] === 1 ? one : many}`,
+  );
+  const count = WAITING_NOUNS.reduce((sum, [key]) => sum + waiting[key], 0);
+  const noun = present.length === 1 ? (count === 1 ? present[0]![1] : present[0]![2]) : "items";
+  return { count, noun, parts };
+}
+
+/**
+ * Whether blocks are coming when they should.
+ *
+ * The node makes a block only when something waits for one: a transaction in
+ * its mempool, or a bridge event that has fallen due. An old tip therefore says
+ * nothing on its own. With nothing waiting the chain is idle; with work waiting
+ * longer than the node's usual gap between blocks, it is late. The overview's
+ * verdict and its chain tip figure both read this, so they cannot disagree.
+ */
+export type Production =
+  | { state: "none" }
+  | ({ state: "current"; p50: number; tipAge: number; waited: number } & Waiting)
+  | { state: "idle"; tipAge: number }
+  | ({ state: "unmeasured"; waited: number } & Waiting)
+  /** Work has waited longer than the whole window and no block came in it.
+   * Late with no cadence to compare against, because none is needed. */
+  | ({ state: "overdue"; waited: number } & Waiting)
+  | ({
+      state: "slow" | "stalled";
+      p50: number;
+      tipAge: number;
+      waited: number;
+      ratio: number;
+    } & Waiting);
+
+type Waiting = { count: number; noun: string; parts: string[] };
+
+export function production(metrics: MetricsResponse): Production {
+  const { tip, throughput, waiting, window: w } = metrics;
+  if (tip.ageSeconds === null || tip.headerHash === null) return { state: "none" };
+  const p50 = throughput.blockIntervalSeconds.p50;
+  const measured = p50 !== null && p50 > 0;
+  const work = waitingPhrase(waiting);
+  const { count } = work;
+  const waited =
+    waiting.since === null
+      ? 0
+      : Math.max(0, Math.round((Date.parse(w.end) - Date.parse(waiting.since)) / 1000));
+
+  if (count === 0) {
+    return measured && tip.ageSeconds / p50 <= SLOW_RATIO
+      ? { state: "current", p50, tipAge: tip.ageSeconds, waited, ...work }
+      : { state: "idle", tipAge: tip.ageSeconds };
+  }
+  if (!measured) {
+    return throughput.blocks === 0 && waited > w.hours * 3600
+      ? { state: "overdue", waited, ...work }
+      : { state: "unmeasured", waited, ...work };
+  }
+
+  const ratio = waited / p50;
+  if (ratio > STALLED_RATIO) {
+    return { state: "stalled", p50, tipAge: tip.ageSeconds, waited, ratio, ...work };
+  }
+  if (ratio > SLOW_RATIO) {
+    return { state: "slow", p50, tipAge: tip.ageSeconds, waited, ratio, ...work };
+  }
+  return { state: "current", p50, tipAge: tip.ageSeconds, waited, ...work };
+}
+
+/** "4 withdrawals awaiting a block · oldest 1d 2h". The duration is the
+ * oldest wait, so it says "oldest" whenever more than one item waits. */
+const awaiting = (made: { waited: number } & Waiting) =>
+  `${made.count} ${made.noun} awaiting a block · ${made.count > 1 ? "oldest " : ""}${formatDuration(made.waited * 1000)}`;
+
+/** The breakdown by kind, shown only when kinds are mixed. */
+const breakdown = (made: Waiting) => (made.parts.length > 1 ? [made.parts.join(" · ")] : []);
+
+const NOTHING_WAITING = "Nothing awaiting a block";
+
 export function networkHealth(metrics: MetricsResponse | null): NetworkHealth {
   if (metrics === null) {
-    return {
-      state: "unknown",
-      headline: "The network's health cannot be judged right now.",
-      reasons: ["Metrics are unavailable, so nothing below describes the chain."],
-    };
+    return { state: "unknown", headline: "Figures unavailable", reasons: [] };
   }
 
-  const { tip, throughput, admission, finality } = metrics;
-  const tipLabel =
-    tip.height === null
-      ? tip.headerHash === null
-        ? "the latest header"
-        : `${tip.headerHash.slice(0, 8)}…`
-      : `#${tip.height}`;
-  const p50 = throughput.blockIntervalSeconds.p50;
-  const reasons: string[] = [];
+  const { admission, finality } = metrics;
+  const made = production(metrics);
+  const trouble = [...settlementReasons(finality), ...admissionReasons(admission)];
 
-  // Production. Judged first because nothing else matters if the chain has
-  // stopped: settling a backlog perfectly while producing no blocks is not a
-  // healthy network, and a verdict that said "healthy" there would be useless.
-  if (tip.ageSeconds === null) {
-    return {
-      state: "unknown",
-      headline: "The network's health cannot be judged right now.",
-      reasons: ["No block has been recorded, so there is no tip to measure against."],
-    };
-  }
-
-  if (p50 === null || p50 <= 0) {
-    // No interval could be measured, which has three quite different causes.
-    // Reporting them all as "not enough history" told a reader the chain was
-    // too young to judge while the panel beside it read "All time: 6 blocks",
-    // which is a contradiction and hid the real answer: the node had stopped.
-    if (tip.headerHash === null) {
+  // One shape for every state: what awaits a block and for how long. A state
+  // word leads whenever something is wrong, so a problem never rests on the
+  // dot's colour or on the second line alone, and "late" is claimed rather than
+  // "stopped", which the figures cannot show.
+  switch (made.state) {
+    case "none":
+      return { state: "unknown", headline: "No blocks yet", reasons: [] };
+    case "unmeasured":
       return {
         state: "unknown",
-        headline: "There is not enough history to judge the network yet.",
-        reasons: ["No block has been produced, so there is nothing to measure."],
+        headline: awaiting(made),
+        reasons: [
+          ...breakdown(made),
+          `Too early to judge: ${metrics.throughput.blocks} ${
+            metrics.throughput.blocks === 1 ? "block" : "blocks"
+          } in ${metrics.window.hours}h, so there is no gap between blocks to compare.`,
+        ],
       };
-    }
-
-    if (throughput.blocks === 0) {
-      // No reasons: the headline already says what happened, the chain tip
-      // figure right below already gives the block and its age, and the
-      // Cardano section further down the page speaks for itself instead of
-      // being pre-announced here.
+    case "stalled":
+    case "overdue":
       return {
         state: "stalled",
-        headline: `Latest recorded block: ${formatDuration(tip.ageSeconds * 1000)} ago. No blocks recorded in the last ${metrics.window.hours} hours.`,
-        reasons: [],
+        headline: `Overdue · ${awaiting(made)}`,
+        reasons: [...breakdown(made), ...trouble],
+      };
+    case "slow":
+      return {
+        state: "degraded",
+        headline: `Slow · ${awaiting(made)}`,
+        reasons: [...breakdown(made), ...trouble],
+      };
+    case "idle":
+      return trouble.length === 0
+        ? { state: "idle", headline: NOTHING_WAITING, reasons: [] }
+        : { state: "degraded", headline: `Degraded · ${NOTHING_WAITING}`, reasons: trouble };
+    case "current": {
+      const line = made.count === 0 ? NOTHING_WAITING : awaiting(made);
+      return {
+        state: trouble.length === 0 ? "healthy" : "degraded",
+        headline: trouble.length === 0 ? line : `Degraded · ${line}`,
+        reasons: [...breakdown(made), ...trouble],
       };
     }
-
-    return {
-      state: "unknown",
-      headline: "There is not enough history to judge the network's pace yet.",
-      reasons: [
-        `Only ${throughput.blocks} ${throughput.blocks === 1 ? "block has" : "blocks have"} arrived in the last ${metrics.window.hours} hours, so no interval between blocks has been measured yet.`,
-        `The last one, ${tipLabel}, arrived ${seconds(tip.ageSeconds)} ago.`,
-      ],
-    };
   }
-
-  const ratio = tip.ageSeconds / p50;
-
-  if (ratio > STALLED_RATIO) {
-    return {
-      state: "stalled",
-      headline: `Latest recorded block: ${formatDuration(tip.ageSeconds * 1000)} ago, beyond the usual interval.`,
-      reasons: [
-        `The last block arrived ${seconds(tip.ageSeconds)} ago, ${ratio.toFixed(1)} times this node's usual ${Math.round(p50)}s interval.`,
-        ...settlementReasons(finality),
-        ...admissionReasons(admission),
-      ],
-    };
-  }
-
-  if (ratio > SLOW_RATIO) {
-    reasons.push(
-      `The last block arrived ${seconds(tip.ageSeconds)} ago, ${ratio.toFixed(1)} times this node's usual ${Math.round(p50)}s interval.`,
-    );
-  }
-
-  reasons.push(...settlementReasons(finality), ...admissionReasons(admission));
-
-  if (reasons.length === 0) {
-    return {
-      state: "healthy",
-      headline: "The network is producing blocks and settling them to Cardano.",
-      reasons: [
-        `Blocks arrive every ${Math.round(p50)}s and the last one was ${seconds(tip.ageSeconds)} ago.`,
-        finality.pending > 0
-          ? `${finality.pending} ${finality.pending === 1 ? "block is" : "blocks are"} waiting on Cardano, which is the normal state while settlement proceeds.`
-          : "No block is waiting on Cardano.",
-      ],
-    };
-  }
-
-  return {
-    state: "degraded",
-    headline:
-      ratio > SLOW_RATIO
-        ? "The network is falling behind its usual pace."
-        : "The network is producing blocks, but not everything is settling.",
-    reasons,
-  };
 }
 
 /** Settlement problems, worst first. Abandonment is the serious one: a block

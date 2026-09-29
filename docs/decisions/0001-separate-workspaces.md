@@ -42,10 +42,10 @@ Three installs rather than one, and roughly 1.1 GB across the three
 `node_modules` trees. pnpm hardlinks into a shared store, so the trees overlap
 heavily and the figure is not three separate copies.
 
-A package cannot be imported across roots. `@midgard-explorer/contracts`
-describes API responses and lives in the frontend workspace, so the API
-describes its own responses independently and
-`frontend/app/test/fixture-contract.test.ts` checks that the two agree.
+A package cannot be imported across roots. The API response contracts are
+owned by the backend in `backend/contracts/`, and `pnpm contracts:write` in
+`backend/` generates the frontend's copy in `frontend/contracts/src/`.
+`pnpm contracts:check` fails when that copy is stale (amended 2026-09-24).
 
 ## Consequences
 

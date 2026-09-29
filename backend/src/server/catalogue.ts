@@ -20,7 +20,6 @@ import { getMetricsRoute } from "./routes/metrics";
 import { getAssetRoute, getAssetsRoute } from "./routes/asset";
 import { getSearchRoute } from "./routes/search";
 import { postVitalsRoute } from "./routes/vitals";
-import { prisma } from "../db";
 import { logger } from "../logger";
 import { readinessRoute } from "./readiness";
 import {
@@ -52,12 +51,8 @@ import { HASH28_HEX, HASH32_HEX } from "../utils";
  * Now registration, the document, the limiter's mount list and the reference
  * page all derive from this array. A route that is not here does not exist.
  *
- * Response schemas are deliberately absent. The shapes a consumer decodes live
- * in `@midgard-explorer/contracts`, which sits in the frontend workspace and
- * cannot be imported here. Declaring them a second time in this file would
- * recreate exactly the problem this catalogue removes, so the document
- * describes status codes and parameters and stays quiet about bodies until the
- * packaging question is answered.
+ * Response schemas are not in the document yet. Their source is
+ * `backend/contracts/`; deriving the document's bodies from it is the next step.
  */
 
 export type EndpointParameter = {
@@ -85,15 +80,10 @@ export type Endpoint = {
   handler: RequestHandler;
 };
 
-// Lowercase, matching what the routes actually accept. The document advertised
-// a case-insensitive pattern while every hash route rejects uppercase, so a
-// client that followed the schema got a 400 the schema said was valid. Cardano
-// hashes are canonically lowercase and stored that way, so widening the routes
-// instead would turn a clear rejection into a silent miss.
-const hex64 = { type: "string", pattern: `^[0-9a-f]{${HASH32_HEX}}$` };
-const hex56 = { type: "string", pattern: `^[0-9a-f]{${HASH28_HEX}}$` };
+// Hash inputs accept either case; handlers normalize before querying.
+const hex64 = { type: "string", pattern: `^[0-9a-fA-F]{${HASH32_HEX}}$` };
+const hex56 = { type: "string", pattern: `^[0-9a-fA-F]{${HASH28_HEX}}$` };
 const pageSchema = { type: "integer", minimum: 1 };
-const limitSchema = { type: "integer", minimum: 1, maximum: 100, default: 25 };
 
 const query = (
   name: string,

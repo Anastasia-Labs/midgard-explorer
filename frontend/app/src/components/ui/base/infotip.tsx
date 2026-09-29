@@ -11,7 +11,12 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { GLOSSARY, glossaryText, type GlossaryTerm } from "../../../lib/glossary";
+import {
+  GLOSSARY,
+  glossaryText,
+  type GlossaryEntry,
+  type GlossaryTerm,
+} from "../../../lib/glossary";
 import { cn } from "../../../lib/format";
 import { Icon, type IconName } from "./icons";
 
@@ -66,7 +71,7 @@ export function InfoTip({
   const [reason, setReason] = useState<OpenReason>(null);
   const [position, setPosition] = useState({ left: 0, top: 0, ready: false });
 
-  const entry = term ? GLOSSARY[term] : null;
+  const entry: GlossaryEntry | null = term ? GLOSSARY[term] : null;
   const text = term ? glossaryText(term) : explain;
   const label = subject ?? entry?.label ?? "more information";
   const open = reason !== null;
@@ -221,18 +226,24 @@ export function InfoTip({
           )}
         >
           {content ??
-            (entry ? (
+            (entry?.tip ? (
+              // A figure's label: one line, the thing a reader hovers to learn.
+              <span className="text-text">{explain ?? entry.tip}</span>
+            ) : entry ? (
               <>
-                <span className="font-semibold text-text">{entry.meaning}</span>{" "}
-                <span>{entry.consequence}</span>
-                {/* The rule separates the record-specific note from the shared
-                  definition, so it carries no "Context:" label: a word naming
+                {/* The note about this record or this moment leads, because it
+                  is what changed; the shared definition follows below the
+                  rule. The rule carries no "Context:" label: a word naming
                   the kind of information is not information. */}
                 {explain ? (
-                  <span className="mt-1.5 block border-t border-border pt-1.5 text-text-3">
+                  <span className="mb-1.5 block border-b border-border pb-1.5 font-medium text-text">
                     {explain}
                   </span>
                 ) : null}
+                <span className={explain ? undefined : "font-semibold text-text"}>
+                  {entry.meaning}
+                </span>{" "}
+                <span>{entry.consequence}</span>
               </>
             ) : (
               text

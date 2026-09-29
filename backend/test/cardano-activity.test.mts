@@ -221,7 +221,29 @@ db("cardano activity, from the node's records", () => {
         // has no rows reads as a kind this deployment does not have.
         expect(forced?.count).toBe(0);
         expect(forced?.newestRecordedAt).toBeNull();
+        expect(forced?.byStatus).toEqual([]);
         expect(summary.newestRecordedAt).toBe("2026-09-01T10:05:00.000Z");
+      } finally {
+        await prisma.$disconnect();
+      }
+    });
+  });
+
+  /** A count alone cannot say whether a kind's records are done or still
+   * moving, so each kind carries its counts by the node's own status word. */
+  it("counts each kind by status", async () => {
+    await withThrowawayNodeDb(async (client) => {
+      await seed(client);
+      const name = (await client.query("SELECT current_database() AS db")).rows[0].db;
+      const { client: prisma, reader: read } = reader(name);
+      try {
+        const summary = await getCardanoActivitySummary(read);
+        const byStatus = (kind: string) =>
+          summary.byKind.find((k) => k.kind === kind)?.byStatus;
+        expect(byStatus("settlement")).toEqual([{ status: "finalized", count: 1 }]);
+        expect(byStatus("deposit")).toEqual([{ status: "consumed", count: 1 }]);
+        expect(byStatus("withdrawal")).toEqual([{ status: "awaiting", count: 1 }]);
+        expect(byStatus("forced_transaction")).toEqual([{ status: "awaiting", count: 1 }]);
       } finally {
         await prisma.$disconnect();
       }

@@ -140,6 +140,7 @@ jobs:
           pnpm run audit:gate 2>&1 | tee gate-evidence/audit.log
 
       - run: pnpm typecheck
+      - run: pnpm contracts:check
 
       - name: Type check the JavaScript tooling
         # `tsconfig.json` has `allowJs` off, so nothing under `scripts/` was
@@ -448,7 +449,7 @@ jobs:
             .env
           pnpm setup
           grep -q '^POSTGRES_HOST=localhost' .env
-          # Nothing outside this package may be written.
+          # Setup must not generate frontend environment files.
           test ! -f ../frontend/app/.env.local || {
             echo "setup wrote into frontend"; exit 1; }
 

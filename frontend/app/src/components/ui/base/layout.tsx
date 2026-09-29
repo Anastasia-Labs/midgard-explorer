@@ -45,6 +45,21 @@ export function EmptyState({
   );
 }
 
+/** A card's own retry, for a card that keeps its layout while its values are
+ * missing. It sits where the card's header actions go. */
+export function RetryButton({ onRetry, label = "Retry" }: { onRetry: () => void; label?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onRetry}
+      className="inline-flex h-8 items-center gap-1.5 rounded border border-border-strong px-2.5 text-sm text-text hover:bg-surface-2"
+    >
+      <Icon name="refresh" size={14} />
+      {label}
+    </button>
+  );
+}
+
 export function ErrorState({
   message,
   onRetry,
@@ -122,56 +137,6 @@ export function Callout({
       ) : null}
     </div>
   );
-}
-
-export function MetricTile({
-  label,
-  value,
-  sub,
-  icon,
-  tone,
-}: {
-  label: string;
-  value: ReactNode;
-  sub?: ReactNode;
-  icon?: IconName;
-  tone?: "success" | "danger" | "warning";
-}) {
-  const toneText =
-    tone === "success"
-      ? "text-success"
-      : tone === "danger"
-        ? "text-danger"
-        : tone === "warning"
-          ? "text-warning"
-          : "text-text";
-  return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-(--mg-shadow)">
-      <div className="flex items-center justify-between gap-2">
-        <p className="mg-overline">{label}</p>
-        {icon ? (
-          <span className={cn("opacity-80", tone ? toneText : "text-text-3")}>
-            <Icon name={icon} size={15} />
-          </span>
-        ) : null}
-      </div>
-      <p
-        className={cn(
-          "mt-2 text-2xl font-semibold leading-none tracking-tight tabular-nums sm:text-3xl",
-          toneText,
-        )}
-      >
-        {value}
-      </p>
-      {sub ? <p className="mt-1.5 mg-caption text-text-3">{sub}</p> : null}
-    </div>
-  );
-}
-
-export function MetricStrip({ children }: { children: ReactNode }) {
-  // Two columns from the smallest viewport: stacked full-width tiles pushed the
-  // first recent row off a phone screen.
-  return <div className="mb-4 grid grid-cols-2 gap-3">{children}</div>;
 }
 
 export function PageHeader({

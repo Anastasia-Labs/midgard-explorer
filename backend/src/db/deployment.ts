@@ -1,5 +1,4 @@
 import { config } from "../config";
-import { prisma } from "../db";
 import { loadManifest } from "./manifest";
 import { logger } from "../logger";
 import { readL2Source, type L2FreshnessState, type L2SourceKind } from "./source";
@@ -113,12 +112,6 @@ export async function getSourceIdentity(): Promise<SourceIdentity | null> {
     return null;
   }
   return identity;
-}
-
-/** Tests only: the memo would otherwise outlive a changed configuration. */
-export function resetSourceIdentity(): void {
-  identity = null;
-  identityAt = 0;
 }
 
 export async function getDeploymentContext(): Promise<DeploymentContext> {

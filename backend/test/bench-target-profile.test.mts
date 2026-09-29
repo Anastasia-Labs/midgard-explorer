@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { PROFILES, expectedTotals } from "../bench/profiles.mjs";
 import { generateDataset, LOAD_ORDER } from "../bench/generate.mjs";
 
@@ -16,7 +16,10 @@ const RUN = process.env.BENCH_TARGET === "1";
 const target = RUN ? describe : describe.skip;
 
 target("the target profile", () => {
-  const dataset = generateDataset(PROFILES.target);
+  let dataset: ReturnType<typeof generateDataset>;
+  beforeAll(() => {
+    dataset = generateDataset(PROFILES.target);
+  }, 900_000);
 
   it("builds every block the profile asks for", () => {
     expect(dataset.blocks.length).toBe(PROFILES.target.blocks);

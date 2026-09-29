@@ -7,28 +7,34 @@
  * so they can be read, changed and tested without opening a chart.
  */
 
+import type { MetricsResponse } from "@midgard-explorer/contracts";
+import { production } from "../../../../lib/health";
+
 export const VERDICT_TONE = {
   healthy: { text: "text-success", dot: "bg-success" },
+  idle: { text: "text-text-2", dot: "bg-text-3" },
   degraded: { text: "text-warning", dot: "bg-warning" },
   stalled: { text: "text-danger", dot: "bg-danger" },
   unknown: { text: "text-text-2", dot: "bg-text-3" },
 } as const;
 
-/** Tip age against the observed block interval. A fixed threshold would be
- * wrong on any chain whose cadence differs from the one it was written for, so
- * lateness is judged against what this node actually does. */
-export function tipTone(
-  ageSeconds: number | null,
-  p50: number | null,
-): { tone: "success" | "warning" | "danger" | "neutral"; note: string } {
-  if (ageSeconds === null) return { tone: "neutral", note: "No blocks recorded" };
-  if (p50 === null || p50 <= 0) {
-    return { tone: "neutral", note: "No interval measured yet, so lateness cannot be judged" };
+/** The tip's colour, from the same production judgement as the verdict. An old
+ * tip is only late when work is waiting for a block, and lateness is measured
+ * against this node's own gap between blocks rather than a fixed threshold. The
+ * verdict beside the tip says why, so the colour carries no note of its own. */
+export function tipTone(metrics: MetricsResponse): "success" | "warning" | "danger" | "neutral" {
+  const made = production(metrics);
+  switch (made.state) {
+    case "none":
+    case "idle":
+    case "unmeasured":
+      return "neutral";
+    case "current":
+      return made.tipAge / made.p50 <= 2 ? "success" : "neutral";
+    case "overdue":
+    case "stalled":
+      return "danger";
+    case "slow":
+      return "warning";
   }
-  const ratio = ageSeconds / p50;
-  if (ratio <= 2) return { tone: "success", note: `Within the usual ${Math.round(p50)}s cadence` };
-  if (ratio <= 5) {
-    return { tone: "warning", note: `${ratio.toFixed(1)}× the usual ${Math.round(p50)}s cadence` };
-  }
-  return { tone: "danger", note: `${ratio.toFixed(1)}× the usual ${Math.round(p50)}s cadence` };
 }

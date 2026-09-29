@@ -134,7 +134,7 @@ answer by accident.
 | `app/src/components/ui/domain/` | What only this one has: addresses, amounts, journeys, validators, the metrics panel, the transaction canvas. |
 | `app/src/lib/`                  | Formatting, classification, and the API client.                                                              |
 | `app/src/app/styles/`           | The stylesheet in four parts: tokens, base, features, motion.                                                |
-| `contracts/`                    | Response schemas, shared with the backend's tests.                                                           |
+| `contracts/`                    | Response schemas, generated from `backend/contracts/`. Edit them there.                                      |
 | `ui/`                           | Design tokens.                                                                                               |
 
 ## Where the data comes from

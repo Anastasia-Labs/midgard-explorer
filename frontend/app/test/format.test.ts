@@ -52,11 +52,11 @@ describe("truncateId", () => {
 
   it("keeps head and tail around an ellipsis", () => {
     const id = "a".repeat(64);
-    expect(truncateId(id)).toBe(`${"a".repeat(8)}…${"a".repeat(8)}`);
+    expect(truncateId(id)).toBe(`${"a".repeat(8)}...${"a".repeat(8)}`);
   });
 
   it("honours custom head and tail lengths", () => {
-    expect(truncateId("0123456789abcdef", 4, 4)).toBe("0123…cdef");
+    expect(truncateId("0123456789abcdef", 4, 4)).toBe("0123...cdef");
   });
 });
 

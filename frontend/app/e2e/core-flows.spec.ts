@@ -17,6 +17,7 @@ import {
 
 const ROUTES = [
   ["/", "Midgard Blockchain Explorer"],
+  ["/health", "Network health"],
   ["/blocks", "Blocks"],
   ["/transactions", "Transactions"],
   ["/deposits", "Deposits"],

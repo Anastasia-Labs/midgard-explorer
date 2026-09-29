@@ -1,5 +1,6 @@
 import type { MetricsResponse } from "@midgard-explorer/contracts";
 import { cn, formatDuration, groupThousands } from "../../../../lib/format";
+import { ShortId } from "../identifier";
 import type { NetworkHealth } from "../../../../lib/health";
 import type { GlossaryTerm } from "../../../../lib/glossary";
 import { FieldLabel } from "../../base/infotip";
@@ -53,16 +54,20 @@ export function Figure({
   hint,
   term,
   live,
+  className,
 }: {
   label: string;
   value: React.ReactNode;
   sub?: React.ReactNode;
-  tone?: "neutral" | "success" | "warning" | "danger";
+  /** `unknown` for a default standing in for a value that did not arrive:
+   * muted, so it does not read as a measurement. */
+  tone?: "neutral" | "success" | "warning" | "danger" | "unknown";
   hint?: string;
   term?: GlossaryTerm | undefined;
   /** Comparable identity of the figure. Given, the value tints when it moves,
    * which is the only motion on this page that means anything. */
   live?: string | number | null;
+  className?: string;
 }) {
   const figure = (
     <span
@@ -75,13 +80,17 @@ export function Figure({
         tone === "warning" && "text-warning",
         tone === "danger" && "text-danger",
         tone === "neutral" && "text-text",
+        tone === "unknown" && "text-text-3",
       )}
     >
       {value}
+      {tone === "unknown" ? <span className="sr-only"> (unavailable)</span> : null}
     </span>
   );
   return (
-    <div className="min-w-0 px-4 py-3">
+    // Centred as one unit: label, value and sub-line share one axis, as every
+    // figure tile on the overview does.
+    <div className={cn("min-w-0 px-4 py-3 text-center", className)}>
       <p className="mg-overline">
         <FieldLabel label={label} explain={hint} term={term} />
       </p>
@@ -93,98 +102,91 @@ export function Figure({
   );
 }
 
-/** The degraded branch only. When metrics are available the Blocks and
- * Transactions figures already carry these totals, so rendering them here as
- * well would state the same number twice in one panel. When metrics fail there
- * are no figures to carry them, and the panel would otherwise say nothing about
- * how big the chain is. */
-export function AllTime({ blocks, txs }: { blocks: number | null; txs: number | null }) {
-  if (blocks === null && txs === null) return null;
+/** A number that did not arrive. The tile keeps its place and its label and
+ * shows 0 in the muted tone, with no status colour, beside a verdict that says
+ * the figures are unavailable. */
+export const DEFAULT_VALUE = "0";
+
+/** A default standing in for a value that did not arrive: muted on screen and
+ * named unavailable for a screen reader, so a missing figure is not told apart
+ * from a real one by colour alone. */
+export function Missing({ children = DEFAULT_VALUE }: { children?: React.ReactNode }) {
   return (
-    <span className="mg-caption text-text-3">
-      All time:{" "}
-      <strong className="font-semibold tabular-nums text-text-2">
-        {blocks === null ? "unknown" : groupThousands(String(blocks))}
-      </strong>{" "}
-      blocks ·{" "}
-      <strong className="font-semibold tabular-nums text-text-2">
-        {txs === null ? "unknown" : groupThousands(String(txs))}
-      </strong>{" "}
-      transactions
+    <span className="text-text-3">
+      {children}
+      <span className="sr-only"> (unavailable)</span>
     </span>
   );
 }
 
-/** The four figures a reader arrives asking about: where the chain is, how big
- * it is, and how much is still waiting on Cardano. Split out of the panel body
- * only so the panel's two branches (metrics present, metrics null) don't have
- * to repeat the JSX; there is exactly one caller. */
+/** Below lg the tip takes the card's width so its hash has room, and blocks
+ * and transactions share the row beneath it. */
+const WIDE_BELOW_LG = "col-span-2 lg:col-span-1";
+
+/** An all-time total, from its own call, so it survives a metrics failure. */
+const total = (n: number | null) => (n === null ? DEFAULT_VALUE : groupThousands(String(n)));
+
+/** The three figures a reader arrives asking about: where the chain is and how
+ * big it is. Blocks and transactions are all-time totals, the same ones the
+ * list pages show; the last 24 hours are in the chart below. Settlement lives
+ * in the Cardano panel. With no metrics every tile still renders with its
+ * default value. */
 export function CoreFigures({
   metrics,
   totalBlocks,
   totalTxs,
 }: {
-  metrics: MetricsResponse;
+  metrics: MetricsResponse | null;
   totalBlocks: number | null;
   totalTxs: number | null;
 }) {
-  const { window: w, tip, throughput, finality } = metrics;
-  const tipState = tipTone(tip.ageSeconds, throughput.blockIntervalSeconds.p50);
-  const backlogTone =
-    finality.pending === 0 ? "success" : finality.pending > 50 ? "warning" : "neutral";
+  const tip = metrics?.tip ?? null;
+  const tipState = metrics === null ? null : tipTone(metrics);
   return (
     <div
       data-region="metrics"
-      className="grid grid-cols-2 divide-x divide-y divide-border sm:grid-cols-4"
+      className="grid grid-cols-2 divide-x divide-y divide-border lg:grid-cols-3"
     >
       <Figure
         label="Chain tip"
-        live={tip.headerHash}
-        value={
-          tip.headerHash === null
-            ? "None"
-            : tip.height === null
-              ? `${tip.headerHash.slice(0, 8)}…`
-              : `#${groupThousands(String(tip.height))}`
-        }
-        sub={tip.ageSeconds === null ? "No blocks" : `${formatDuration(tip.ageSeconds * 1000)} ago`}
-        tone={tipState.tone}
+        className={WIDE_BELOW_LG}
         term="chainTip"
-        // The cadence note, not the node column. Where the figure came from is
-        // listed once, on the health page.
-        hint={tipState.note}
+        {...(tip === null || tipState === null
+          ? { value: "None", tone: "unknown" as const }
+          : {
+              live: tip.headerHash,
+              value:
+                tip.headerHash === null ? (
+                  "None"
+                ) : tip.height === null ? (
+                  // A block the node no longer numbers is named by its hash, a
+                  // size down from the other figures.
+                  <span className="whitespace-nowrap font-mono text-lg">
+                    <ShortId value={tip.headerHash} head={12} tail={10} />
+                  </span>
+                ) : (
+                  `#${groupThousands(String(tip.height))}`
+                ),
+              sub:
+                tip.ageSeconds === null
+                  ? "No blocks"
+                  : `${formatDuration(tip.ageSeconds * 1000)} ago`,
+              tone: tipState,
+            })}
       />
-      {/* These values use the same canonical all-time totals as the list
-          pages. Window activity remains useful context, but must not occupy
-          the primary value and appear to contradict the list total. */}
       <Figure
         label="Blocks"
-        term="blockThroughput"
-        live={totalBlocks ?? throughput.blocks}
-        value={groupThousands(String(totalBlocks ?? throughput.blocks))}
-        sub={
-          totalBlocks === null
-            ? `${throughput.blocks} in the last ${w.hours}h · total unavailable`
-            : `${throughput.blocks} in the last ${w.hours}h · all time total`
-        }
+        term="blocksTotal"
+        live={totalBlocks}
+        value={total(totalBlocks)}
+        tone={totalBlocks === null ? "unknown" : "neutral"}
       />
       <Figure
         label="Transactions"
-        term="transactionThroughput"
-        live={totalTxs ?? throughput.transactions}
-        value={groupThousands(String(totalTxs ?? throughput.transactions))}
-        sub={
-          totalTxs === null
-            ? `${throughput.transactions} in the last ${w.hours}h · total unavailable`
-            : `${throughput.transactions} in the last ${w.hours}h · all time total`
-        }
-      />
-      <Figure
-        label="Awaiting settlement"
-        term="l1Finality"
-        value={groupThousands(String(finality.pending))}
-        sub={`${finality.finalized} settled · ${finality.abandoned} abandoned`}
-        tone={backlogTone}
+        term="transactionsTotal"
+        live={totalTxs}
+        value={total(totalTxs)}
+        tone={totalTxs === null ? "unknown" : "neutral"}
       />
     </div>
   );

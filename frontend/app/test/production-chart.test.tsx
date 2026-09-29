@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { IsoTimestamp } from "@midgard-explorer/contracts";
-import { Bars, ProductionChart } from "../src/components/ui/domain/metrics/charts";
+import { Bars, HourlyChart } from "../src/components/ui/domain/metrics/charts";
 
 afterEach(cleanup);
 const series = [
@@ -26,7 +26,28 @@ it("uses the observed peak and distinguishes hourly intervals from elapsed hours
 });
 
 it("distinguishes missing history from a measured zero", () => {
-  render(<ProductionChart series={[]} />);
+  render(<HourlyChart series={[]} measure="blocks" hours={24} />);
   expect(screen.getByText("No production history in this window.")).toBeDefined();
   expect(screen.queryByText(/No blocks or transactions recorded/)).toBeNull();
+});
+
+/** One measure each, with its own table, so neither needs a toggle. */
+it("draws one measure and tables every hour of it", () => {
+  render(
+    <HourlyChart
+      series={[{ ...series[0]!, blocks: 2, transactions: 5 }, series[1]!]}
+      measure="transactions"
+      hours={24}
+    />,
+  );
+  expect(screen.getByText("Transactions per hour, last 24h")).toBeDefined();
+  expect(screen.getByRole("img").getAttribute("aria-label")).toMatch(/^transactions per hour/);
+  const table = screen.getByRole("table", { name: "Transactions per hour" });
+  expect(table.querySelectorAll("tbody td")[0]?.textContent).toBe("5");
+});
+
+it("keeps its shape in the danger tone when the series did not arrive", () => {
+  render(<HourlyChart series={null} measure="blocks" hours={24} />);
+  const chart = screen.getByRole("img", { name: "Blocks per hour are unavailable." });
+  expect(chart.querySelectorAll("rect.fill-danger")).toHaveLength(25);
 });

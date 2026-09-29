@@ -19,14 +19,14 @@ if (!repoRoot) {
 }
 
 /**
- * Every file git tracks, and every directory holding one.
+ * Tracked files and non-ignored additions, including a rename before staging.
  *
  * The link check used to ask the filesystem whether a target existed, which
  * answers a question about this machine rather than about the repository. A
  * page linking to a plan under `docs/superpowers/`, or to a local evidence
  * directory, passed here and was dead for everyone who cloned it.
  */
-const trackedPaths = execFileSync("git", ["-C", repoRoot, "ls-files", "-z"], {
+const trackedPaths = execFileSync("git", ["-C", repoRoot, "ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
   encoding: "utf8",
   maxBuffer: 32 * 1024 * 1024,
 })
@@ -46,7 +46,7 @@ const relativeToRepo = (absolute) => relative(repoRoot, absolute).split("\\").jo
 /** Markdown that is meant to be read, which is not every markdown file: the
  * design briefs and redesign notes are working papers, kept but not maintained
  * as pages. */
-const PAGES = [
+const PAGES = [...new Set([
   "README.md",
   "backend/README.md",
   "frontend/README.md",
@@ -72,7 +72,7 @@ const PAGES = [
   ...readdirSync(join(repoRoot, "docs", "decisions"))
     .filter((name) => name.endsWith(".md"))
     .map((name) => `docs/decisions/${name}`),
-];
+])].filter((page) => tracked.has(page));
 
 /** Which package a page's bare `pnpm x` belongs to, by the directory the page
  * tells the reader to be in.
@@ -107,7 +107,7 @@ for (const page of PAGES) {
   // Links to something in this repository. External URLs and in-page anchors
   // are somebody else's to keep working.
   //
-  // Resolved against TRACKED files, not against the working tree. A page that
+  // Resolved against publishable files, excluding ignored local drafts. A page that
   // links into a git-excluded path (a plan, a local evidence directory, a
   // build output) passes on the machine that has it and is a dead link in a
   // fresh clone, which is the only place a reader ever follows it.

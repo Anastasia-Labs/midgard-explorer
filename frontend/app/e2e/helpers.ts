@@ -160,9 +160,11 @@ export async function isNarrow(page: Page): Promise<boolean> {
 }
 
 /** Row content as the current viewport actually presents it: the `<table>` on
- * desktop, the prioritized ledger list below `sm`. */
+ * desktop, the prioritized ledger list below `sm`. A chart's screen-reader
+ * table is not row content: it sits inside `.sr-only`, which Playwright counts
+ * as visible, and it comes first on a list page with an hourly chart. */
 export function rowRegion(page: Page) {
-  return page.locator("table, ul.divide-y").filter({ visible: true }).first();
+  return page.locator("table:not(.sr-only table), ul.divide-y").filter({ visible: true }).first();
 }
 
 export async function firstBlockHash(page: Page): Promise<string> {

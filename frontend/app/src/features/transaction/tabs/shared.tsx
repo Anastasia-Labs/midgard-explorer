@@ -1,7 +1,6 @@
 import type { OutputView, TransactionView } from "@midgard-explorer/contracts";
 import { Identifier } from "../../../components/ui/domain/identifier";
-import { SemanticLabel, SemanticValue } from "../../../components/ui/base/semantic";
-import type { SemanticIconKind } from "../../../lib/semantic-icons";
+import { SemanticValue } from "../../../components/ui/base/semantic";
 
 export function OutputState({ output }: { output: OutputView }) {
   if (output.state.consumedBy) {
@@ -30,64 +29,6 @@ export function OutputState({ output }: { output: OutputView }) {
         ? "Not in current ledger"
         : "State not checked";
   return <span className={`rounded px-2 py-0.5 text-micro font-medium ${style}`}>{label}</span>;
-}
-
-export function EvidenceList({
-  label,
-  kind,
-  values,
-  empty,
-}: {
-  label: string;
-  kind: SemanticIconKind;
-  values: readonly string[];
-  empty: string;
-}) {
-  return (
-    <div className="min-w-0">
-      <dt className="mg-overline">
-        <SemanticLabel kind={kind} label={label} />
-      </dt>
-      <dd className="mt-1">
-        {values.length === 0 ? (
-          <span className="text-sm text-text-3">{empty}</span>
-        ) : (
-          <ul className="space-y-1">
-            {values.map((value) => (
-              <li key={value}>
-                <Identifier value={value} head={10} tail={8} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </dd>
-    </div>
-  );
-}
-
-export function EvidenceHash({
-  label,
-  kind,
-  value,
-}: {
-  label: string;
-  kind: SemanticIconKind;
-  value: string | null;
-}) {
-  return (
-    <div className="min-w-0">
-      <dt className="mg-overline">
-        <SemanticLabel kind={kind} label={label} />
-      </dt>
-      <dd className="mt-1">
-        {value === null ? (
-          <span className="text-sm text-text-3">Not declared</span>
-        ) : (
-          <Identifier value={value} head={10} tail={8} />
-        )}
-      </dd>
-    </div>
-  );
 }
 
 /** Reads as a phrase rather than a pair of slots joined by a glyph, and each

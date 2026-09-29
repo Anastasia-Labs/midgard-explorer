@@ -249,11 +249,11 @@ The five dimensions of the original assessment that no latency, resource or CI r
 | Duplication | 0.90%: 15 clones, 265 lines over 203 files, at 12 lines / 50 tokens | **≤1.0%** at 12 lines / 50 tokens | explorer | `jscpd --min-lines 12 --min-tokens 50` | **PASS** |
 | Change complexity | top-10 churn peaks at 524 lines (`indexer/sync.ts`), then 418 (`indexer/koios.ts`); largest source 637 (`decode/transaction.ts`), largest tracked 871 (an e2e spec) | the 10 highest-churn files each under 400 lines; no file over 800 lines without a stated reason | explorer | `git log --numstat` churn crossed with line counts | **FAIL** |
 
-**Dead and legacy artifacts, inventoried 2026-09-15.** Tracked files only: gitignored local prototypes under `frontend/` are not repository artifacts.
+**Dead and legacy artifacts, updated 2026-09-24.** The legacy Vite client was removed; `frontend/` now contains the current Next.js workspace. Local legacy files were backed up outside this repository before removal.
 
 | Artifact | Size | Decision | Reason |
 |---|---|---|---|
-| `frontend/`, the previous Vite client | 47 files, 6,304 lines | keep, frozen | Owner ruling 2026-08-25, confirmed 2026-09-15: the previous client, no longer developed, and no CI job builds it |
+| `frontend/`, the previous Vite client | 47 files, 5,751 text lines plus images | removed 2026-09-24 | Owner ruling 2026-09-24: every route it served exists in `frontend/`, no CI job built it, and no gate covered its 18 high advisories |
 | `getBlockHeader` in `backend/src/db/block.ts` | one wrapper | keep | No production caller since `0bcc98d5`; the block query tests read a header through it |
 | `getBlockDaMetadata` in `backend/src/db/block.ts` | one keyed query | keep | No production caller since `0bcc98d5`; it is the independent query the merged block read is checked against |
 | Fixture representativeness | not measurable until the fixture pipeline exists | every fixture response validates against its contract, and the set covers every route the demo server serves plus the empty, truncated and error cases | explorer | fixture build, which fails on a contract violation | UNMEASURABLE |

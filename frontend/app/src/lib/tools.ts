@@ -1,5 +1,5 @@
 import { decode as decodeCbor } from "cborg";
-import { assetLabel } from "./asset";
+import { assetLabel, hexToBytes } from "./asset";
 
 /**
  * Pure functions behind the standalone developer utilities.
@@ -11,9 +11,6 @@ import { assetLabel } from "./asset";
  */
 
 const HEX = /^[0-9a-fA-F]*$/;
-
-const hexToBytes = (hex: string): Uint8Array =>
-  Uint8Array.from(hex.match(/.{2}/g)?.map((b) => parseInt(b, 16)) ?? []);
 
 /** Strips a `0x` prefix and any whitespace, which is how bytes actually arrive
  * from a terminal, a log or another explorer. */
@@ -117,7 +114,7 @@ export function decodeCborHex(input: string): CborResult {
   try {
     // `cborg` is the same decoder the Midgard codec uses, so a payload this
     // page accepts is one the backend would also read.
-    const value = decodeCbor(hexToBytes(hex), { useMaps: true });
+    const value = decodeCbor(hexToBytes(hex)!, { useMaps: true });
     return { ok: true, value: toDisplayable(value) };
   } catch (err) {
     return {

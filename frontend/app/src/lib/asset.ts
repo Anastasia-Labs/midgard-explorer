@@ -1,3 +1,4 @@
+import { bech32 } from "@scure/base";
 import { blake2b } from "@noble/hashes/blake2.js";
 
 /** Native asset identity.
@@ -16,50 +17,6 @@ import { blake2b } from "@noble/hashes/blake2.js";
  *   3. Two different assets can share a display name. CIP-14 fingerprints exist
  *      precisely for this and are the identifier a reader should compare.
  */
-
-const BECH32_CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
-
-function polymod(values: number[]): number {
-  const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
-  let chk = 1;
-  for (const v of values) {
-    const top = chk >>> 25;
-    chk = ((chk & 0x1ffffff) << 5) ^ v;
-    for (let i = 0; i < 5; i++) if ((top >>> i) & 1) chk ^= GEN[i]!;
-  }
-  return chk;
-}
-
-function hrpExpand(hrp: string): number[] {
-  const out: number[] = [];
-  for (let i = 0; i < hrp.length; i++) out.push(hrp.charCodeAt(i) >>> 5);
-  out.push(0);
-  for (let i = 0; i < hrp.length; i++) out.push(hrp.charCodeAt(i) & 31);
-  return out;
-}
-
-function toWords(bytes: Uint8Array): number[] {
-  let acc = 0;
-  let bits = 0;
-  const words: number[] = [];
-  for (const b of bytes) {
-    acc = (acc << 8) | b;
-    bits += 8;
-    while (bits >= 5) {
-      bits -= 5;
-      words.push((acc >> bits) & 31);
-    }
-  }
-  if (bits > 0) words.push((acc << (5 - bits)) & 31);
-  return words;
-}
-
-function bech32(hrp: string, bytes: Uint8Array): string {
-  const words = toWords(bytes);
-  const mod = polymod([...hrpExpand(hrp), ...words, 0, 0, 0, 0, 0, 0]) ^ 1;
-  const checksum = Array.from({ length: 6 }, (_, i) => (mod >> (5 * (5 - i))) & 31);
-  return `${hrp}1${[...words, ...checksum].map((w) => BECH32_CHARSET[w]).join("")}`;
-}
 
 const HEX = /^[0-9a-fA-F]*$/;
 
@@ -85,7 +42,7 @@ export function assetFingerprint(policyId: string, nameHex: string): string | nu
   const joined = new Uint8Array(policy.length + name.length);
   joined.set(policy);
   joined.set(name, policy.length);
-  return bech32("asset", blake2b(joined, { dkLen: 20 }));
+  return bech32.encode("asset", bech32.toWords(blake2b(joined, { dkLen: 20 })));
 }
 
 export type AssetName =

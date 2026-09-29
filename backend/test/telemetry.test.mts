@@ -8,12 +8,10 @@ import { cachePublicJson, clearCache } from "../src/server/cache.js";
 import { observeRequests } from "../src/telemetry/http.js";
 import {
   UNMATCHED,
-  indexerPassDuration,
   methodLabel,
   registry,
   routeLabel,
   statusClass,
-  timedPass,
 } from "../src/telemetry/metrics.js";
 import { requestTally, type RequestTally } from "../src/telemetry/requestTally.js";
 import { startMetricsServer } from "../src/telemetry/server.js";
@@ -108,21 +106,6 @@ describe("statement counting against a real database", () => {
   it("reads normally when no request is being tallied", async () => {
     if (!reachable) return void console.warn("skipped: no database reachable");
     await expect(getLastBlocks(1)).resolves.toBeInstanceOf(Array);
-  });
-});
-
-describe("indexer passes", () => {
-  it("records success and failure, and rethrows the failure", async () => {
-    const before = async (outcome: string) =>
-      (await indexerPassDuration.get()).values.find(
-        (v) => v.labels.outcome === outcome && v.metricName === "explorer_indexer_pass_duration_seconds_count",
-      )?.value ?? 0;
-    const successes = await before("success");
-    const failures = await before("failure");
-    await expect(timedPass(async () => 1)).resolves.toBe(1);
-    await expect(timedPass(async () => { throw new Error("koios 503"); })).rejects.toThrow("koios 503");
-    expect(await before("success")).toBe(successes + 1);
-    expect(await before("failure")).toBe(failures + 1);
   });
 });
 

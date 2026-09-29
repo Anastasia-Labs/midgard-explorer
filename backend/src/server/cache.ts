@@ -128,7 +128,7 @@ export function cachePublicJson(
   maxBytes: number,
 ): RequestHandler {
   return (req, res, next) => {
-    if (req.method !== "GET" || ttlMs <= 0) return next();
+    if ((req.method !== "GET" && req.method !== "HEAD") || ttlMs <= 0) return next();
     if (bypassed(req)) {
       // Neither read nor written: a benchmark run must not warm the cache for
       // the requests that follow it either.
@@ -164,8 +164,11 @@ export function cachePublicJson(
           body,
           bytes: 0,
         };
-        responses.set(key, entry);
         const sent = sendJson(body);
+        // Concurrent misses may replace a completed fill of this same key.
+        // Remove its byte charge before storing the replacement.
+        drop(key);
+        responses.set(key, entry);
         // Measured after the send, from what Express actually wrote, so the
         // budget counts the bytes a reader received rather than an estimate of
         // them and never serializes the body a second time to find out.

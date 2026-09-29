@@ -1,4 +1,3 @@
-import { prisma } from "../db";
 import { readConsistently } from "./consistent";
 
 /** Native-asset queries over the live ledger.

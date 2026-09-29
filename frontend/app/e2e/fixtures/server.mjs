@@ -356,7 +356,8 @@ const routes = [
     "blocks/recent",
     /^\/api\/blocks\/recent$/,
     () => ({
-      rows: BLOCKS.slice(0, 7).map((b) => ({
+      // The backend default for RECENT_BLOCKS_LIMIT.
+      rows: BLOCKS.slice(0, 10).map((b) => ({
         ...b,
         ...blockHeader(b.number),
         tx_count: blockHeader(b.number).header_l2_transaction_count,
@@ -387,7 +388,8 @@ const routes = [
     "transactions/recent",
     /^\/api\/transactions\/recent$/,
     () => ({
-      rows: TXS.slice(0, 7).map((t) => {
+      // The backend default for RECENT_TRANSACTIONS_LIMIT.
+      rows: TXS.slice(0, 10).map((t) => {
         const block = BLOCKS.find((b) => b.header_hash === t.header_hash);
         return {
           height: block?.height ?? null,
@@ -469,10 +471,15 @@ const routes = [
       const rows = cardanoActivity();
       const byKind = ["settlement", "deposit", "withdrawal", "forced_transaction"].map((kind) => {
         const own = rows.filter((row) => row.kind === kind);
+        const counts = new Map();
+        for (const row of own) counts.set(row.status, (counts.get(row.status) ?? 0) + 1);
         return {
           kind,
           count: own.length,
           newestRecordedAt: own[0]?.recordedAt ?? null,
+          byStatus: [...counts.entries()]
+            .map(([status, count]) => ({ status, count }))
+            .sort((a, b) => b.count - a.count),
         };
       });
       return {

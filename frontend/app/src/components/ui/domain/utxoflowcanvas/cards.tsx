@@ -2,7 +2,7 @@
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { FlowGraphNode } from "../../../../lib/flow";
-import { formatAda } from "../../../../lib/format";
+import { formatAda, truncateId } from "../../../../lib/format";
 import { Icon } from "../../base/icons";
 import { Chip } from "../../base/layout";
 import { useInspection } from "./inspection";
@@ -16,8 +16,7 @@ import type { CanvasNode } from "./layout";
  * ./inspection.
  */
 
-const short = (value: string, head = 8, tail = 6) =>
-  value.length <= head + tail + 1 ? value : `${value.slice(0, head)}…${value.slice(-tail)}`;
+const short = (value: string, head = 8, tail = 6) => truncateId(value, head, tail);
 
 export function Amount({ lovelace }: { lovelace: bigint }) {
   return (

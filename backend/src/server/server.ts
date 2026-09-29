@@ -19,6 +19,7 @@ import { startMetricsServer } from "../telemetry/server";
 
 export const startServer = async () => {
   const app = express();
+  app.disable("x-powered-by");
   const server = http.createServer(app);
 
   // Off unless a token is configured, which production does not set. See the
@@ -52,7 +53,7 @@ export const startServer = async () => {
   });
 
   // Middleware to convert BigInt to string before sending JSON response
-  app.use((req, res, next) => {
+  app.use((_req, res, next) => {
     const oldJson = res.json;
 
     res.json = (data: unknown) => {
@@ -87,7 +88,7 @@ export const startServer = async () => {
     res.status(404).json({ error: "Not found." });
   });
 
-  // Global error handler — catches rejections forwarded by asyncHandler.
+  // Global error handler: Express 5 forwards rejected async handlers here.
   const errorHandler: ErrorRequestHandler = (
     err: unknown,
     _req: Request,

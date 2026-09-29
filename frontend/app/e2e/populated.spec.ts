@@ -296,7 +296,7 @@ test.describe("operational metrics", () => {
     const metrics = page.locator('[data-region="metrics"]');
     await expect(metrics).toBeVisible();
     await expect(metrics.getByText("Chain tip")).toBeVisible();
-    await expect(metrics.getByText("Awaiting settlement")).toBeVisible();
+    await expect(metrics.getByText("Transactions")).toBeVisible();
   });
 
   test("states a health verdict in words, above the figures", async ({ page }) => {
@@ -311,9 +311,7 @@ test.describe("operational metrics", () => {
     // The fixture chain abandons a third of its settlements, so the verdict
     // must not be the reassuring one. A green light on a degraded chain is the
     // single worst thing this panel could do.
-    await expect(verdict).toContainText(
-      /not everything is settling|falling behind|latest recorded block/i,
-    );
+    await expect(verdict.locator("p").first()).toContainText(/^(Degraded|Slow|Overdue) · /);
 
     // Every reason cites a figure, so a reader can disagree with the judgement.
     const reasons = await verdict.locator("li").allInnerTexts();
@@ -338,7 +336,7 @@ test.describe("operational metrics", () => {
 
   test("says when the window covers less history than its label", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByText(/the node holds history only from/)).toBeVisible();
+    await expect(page.getByText(/^Since \d{4}-\d{2}-\d{2} /)).toBeVisible();
   });
 
   test("marks an hour that produced no blocks instead of smoothing over it", async ({ page }) => {
@@ -348,24 +346,92 @@ test.describe("operational metrics", () => {
     await expect(chart.locator("rect.fill-warning").first()).toBeVisible();
   });
 
-  test("links the oldest block still waiting on L1", async ({ page }) => {
+  /** The overview says only how many blocks wait and how long; the block
+   * itself is one step away, on the network health page. */
+  test("notes waiting settlements and links the oldest block from network health", async ({
+    page,
+  }) => {
     await page.goto("/");
-    const oldest = page.getByText("Oldest block awaiting settlement").locator("..");
-    await expect(oldest.getByRole("link")).toBeVisible();
+    await expect(page.locator('[data-region="settlement-notice"]')).toContainText(
+      /awaiting settlement · oldest/,
+    );
+    await page.getByRole("link", { name: "Details" }).click();
+    await expect(page).toHaveURL(/\/health$/);
+    const oldest = page.locator("dt", { hasText: "Oldest awaiting" }).locator("..");
     await oldest.getByRole("link").click();
     await expect(page).toHaveURL(/\/block\/[0-9a-f]{56}/);
+  });
+
+  test("network health keeps every row when metrics fail", async ({ page }) => {
+    await page.request.post(`${FIXTURE}/__control?fail=metrics`);
+    try {
+      await page.goto("/health");
+      await expect(page.locator('[data-region="verdict"]')).toContainText("Figures unavailable");
+      for (const label of ["Chain tip", "Settled", "Queue"]) {
+        await expect(page.locator("dt", { hasText: label }).first()).toBeVisible();
+      }
+      await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+    } finally {
+      await page.request.post(`${FIXTURE}/__control`);
+    }
+  });
+
+  /** Nine rows where the lists sit side by side, five on a phone. */
+  test("shows nine latest rows on desktop and five on a phone", async ({ page }) => {
+    for (const [width, rows] of [
+      [1440, 9],
+      [390, 5],
+    ] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/");
+      for (const name of ["Latest blocks", "Latest transactions"]) {
+        const list = page.locator("section", { has: page.getByRole("heading", { name }) });
+        await expect(list.locator("li:visible")).toHaveCount(rows);
+      }
+    }
+  });
+
+  test("latest transactions on the overview name no block", async ({ page }) => {
+    await page.goto("/");
+    const txs = page.locator("section", {
+      has: page.getByRole("heading", { name: "Latest transactions" }),
+    });
+    await expect(txs.locator('a[href^="/transaction/"]').first()).toBeVisible();
+    await expect(txs.locator('a[href^="/block/"]')).toHaveCount(0);
+  });
+
+  test("Cardano activity shows every kind and the record total", async ({ page }) => {
+    await page.goto("/");
+    const panel = page.locator("section", {
+      has: page.getByRole("heading", { name: /Cardano activity/ }),
+    });
+    for (const label of [
+      "Block settlements",
+      "Deposits",
+      "Withdrawals",
+      "Forced transactions",
+      "Records",
+    ]) {
+      await expect(panel.locator("dt", { hasText: label })).toBeVisible();
+    }
   });
 
   test("the panel survives a metrics failure without blanking the page", async ({ page }) => {
     await page.request.post(`${FIXTURE}/__control?fail=metrics`);
     try {
       await page.goto("/");
-      // The panel says it cannot judge, in the same grammar it uses when it
-      // can. A panel that answers only when things are fine teaches a reader
-      // that silence means trouble.
+      // The panel says so once, in the same grammar it uses when it can
+      // judge, and keeps every tile, the chart and the queue in place with
+      // default values rather than collapsing to a message.
       const verdict = page.locator('[data-region="verdict"]');
-      await expect(verdict).toContainText("cannot be judged");
-      await expect(page.getByText(/Other sections may still be available/)).toBeVisible();
+      await expect(verdict).toContainText("Figures unavailable");
+      const metrics = page.locator('[data-region="metrics"]');
+      await expect(metrics.getByText("Chain tip")).toBeVisible();
+      await expect(metrics.getByText("Transactions")).toBeVisible();
+      await expect(
+        page.getByRole("img", { name: "Blocks per hour are unavailable." }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry" }).first()).toBeVisible();
       // The rest of the overview still has to work.
       await expect(page.getByText("Latest blocks")).toBeVisible();
     } finally {

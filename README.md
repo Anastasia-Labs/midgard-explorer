@@ -35,10 +35,9 @@ pnpm dev
 
 Open <http://127.0.0.1:3011>.
 
-`pnpm dev` in `backend/` starts the explorer's own PostgreSQL, applies the index
-migrations, checks both databases, and then runs the API on
-<http://127.0.0.1:3101>. Ctrl-C stops the API and leaves the containers running;
-`pnpm services:down` stops those.
+`pnpm dev` in `backend/` checks the configured Midgard node database and
+deployment manifest, then runs the API on <http://127.0.0.1:3101>. It does not
+start PostgreSQL or apply migrations. Ctrl-C stops the API.
 
 ## Start it without a Midgard node
 
@@ -79,8 +78,8 @@ so there is one way to start the explorer rather than two that must agree.
 | Path | What it is |
 |---|---|
 | `backend/` | The API. Reads the Midgard node's PostgreSQL, and nothing else. |
-| `frontend/` | The current explorer web app: a pnpm workspace of `app` (Next.js), `contracts` (response schemas) and `ui` (design tokens and primitives). |
-| `docs/` | Production data path, data-coverage audit, design audits, and the feedback implementation plan. |
+| `frontend/` | The current explorer web app: a pnpm workspace of `app` (Next.js), `contracts` (response schemas) and `ui` (design tokens). |
+| `docs/` | Production data path, data-coverage audit and design audits. |
 | `docs/decisions/` | Numbered records of structural decisions, including why each root is its own pnpm workspace. |
 | `infra/` | The Nginx API cache template used by `docker-compose.yml`. |
 
@@ -91,7 +90,8 @@ origins, database URLs and the local database password live, then generates
 `backend/.env` from it. Nothing is copied between files by hand, and
 `pnpm doctor` reports it when the two drift apart.
 
-It writes nothing outside `backend/`. The frontend needs no generated file: it
+The runtime file lives at the repository root. The frontend needs no generated
+environment file: it
 calls <http://127.0.0.1:3101> unless `NEXT_PUBLIC_API_BASE` says otherwise.
 
 `backend/.env.example` documents the backend's settings at length, including

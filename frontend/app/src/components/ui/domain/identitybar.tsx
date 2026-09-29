@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Icon } from "../base/icons";
-import { CopyButton } from "./identifier";
+import { CopyButton, ShortId } from "./identifier";
 import { Identicon } from "../base/identicon";
 import { cn } from "../../../lib/format";
 import { SummaryBand, type SummaryItem } from "./summary";
@@ -66,7 +66,7 @@ export function IdentityBar({
       <div className="mt-2 flex items-center gap-1.5">
         {mark ? <Identicon seed={value} size={24} /> : null}
         <code className="min-w-0 truncate font-mono text-sm font-medium leading-normal text-text sm:hidden">
-          {value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-10)}` : value}
+          <ShortId value={value} head={12} tail={10} />
         </code>
         <code className="hidden min-w-0 break-all font-mono text-body font-medium leading-normal text-text sm:inline">
           {value}

@@ -76,6 +76,9 @@ importers:
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
+      effect:
+        specifier: 3.22.0
+        version: 3.22.0
       prisma:
         specifier: ^7.8.0
         version: 7.8.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@5.9.3)
@@ -973,8 +976,8 @@ packages:
   effect@3.20.0:
     resolution: {integrity: sha512-qMLfDJscrNG8p/aw+IkT9W7fgj50Z4wG5bLBy0Txsxz8iUHjDIkOgO3SV0WZfnQbNG2VJYb0b+rDLMrhM4+Krw==}
 
-  effect@3.21.0:
-    resolution: {integrity: sha512-PPN80qRokCd1f015IANNhrwOnLO7GrrMQfk4/lnZRE/8j7UPWrNNjPV0uBrZutI/nHzernbW+J0hdqQysHiSnQ==}
+  effect@3.22.0:
+    resolution: {integrity: sha512-jhYFe0zTlIRqYFrKTS+6luhmS/Tm0f+JLo0K9KUxvtFab1SUGEszQi2ehOP6QzAZvy831lDmTwwzvVDZSPNz3g==}
 
   empathic@2.0.0:
     resolution: {integrity: sha512-i6UzDscO/XfAcNYD75CfICkmfLedpyPDdozrLMmQc5ORaQcdMoc21OnlEylMIqI7U8eniKrPMxxtj8k0vhmJhA==}
@@ -2172,20 +2175,20 @@ snapshots:
       '@leichtgewicht/ip-codec': 2.0.5
       utf8-codec: 1.0.0
 
-  '@effect/platform@0.71.7(effect@3.21.0)':
+  '@effect/platform@0.71.7(effect@3.22.0)':
     dependencies:
-      effect: 3.21.0
+      effect: 3.22.0
       find-my-way-ts: 0.1.6
       multipasta: 0.2.7
 
-  '@effect/schema@0.66.16(effect@3.21.0)(fast-check@3.23.2)':
+  '@effect/schema@0.66.16(effect@3.22.0)(fast-check@3.23.2)':
     dependencies:
-      effect: 3.21.0
+      effect: 3.22.0
       fast-check: 3.23.2
 
-  '@effect/schema@0.68.27(effect@3.21.0)':
+  '@effect/schema@0.68.27(effect@3.22.0)':
     dependencies:
-      effect: 3.21.0
+      effect: 3.22.0
       fast-check: 3.23.2
 
   '@electric-sql/pglite-socket@0.1.1(@electric-sql/pglite@0.4.1)':
@@ -2311,7 +2314,7 @@ snapshots:
     dependencies:
       '@anastasia-labs/cardano-multiplatform-lib-browser': 6.0.2-3
       '@anastasia-labs/cardano-multiplatform-lib-nodejs': 6.0.2-3
-      '@effect/schema': 0.66.16(effect@3.21.0)(fast-check@3.23.2)
+      '@effect/schema': 0.66.16(effect@3.22.0)(fast-check@3.23.2)
       '@emurgo/cardano-message-signing-nodejs': 1.1.0
       '@lucid-evolution/core-types': 0.1.23
       '@lucid-evolution/core-utils': 0.1.16
@@ -2321,7 +2324,7 @@ snapshots:
       '@lucid-evolution/uplc': 0.2.21
       '@lucid-evolution/utils': 0.1.67(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.6)(@harmoniclabs/crypto@0.2.5)(@harmoniclabs/pair@1.0.0)
       '@lucid-evolution/wallet': 0.1.73(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.6)(@harmoniclabs/crypto@0.2.5)(@harmoniclabs/pair@1.0.0)
-      effect: 3.21.0
+      effect: 3.22.0
     transitivePeerDependencies:
       - '@dcspark/cardano-multiplatform-lib-asmjs'
       - '@dcspark/cardano-multiplatform-lib-browser'
@@ -2349,13 +2352,13 @@ snapshots:
     dependencies:
       '@anastasia-labs/cardano-multiplatform-lib-browser': 6.0.2-3
       '@anastasia-labs/cardano-multiplatform-lib-nodejs': 6.0.2-3
-      '@effect/platform': 0.71.7(effect@3.21.0)
-      '@effect/schema': 0.68.27(effect@3.21.0)
+      '@effect/platform': 0.71.7(effect@3.22.0)
+      '@effect/schema': 0.68.27(effect@3.22.0)
       '@lucid-evolution/core-types': 0.1.23
       '@lucid-evolution/core-utils': 0.1.16
       '@lucid-evolution/utils': 0.1.67(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.6)(@harmoniclabs/crypto@0.2.5)(@harmoniclabs/pair@1.0.0)
       '@lucid-evolution/wallet': 0.1.73(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.6)(@harmoniclabs/crypto@0.2.5)(@harmoniclabs/pair@1.0.0)
-      effect: 3.21.0
+      effect: 3.22.0
     transitivePeerDependencies:
       - '@dcspark/cardano-multiplatform-lib-asmjs'
       - '@dcspark/cardano-multiplatform-lib-browser'
@@ -2386,7 +2389,7 @@ snapshots:
       '@anastasia-labs/cardano-multiplatform-lib-browser': 6.0.2-3
       '@anastasia-labs/cardano-multiplatform-lib-nodejs': 6.0.2-3
       '@cardano-sdk/core': 0.46.12
-      '@effect/schema': 0.68.27(effect@3.21.0)
+      '@effect/schema': 0.68.27(effect@3.22.0)
       '@harmoniclabs/plutus-data': 1.2.6(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.6)
       '@harmoniclabs/uplc': 1.4.1(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.6)(@harmoniclabs/crypto@0.2.5)(@harmoniclabs/pair@1.0.0)(@harmoniclabs/plutus-data@1.2.6(@harmoniclabs/bytestring@1.0.0)(@harmoniclabs/cbor@1.6.6))
       '@lucid-evolution/core-types': 0.1.23
@@ -2396,7 +2399,7 @@ snapshots:
       '@lucid-evolution/uplc': 0.2.21
       bip39: 3.1.0
       cbor-x: 1.6.4
-      effect: 3.21.0
+      effect: 3.22.0
     transitivePeerDependencies:
       - '@dcspark/cardano-multiplatform-lib-asmjs'
       - '@dcspark/cardano-multiplatform-lib-browser'
@@ -3069,7 +3072,7 @@ snapshots:
       '@standard-schema/spec': 1.1.0
       fast-check: 3.23.2
 
-  effect@3.21.0:
+  effect@3.22.0:
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 3.23.2

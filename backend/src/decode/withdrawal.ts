@@ -1,5 +1,4 @@
-/** Narrow imports rather than the `@lucid-evolution/lucid` barrel, for the
- * reason `db/bech32.ts` records. */
+// Narrow Lucid imports avoid loading unused wallet and provider modules.
 import { type Credential, type Network } from "@lucid-evolution/core-types";
 import { Data } from "@lucid-evolution/plutus";
 import { credentialToAddress } from "@lucid-evolution/utils";

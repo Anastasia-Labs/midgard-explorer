@@ -163,8 +163,8 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
                       hash={settlementHash}
                       destination="midgard"
                       marker={false}
-                      head={6}
-                      tail={6}
+                      head={5}
+                      tail={4}
                     />
                   ),
                 },

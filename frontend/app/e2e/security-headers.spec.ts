@@ -106,3 +106,13 @@ test("refuses an inline script that does not carry the nonce", async ({ page }) 
   expect(await page.evaluate(() => "__unauthorized" in window)).toBe(false);
   expect(refusals.length, "the browser did not report refusing the script").toBeGreaterThan(0);
 });
+
+for (const path of ["/api-docs", "/tools"]) {
+  test(`protects ${path} even with prefetch headers`, async ({ request }) => {
+    for (const headers of [{}, { purpose: "prefetch" }, { "next-router-prefetch": "1" }]) {
+      const response = await request.get(path, { headers });
+      expect(response.status()).toBe(200);
+      expect(response.headers()["content-security-policy"]).toContain("'strict-dynamic'");
+    }
+  });
+}

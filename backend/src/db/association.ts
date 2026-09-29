@@ -268,7 +268,7 @@ export function transactionSettlement(
  * from, a withdrawal's is where the request was made rather than where a payout
  * landed, and a forced transaction's is where the order was placed. They come
  * from one node record each, so there is nothing to reconcile and the verdict is
- * `node_only` rather than `matched`, which would claim a corroboration that was
+ * `node_reported` rather than `matched`, which would claim a corroboration that was
  * never sought.
  */
 const bridge = (

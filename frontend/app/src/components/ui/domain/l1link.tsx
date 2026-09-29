@@ -1,4 +1,4 @@
-import { CopyButton } from "./identifier";
+import { CopyButton, ShortId } from "./identifier";
 import { Icon } from "../base/icons";
 import { truncateId } from "../../../lib/format";
 import { L1_EXPLORER_NAME, l1TxUrl } from "../../../lib/network";
@@ -32,12 +32,15 @@ export function L1TxLink({
   destination: L1Destination;
   /** Off where the label already says Cardano, such as a "Settlement" field. */
   marker?: boolean;
-  /** Characters kept each side of the ellipsis, for a narrow header figure. */
+  /** Characters kept each side of the gap, for a narrow header figure. */
   head?: number;
   tail?: number;
 }) {
   const href = destination === "midgard" ? `/l1/transaction/${hash}` : l1TxUrl(hash);
+  // The string names the link for a screen reader; the page shows the same
+  // hash in the standard rendered form.
   const short = truncateId(hash, head, tail);
+  const shown = <ShortId value={hash} head={head ?? 8} tail={tail ?? 8} />;
   const linkClass =
     "whitespace-nowrap font-mono text-sm text-text underline decoration-border-strong " +
     "underline-offset-2 transition-colors hover:text-link hover:decoration-link";
@@ -52,14 +55,14 @@ export function L1TxLink({
       ) : null}
       <span className="inline-flex items-center gap-1">
         {href === null ? (
-          <span className="whitespace-nowrap font-mono text-sm">{short}</span>
+          <span className="whitespace-nowrap font-mono text-sm">{shown}</span>
         ) : destination === "midgard" ? (
           <a
             href={href}
             className={linkClass}
             aria-label={`Midgard context for L1 transaction ${short}`}
           >
-            {short}
+            {shown}
           </a>
         ) : (
           <a
@@ -69,7 +72,7 @@ export function L1TxLink({
             className={`${linkClass} inline-flex items-center gap-1`}
             aria-label={`View L1 transaction ${short} on ${L1_EXPLORER_NAME ?? "the Cardano explorer"}`}
           >
-            {short}
+            {shown}
             <Icon name="external" size={12} />
           </a>
         )}

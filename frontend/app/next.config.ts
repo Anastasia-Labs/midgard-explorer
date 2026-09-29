@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
   turbopack: { root: workspaceRoot },
   outputFileTracingRoot: workspaceRoot,
   typescript: { ignoreBuildErrors: false },
+  poweredByHeader: false,
   /**
    * Routes that used to exist and now answer somewhere else.
    *

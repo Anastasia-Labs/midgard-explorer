@@ -11,20 +11,42 @@ import { BRIDGE } from "../../lib/nav";
 import { Icon } from "../../components/ui/base/icons";
 import { Identifier } from "../../components/ui/domain/identifier";
 import { NewRowsBanner, useHeldList } from "../../components/ui/base/livelist";
-import { NetworkMetrics } from "../../components/ui/domain/metrics";
-import { StatusMark } from "../../components/ui/domain/status";
-import { EmptyState, ErrorState, L1L2Badge, Panel } from "../../components/ui/base/layout";
+import { HourlyChart, NetworkMetrics } from "../../components/ui/domain/metrics";
+import { Missing } from "../../components/ui/domain/metrics/figures";
+import { StatusMark, statusOf, statusTextClass } from "../../components/ui/domain/status";
+import {
+  EmptyState,
+  ErrorState,
+  L1L2Badge,
+  Panel,
+  RetryButton,
+} from "../../components/ui/base/layout";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { cn, groupThousands } from "../../lib/format";
+import type { StatusTone } from "../../lib/status-registry";
+import type { GlossaryTerm } from "../../lib/glossary";
+import { FieldLabel } from "../../components/ui/base/infotip";
+
+/** Hash lengths on the latest lists, as long as one row holds at each width:
+ * narrow phones (the `head` and `tail` below), phones from 390px, the stacked
+ * lists from sm, the side-by-side lists from lg (the narrowest rows), and the
+ * wider side-by-side rows from xl. */
+const HASH_LENGTHS = {
+  xs: { head: 12, tail: 10 },
+  sm: { head: 27, tail: 21 },
+  lg: { head: 18, tail: 14 },
+  xl: { head: 27, tail: 21 },
+};
 
 /** A stable empty array: a fresh `[]` each render would make the held list
  * think its input changed on every poll. */
 const EMPTY_ROWS: readonly never[] = [];
 
 const POLL_MS = 10_000;
-// Five rows per panel keeps the overview scannable on a phone; the list pages
-// carry depth.
-const RECENT_ROWS = 5;
+// Nine rows per panel where the lists sit side by side, five below that so a
+// phone stays scannable; the list pages carry depth.
+const RECENT_ROWS = 9;
+const PHONE_ROWS = 5;
 
 export type OverviewData = {
   recentBlocks: readonly RecentBlockRow[] | null;
@@ -42,18 +64,49 @@ async function fetchOverview(): Promise<OverviewData> {
   return await res.json();
 }
 
-/** "Updated Xs ago" freshness tag, ticking every 5 s. */
-function RefreshMeta({ updatedAt }: { updatedAt: number }) {
+/** A fetch takes about a tenth of a second, which on its own reads as a
+ * flicker. The icon keeps turning this long after one ends. */
+const MIN_SPIN_MS = 700;
+
+/** How long since the overview last checked: "now", then the seconds. While a
+ * check runs, a turning icon takes the text's place, and the timer comes back
+ * when it is done. A screen reader hears the full phrase. */
+function RefreshMeta({ updatedAt, fetching }: { updatedAt: number; fetching: boolean }) {
   const [now, setNow] = useState(() => Date.now());
+  const [settling, setSettling] = useState(false);
+  const [wasFetching, setWasFetching] = useState(fetching);
+  if (fetching !== wasFetching) {
+    setWasFetching(fetching);
+    if (!fetching) setSettling(true);
+  }
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 5_000);
+    if (!settling) return;
+    const t = setTimeout(() => setSettling(false), MIN_SPIN_MS);
+    return () => clearTimeout(t);
+  }, [settling]);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(t);
   }, []);
   const s = Math.max(0, Math.round((now - updatedAt) / 1000));
+  // A fixed width, so the swap between icon and text does not shift the header.
   return (
-    <span className="inline-flex items-center gap-1.5 mg-caption text-text-3">
-      <Icon name="refresh" size={13} />
-      Checked {s < 5 ? "just now" : `${s}s ago`}
+    <span className="inline-flex h-5 min-w-7 items-center justify-end mg-caption tabular-nums text-text-3">
+      {fetching || settling ? (
+        <>
+          <Icon name="refresh" size={13} className="motion-safe:animate-spin" />
+          <span className="sr-only">Checking</span>
+        </>
+      ) : s < 5 ? (
+        <>
+          <span className="sr-only">Checked </span>now
+        </>
+      ) : (
+        <>
+          <span className="sr-only">Checked </span>
+          {s}s<span className="sr-only"> ago</span>
+        </>
+      )}
     </span>
   );
 }
@@ -97,12 +150,13 @@ function RecentList<T>({
     <>
       <NewRowsBanner count={held.pending} noun={noun} onApply={held.apply} />
       <ul className="py-1">
-        {held.rows.slice(0, RECENT_ROWS).map((r) => (
+        {held.rows.slice(0, RECENT_ROWS).map((r, i) => (
           <li
             key={keyOf(r)}
             className={cn(
               "flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2.5 transition-colors hover:bg-surface-2",
               !initialKeys.has(keyOf(r)) && "mg-tint",
+              i >= PHONE_ROWS && "max-lg:hidden",
             )}
           >
             {render(r)}
@@ -126,7 +180,7 @@ function ViewAll({ href, label }: { href: string; label: string }) {
 }
 
 export function Overview({ initial }: { initial: OverviewData }) {
-  const { data, refetch, dataUpdatedAt } = useQuery({
+  const { data, refetch, dataUpdatedAt, isFetching } = useQuery({
     queryKey: ["overview"],
     queryFn: fetchOverview,
     initialData: initial,
@@ -136,6 +190,9 @@ export function Overview({ initial }: { initial: OverviewData }) {
 
   const sectionState = (section: unknown): "error" | "success" =>
     section === null ? "error" : "success";
+  // Each list carries its own hourly chart, from the one metrics series.
+  const series = data.metrics?.series ?? null;
+  const hours = data.metrics?.window.hours ?? 24;
 
   return (
     <>
@@ -147,10 +204,12 @@ export function Overview({ initial }: { initial: OverviewData }) {
         metrics={data.metrics}
         totalBlocks={data.totalBlocks}
         totalTxs={data.totalTxs}
-        freshness={<RefreshMeta updatedAt={dataUpdatedAt} />}
+        freshness={<RefreshMeta updatedAt={dataUpdatedAt} fetching={isFetching} />}
+        onRetry={() => void refetch()}
       />
       <div className="mb-4 grid items-start gap-4 lg:grid-cols-2">
         <Panel title="Latest blocks" actions={<ViewAll href="/blocks" label="View all" />}>
+          <HourlyChart series={series} measure="blocks" hours={hours} />
           <RecentList
             rows={data.recentBlocks}
             state={sectionState(data.recentBlocks)}
@@ -170,8 +229,9 @@ export function Overview({ initial }: { initial: OverviewData }) {
                       <Identifier
                         value={r.header_hash}
                         href={`/block/${r.header_hash}`}
-                        head={8}
-                        tail={6}
+                        head={10}
+                        tail={8}
+                        breakpoints={HASH_LENGTHS}
                       />
                     ) : (
                       <Link
@@ -186,16 +246,13 @@ export function Overview({ initial }: { initial: OverviewData }) {
                       <StatusMark status={r.finalization_status} />
                     )}
                   </span>
-                  <span className="mg-caption text-text-3">
-                    {r.height === null ? null : (
-                      <>
-                        <span className="font-mono">{`${r.header_hash.slice(0, 8)}…`}</span>
-                        {" · "}
-                      </>
-                    )}
-                    {r.header_l2_transaction_count} tx · {r.header_deposit_count}{" "}
-                    {r.header_deposit_count === 1 ? "deposit" : "deposits"}
-                  </span>
+                  {/* A numbered block keeps its hash in a caption. Its counts
+                      are on the block page. */}
+                  {r.height === null ? null : (
+                    <span className="mg-caption font-mono text-text-3">
+                      {`${r.header_hash.slice(0, 8)}…`}
+                    </span>
+                  )}
                 </span>
                 <Timestamp iso={r.time_stamp_tz} wrap />
               </>
@@ -207,6 +264,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
           title="Latest transactions"
           actions={<ViewAll href="/transactions" label="View all" />}
         >
+          <HourlyChart series={series} measure="transactions" hours={hours} />
           <RecentList
             rows={data.recentTxs}
             state={sectionState(data.recentTxs)}
@@ -218,22 +276,19 @@ export function Overview({ initial }: { initial: OverviewData }) {
             noun="transaction"
             render={(r) => (
               <>
-                {/* One line: the transaction, how far it got, and its block. */}
+                {/* One line: the transaction and how far it got. Its block is on
+                    the transaction page and the transactions list. */}
                 <span className="flex min-w-0 flex-wrap items-center gap-2">
-                  <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={8} />
-                  <span className="flex flex-wrap items-center gap-2 mg-caption text-text-3">
-                    {/* How far it got: its block's Cardano settlement once the node
-                        recorded one, until then its state on Midgard. */}
-                    <StatusMark status={r.finalization_status ?? r.status} />
-                    <Link
-                      href={`/block/${r.header_hash}`}
-                      className="tabular-nums text-link hover:text-link-hover hover:underline"
-                    >
-                      {r.height === null
-                        ? `Block ${r.header_hash.slice(0, 8)}…`
-                        : `Block #${r.height}`}
-                    </Link>
-                  </span>
+                  <Identifier
+                    value={r.tx_id}
+                    href={`/transaction/${r.tx_id}`}
+                    head={10}
+                    tail={8}
+                    breakpoints={HASH_LENGTHS}
+                  />
+                  {/* Its block's Cardano settlement once the node recorded one,
+                      until then its state on Midgard. */}
+                  <StatusMark status={r.finalization_status ?? r.status} />
                 </span>
                 <Timestamp iso={r.time_stamp_tz} wrap />
               </>
@@ -247,7 +302,91 @@ export function Overview({ initial }: { initial: OverviewData }) {
   );
 }
 
-/** Cardano totals and bridge navigation share one panel without mixing their counts. */
+const KIND_LABEL: Record<CardanoActivitySummary["byKind"][number]["kind"], string> = {
+  settlement: "Block settlements",
+  deposit: "Deposits",
+  withdrawal: "Withdrawals",
+  forced_transaction: "Forced transactions",
+};
+
+/** Each count's explanation, from the shared glossary. */
+const KIND_TERM: Record<keyof typeof KIND_LABEL, GlossaryTerm> = {
+  settlement: "blockSettlements",
+  deposit: "bridgeDeposits",
+  withdrawal: "bridgeWithdrawals",
+  forced_transaction: "bridgeForced",
+};
+
+/** Least advanced first: a kind shows the state of the record that most needs
+ * watching, so one waiting withdrawal is not hidden behind finished ones. */
+const TONE_RANK: Record<StatusTone, number> = {
+  danger: 4,
+  warning: 3,
+  neutral: 2,
+  info: 1,
+  success: 0,
+};
+
+type StatusCounts = CardanoActivitySummary["byKind"][number]["byStatus"];
+
+const statusName = (status: string | null) => status ?? "unknown";
+
+function leadStatus(byStatus: StatusCounts): string | null {
+  const [lead] = [...byStatus]
+    .filter((s) => s.count > 0)
+    .sort(
+      (a, b) =>
+        TONE_RANK[statusOf(statusName(b.status)).tone] -
+        TONE_RANK[statusOf(statusName(a.status)).tone],
+    );
+  return lead === undefined ? null : statusName(lead.status);
+}
+
+/** One count per kind, coloured by the state of its records, with the mark
+ * carrying the breakdown ("5 Finalized, 1 Awaiting") for a reader who cannot
+ * rely on colour. */
+function KindFigure({
+  label,
+  term,
+  count,
+  byStatus,
+}: {
+  label: string;
+  term: GlossaryTerm;
+  count: number | null;
+  byStatus: StatusCounts;
+}) {
+  const lead = count === null ? null : leadStatus(byStatus);
+  return (
+    <div className="min-w-0 text-center">
+      <dt className="mg-caption text-text-2">
+        <FieldLabel label={label} term={term} />
+      </dt>
+      <dd className="mt-1 flex items-center justify-center gap-2">
+        <span
+          className={cn(
+            "text-2xl font-semibold tabular-nums",
+            count === null ? "text-text-3" : lead === null ? "text-text" : statusTextClass(lead),
+          )}
+        >
+          {count === null ? <Missing /> : groupThousands(String(count))}
+        </span>
+        {lead === null ? null : (
+          <StatusMark
+            status={lead}
+            label={byStatus
+              .map((s) => `${s.count} ${statusOf(statusName(s.status)).label.toLowerCase()}`)
+              .join(", ")}
+          />
+        )}
+      </dd>
+    </div>
+  );
+}
+
+/** Cardano totals and bridge navigation share one panel without mixing their
+ * counts. When the counts fail, the panel keeps its figures at their default
+ * and offers a retry beside its link. */
 export function L1Activity({
   summary,
   onRetry,
@@ -263,38 +402,45 @@ export function L1Activity({
           Cardano activity
         </span>
       }
-      actions={<ViewAll href="/l1" label="View activity" />}
+      actions={
+        <span className="flex items-center gap-2">
+          {summary === null ? <RetryButton onRetry={onRetry} /> : null}
+          <ViewAll href="/l1" label="View activity" />
+        </span>
+      }
       className="mb-4 border-l-2 border-l-info/60"
     >
-      <div className="px-4 py-3">
-        {summary === null ? (
-          <ErrorState message="Could not load Cardano activity." onRetry={onRetry} />
-        ) : summary.total === 0 ? (
-          <p className="text-sm text-text-2">The node has recorded nothing on Cardano yet.</p>
-        ) : (
-          <>
-            <dl className="grid grid-cols-2 gap-4">
-              {summary.byKind
-                .filter((kind) => kind.kind === "settlement" || kind.kind === "deposit")
-                .map((kind) => (
-                  <div key={kind.kind} className="min-w-0">
-                    <dt className="mg-caption text-text-2">
-                      {kind.kind === "settlement" ? "Block settlements" : "Deposits"}
-                    </dt>
-                    <dd className="mt-1 text-2xl font-semibold tabular-nums text-text">
-                      {groupThousands(String(kind.count))}
-                    </dd>
-                  </div>
-                ))}
-            </dl>
-            {/* Whose records these are, said on the panel. They are the node's
-                own count of what it did on Cardano, not a scan of the chain. */}
-            <p className="mt-2 mg-micro text-text-3">
-              {groupThousands(String(summary.total))} records, as the node recorded them.
-            </p>
-          </>
-        )}
-      </div>
+      {/* Every kind, always, and the same layout when the counts are missing:
+          only the values change, to their default. */}
+      {/* One list, every group a direct child, so each label stays paired
+          with its value for assistive technology. */}
+      <dl className="grid grid-cols-2 gap-4 px-4 py-3 sm:grid-cols-4">
+        {(Object.keys(KIND_LABEL) as Array<keyof typeof KIND_LABEL>).map((kind) => {
+          const own = summary?.byKind.find((k) => k.kind === kind);
+          return (
+            <KindFigure
+              key={kind}
+              label={KIND_LABEL[kind]}
+              term={KIND_TERM[kind]}
+              count={summary === null ? null : (own?.count ?? 0)}
+              byStatus={own?.byStatus ?? []}
+            />
+          );
+        })}
+        <div className="col-span-full -mt-1 border-t border-border pt-3 text-center">
+          <dt className="mg-caption text-text-2">
+            <FieldLabel label="Records" term="cardanoRecords" />
+          </dt>
+          <dd
+            className={cn(
+              "mt-1 text-2xl font-semibold tabular-nums",
+              summary === null ? "text-text-3" : "text-text",
+            )}
+          >
+            {summary === null ? <Missing /> : groupThousands(String(summary.total))}
+          </dd>
+        </div>
+      </dl>
       <nav aria-label="Bridge activity" className="border-t border-border">
         <div className="grid sm:grid-cols-3">
           {BRIDGE.map((b, i) => (

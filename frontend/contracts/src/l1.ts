@@ -1,3 +1,4 @@
+// Generated from backend/contracts by `pnpm contracts:write` in backend/. Edit the source, not this copy.
 import { Schema } from "effect";
 import { DeploymentContext } from "./association";
 import { Hash28, Hash32, IsoTimestamp, paged } from "./primitives";
@@ -50,6 +51,11 @@ export const CardanoActivityKindCount = Schema.Struct({
   kind: ActivityKind,
   count: Schema.Number,
   newestRecordedAt: Schema.NullOr(IsoTimestamp),
+  /** The node's own status words, largest count first, so a count can say
+   * whether its records are done or still moving. */
+  byStatus: Schema.Array(
+    Schema.Struct({ status: Schema.NullOr(Schema.String), count: Schema.Number }),
+  ),
 });
 export type CardanoActivityKindCount = Schema.Schema.Type<typeof CardanoActivityKindCount>;
 

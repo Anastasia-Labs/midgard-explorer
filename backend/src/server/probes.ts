@@ -11,8 +11,7 @@ import { config } from "../config";
  * check passed while the suite would have failed on a missing relation.
  *
  * These probes reject on the conditions that actually make the explorer unable
- * to serve: a database missing the relations it is queried through, an index
- * whose migrations do not match this build, and a manifest that cannot be read.
+ * to serve: a database missing the relations it is queried through, a manifest that cannot be read.
  */
 
 /** Tables in the node's database that the read path queries.
@@ -56,7 +55,7 @@ export async function missingRelations(
   tables: readonly string[],
 ): Promise<string[]> {
   const selects = tables
-    .map((t, i) => `to_regclass($${i + 1}) IS NOT NULL AS "t${i}"`)
+    .map((_, i) => `to_regclass($${i + 1}) IS NOT NULL AS "t${i}"`)
     .join(", ");
   const [row] = await client.$queryRawUnsafe<Array<Record<string, boolean>>>(
     `SELECT ${selects};`,
@@ -83,15 +82,6 @@ async function assertTables(
 export async function probeNodeDatabase(): Promise<void> {
   await assertTables(prisma as unknown as Queryable, "the node database", NODE_TABLES);
 }
-
-/** Migrations this build ships, read from the directory Prisma deploys from.
- *
- * Resolved relative to this file so it works the same from `src` under ts-node
- * and from `dist` after a build, both of which sit two levels below the backend
- * root. */
-
-
-
 
 /**
  * The deployment manifest.

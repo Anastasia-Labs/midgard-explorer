@@ -1,19 +1,7 @@
-/**
- * The client address to pass through to the backend.
- *
- * No browser fetch in this app reaches the backend directly: a route handler or
- * a server component fetches on the viewer's behalf. Without this the backend
- * sees this server's address on every one of them, and its per-client rate
- * limiter would put every viewer in the world into one bucket. The first
- * symptom would be readers getting 429 for someone else's traffic.
- *
- * The value is only ever the one the trusted edge wrote. This used to copy
- * whatever the caller sent, so a direct client could supply its own chain,
- * rotate it per request, evade the limiter entirely and fill its bucket map
- * with forged identities. The backend counts hops from the right for the same
- * reason: the rightmost entry is the one the nearest trusted hop wrote, and it
- * is the only part a client cannot choose.
- */
+/** Forward only the nearest edge's client address. The deployment must strip
+ * incoming forwarding headers before traffic reaches Next.js and prevent
+ * direct access to a frontend trusted by the backend. A header alone cannot
+ * establish trust in the sender. */
 type HeaderSource = { get(name: string): string | null };
 
 export function forwardedFrom(source: HeaderSource): Record<string, string> {

@@ -19,9 +19,14 @@ export function groupThousands(digits: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
+/** The site's standard gap between the head and tail of a shortened hash:
+ * three periods, which a monospace font spaces one to a cell, so it reads as
+ * ". . ." rather than one tight ellipsis. */
+export const ID_GAP = "...";
+
 export function truncateId(id: string, head = 8, tail = 8): string {
-  if (id.length <= head + tail + 1) return id;
-  return `${id.slice(0, head)}…${id.slice(-tail)}`;
+  if (id.length <= head + tail + ID_GAP.length) return id;
+  return `${id.slice(0, head)}${ID_GAP}${id.slice(-tail)}`;
 }
 
 export function formatTimestamp(iso: string): string {

@@ -36,7 +36,7 @@ const probe = (over: Partial<SourceProbe> = {}): SourceProbe => ({
 
 describe("which kind of source this is", () => {
   it("calls the live node database primary", () => {
-    expect(classifySource(probe(), NOW).kind).toBe("primary");
+    expect(classifySource(probe()).kind).toBe("primary");
   });
 
   /** `pg_is_in_recovery()` cannot be wrong about a standby, which is why this
@@ -47,7 +47,7 @@ describe("which kind of source this is", () => {
       in_recovery: true,
       replay_at: ago(2),
     });
-    expect(classifySource(standby, NOW).kind).toBe("replica");
+    expect(classifySource(standby).kind).toBe("replica");
   });
 
   /** The case the old boolean got wrong. Checked before the name, because a
@@ -57,12 +57,12 @@ describe("which kind of source this is", () => {
       db: "midgard_snapshot",
       has_snapshot_marker: true,
     });
-    expect(classifySource(snapshot, NOW).kind).toBe("snapshot");
+    expect(classifySource(snapshot).kind).toBe("snapshot");
   });
 
   it("still calls an unmarked unknown database a fixture", () => {
     const other = probe({ db: "midgard_phase4_process_txcoverage" });
-    expect(classifySource(other, NOW).kind).toBe("fixture");
+    expect(classifySource(other).kind).toBe("fixture");
   });
 
   /** A snapshot restored over the live name is still a snapshot. The marker is
@@ -72,7 +72,7 @@ describe("which kind of source this is", () => {
       db: SOURCE_THRESHOLDS.liveDatabase,
       has_snapshot_marker: true,
     });
-    expect(classifySource(marked, NOW).kind).toBe("snapshot");
+    expect(classifySource(marked).kind).toBe("snapshot");
   });
 });
 
@@ -90,7 +90,7 @@ const streaming = (over: Partial<SourceProbe> = {}): SourceProbe =>
 
 describe("how current the source is", () => {
   it("reports a healthy standby as live", () => {
-    expect(classifySource(streaming(), NOW).freshness).toBe("live");
+    expect(classifySource(streaming()).freshness).toBe("live");
   });
 
   /**
@@ -104,7 +104,7 @@ describe("how current the source is", () => {
    */
   it("calls a connected standby live however quiet the chain has been", () => {
     const quiet = streaming({ replay_at: ago(60 * 60 * 24 * 7) });
-    expect(classifySource(quiet, NOW).freshness).toBe("live");
+    expect(classifySource(quiet).freshness).toBe("live");
   });
 
   /**
@@ -120,14 +120,14 @@ describe("how current the source is", () => {
       receiver_status: null,
       receiver_silent_seconds: null,
     });
-    expect(classifySource(disconnected, NOW).freshness).toBe("unknown");
+    expect(classifySource(disconnected).freshness).toBe("unknown");
   });
 
   /** A receiver row exists but is not streaming: starting up, or shutting
    * down. Neither is evidence that this standby is current. */
   it("does not call a standby live when its receiver is not streaming", () => {
     const starting = streaming({ receiver_status: "startup" });
-    expect(classifySource(starting, NOW).freshness).toBe("unknown");
+    expect(classifySource(starting).freshness).toBe("unknown");
   });
 
   /** Keepalives arrive on `wal_receiver_status_interval`, so silence far past
@@ -135,7 +135,7 @@ describe("how current the source is", () => {
    * receiver's own opinion and it can be out of date. */
   it("does not trust a streaming status that has gone quiet", () => {
     const silent = streaming({ receiver_silent_seconds: 600 });
-    expect(classifySource(silent, NOW).freshness).toBe("unknown");
+    expect(classifySource(silent).freshness).toBe("unknown");
   });
 
   /** `pg_stat_wal_receiver` is readable only by superusers and
@@ -147,12 +147,12 @@ describe("how current the source is", () => {
       receiver_status: null,
       receiver_silent_seconds: null,
     });
-    expect(classifySource(unprivileged, NOW).freshness).toBe("unknown");
+    expect(classifySource(unprivileged).freshness).toBe("unknown");
   });
 
   it("reports a connected standby with replay backlog as lagging", () => {
     const behind = streaming({ replay_backlog: true });
-    expect(classifySource(behind, NOW).freshness).toBe("lagging");
+    expect(classifySource(behind).freshness).toBe("lagging");
   });
 
   /**
@@ -166,9 +166,9 @@ describe("how current the source is", () => {
    */
   it("never presents a replica figure as seconds behind the chain", () => {
     for (const source of [
-      classifySource(streaming(), NOW),
-      classifySource(streaming({ replay_backlog: true }), NOW),
-      classifySource(streaming({ receiver_status: null }), NOW),
+      classifySource(streaming()),
+      classifySource(streaming({ replay_backlog: true })),
+      classifySource(streaming({ receiver_status: null })),
     ]) {
       expect(source.lagSeconds).toBeNull();
     }
@@ -182,7 +182,7 @@ describe("how current the source is", () => {
       has_snapshot_marker: true,
       newest_block: ago(60 * 60 * 24 * 30),
     });
-    expect(classifySource(old, NOW).freshness).toBe("fixed");
+    expect(classifySource(old).freshness).toBe("fixed");
   });
 
   /** A snapshot reports when it was CAPTURED, from the marker the restore
@@ -197,12 +197,12 @@ describe("how current the source is", () => {
       newest_block: ago(60 * 60 * 24 * 30),
       snapshot_captured_at: captured,
     });
-    expect(classifySource(snapshot, NOW).observedAsOf).toBe(captured.toISOString());
+    expect(classifySource(snapshot).observedAsOf).toBe(captured.toISOString());
   });
 
   /** Fixture data has no relationship to time at all. */
   it("calls fixture data synthetic", () => {
-    expect(classifySource(probe({ db: "anything_else" }), NOW).freshness).toBe("synthetic");
+    expect(classifySource(probe({ db: "anything_else" })).freshness).toBe("synthetic");
   });
 
   /** Lag is a replica concept. A primary is never behind itself, and reporting
@@ -210,7 +210,7 @@ describe("how current the source is", () => {
    * `state: "live"` beside `lagSeconds: 1748752` on a twenty-day-quiet chain. */
   it("reports no lag for a primary, however old its newest block", () => {
     const quiet = probe({ newest_block: ago(60 * 60 * 24 * 20) });
-    const source = classifySource(quiet, NOW);
+    const source = classifySource(quiet);
     expect(source.kind).toBe("primary");
     expect(source.lagSeconds).toBeNull();
     expect(source.freshness).toBe("live");
@@ -223,7 +223,7 @@ describe("how current the source is", () => {
    * last replayed, and the reader compares that to their own clock. */
   it("reports a replica's last replay as a time, not as a duration", () => {
     const ahead = streaming({ replay_at: new Date(NOW + 5000) });
-    const source = classifySource(ahead, NOW);
+    const source = classifySource(ahead);
     expect(source.lagSeconds).toBeNull();
     expect(source.observedAsOf).toBe(new Date(NOW + 5000).toISOString());
   });

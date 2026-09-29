@@ -51,14 +51,6 @@ export const routeStatementsPerRequest = new Histogram({
   registers: [registry],
 });
 
-export const indexerPassDuration = new Histogram({
-  name: "explorer_indexer_pass_duration_seconds",
-  help: "Time for one L1 sync pass, by outcome.",
-  labelNames: ["outcome"] as const,
-  buckets: [0.5, 1, 2.5, 5, 10, 30, 60, 120, 180, 300],
-  registers: [registry],
-});
-
 /** Requests no route matched: a 404, or one refused before routing. */
 export const UNMATCHED = "unmatched";
 
@@ -80,19 +72,6 @@ export function methodLabel(method: string): string {
 
 export function statusClass(status: number): string {
   return status >= 100 && status < 600 ? `${Math.floor(status / 100)}xx` : "other";
-}
-
-/** Observes one sync pass, and rethrows what it threw. */
-export async function timedPass<T>(pass: () => Promise<T>): Promise<T> {
-  const started = performance.now();
-  let outcome = "failure";
-  try {
-    const result = await pass();
-    outcome = "success";
-    return result;
-  } finally {
-    indexerPassDuration.observe({ outcome }, (performance.now() - started) / 1_000);
-  }
 }
 
 const vitalLabels = ["route_class", "device_class"] as const;

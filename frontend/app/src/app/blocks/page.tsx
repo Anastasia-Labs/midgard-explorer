@@ -6,6 +6,7 @@ import { ListTools } from "../../components/ui/base/listtools";
 import { Count, PageHeader } from "../../components/ui/base/layout";
 import { DataTable, Pagination } from "../../components/ui/base/table";
 import { Timestamp } from "../../components/ui/base/timestamp";
+import { HourlyChart } from "../../components/ui/domain/metrics";
 import { api } from "../../lib/api";
 import { groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
@@ -33,14 +34,25 @@ export default async function BlocksPage({
   const page = parsePage(params.page);
   const status = params.status;
 
-  let data;
-  try {
-    data = await api.blocksPage(page, status, await viewerInit());
-  } catch (e) {
+  // The hourly chart reads metrics on the side: when that call fails the chart
+  // shows its unavailable state and the list is untouched.
+  const init = await viewerInit();
+  const [pageResult, metricsResult] = await Promise.allSettled([
+    api.blocksPage(page, status, init),
+    api.metrics(init),
+  ]);
+  if (pageResult.status === "rejected") {
     return (
-      <ListError crumbs={CRUMBS} entity="block" title="Blocks" message={listErrorMessage(e)} />
+      <ListError
+        crumbs={CRUMBS}
+        entity="block"
+        title="Blocks"
+        message={listErrorMessage(pageResult.reason)}
+      />
     );
   }
+  const data = pageResult.value;
+  const metrics = metricsResult.status === "fulfilled" ? metricsResult.value : null;
 
   return (
     <>
@@ -77,6 +89,11 @@ export default async function BlocksPage({
       />
 
       <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
+        <HourlyChart
+          series={metrics?.series ?? null}
+          measure="blocks"
+          hours={metrics?.window.hours ?? 24}
+        />
         <DataTable
           caption="Midgard blocks, newest first"
           columns={[

@@ -141,7 +141,7 @@ export async function readL2Source(): Promise<L2Source> {
     capturedAt = marker[0]?.captured_at ?? null;
   }
 
-  return classifySource({ ...row, snapshot_captured_at: capturedAt }, Date.now());
+  return classifySource({ ...row, snapshot_captured_at: capturedAt });
 }
 
 /**
@@ -152,7 +152,7 @@ export async function readL2Source(): Promise<L2Source> {
  * branch would call it a fixture: real data reported as synthetic, which is the
  * mistake the old boolean made by construction.
  */
-export function classifySource(row: SourceProbe, now: number): L2Source {
+export function classifySource(row: SourceProbe): L2Source {
   const kind: L2SourceKind = row.has_snapshot_marker
     ? "snapshot"
     : row.in_recovery

@@ -225,38 +225,90 @@ describe("NetworkMetrics", () => {
       oldestUnsettled: null,
       source: "pbf.status",
     },
+    waiting: {
+      transactions: 0,
+      deposits: 0,
+      withdrawals: 0,
+      forcedTransactions: 0,
+      since: null,
+      source: "mempool",
+    },
     statusBreakdown: { finalization: [], admission: [] },
     series: [],
   } as unknown as MetricsResponse;
 
-  it("degrades to a message rather than blanking when metrics are unavailable", () => {
-    render(<NetworkMetrics metrics={null} totalBlocks={40} totalTxs={60} />);
-    // The panel says it cannot judge, in the same grammar it uses when it can.
-    // A panel that answers only when things are fine teaches a reader that
-    // silence means trouble, which is a worse signal than saying so.
-    expect(screen.getByText("The network's health cannot be judged right now.")).toBeDefined();
-    expect(screen.getByText(/Other sections may still be available/)).toBeDefined();
+  /** Work waiting since `seconds` before the window's end. */
+  const waitingFor = (seconds: number) => ({
+    ...base.waiting,
+    transactions: 3,
+    since: new Date(Date.parse(base.window.end) - seconds * 1000).toISOString(),
+  });
+
+  it("keeps every tile, the chart and the queue when metrics are unavailable", () => {
+    const retry = vi.fn();
+    render(<NetworkMetrics metrics={null} totalBlocks={40} totalTxs={60} onRetry={retry} />);
+    // Said once, in the same grammar the panel uses when it can judge.
+    expect(screen.getByText("Figures unavailable")).toBeDefined();
+    for (const label of ["Chain tip", "Blocks", "Transactions"]) {
+      expect(screen.getByText(label)).toBeDefined();
+    }
     // All-time counts survive a metrics failure: they come from another call.
     expect(screen.getByText("40")).toBeDefined();
+    // A default is named unavailable, so it is not told apart by colour alone.
+    expect(document.querySelector('[data-region="metrics"]')?.textContent).toContain(
+      "(unavailable)",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /retry/i }));
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
+  /** Settlement stays off the overview until a block is waiting, and then the
+   * panel says how many and for how long. */
+  it("notes waiting settlements only when a block is waiting", () => {
+    const { container, rerender } = render(
+      <NetworkMetrics metrics={base} totalBlocks={40} totalTxs={60} />,
+    );
+    expect(container.querySelector('[data-region="settlement-notice"]')).toBeNull();
+    const waiting = {
+      ...base,
+      finality: {
+        ...base.finality,
+        pending: 3,
+        oldestUnsettled: {
+          headerHash: "cd".repeat(28),
+          status: "submitted_unconfirmed",
+          blockEndTime: "2026-07-28T11:55:00.000Z",
+          waitingSeconds: 300,
+        },
+      },
+    } as unknown as MetricsResponse;
+    rerender(<NetworkMetrics metrics={waiting} totalBlocks={40} totalTxs={60} />);
+    expect(container.querySelector('[data-region="settlement-notice"]')?.textContent).toBe(
+      "3 blocks awaiting settlement · oldest 5m 0s",
+    );
+    expect(screen.getByRole("link", { name: /Details/ }).getAttribute("href")).toBe("/health");
   });
 
   /** Density has to follow severity, not the other way round. On a phone the
    * healthy verdict's supporting sentences repeat figures that are already in
    * the tiles below it, so they collapse; a degraded or stalled verdict's
    * reasons are the only place its evidence appears, so they never do. */
-  it("collapses only a healthy verdict's reasons at phone width", () => {
+  it("gives a healthy verdict no second line to collapse", () => {
+    // The healthy line says what awaits a block; the cadence it used to add
+    // lives on the network health page.
     const { container } = render(<NetworkMetrics metrics={base} totalBlocks={40} totalTxs={60} />);
     const verdict = container.querySelector('[data-region="verdict"]');
     expect(verdict?.getAttribute("data-verdict-state")).toBe("healthy");
-    expect(
-      verdict?.querySelector("[data-region='verdict-reasons']")?.getAttribute("data-density"),
-    ).toBe("collapsible");
+    expect(verdict?.querySelector("[data-region='verdict-reasons']")).toBeNull();
   });
 
   it("keeps a stalled verdict's reasons at every width", () => {
+    // Abandoned settlements, so the stalled verdict has a reason to show.
     const stalled = {
       ...base,
       tip: { ...base.tip, ageSeconds: 4_000 },
+      waiting: waitingFor(4_000),
+      finality: { ...base.finality, finalized: 10, abandoned: 5 },
     } as unknown as MetricsResponse;
     const { container } = render(
       <NetworkMetrics metrics={stalled} totalBlocks={40} totalTxs={60} />,
@@ -270,20 +322,36 @@ describe("NetworkMetrics", () => {
 
   it("states a verdict above the figures rather than leaving the reader to add up five numbers", () => {
     render(<NetworkMetrics metrics={base} totalBlocks={40} totalTxs={60} />);
-    const verdict = screen.getByText(/producing blocks and settling/i);
+    const verdict = screen.getByText("Nothing awaiting a block");
     expect(verdict).toBeDefined();
     const figure = screen.getByText("#40");
     expect(verdict.compareDocumentPosition(figure) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("judges tip lateness against the observed cadence, not a fixed threshold", () => {
+  it("judges waiting work against the observed cadence, not a fixed threshold", () => {
     const late = {
       ...base,
       tip: { ...base.tip, ageSeconds: 300 },
+      waiting: waitingFor(300),
     } as MetricsResponse;
     const { container } = render(<NetworkMetrics metrics={late} totalBlocks={40} totalTxs={60} />);
     // 300s against a 21s p50 is 14x: danger, not merely warning.
     expect(container.querySelector(".text-danger")).not.toBeNull();
+  });
+
+  /** The node makes a block only when something waits for one. A day-old tip
+   * with nothing waiting is a quiet chain, and colouring it as a failure put a
+   * red tip on a node that had simply had no transactions. */
+  it("leaves an old tip uncoloured when nothing is waiting", () => {
+    const quiet = {
+      ...base,
+      tip: { ...base.tip, ageSeconds: 77_679 },
+    } as MetricsResponse;
+    const { container } = render(<NetworkMetrics metrics={quiet} totalBlocks={40} totalTxs={60} />);
+    expect(container.querySelector(".text-danger")).toBeNull();
+    expect(
+      container.querySelector('[data-region="verdict"]')?.getAttribute("data-verdict-state"),
+    ).toBe("idle");
   });
 
   it("tints a live figure only after it changes, never on arrival", () => {
@@ -317,9 +385,6 @@ describe("NetworkMetrics", () => {
     const region = document.querySelector('[data-region="metrics"]')!;
     expect(region.textContent).toContain("6");
     expect(region.textContent).toContain("21");
-    // The basis must be stated. A figure a reader cannot situate is worth
-    // less than the zero it replaced.
-    expect(region.textContent).toContain("all time total");
   });
 
   // The overview and list pages must never disagree merely because the node
@@ -328,8 +393,16 @@ describe("NetworkMetrics", () => {
     render(<NetworkMetrics metrics={base} totalBlocks={9999} totalTxs={9999} />);
     const region = document.querySelector('[data-region="metrics"]')!;
     expect(region.textContent).toContain("9,999");
-    expect(region.textContent).toContain("all time total");
-    expect(region.textContent).toContain(`in the last ${base.window.hours}h`);
+    // The window's count is the chart's to show, not a second figure here.
+    expect(region.textContent).not.toContain(`in ${base.window.hours}h`);
+  });
+
+  /** Settlement is the Cardano panel's to show; the tiles do not repeat it. */
+  it("shows three tiles, with no settlement tile", () => {
+    render(<NetworkMetrics metrics={base} totalBlocks={40} totalTxs={60} />);
+    const region = document.querySelector('[data-region="metrics"]')!;
+    expect(region.children).toHaveLength(3);
+    expect(region.textContent).not.toMatch(/settle/i);
   });
 });
 

@@ -47,19 +47,40 @@ const base = (over: Partial<MetricsResponse> = {}): MetricsResponse =>
       oldestUnsettled: null,
       source: "finalizations",
     },
+    waiting: {
+      transactions: 0,
+      deposits: 0,
+      withdrawals: 0,
+      forcedTransactions: 0,
+      since: null,
+      source: "mempool",
+    },
     statusBreakdown: { finalization: [], admission: [] },
     series: [],
     ...over,
   }) as MetricsResponse;
 
+/** Work waiting for a block since `seconds` before the window's end. */
+const waitingFor = (seconds: number, over: Partial<MetricsResponse["waiting"]> = {}) => ({
+  transactions: 0,
+  deposits: 0,
+  withdrawals: 1,
+  forcedTransactions: 0,
+  since: IsoTimestamp.make(
+    new Date(Date.parse("2026-07-31T00:00:00.000Z") - seconds * 1000).toISOString(),
+  ),
+  source: "mempool",
+  ...over,
+});
+
 describe("networkHealth", () => {
   it("calls a chain producing and settling normally healthy", () => {
     const h = networkHealth(base());
     expect(h.state).toBe("healthy");
-    expect(h.headline).toMatch(/producing blocks/i);
+    expect(h.headline).toBe("Nothing awaiting a block");
   });
 
-  it("never reports healthy when the tip is far past the observed cadence", () => {
+  it("never reports healthy when work has waited far past the observed cadence", () => {
     const h = networkHealth(
       base({
         tip: {
@@ -69,14 +90,45 @@ describe("networkHealth", () => {
           ageSeconds: 21 * 12,
           source: "blocks.height",
         },
+        waiting: waitingFor(21 * 12),
       } as Partial<MetricsResponse>),
     );
     expect(h.state).toBe("stalled");
-    expect(h.headline).toMatch(/Latest recorded block: .* ago, beyond the usual interval/);
+    // Late is claimed, not stopped: the figures show a wait, not a halt.
+    expect(h.headline).toBe("Overdue · 1 withdrawal awaiting a block · 4m 12s");
+    // The chain tip figure beside the verdict already gives the last block's age.
+    expect(h.reasons).toEqual([]);
+  });
+
+  /** The node makes a block only when something waits for one, so an old tip
+   * with nothing waiting is a quiet chain. Calling it stalled put a red tip on
+   * a node that had simply had no transactions for a day. */
+  it("calls an old tip with nothing waiting idle, not stalled", () => {
+    const h = networkHealth(
+      base({
+        tip: { headerHash: "ab".repeat(28), height: 40, at: null, ageSeconds: 77_679, source: "b" },
+      } as Partial<MetricsResponse>),
+    );
+    expect(h.state).toBe("idle");
+    expect(h.headline).toBe("Nothing awaiting a block");
+    expect(h.reasons).toEqual([]);
+  });
+
+  it("names everything that is waiting", () => {
+    const h = networkHealth(
+      base({
+        tip: { headerHash: "ab".repeat(28), height: 40, at: null, ageSeconds: 3_600, source: "b" },
+        waiting: waitingFor(3_600, { transactions: 2, deposits: 1 }),
+      } as Partial<MetricsResponse>),
+    );
+    // The duration is the oldest wait, so it says so, and mixed kinds are
+    // named once as items with the breakdown on its own line.
+    expect(h.headline).toBe("Overdue · 4 items awaiting a block · oldest 1h 0m");
+    expect(h.reasons[0]).toBe("2 transactions · 1 deposit · 1 withdrawal");
   });
 
   it("judges lateness against this node's own interval, not a constant", () => {
-    // 60s since the last block is healthy on a 40s chain and stalled on a 5s
+    // Work that has waited 60s is on time on a 40s chain and stalled on a 5s
     // one. A fixed threshold cannot express that, and would be wrong on one of
     // them whichever number it picked.
     const slowChain = networkHealth(
@@ -89,6 +141,7 @@ describe("networkHealth", () => {
           blockIntervalSeconds: { p50: 40, p95: 80, sampleCount: 40 },
           source: "blocks",
         },
+        waiting: waitingFor(60),
       } as Partial<MetricsResponse>),
     );
     const fastChain = networkHealth(
@@ -101,6 +154,7 @@ describe("networkHealth", () => {
           blockIntervalSeconds: { p50: 5, p95: 9, sampleCount: 40 },
           source: "blocks",
         },
+        waiting: waitingFor(60),
       } as Partial<MetricsResponse>),
     );
     expect(slowChain.state).toBe("healthy");
@@ -126,6 +180,8 @@ describe("networkHealth", () => {
       } as Partial<MetricsResponse>),
     );
     expect(h.state).toBe("degraded");
+    // Said in the headline, not left to the dot and the second line.
+    expect(h.headline).toBe("Degraded · Nothing awaiting a block");
     expect(h.reasons.join(" ")).toMatch(/abandoned/i);
   });
 
@@ -146,7 +202,7 @@ describe("networkHealth", () => {
     expect(h.reasons.join(" ")).toMatch(/rejected/i);
   });
 
-  it("says it cannot judge rather than guessing when there is no interval", () => {
+  it("says it cannot judge waiting work rather than guessing when there is no interval", () => {
     const h = networkHealth(
       base({
         throughput: {
@@ -156,16 +212,47 @@ describe("networkHealth", () => {
           blockIntervalSeconds: { p50: null, p95: null, sampleCount: 0 },
           source: "blocks",
         },
+        waiting: waitingFor(30),
       } as Partial<MetricsResponse>),
     );
     expect(h.state).toBe("unknown");
-    expect(h.headline).toMatch(/not enough history/i);
+    expect(h.headline).toBe("1 withdrawal awaiting a block · 30s");
+    expect(h.reasons[0]).toMatch(/^Too early to judge: 1 block in 24h/);
   });
 
-  it("says it cannot judge when metrics are missing entirely", () => {
+  /** A day with no block leaves no gap to measure a cadence from, but work
+   * that has waited longer than the whole window with no block in it is
+   * stalled whatever the cadence. Reading "not enough history" there put a
+   * grey verdict on a withdrawal a day overdue. */
+  it("calls work that has waited longer than the whole window stalled", () => {
+    const h = networkHealth(
+      base({
+        tip: {
+          headerHash: "ab".repeat(28),
+          height: null,
+          at: null,
+          ageSeconds: 90_600,
+          source: "b",
+        },
+        throughput: {
+          transactions: 0,
+          blocks: 0,
+          transactionsPerBlock: null,
+          blockIntervalSeconds: { p50: null, p95: null, sampleCount: 0 },
+          source: "blocks",
+        },
+        waiting: waitingFor(90_840),
+      } as Partial<MetricsResponse>),
+    );
+    expect(h.state).toBe("stalled");
+    expect(h.headline).toBe("Overdue · 1 withdrawal awaiting a block · 1d 1h");
+  });
+
+  it("says once that the figures are unavailable when metrics are missing entirely", () => {
     const h = networkHealth(null);
     expect(h.state).toBe("unknown");
-    expect(h.reasons.join(" ")).toMatch(/unavailable/i);
+    expect(h.headline).toBe("Figures unavailable");
+    expect(h.reasons).toEqual([]);
   });
 
   it("gives every reason a figure a reader can check", () => {
@@ -212,18 +299,14 @@ describe("networkHealth when no interval can be measured", () => {
       },
     });
 
-  it("calls a node that produced blocks and then went quiet stalled, not unjudgeable", () => {
+  it("calls a node that went quiet with nothing waiting idle, not unjudgeable", () => {
     const h = networkHealth(noInterval());
-    expect(h.state).toBe("stalled");
-    expect(h.headline).toBe(
-      `Latest recorded block: 3d 6h ago. No blocks recorded in the last ${noInterval().window.hours} hours.`,
-    );
+    expect(h.state).toBe("idle");
+    expect(h.headline).toBe("Nothing awaiting a block");
   });
 
-  // The headline already says what happened, the chain tip figure the panel
-  // renders next to this verdict already gives the block and its age, and the
-  // reasons list existed to avoid contradicting those figures, not to restate
-  // them. Nothing here needs a reason.
+  // The chain tip figure the panel renders next to this verdict already gives
+  // the block and its age. Nothing here needs a reason.
   it("gives no reasons: the headline and the chain tip figure already say it", () => {
     const h = networkHealth(noInterval());
     expect(h.reasons).toEqual([]);
@@ -246,15 +329,15 @@ describe("networkHealth when no interval can be measured", () => {
       }),
     );
     expect(h.state).toBe("unknown");
-    expect(h.headline).toContain("not enough history");
+    expect(h.headline).toBe("No blocks yet");
   });
 
-  // And a chain that IS producing, but has only one block in the window, is
-  // unmeasurable rather than stalled.
-  it("reports a single block in the window as unmeasurable pace, not stopped", () => {
-    const h = networkHealth(noInterval({ blocks: 1 }));
+  // And work waiting on a chain with only one block in the window is
+  // unmeasurable rather than stalled: there is no gap to compare the wait with.
+  it("reports waiting work with a single block in the window as unmeasurable pace", () => {
+    const h = networkHealth({ ...noInterval({ blocks: 1 }), waiting: waitingFor(90) });
     expect(h.state).toBe("unknown");
-    expect(h.headline).toContain("pace");
-    expect(h.reasons[0]).toContain("1 block has");
+    expect(h.headline).toBe("1 withdrawal awaiting a block · 1m 30s");
+    expect(h.reasons[0]).toMatch(/^Too early to judge/);
   });
 });

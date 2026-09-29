@@ -76,27 +76,3 @@ export async function findOutRefs(
   }
   return found;
 }
-
-/**
- * A lookup that answers from one prefetched batch.
- *
- * Keeps the decoder's injected-lookup shape unchanged: it still asks for one
- * outref at a time and does not know a batch happened. Anything not in the
- * batch falls through to a single query, so a caller that under-prefetches gets
- * a slower answer rather than a wrong one.
- */
-export function lookupFrom(
-  batch: Map<string, LedgerOutput>,
-  requested: ReadonlySet<string>,
-) {
-  return async (outref: Uint8Array): Promise<LedgerOutput | null> => {
-    const key = Buffer.from(outref).toString("hex");
-    const hit = batch.get(key);
-    if (hit) return hit;
-    // Absent from a batch that ASKED for it means absent, not unknown. Falling
-    // through there would re-query every unresolvable input, and a historical
-    // transaction's inputs are nearly all unresolvable, so the batch would cost
-    // more than the loop it replaced.
-    return requested.has(key) ? null : await findOutRef(outref);
-  };
-}

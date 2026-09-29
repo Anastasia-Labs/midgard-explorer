@@ -3,10 +3,8 @@ import Link from "next/link";
 import { formatDuration, formatTimestamp, groupThousands } from "../../../../lib/format";
 import { networkHealth } from "../../../../lib/health";
 import { Icon } from "../../base/icons";
-import { StatusBadge } from "../../domain/status";
-import { ProductionChart } from "./charts";
-import { Card, Panel } from "../../base/layout";
-import { AllTime, CoreFigures, Figure, Verdict } from "./figures";
+import { Panel, RetryButton } from "../../base/layout";
+import { CoreFigures, Verdict } from "./figures";
 
 /**
  * The operations panel, composed.
@@ -22,6 +20,7 @@ export function NetworkMetrics({
   totalBlocks,
   totalTxs,
   freshness,
+  onRetry,
 }: {
   metrics: MetricsResponse | null;
   totalBlocks: number | null;
@@ -29,89 +28,55 @@ export function NetworkMetrics({
   /** How recently these figures were fetched. It belongs to this panel rather
    * than to the page title: it qualifies these numbers and nothing else. */
   freshness?: React.ReactNode;
+  /** Offered in place of the freshness note when the figures did not arrive. */
+  onRetry?: () => void;
 }) {
-  if (metrics === null) {
-    return (
-      <>
-        <Panel
-          title="Network activity"
-          subtitle="Activity recorded by the connected node"
-          actions={<AllTime blocks={totalBlocks} txs={totalTxs} />}
-          className="mb-4"
-        >
-          {/* The same grammar as the healthy case. A panel that answers when
-            things are fine and goes blank when they are not teaches a reader
-            that silence means trouble, which is a worse signal than saying so. */}
-          <Verdict health={networkHealth(null)} />
-          <p className="px-4 py-3 mg-caption text-text-3">Other sections may still be available.</p>
-        </Panel>
-      </>
-    );
-  }
-
-  const { window: w, admission, finality } = metrics;
+  // One layout whether or not the figures arrived. When they did not, every
+  // tile keeps its place with its default value, so a failure reads as
+  // missing numbers rather than a panel that vanished.
+  const w = metrics?.window ?? null;
+  const finality = metrics?.finality ?? null;
   return (
     <>
       <Panel
         title="Network activity"
-        subtitle={
-          w.partial
-            ? `Last ${w.hours}h · partial: the node holds history only from ${formatTimestamp(
-                w.observedFrom ?? w.start,
-              )}`
-            : `Last ${w.hours} hours`
+        // Said only when the node holds less history than the chart's window,
+        // because then the chart's first hours were never observed.
+        subtitle={w?.partial ? `Since ${formatTimestamp(w.observedFrom ?? w.start)}` : undefined}
+        actions={
+          <span className="flex items-center gap-3">
+            {metrics === null && onRetry ? <RetryButton onRetry={onRetry} /> : freshness}
+            <Link
+              href="/health"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium text-link transition-colors hover:bg-surface-2 hover:text-link-hover"
+            >
+              Details
+              <Icon name="arrowRight" size={14} />
+            </Link>
+          </span>
         }
-        actions={freshness}
         className="mb-4"
       >
         <Verdict health={networkHealth(metrics)} />
 
         <CoreFigures metrics={metrics} totalBlocks={totalBlocks} totalTxs={totalTxs} />
+
+        {/* Settlement is an operator's figure, so it stays off the overview
+            until a block is waiting, and then says only how many and how long. */}
+        {finality !== null && finality.pending > 0 ? (
+          <p
+            data-region="settlement-notice"
+            className="border-t border-border px-4 py-2.5 text-center mg-caption text-text-2"
+          >
+            {`${groupThousands(String(finality.pending))} ${finality.pending === 1 ? "block" : "blocks"} awaiting settlement`}
+            {finality.oldestUnsettled === null
+              ? null
+              : ` · ${finality.pending > 1 ? "oldest " : ""}${formatDuration(
+                  finality.oldestUnsettled.waitingSeconds * 1000,
+                )}`}
+          </p>
+        ) : null}
       </Panel>
-      <Card className="mb-4">
-        <div className="grid divide-y divide-border lg:grid-cols-[2fr_1fr] lg:divide-x lg:divide-y-0">
-          <ProductionChart series={metrics.series} />
-
-          <div>
-            <Figure
-              label="Admission queue"
-              term="admissionQueue"
-              value={groupThousands(String(admission.queueDepth))}
-              sub={
-                admission.rejectionRate === null
-                  ? "No decisions in window"
-                  : `${(admission.rejectionRate * 100).toFixed(1)}% rejected (${admission.rejected} of ${
-                      admission.accepted + admission.rejected
-                    })`
-              }
-              tone={
-                admission.rejectionRate !== null && admission.rejectionRate > 0.25
-                  ? "warning"
-                  : "neutral"
-              }
-            />
-
-            {finality.oldestUnsettled ? (
-              <div className="border-t border-border px-4 py-3">
-                <p className="mg-overline">Oldest block awaiting settlement</p>
-                <p className="mt-1 flex flex-wrap items-center gap-2 mg-caption">
-                  <Link
-                    href={`/block/${finality.oldestUnsettled.headerHash}`}
-                    className="inline-flex items-center gap-1 font-medium text-link hover:text-link-hover hover:underline"
-                  >
-                    {finality.oldestUnsettled.headerHash.slice(0, 12)}…
-                    <Icon name="arrowRight" size={11} />
-                  </Link>
-                  <StatusBadge status={finality.oldestUnsettled.status} />
-                  <span className="tabular-nums text-text-2">
-                    waiting {formatDuration(finality.oldestUnsettled.waitingSeconds * 1000)}
-                  </span>
-                </p>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </Card>
     </>
   );
 }

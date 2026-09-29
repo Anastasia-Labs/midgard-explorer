@@ -336,8 +336,8 @@ test.describe("the flow itself", () => {
     const inspector = page.getByRole("region", { name: /output .* details/i }).last();
     await expect(inspector).toBeVisible();
     await expect(inspector.locator("p.break-all.font-mono")).toHaveCount(2);
-    await expect(inspector.locator("p.break-all.font-mono").first()).not.toContainText("…");
-    await expect(inspector.locator("p.break-all.font-mono").last()).not.toContainText("…");
+    await expect(inspector.locator("p.break-all.font-mono").first()).not.toContainText("...");
+    await expect(inspector.locator("p.break-all.font-mono").last()).not.toContainText("...");
   });
 
   test("clusters first paint and positions all 503 stress nodes deterministically", async ({

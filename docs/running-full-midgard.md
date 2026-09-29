@@ -24,9 +24,7 @@ dominate the total and no figure is offered for them here.
 | Explorer web app | `cd frontend && pnpm dev` | 3011 |
 
 The web app is `frontend/`. The explorer's ports avoid 3000, which the
-node's HTTP API holds, and 3100, which the node's monitoring stack holds. The
-previous Vite client in `frontend/` is kept and still buildable, but it is not
-the app these steps run.
+node's HTTP API holds, and 3100, which the node's monitoring stack holds.
 
 The backend needs only the PostgreSQL connection; it never calls the node's HTTP
 API. The node's Docker stack exposes Postgres on host port 5433.

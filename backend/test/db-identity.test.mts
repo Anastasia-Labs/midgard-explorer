@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { logger } from "../src/logger.js";
 import { reportDatabaseIdentity } from "../src/db/identity.js";
-import { config } from "../src/config.js";
 
 /** This exists because the explorer read a test-coverage database for weeks
  * and reported its contents as the live chain. Nothing failed: a wrong

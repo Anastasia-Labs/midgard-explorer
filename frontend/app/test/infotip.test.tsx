@@ -150,6 +150,26 @@ describe("InfoTip", () => {
     );
   });
 
+  /** The note about this moment is what changed, so it leads; the shared
+   * definition follows. It used to trail in muted text under the definition. */
+  it("puts a contextual note before the glossary definition", () => {
+    render(<InfoTip term="referenceInput" explain="Read by this transaction." />);
+    fireEvent.click(screen.getByRole("button"));
+    const text = screen.getByRole("tooltip").textContent ?? "";
+    expect(text.startsWith("Read by this transaction.")).toBe(true);
+    expect(text).toMatch(/reading without being spent/i);
+  });
+
+  /** A figure's label answers one question on hover, in one line; the
+   * glossary page keeps the full entry. */
+  it("shows a term's one-line tip alone where it has one", () => {
+    render(<InfoTip term="chainTip" />);
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.getByRole("tooltip").textContent).toBe(
+      "Latest block. Produced when work is waiting.",
+    );
+  });
+
   it("names the trigger for a screen reader using the subject it explains", () => {
     render(<InfoTip explain="Some help." subject="Status" />);
     expect(screen.getByRole("button").getAttribute("aria-label")).toBe("About Status");

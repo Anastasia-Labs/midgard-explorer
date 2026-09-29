@@ -2,8 +2,39 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { cn, truncateId } from "../../../lib/format";
+import { ID_GAP, cn } from "../../../lib/format";
 import { Icon } from "../base/icons";
+
+/** `xs` is 390px, the width where the longer phone length first fits one row; the rest are Tailwind's. */
+const BREAKPOINTS = ["xs", "sm", "lg", "xl"] as const;
+type Breakpoint = (typeof BREAKPOINTS)[number];
+
+/** A shortened hash in the site's standard form: head, the gap in the muted
+ * colour with a little room either side, then tail. Short values show whole. */
+export function ShortId({ value, head, tail }: { value: string; head: number; tail: number }) {
+  if (value.length <= head + tail + ID_GAP.length) return <>{value}</>;
+  return (
+    <>
+      {value.slice(0, head)}
+      <span className="mx-0.5 text-text-3">{ID_GAP}</span>
+      {value.slice(-tail)}
+    </>
+  );
+}
+
+/** Written out whole so Tailwind finds every class in the source. */
+const SHOW_FROM: Record<Breakpoint, string> = {
+  xs: "hidden min-[390px]:inline",
+  sm: "hidden sm:inline",
+  lg: "hidden lg:inline",
+  xl: "hidden xl:inline",
+};
+const HIDE_FROM: Record<Breakpoint, string> = {
+  xs: "min-[390px]:hidden",
+  sm: "sm:hidden",
+  lg: "lg:hidden",
+  xl: "xl:hidden",
+};
 
 export function Identifier({
   value,
@@ -13,6 +44,7 @@ export function Identifier({
   full = false,
   external = false,
   externalLabel,
+  breakpoints,
   className,
 }: {
   value: string;
@@ -31,9 +63,39 @@ export function Identifier({
    * primitive that knows what a Cardano explorer is cannot be reused for
    * anything else. */
   externalLabel?: string;
+  /** Other head and tail lengths from a breakpoint up, each in force until the
+   * next one given, where the row has more or less room. `head` and `tail`
+   * set the length below the first. One link and one copy button carry every
+   * length, so nothing is duplicated for a screen reader. */
+  breakpoints?: Partial<Record<Breakpoint, { head: number; tail: number }>>;
   className?: string;
 }) {
-  const display = full ? value : truncateId(value, head, tail);
+  const lengths = BREAKPOINTS.flatMap((bp) => {
+    const at = breakpoints?.[bp];
+    return at === undefined ? [] : [{ bp, ...at }];
+  });
+  const display =
+    full || lengths.length === 0 ? (
+      full ? (
+        value
+      ) : (
+        <ShortId value={value} head={head} tail={tail} />
+      )
+    ) : (
+      <>
+        <span className={HIDE_FROM[lengths[0]!.bp]}>
+          <ShortId value={value} head={head} tail={tail} />
+        </span>
+        {lengths.map((at, i) => {
+          const next = lengths[i + 1];
+          return (
+            <span key={at.bp} className={cn(SHOW_FROM[at.bp], next && HIDE_FROM[next.bp])}>
+              <ShortId value={value} head={at.head} tail={at.tail} />
+            </span>
+          );
+        })}
+      </>
+    );
   const text = (
     <span
       className={cn(

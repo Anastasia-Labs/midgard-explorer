@@ -1,3 +1,4 @@
+// Generated from backend/contracts by `pnpm contracts:write` in backend/. Edit the source, not this copy.
 import { Schema } from "effect";
 import { Hash28, HexString, IsoTimestamp } from "./primitives";
 
@@ -82,6 +83,18 @@ export const MetricsResponse = Schema.Struct({
         waitingSeconds: Schema.Number,
       }),
     ),
+    source: Schema.String,
+  }),
+  /** Work the node has not put in a block yet. The node makes a block only when
+   * something waits, so an old tip with nothing here is a quiet chain, not a
+   * stalled one. */
+  waiting: Schema.Struct({
+    transactions: Schema.Number,
+    deposits: Schema.Number,
+    withdrawals: Schema.Number,
+    forcedTransactions: Schema.Number,
+    /** When the longest-waiting item entered the mempool or fell due. */
+    since: Schema.NullOr(IsoTimestamp),
     source: Schema.String,
   }),
   statusBreakdown: Schema.Struct({

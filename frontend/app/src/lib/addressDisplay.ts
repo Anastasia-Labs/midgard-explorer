@@ -5,7 +5,7 @@ import type { AddressResponse } from "@midgard-explorer/contracts";
  * full.
  *
  * Paging cursors and each transaction body stay in the API response, one link
- * away. `spent` is null where inputs were pruned, which means unknown, not
+ * away. `spent` is null where inputs are unresolved, which means unknown, not
  * zero. */
 export function addressForDisplay(address: string, data: AddressResponse) {
   return {

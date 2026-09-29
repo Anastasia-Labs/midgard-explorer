@@ -176,14 +176,21 @@ const MARK_COLOR: Record<StatusTone, string> = {
   neutral: "text-text-3",
 };
 
+/** The text colour of a status, for a figure that takes its record's state. */
+export function statusTextClass(status: string): string {
+  const entry = statusOf(status);
+  return MARK_COLOR[entry.known ? entry.tone : "neutral"];
+}
+
 /** A status as its mark alone, where space is tight, as on the overview's
  * latest lists. The circled glyph carries the state class and the color the
  * tone; the name is in the tooltip, on hover, focus or tap, and is the
- * mark's accessible name. */
-export function StatusMark({ status }: { status: string }) {
+ * mark's accessible name. `label` replaces the name where the mark stands for
+ * several records, such as "5 Finalized, 1 Awaiting". */
+export function StatusMark({ status, label }: { status: string; label?: string }) {
   const entry = statusOf(status);
   const state: StateClass = entry.known ? STATE_CLASS[entry.tone] : "unknown";
-  const name = entry.label;
+  const name = label ?? entry.label;
   return (
     <InfoTip
       explain={name}

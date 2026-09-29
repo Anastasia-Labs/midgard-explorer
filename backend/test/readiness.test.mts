@@ -54,6 +54,19 @@ describe("checkReadiness", () => {
 });
 
 describe("probe frequency", () => {
+  it("shares an in-flight probe across a concurrent burst", async () => {
+    let calls = 0;
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    const probes = { node: async () => { calls += 1; await pending; } };
+    const reports = Array.from({ length: 20 }, () =>
+      checkReadiness(probes, { cacheMs: 1_000 }),
+    );
+    release();
+    expect((await Promise.all(reports)).every((report) => report.ready)).toBe(true);
+    expect(calls).toBe(1);
+  });
+
   /** A probe endpoint is unauthenticated and outside the /api rate limit, so a
    * flood of requests would otherwise open two database round trips each and
    * compete with real traffic for a pool of 8 and 5 connections. One second of

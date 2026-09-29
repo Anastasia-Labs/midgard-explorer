@@ -12,6 +12,15 @@ describe("shared explorer glossary", () => {
     }
   });
 
+  /** A tip is what a reader wants on hover: short enough to read at a glance. */
+  it("keeps every one-line tip short", () => {
+    for (const [key, entry] of Object.entries(GLOSSARY)) {
+      if (!("tip" in entry) || entry.tip === undefined) continue;
+      expect(entry.tip, key).toMatch(/[.!?]$/);
+      expect(entry.tip.split(/\s+/).length, key).toBeLessThanOrEqual(14);
+    }
+  });
+
   it("combines both parts for compact tooltip use", () => {
     expect(glossaryText("referenceInput")).toContain(GLOSSARY.referenceInput.meaning);
     expect(glossaryText("referenceInput")).toContain(GLOSSARY.referenceInput.consequence);

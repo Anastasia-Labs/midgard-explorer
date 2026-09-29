@@ -218,8 +218,8 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
                       hash={data.cardano.l1TxHash}
                       destination="midgard"
                       marker={false}
-                      head={6}
-                      tail={6}
+                      head={5}
+                      tail={4}
                     />
                   ),
                 },

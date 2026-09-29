@@ -3,6 +3,9 @@ export type GlossaryEntry = {
   category: "Ledger" | "Transaction" | "Script" | "Asset" | "Explorer";
   meaning: string;
   consequence: string;
+  /** One line a reader wants on hover, where the label sits beside a figure:
+   * the tooltip shows this alone, and the glossary page keeps the full entry. */
+  tip?: string;
 };
 
 /** Shared explanations for protocol terms and unfamiliar semantic marks.
@@ -14,35 +17,107 @@ export type GlossaryEntry = {
 export const GLOSSARY = {
   chainTip: {
     label: "Chain tip",
+    tip: "Latest block. Produced when work is waiting.",
     category: "Ledger",
-    meaning: "The highest Midgard block currently known to this explorer.",
-    consequence: "If its age keeps growing, block production or explorer ingestion may be stalled.",
+    meaning: "The newest block Midgard has made that this explorer can read.",
+    consequence:
+      "Midgard makes a block only when work is waiting, so an old tip is normal when nothing waits.",
   },
   blockThroughput: {
-    label: "Block throughput",
+    label: "Blocks in a window",
+    tip: "Zero is normal when nothing was waiting for a block.",
     category: "Explorer",
-    meaning: "The number of Midgard blocks produced in the stated observation window.",
-    consequence: "A sustained zero means no block was produced in that window.",
+    meaning: "The number of blocks Midgard made during the stated window.",
+    consequence: "Zero is normal when nothing was waiting for a block in that time.",
+  },
+  blocksTotal: {
+    label: "Blocks",
+    tip: "Every block made so far.",
+    category: "Ledger",
+    meaning: "Every block Midgard has made that this explorer has recorded.",
+    consequence: "The hourly chart above the latest blocks shows recent activity.",
   },
   transactionThroughput: {
-    label: "Transaction throughput",
+    label: "Transactions in a window",
+    tip: "Zero is normal when nobody sent a transaction.",
     category: "Explorer",
-    meaning: "The number of Midgard transactions included during the stated observation window.",
-    consequence: "Read it against the window and block count beside it.",
+    meaning: "The number of transactions included in Midgard blocks during the stated window.",
+    consequence: "Zero is normal when nobody submitted a transaction in that time.",
+  },
+  transactionsTotal: {
+    label: "Transactions",
+    tip: "Transactions included in blocks so far.",
+    category: "Ledger",
+    meaning: "Every transaction included in a Midgard block so far.",
+    consequence: "The hourly chart above the latest transactions shows recent activity.",
   },
   admissionLatency: {
-    label: "Admission latency",
+    label: "Time to admit",
+    tip: "How long the node takes to accept or reject a transaction.",
     category: "Explorer",
-    meaning:
-      "The measured time from first receipt until the node accepts or rejects a transaction.",
-    consequence: "Rising percentiles mean the node is taking longer to decide.",
+    meaning: "How long the node takes to accept or reject a transaction after receiving it.",
+    consequence: "Shown as the typical time and the time within which 95% finish.",
   },
   admissionQueue: {
     label: "Admission queue",
+    tip: "Transactions received and still being checked.",
     category: "Explorer",
-    meaning: "The number of received transactions still waiting for an admission decision.",
+    meaning: "Transactions the node has received and has not yet accepted or rejected.",
     consequence:
-      "A growing queue indicates validation is arriving faster than the node can complete it.",
+      "A queue that keeps growing means transactions arrive faster than the node can check them.",
+  },
+  awaitingBlock: {
+    label: "Awaiting a block",
+    tip: "Not in a block yet. Time counts from when it became eligible.",
+    category: "Explorer",
+    meaning:
+      "Transactions, deposits, withdrawals and forced transactions the node has not yet put in a Midgard block.",
+    consequence:
+      "The time shown is the oldest wait: a transaction counts from when the node accepted it, a deposit, withdrawal or forced transaction from when it fell due.",
+  },
+  awaitingSettlement: {
+    label: "Awaiting settlement",
+    tip: "In a block, but not yet final on Cardano.",
+    category: "Ledger",
+    meaning: "Blocks made on Midgard that the node has not yet reported final on Cardano.",
+    consequence: "Their transactions can still be reversed until settlement completes.",
+  },
+  blockSettlements: {
+    label: "Block settlements",
+    tip: "Blocks sent to Cardano to be made final.",
+    category: "Ledger",
+    meaning: "Blocks the node has posted to Cardano to make them final there.",
+    consequence: "A block's transactions are final once its settlement is finalized on Cardano.",
+  },
+  bridgeDeposits: {
+    label: "Deposits",
+    tip: "Transfers from Cardano to Midgard.",
+    category: "Ledger",
+    meaning: "Funds sent from Cardano into Midgard, as the node recorded them.",
+    consequence: "A deposit changes Midgard balances once a Midgard block includes it.",
+  },
+  bridgeWithdrawals: {
+    label: "Withdrawals",
+    tip: "Transfers from Midgard to Cardano.",
+    category: "Ledger",
+    meaning: "Funds leaving Midgard for Cardano, as the node recorded them.",
+    consequence: "Each withdrawal's status shows how far it has got, from awaiting to finalized.",
+  },
+  bridgeForced: {
+    label: "Forced transactions",
+    tip: "Transactions sent through Cardano that Midgard must include.",
+    category: "Ledger",
+    meaning: "Transactions submitted on Cardano that the Midgard operator must include.",
+    consequence:
+      "They let a user reach the ledger even when the operator would not include their transaction.",
+  },
+  cardanoRecords: {
+    label: "Records",
+    tip: "The four counts above, added together.",
+    category: "Ledger",
+    meaning: "Every record the node keeps of what it did on Cardano.",
+    consequence:
+      "It is the sum of block settlements, deposits, withdrawals and forced transactions.",
   },
   blockHeight: {
     label: "Block height",
@@ -71,11 +146,11 @@ export const GLOSSARY = {
   },
   l1Finality: {
     label: "L1 settlement",
+    tip: "Final on Cardano, so these can no longer be reversed.",
     category: "Ledger",
-    meaning:
-      "The Midgard block has been committed to Cardano and reached the required stability depth.",
+    meaning: "The node has posted the Midgard block to Cardano and reports it final there.",
     consequence:
-      "Before settlement, its Midgard transactions remain reversible if the commitment is abandoned.",
+      "Until then, the block's transactions can still be reversed if its settlement is abandoned.",
   },
   transactionHash: {
     label: "Transaction hash",

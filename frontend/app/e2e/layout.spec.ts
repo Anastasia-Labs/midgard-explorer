@@ -33,23 +33,24 @@ test.describe("overview health density", () => {
     test.skip(info.project.name !== "desktop", "sets its own viewports");
   });
 
-  test("collapses a healthy verdict's reasons on a phone and keeps them on a desktop", async ({
+  /** One line on every width: what awaits a block and for how long. The
+   * cadence the healthy verdict used to add lives on the network health page. */
+  test("states a healthy verdict in one line on a phone and a desktop", async ({
     page,
     request,
   }) => {
     await request.post(`${FIXTURE}/__control?health=healthy`);
 
-    await page.setViewportSize(VIEWPORTS.phone);
-    await page.goto("/");
-    await settle(page);
+    for (const viewport of [VIEWPORTS.phone, VIEWPORTS.desktop]) {
+      await page.setViewportSize(viewport);
+      await page.goto("/");
+      await settle(page);
 
-    const verdict = page.locator('[data-region="verdict"]');
-    await expect(verdict).toHaveAttribute("data-verdict-state", "healthy");
-    await expect(verdict.getByText(/Blocks arrive every/)).toBeHidden();
-
-    await page.setViewportSize(VIEWPORTS.desktop);
-    await settle(page);
-    await expect(verdict.getByText(/Blocks arrive every/)).toBeVisible();
+      const verdict = page.locator('[data-region="verdict"]');
+      await expect(verdict).toHaveAttribute("data-verdict-state", "healthy");
+      await expect(verdict).toContainText("awaiting a block");
+      await expect(verdict.locator('[data-region="verdict-reasons"]')).toHaveCount(0);
+    }
   });
 
   test("keeps a degraded verdict's reasons on a phone, where its evidence lives nowhere else", async ({

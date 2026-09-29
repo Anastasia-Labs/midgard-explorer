@@ -17,13 +17,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    {
-      source: "/((?!api|_next/static|_next/image|favicon.ico).*)",
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
-    },
-  ],
+  // Match path segments exactly: /api-docs is a document, not an API route.
+  // Prefetch headers are client-controlled and must not disable the policy.
+  matcher: ["/((?!api(?:/|$)|_next/static(?:/|$)|_next/image(?:/|$)|favicon[.]ico$).*)"],
 };

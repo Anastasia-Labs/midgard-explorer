@@ -94,6 +94,11 @@ describe("the backend answers the shapes the frontend decodes", () => {
     await satisfies("/api/source", C.DeploymentContext);
   });
 
+  it("the overview's metrics, with the work waiting for a block", async () => {
+    if (!reachable) return;
+    await satisfies("/api/metrics", C.MetricsResponse);
+  });
+
   it("the node-recorded Cardano activity and its summary", async () => {
     if (!reachable) return;
     await satisfies("/api/l1/activity/1", C.CardanoActivityPage);

@@ -187,6 +187,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <FooterColumn title="Resources">
               {/* A utility rather than a record type, so it sits here rather
                   than competing for room in the primary nav. */}
+              <FooterLink href="/health">Network health</FooterLink>
               <FooterLink href="/glossary">Glossary</FooterLink>
               <FooterLink href="/api-docs">API reference</FooterLink>
               <FooterLink href="/tools">Tools</FooterLink>

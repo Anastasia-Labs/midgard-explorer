@@ -912,6 +912,18 @@ export const metrics = () => {
             },
       source: "pending_block_finalizations.status, pending_block_finalizations.block_end_time",
     },
+    // Arranged, not derived: the fixture's bridge rows have waited hours, which
+    // would make every page read as a stalled chain. Two transactions that
+    // arrived half a minute ago is a node working normally.
+    waiting: {
+      transactions: 2,
+      deposits: 0,
+      withdrawals: 0,
+      forcedTransactions: 0,
+      since: new Date(end.getTime() - 30_000).toISOString(),
+      source:
+        "mempool.time_stamp_tz; deposits_utxos, withdrawal_utxos, forced_transaction_utxos: inclusion_time, projected_header_hash, status",
+    },
     statusBreakdown: {
       finalization: statusCounts(finalizations, "status"),
       admission: statusCounts(

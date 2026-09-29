@@ -1,6 +1,5 @@
 import type { MetricsResponse } from "@midgard-explorer/contracts";
 import { formatTimestamp } from "../../../../lib/format";
-import { ViewToggle } from "../../base/viewtoggle";
 
 /**
  * The panel's drawing primitives.
@@ -29,9 +28,12 @@ import { ViewToggle } from "../../base/viewtoggle";
 export function Bars({
   series,
   measure,
+  caption,
 }: {
   series: MetricsResponse["series"];
   measure: "blocks" | "transactions";
+  /** Replaces the default "{measure} per hour" heading. */
+  caption?: string;
 }) {
   const values = series.map((s) => s[measure]);
   const peak = Math.max(...values, 0);
@@ -47,7 +49,7 @@ export function Bars({
       {/* Not a `figcaption`: that has to be a direct child of its `figure`,
           and the toggle puts a wrapper in between. */}
       <p className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="mg-overline">{noun} per hour</span>
+        <span className="mg-overline">{caption ?? `${noun} per hour`}</span>
         <span className="mg-micro text-text-3">peak {peak}</span>
       </p>
       <svg
@@ -90,55 +92,81 @@ export function Bars({
   );
 }
 
-export function ProductionChart({ series }: { series: MetricsResponse["series"] }) {
+/**
+ * One measure per hour across the window, drawn inside the list it describes:
+ * blocks above the latest blocks, transactions above the latest transactions.
+ * Each carries its own table of every hour for a reader who cannot see bars.
+ */
+export function HourlyChart({
+  series,
+  measure,
+  hours,
+}: {
+  series: MetricsResponse["series"] | null;
+  measure: "blocks" | "transactions";
+  /** The window the series covers, for the heading. */
+  hours: number;
+}) {
+  const noun = measure === "blocks" ? "Blocks" : "Transactions";
+  const caption = `${noun} per hour, last ${hours}h`;
+  if (series === null) {
+    // No history arrived. The chart keeps its shape: a floor mark for every
+    // hour, in the danger tone rather than the warning tone of an empty hour,
+    // so it reads as figures that failed to load and not as a quiet day.
+    const bars = hours + 1;
+    const barWidth = 100 / bars - 0.35;
+    return (
+      <figure className="border-b border-border px-4 py-3">
+        <p className="mg-overline">{caption}</p>
+        <svg
+          viewBox="0 0 100 34"
+          preserveAspectRatio="none"
+          className="mt-2 h-16 w-full"
+          role="img"
+          aria-label={`${noun} per hour are unavailable.`}
+        >
+          {Array.from({ length: bars }, (_, i) => (
+            <rect
+              key={i}
+              x={i * (barWidth + 0.35)}
+              y={33}
+              width={barWidth}
+              height={1}
+              className="fill-danger"
+            />
+          ))}
+        </svg>
+      </figure>
+    );
+  }
   if (series.length === 0) {
     return (
-      <p className="px-4 py-6 text-center mg-caption text-text-3">
+      <p className="border-b border-border px-4 py-6 text-center mg-caption text-text-3">
         No production history in this window.
       </p>
     );
   }
 
-  const start = series[0]!.hour;
-  const end = new Date(Date.parse(series[series.length - 1]!.hour) + 3_600_000).toISOString();
-
   return (
-    <figure className="px-4 py-3">
-      <ViewToggle
-        label="Chart measure"
-        param="chart"
-        views={[
-          { id: "blocks", label: "Blocks", content: <Bars series={series} measure="blocks" /> },
-          {
-            id: "transactions",
-            label: "Transactions",
-            content: <Bars series={series} measure="transactions" />,
-          },
-        ]}
-      />
-      <p className="mt-2 flex flex-wrap justify-between gap-x-4 gap-y-1 text-micro text-text-3">
-        <span>{formatTimestamp(start)}</span>
-        <span>{formatTimestamp(end)}</span>
-      </p>
+    <figure className="border-b border-border px-4 py-3">
+      <Bars series={series} measure={measure} caption={caption} />
       {/* The wrapper carries `sr-only`, not the table. A table box takes its
           min-content width whatever width is set on it, so `sr-only` on the
           table itself left a 359px element on a 320px page. */}
       <div className="sr-only">
         <table>
-          <caption>Blocks and transactions per hour</caption>
+          <caption>{noun} per hour</caption>
           <thead>
             <tr>
               <th scope="col">Hour</th>
-              <th scope="col">Blocks</th>
-              <th scope="col">Transactions</th>
+              <th scope="col">{noun}</th>
             </tr>
           </thead>
           <tbody>
             {series.map((s) => (
               <tr key={s.hour}>
                 <th scope="row">{formatTimestamp(s.hour)}</th>
-                <td>{s.blocks}</td>
-                <td>{s.transactions}</td>
+                <td>{s[measure]}</td>
               </tr>
             ))}
           </tbody>

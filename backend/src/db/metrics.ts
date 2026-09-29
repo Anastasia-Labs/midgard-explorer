@@ -1,5 +1,4 @@
-import { prisma } from "../db";
-import { readConsistently } from "./consistent";
+import { readConsistently, type NodeReader } from "./consistent";
 import { toHex } from "../utils";
 
 /** Operational metrics for the overview.
@@ -81,6 +80,18 @@ export type MetricsResponse = {
     } | null;
     source: string;
   };
+  /** Work the node has not put in a block yet, counted the way the node decides
+   * whether to make one. It makes a block only when something waits, so an old
+   * tip with nothing here is a quiet chain, not a stalled one. */
+  waiting: {
+    transactions: number;
+    deposits: number;
+    withdrawals: number;
+    forcedTransactions: number;
+    /** When the longest-waiting item entered the mempool or fell due. */
+    since: string | null;
+    source: string;
+  };
   /** Per-status counts, so an unrecognized status is visible as itself rather
    * than being folded into a bucket the explorer invented. */
   statusBreakdown: {
@@ -102,23 +113,13 @@ const msOrNull = (v: number | string | null): number | null => {
   return Number.isFinite(n) ? Math.round(n) : null;
 };
 
-export async function getMetrics(): Promise<MetricsResponse> {
+export async function getMetrics(reader?: NodeReader): Promise<MetricsResponse> {
   const end = new Date();
   const start = new Date(end.getTime() - WINDOW_HOURS * 3_600_000);
 
-  const [
-    tipRows,
-    throughputRows,
-    intervalRows,
-    admissionRows,
-    finalizationScalars,
-    oldestRows,
-    finalizationBreakdown,
-    admissionBreakdown,
-    seriesRows,
-  ] = await readConsistently(async (db) =>
-    // One snapshot for the whole panel. These nine read the same two tables and
-    // are shown side by side, so a block finalised between two of them made the
+  const read = async (db: NodeReader) =>
+    // One snapshot for the whole panel. These read the same tables and are
+    // shown side by side, so a block finalised between two of them made the
     // tip newer than the backlog it was counted against.
     Promise.all([
     // A chain tip is finalized journal evidence, not merely the newest
@@ -279,8 +280,63 @@ export async function getMetrics(): Promise<MetricsResponse> {
           ON j.header_hash = f.header_hash
        GROUP BY h.hour
        ORDER BY h.hour ASC;`,
-  ]),
-  );
+
+    // The node's own test for whether to make a block: pending transactions,
+    // plus bridge events that are due and carried by no header yet. Deposits
+    // count in any status and withdrawals and forced transactions only while
+    // awaiting or projected, as in the node's pending-header queries.
+    db.$queryRaw<
+      Array<{
+        transactions: bigint;
+        deposits: bigint;
+        withdrawals: bigint;
+        forced: bigint;
+        since: Date | null;
+      }>
+    >`
+      WITH waiting AS (
+        -- A skipped submission moves transactions from mempool into
+        -- processed_mempool, and the node draws candidates from both; a
+        -- transaction in both counts once, from its earlier time.
+        SELECT 'transaction' AS kind, MIN(since) AS since
+          FROM (
+            SELECT tx_id, time_stamp_tz AS since FROM mempool
+            UNION ALL
+            SELECT tx_id, time_stamp_tz FROM processed_mempool
+          ) AS pending
+         GROUP BY tx_id
+        UNION ALL
+        SELECT 'deposit', inclusion_time FROM deposits_utxos
+         WHERE projected_header_hash IS NULL AND inclusion_time <= ${end}
+        UNION ALL
+        SELECT 'withdrawal', inclusion_time FROM withdrawal_utxos
+         WHERE status IN ('awaiting', 'projected')
+           AND projected_header_hash IS NULL AND inclusion_time <= ${end}
+        UNION ALL
+        SELECT 'forced', inclusion_time FROM forced_transaction_utxos
+         WHERE status IN ('awaiting', 'projected')
+           AND projected_header_hash IS NULL AND inclusion_time <= ${end}
+      )
+      SELECT COUNT(*) FILTER (WHERE kind = 'transaction')::bigint AS transactions,
+             COUNT(*) FILTER (WHERE kind = 'deposit')::bigint AS deposits,
+             COUNT(*) FILTER (WHERE kind = 'withdrawal')::bigint AS withdrawals,
+             COUNT(*) FILTER (WHERE kind = 'forced')::bigint AS forced,
+             MIN(since) AS since
+        FROM waiting;`,
+  ]);
+
+  const [
+    tipRows,
+    throughputRows,
+    intervalRows,
+    admissionRows,
+    finalizationScalars,
+    oldestRows,
+    finalizationBreakdown,
+    admissionBreakdown,
+    seriesRows,
+    waitingRows,
+  ] = reader ? await read(reader) : await readConsistently(read);
 
   const tip = tipRows[0] ?? { header_hash: null, height: null, at: null };
   const observedFrom = finalizationScalars[0]?.at ?? null;
@@ -302,6 +358,7 @@ export async function getMetrics(): Promise<MetricsResponse> {
     abandoned: 0n,
   };
   const oldest = oldestRows[0] ?? null;
+  const waiting = waitingRows[0] ?? null;
 
   const txCount = Number(throughput.txs);
   const blockCount = Number(throughput.blocks);
@@ -383,6 +440,15 @@ export async function getMetrics(): Promise<MetricsResponse> {
             },
       source:
         "pending_block_finalizations.status, pending_block_finalizations.block_end_time",
+    },
+    waiting: {
+      transactions: Number(waiting?.transactions ?? 0n),
+      deposits: Number(waiting?.deposits ?? 0n),
+      withdrawals: Number(waiting?.withdrawals ?? 0n),
+      forcedTransactions: Number(waiting?.forced ?? 0n),
+      since: waiting?.since?.toISOString() ?? null,
+      source:
+        "mempool.time_stamp_tz; deposits_utxos, withdrawal_utxos, forced_transaction_utxos: inclusion_time, projected_header_hash, status",
     },
     statusBreakdown: {
       finalization: finalizationBreakdown.map((r) => ({

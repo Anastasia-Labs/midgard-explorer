@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { prisma } from "../src/db.js";
+import { reachable as isReachable } from "./helpers/reachable.mjs";
 import {
   getBlock,
   getBlockHashByHeight,
@@ -10,7 +11,6 @@ import {
 } from "../src/db/block.js";
 import { getTxInclusion } from "../src/db/transaction.js";
 import { getMetrics } from "../src/db/metrics.js";
-import { getAddressHistory } from "../src/db/address.js";
 
 /**
  * The block listing queries, run against a real Postgres.
@@ -28,20 +28,14 @@ import { getAddressHistory } from "../src/db/address.js";
  *      while `total` counted distinct hashes. The page claimed six blocks and
  *      rendered twenty-one.
  *
- * Skipped, with the reason printed, when no database is reachable: this suite
- * is meant to run where the node's Postgres is, and a hard failure elsewhere
- * would make it noise rather than a gate.
+ * REQUIRE_DB=1 fails when the database is unavailable; optional local runs
+ * print the reason when database assertions cannot run.
  */
 
 let reachable = false;
 
 beforeAll(async () => {
-  try {
-    await prisma.$queryRaw`SELECT 1;`;
-    reachable = true;
-  } catch {
-    reachable = false;
-  }
+  reachable = await isReachable("node", "block listing queries");
 });
 
 afterAll(async () => {
