@@ -32,11 +32,13 @@ const MARKDOWN = resolve(repo, "docs/coverage-scope.md");
 const GAP = new Set(["not-read", "referenced-only"]);
 const DECISIONS = new Set(["adopt", "defer", "exclude", "already-exposed"]);
 
-/** `CREATE TABLE` bodies, so a column is only ever credited to its own table. */
+/** `CREATE TABLE` bodies, so a column is only ever credited to its own table.
+ * Midgard declares `mempool_tx_deltas` UNLOGGED and gives `tx_admissions` storage
+ * parameters (`) WITH (...);`), so both forms are accepted. */
 function tableBodies(sql) {
   const blocks = new Map();
   const pattern =
-    /CREATE TABLE (?:IF NOT EXISTS )?(?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\);/g;
+    /CREATE (?:UNLOGGED )?TABLE (?:IF NOT EXISTS )?(?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\)(?:\nWITH \([^\n]*\))?;/g;
   for (const m of sql.matchAll(pattern)) blocks.set(m[1], m[2]);
   return blocks;
 }
@@ -77,7 +79,7 @@ const byId = new Map(records.map((r) => [r.id, r]));
 // Any type token, including user-defined enums such as
 // `public.tx_admission_status`. Whitelisting built-ins silently dropped
 // every enum column and reported it as a phantom manifest record.
-const TYPE = /^(?:"?public"?\.)?"?\w+"?(?:\s*\(|\s|$)/;
+const TYPE = /^(?:"?public"?\.)?"?\w+"?(?:\[\])?(?:\s*\(|\s|$)/;
 const schemaIds = [];
 for (const [table, body] of bodies) {
   if (excluded.has(table)) continue;

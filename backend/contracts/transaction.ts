@@ -51,6 +51,9 @@ const TransactionEnvelope = {
   admission: Schema.NullOr(TxAdmission),
   inclusion: Schema.NullOr(TxInclusion),
   finalization: Schema.NullOr(BlockFinalization),
+  /** Public source only: every archived block that carries this
+   * transaction. More than one is a branch, not a contradiction. */
+  archive: Schema.optional(Schema.Struct({ blocks: Schema.Array(HexString) })),
 };
 
 export const TransactionFound = Schema.Struct({

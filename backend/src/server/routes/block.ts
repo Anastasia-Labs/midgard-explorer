@@ -60,8 +60,15 @@ export async function getBlockRoute(req: Request, res: Response) {
     ]),
   );
 
-  const [[{ header, da, finalization, commitments }, rows, neighbours, events], context] =
-    await Promise.all([nodeReads, getDeploymentContext()]);
+  const [
+    [
+      { header, da, finalization, commitments, journalStatus },
+      rows,
+      neighbours,
+      events,
+    ],
+    context,
+  ] = await Promise.all([nodeReads, getDeploymentContext()]);
   if (header === null) {
     return res.status(404).json({ error: "Block not found." });
   }
@@ -76,6 +83,7 @@ export async function getBlockRoute(req: Request, res: Response) {
     {
       nodeHash: finalization?.submitted_tx_hash ?? null,
       nodeStatus: finalization?.status ?? null,
+      journalStatus,
       nodeObservedAt: finalization?.updatedAt?.toISOString() ?? null,
       // What the node's silence is worth. A snapshot cannot settle whether the
       // live node holds a finalization record it does not.
@@ -202,7 +210,13 @@ export async function getBlocksPageRoute(req: Request, res: Response) {
   if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
   const page = parsedPage.value;
 
-  const { rows, hasNextPage, total, limit, page: served } = await getBlocksPage(
+  const {
+    rows,
+    hasNextPage,
+    total,
+    limit,
+    page: served,
+  } = await getBlocksPage(
     page,
     typeof req.query.status === "string" ? req.query.status : undefined,
   );

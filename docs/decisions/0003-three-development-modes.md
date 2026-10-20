@@ -49,6 +49,13 @@ records why. The developer command runs the workspaces, it does not merge them.
 `GET /readyz` is unchanged. It runs all four probes and answers `503` naming the
 one that failed, which is what a load balancer and a rollout gate read.
 
+> **Amended 2026-10-19.** The `--scope` flag went with the Cardano index
+> ([ADR 0009](0009-node-reported-settlement.md)), and `pnpm dev` silently began
+> running the strict check, so a contributor with no manifest was refused. The
+> rule below is restored by `pnpm readiness -- --manifest=optional`, which
+> `pnpm dev` passes: an unset manifest is reported as skipped, and a configured
+> one is probed in full. `/readyz` is unchanged.
+
 Development adds a second scope, on the command line only:
 
 ```sh

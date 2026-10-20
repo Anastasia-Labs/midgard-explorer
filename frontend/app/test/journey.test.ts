@@ -169,6 +169,56 @@ describe("final means the protocol's terminal success state", () => {
   });
 });
 
+/** Midgard migration 0011 renamed the node's terminal `finalized` to
+ * `locally_applied`: the node applied the block, and finality is derived from
+ * its follower. The backend sends `waiting_to_merge`, `merged` or `finalized`
+ * once the follower places the block, and leaves `locally_applied` when it has
+ * not yet. Only `finalized` ends a journey; the rest are on their way, and an
+ * unplaced block is unknown, never complete. */
+describe("an applied block's place in settlement", () => {
+  const tx = (status: string) =>
+    transactionJourney({
+      status: "committed",
+      admission: admission(),
+      inclusion: inclusion(),
+      finalization: finalization({ status }),
+    });
+
+  it("waits to merge while it is in the state queue", () => {
+    const m = tx("waiting_to_merge");
+    expect(stageBy(m, "final")).toMatchObject({ label: "Waiting to merge", state: "current" });
+    expect(m.outcome).toBe("active");
+    expect(m.headline).toBe("Waiting to merge");
+  });
+
+  it("is merged, not final, while a rollback could still undo it", () => {
+    const m = blockJourney(finalization({ status: "merged" }), 40, "ab".repeat(28));
+    expect(stageBy(m, "final")).toMatchObject({ label: "Merged", state: "current" });
+    expect(m.outcome).toBe("active");
+    expect(m.headline).toBe("Merged");
+  });
+
+  it("is unknown, not complete, before the follower places it", () => {
+    for (const m of [
+      tx("locally_applied"),
+      blockJourney(finalization({ status: "locally_applied" }), 40, "ab".repeat(28)),
+    ]) {
+      expect(m.outcome).toBe("unknown");
+      expect(m.headline).toBe("Merge not recorded");
+      expect(m.headline).not.toMatch(/final/i);
+    }
+  });
+
+  it("places every applied state one step short of final in a list row", () => {
+    for (const status of ["locally_applied", "waiting_to_merge", "merged"]) {
+      const p = journeyProgress(status);
+      expect(p.state, status).toBe("active");
+      expect(p.step, status).toBe(p.total - 1);
+    }
+    expect(journeyProgress("finalized").state).toBe("complete");
+  });
+});
+
 describe("unknown statuses stay visible", () => {
   it("appends an unrecognized settlement stage verbatim", () => {
     const m = transactionJourney({

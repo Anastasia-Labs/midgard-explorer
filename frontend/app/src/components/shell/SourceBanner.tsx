@@ -58,9 +58,17 @@ export async function SourceBanner() {
         role="status"
         className="border-b border-warning/45 bg-warning/10 px-4 py-2 text-center text-sm font-medium text-warning"
       >
-        <strong className="font-semibold">Test fixture, not live data.</strong> Midgard figures on
-        this site come from the database <code className="font-mono">{source.database}</code>, which
-        is not the live node.
+        <strong className="font-semibold">Test fixture, not live data.</strong>{" "}
+        {source.database === "archive" ? (
+          <>
+            Midgard figures on this site come from an archive filled from recorded fixture payloads.
+          </>
+        ) : (
+          <>
+            Midgard figures on this site come from the database{" "}
+            <code className="font-mono">{source.database}</code>, which is not the live node.
+          </>
+        )}
       </div>
     );
   }
@@ -99,9 +107,9 @@ export async function DeploymentNote() {
 
   return (
     <p className="text-sm text-text-3">
-      Deployment <code className="font-mono text-text-2">{source.deploymentId.slice(0, 12)}</code>{" "}
-      on {networkName(source.network)}, as configured. Reading Midgard from{" "}
-      <code className="font-mono text-text-2">{source.database}</code>.
+      Deployment <code className="font-mono text-text-2">{source.deploymentId.slice(0, 12)}</code> ·{" "}
+      {networkName(source.network)} · as configured ·{" "}
+      <code className="font-mono text-text-2">{source.database}</code>
     </p>
   );
 }

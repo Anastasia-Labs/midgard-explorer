@@ -78,7 +78,8 @@ it("previews the row's exact UTxO rather than all outputs at an address", () => 
   const dialog = screen.getByRole("dialog", { name: "UTxO" });
   expect(dialog.textContent).toContain(`${txId}#7`);
   expect(dialog.textContent).toContain("Unspent");
-  expect(dialog.querySelector("a")?.getAttribute("href")).toBe(`/transaction/${txId}`);
+  // It opens that exact output, not just its transaction.
+  expect(dialog.querySelector("a")?.getAttribute("href")).toBe(`/transaction/${txId}#output-7`);
 });
 
 it("draws a script credential as code, never as a key", () => {

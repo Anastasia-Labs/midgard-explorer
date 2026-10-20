@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { outputHref } from "../../../lib/entities";
 import type { AddressIdentityView, OutRef, ValueView } from "@midgard-explorer/contracts";
 import { AddressLink } from "./address";
 import { ValueCell } from "./amount";
@@ -18,10 +19,14 @@ export function AddressRecord({
   identity,
   children,
   utxo,
+  fullAddress = false,
 }: {
   address: string;
   identity: AddressIdentityView;
   children: ReactNode;
+  /** The whole address as text, for a details panel, in place of the
+   * shortened link a table row uses. */
+  fullAddress?: boolean;
   utxo?: OutRef & {
     value: ValueView;
     context: "Input" | "Output" | "Reference input";
@@ -31,7 +36,11 @@ export function AddressRecord({
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
       <div className="flex min-w-0 flex-wrap items-center">
-        <AddressLink address={address} kind={identity.payment.kind} />
+        {fullAddress ? (
+          <p className="w-full break-all font-mono text-sm text-text-2">{address}</p>
+        ) : (
+          <AddressLink address={address} kind={identity.payment.kind} />
+        )}
         <span className="inline-flex items-center" role="group" aria-label="Address details">
           {(["payment", "stake"] as const).map((kind) => {
             const credential = identity[kind];
@@ -76,7 +85,7 @@ export function AddressRecord({
                     <span className="mb-2 block font-medium text-text">{utxo.context} UTxO</span>
                     <Identifier
                       value={`${utxo.txId}#${utxo.index}`}
-                      href={`/transaction/${utxo.txId}`}
+                      href={outputHref(utxo.txId, utxo.index)}
                       full
                     />
                     <span className="mt-2 block">

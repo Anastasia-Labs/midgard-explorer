@@ -47,9 +47,7 @@ test.describe("block Merkle roots", () => {
     await page.goto(`/block/${await hashAt(page, 10)}?tab=roots`);
     await settle(page);
     await expect(
-      page
-        .getByRole("tabpanel")
-        .getByText("As the node recorded them. The explorer does not recompute them."),
+      page.getByRole("tabpanel").getByText("Not recomputed by the explorer."),
     ).toHaveCount(1);
   });
 

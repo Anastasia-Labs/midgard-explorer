@@ -1,0 +1,18 @@
+{
+  "commit": "f4cf28ca100e99f5bc07c7b1ed6e9b936062a44d",
+  "profile": "preprod-testing",
+  "tarballs": {
+    "al-ft-l1-node-transport-0.1.0.tgz": "13c36bd10769c7c70962ddf3f2e4a1e62d64207eb95850ef6fcf106cad1f0b45",
+    "al-ft-lucid-midgard-0.1.0.tgz": "ee74cdbcaa0ff3d0a832d27687d5880cd6c4c7de5af95aedf56ff5b75674ab0b",
+    "al-ft-midgard-core-0.1.0.tgz": "2e7410c00029bda04c00080841f722996672644b0b96d67cf5655fe5f5c517e9",
+    "al-ft-midgard-fault-proofs-0.1.0.tgz": "3c702726f2337e2ba42293f2fc653a4418f2eb37124693f6b4bcac2a42d1997e",
+    "al-ft-midgard-l1-follower-0.1.0.tgz": "c0c478afd17c6d5ab4c22d30c8169d7d0a0203714933c33afbe44e456c3006ff",
+    "al-ft-midgard-sdk-0.1.0.tgz": "aff103696ffdb2365dacc48a6e491bcc72df8200495fb22ab4c4a9adfc3f05b1",
+    "al-ft-midgard-validation-0.1.0.tgz": "32c8580f39a3d0375266d7375853ada3669de47af5adffa09de88643149352c4",
+    "midgard-watcher-0.1.0.tgz": "41c894455e2a3c3f5ff852d57c86901b0363d2678b54852b92d9915cf9dd8cb5",
+    "mpf-1.3.1-midgard.1.tgz": "dfb0cba54a26e14b4ec134eb8f1b8cfd331663568f574d8ce93821b03e855ff8"
+  },
+  "patches": {
+    "@lucid-evolution__utils@0.2.0.patch": "73149416d552756c6593e20a600a2778a3148fe76a4607c07c0fa25561cf7dfa"
+  }
+}

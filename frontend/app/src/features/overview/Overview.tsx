@@ -268,7 +268,7 @@ export function Overview({ initial }: { initial: OverviewData }) {
           <RecentList
             rows={data.recentTxs}
             state={sectionState(data.recentTxs)}
-            keyOf={(r) => r.tx_id}
+            keyOf={(r) => `${r.tx_id}:${r.header_hash}`}
             errorMessage="Could not load recent transactions."
             onRetry={() => void refetch()}
             emptyTitle="No transactions yet"

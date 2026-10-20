@@ -90,7 +90,16 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
    * so the badge contradicted the stepper directly beneath it. The journey
    * model is the one that resolves the code together with inclusion and Cardano
    * finality, so it is the one that speaks. */
-  const lifecycle = (
+  // Served from the explorer's archive: it knows the transaction is in a block
+  // whose payload verified, and nothing about Cardano, so it says that alone.
+  const archived = data.archive !== undefined;
+  const lifecycle = archived ? (
+    <ToneBadge
+      tone="info"
+      label="In an archived block"
+      explain="Its block's payload verified against the block header. Whether Cardano settled the block is not observed here."
+    />
+  ) : (
     <ToneBadge
       tone={OUTCOME_TONE[journeyModel.outcome]}
       label={journeyModel.headline}
@@ -124,8 +133,8 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
           value={hash}
           badges={lifecycle}
         />
-        {journey}
-        <CardanoAssociation association={data.cardano} context={data.midgard} />
+        {archived ? null : journey}
+        {archived ? null : <CardanoAssociation association={data.cardano} context={data.midgard} />}
         {data.decodeError ? (
           <Callout tone="warning" title="This transaction's body could not be decoded.">
             <p>
@@ -204,6 +213,11 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
             ) : (
               "Pending"
             ),
+            // More than one archived block carrying it is a branch: the
+            // newest is shown, and the count says there are others.
+            ...((data.archive?.blocks.length ?? 0) > 1
+              ? { sub: `In ${data.archive!.blocks.length} archived blocks` }
+              : {}),
           },
           // The Cardano transaction the node recorded, beside the block it
           // settles. It is evidence, not the verdict: the badge above says
@@ -249,12 +263,12 @@ export default async function TransactionPage({ params }: { params: Promise<{ tx
       )}
 
       {!terminal ? <LifecyclePoller /> : null}
-      {journeyModel.outcome !== "complete" ? journey : null}
+      {!archived && journeyModel.outcome !== "complete" ? journey : null}
       {/* The prominent notice is for a record that needs one. A settled record
           does not, in either deployment shape: reading `matched` alone put a
           full-width panel above every settled transaction the moment the
           second source went away. */}
-      {hasRecordedSettlement(data.cardano) ? null : (
+      {archived || hasRecordedSettlement(data.cardano) ? null : (
         <CardanoAssociation association={data.cardano} context={data.midgard} />
       )}
 

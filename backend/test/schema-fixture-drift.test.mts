@@ -50,7 +50,7 @@ describe("node schema fixture", () => {
     // table's `payload_sha256` cannot satisfy another's.
     const blocks = new Map<string, string>();
     for (const m of sql.matchAll(
-      /CREATE TABLE (?:IF NOT EXISTS )?(?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\);/g,
+      /CREATE (?:UNLOGGED )?TABLE (?:IF NOT EXISTS )?(?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\)(?:\nWITH \([^\n]*\))?;/g,
     )) {
       blocks.set(m[1], m[2]);
     }

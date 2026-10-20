@@ -11,7 +11,7 @@ const DOWN_POLL_MS = 5_000;
 /** Whether the explorer API can serve, as `/api/health` reports it. One query,
  * shared by the indicator and by `ApiRecovery`. */
 export function useApiHealth() {
-  return useQuery<{ up: boolean }>({
+  return useQuery<{ up: boolean; nodeDown?: boolean }>({
     queryKey: ["health"],
     queryFn: async () => {
       const res = await fetch("/api/health");
@@ -27,7 +27,15 @@ export function HealthIndicator() {
   const { data } = useApiHealth();
 
   const up = data?.up;
-  const label = up === undefined ? "API status unknown" : up ? "API reachable" : "API unreachable";
+  const nodeDown = data?.nodeDown === true;
+  const label =
+    up === undefined
+      ? "API status unknown"
+      : nodeDown
+        ? "Midgard node not answering"
+        : up
+          ? "API reachable"
+          : "API unreachable";
 
   return (
     <span className="inline-flex items-center gap-1.5" role="status">
@@ -36,9 +44,11 @@ export function HealthIndicator() {
         className={
           up === undefined
             ? "size-2 rounded-full bg-border-strong"
-            : up
-              ? "size-2 rounded-full bg-success"
-              : "size-2 rounded-full bg-danger"
+            : nodeDown
+              ? "size-2 rounded-full bg-warning"
+              : up
+                ? "size-2 rounded-full bg-success"
+                : "size-2 rounded-full bg-danger"
         }
       />
       {label}

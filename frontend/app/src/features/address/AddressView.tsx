@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { outputHref } from "../../lib/entities";
 import { BlockRef } from "../../components/ui/domain/blockref";
 import { AdaAmount, ValueCell } from "../../components/ui/domain/amount";
 import { ApiExample } from "../../components/ui/domain/apiexample";
@@ -52,8 +53,7 @@ export function AddressView({
       {/* Said once for the page. Each affected row keeps its own label. */}
       {spentUnknown ? (
         <p className="border-b border-border px-4 py-3 mg-caption text-text-3">
-          The amount spent from this address is unknown because this response does not resolve every
-          input.
+          Spent amount unknown
         </p>
       ) : null}
       <DataTable
@@ -202,7 +202,7 @@ export function AddressView({
               ) : (
                 <Identifier
                   value={`${u.txId}#${u.index}`}
-                  href={`/transaction/${u.txId}`}
+                  href={outputHref(u.txId, u.index)}
                   head={10}
                   tail={6}
                 />
@@ -237,7 +237,7 @@ export function AddressView({
             ) : (
               <Identifier
                 value={`${u.txId}#${u.index}`}
-                href={`/transaction/${u.txId}`}
+                href={outputHref(u.txId, u.index)}
                 head={10}
                 tail={6}
               />
@@ -324,11 +324,9 @@ export function AddressView({
       {data.undecodedOutputs > 0 ? (
         <div className="mb-4">
           <Callout tone="warning" title="Balance is incomplete.">
-            {data.undecodedOutputs} UTxO{data.undecodedOutputs === 1 ? "" : "s"} at this address
-            could not be decoded (legacy encoding), so the balance above undercounts by their value.
-            {undecodableUtxos > 0
-              ? " They are listed in the UTxOs tab, marked unreadable, rather than omitted."
-              : null}
+            Excludes {data.undecodedOutputs} undecodable UTxO
+            {data.undecodedOutputs === 1 ? "" : "s"}
+            {undecodableUtxos > 0 ? ", listed in the UTxOs tab" : null}.
           </Callout>
         </div>
       ) : null}

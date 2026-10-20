@@ -65,12 +65,23 @@ const insertFinalization = async (
     "header_hash", "submitted_tx_hash", "block_end_time", "block_start_time",
     "status", "created_at", "updated_at", "state_queue_lease_token",
     "base_snapshot_id", "base_tail_header_hash", "header_cbor",
+    // Midgard f4cf28ca1 binds each journal row to the consensus profile, a v1
+    // record, the plain ledger-delta replay and its validation traces.
+    "consensus_profile_id", "format_version", "replay_kind",
+    "deployment_marker_schema_version", "deployment_manifest_id",
+    "expected_validation_traces_root", "expected_validation_trace_count",
+    "ledger_delta_spent", "ledger_delta_produced", "block_time",
     ...roots, ...counts,
   ];
   const values = [
     row.headerHash, row.submitted, row.endTime, row.endTime, row.status,
     row.endTime, row.updatedAt, row.lease, "snapshot", hex(0x00, 28),
     Buffer.alloc(1),
+    "midgard-consensus-v1", 1, "ledger_delta_v1", "midgard-deployment-marker-v1",
+    "0".repeat(64),
+    // No events, so no validation traces, under the root the schema reserves for none.
+    "0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8", 0,
+    "[]", "[]", row.endTime,
     // The roots are constrained to 64 hex characters, so a placeholder has to
     // be shaped like a root even where nothing reads it.
     ...roots.map(() => "0".repeat(64)),
@@ -88,7 +99,7 @@ const seed = async (client: import("pg").Client) => {
   await insertFinalization(client, {
     headerHash: hex(0x11, 28),
     submitted: hex(0xaa),
-    status: "finalized",
+    status: "locally_applied",
     endTime: "2026-09-01T10:00:00Z",
     updatedAt: "2026-09-01T10:05:00Z",
     lease: "lease",
@@ -126,10 +137,13 @@ const seed = async (client: import("pg").Client) => {
   await client.query(
     `INSERT INTO forced_transaction_utxos
        (tx_order_id, tx_order_l1_tx_hash, tx_order_l1_output_index, asset_name,
-        raw_datum, tx_id, tx_compact, forced_inclusion_value, operator_validity,
+        raw_datum, tx_id, tx_compact, forced_inclusion_value,
+        consensus_profile_id, native_tx_cbor, transaction_commitment,
+        cek_program_material_sidecar_cbor, cek_program_material_sidecar_sha256,
         inclusion_time, status, created_at, updated_at)
-     VALUES ($1, $2, 0, $3, $3, $4, $3, $3, 'TxIsValid', $5, 'awaiting', $5, $5)`,
-    [hex(0x41), hex(0xdd), blob, hex(0x42), "2026-09-01T07:00:00Z"],
+     VALUES ($1, $2, 0, $3, $3, $4, $3, $3,
+             'midgard-consensus-v1', $3, $6, $3, $6, $5, 'awaiting', $5, $5)`,
+    [hex(0x41), hex(0xdd), blob, hex(0x42), "2026-09-01T07:00:00Z", hex(0x5c)],
   );
 };
 
@@ -193,7 +207,7 @@ db("cardano activity, from the node's records", () => {
         const rows = (await getCardanoActivityPage(1, read)).rows;
         const settlement = rows.find((row) => row.kind === "settlement");
         expect(settlement?.headerHash).toBe("11".repeat(28));
-        expect(settlement?.status).toBe("finalized");
+        expect(settlement?.status).toBe("locally_applied");
         const deposit = rows.find((row) => row.kind === "deposit");
         expect(deposit?.recordId).toBe("21".repeat(32));
         // The header a bridge event was projected into, when the node has set
@@ -240,7 +254,7 @@ db("cardano activity, from the node's records", () => {
         const summary = await getCardanoActivitySummary(read);
         const byStatus = (kind: string) =>
           summary.byKind.find((k) => k.kind === kind)?.byStatus;
-        expect(byStatus("settlement")).toEqual([{ status: "finalized", count: 1 }]);
+        expect(byStatus("settlement")).toEqual([{ status: "locally_applied", count: 1 }]);
         expect(byStatus("deposit")).toEqual([{ status: "consumed", count: 1 }]);
         expect(byStatus("withdrawal")).toEqual([{ status: "awaiting", count: 1 }]);
         expect(byStatus("forced_transaction")).toEqual([{ status: "awaiting", count: 1 }]);

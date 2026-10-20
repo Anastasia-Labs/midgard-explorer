@@ -55,6 +55,9 @@ jobs:
       # below. Pointing this at a generic empty `postgres` meant every test
       # that queries a node table skipped on a `SELECT 1` guard that succeeded.
       POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_node_ci?schema=public
+      # The suite's server, named for the purpose. Tests never read POSTGRES_URL
+      # or a .env: on a developer machine those name the live node's server.
+      TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_node_ci?schema=public
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
       POSTGRES_USER: postgres
@@ -150,6 +153,9 @@ jobs:
 
       - name: Documentation says what exists
         run: pnpm docs:check
+
+      - name: The coverage manifest matches the schema and the read path
+        run: pnpm coverage:lint
 
       - name: The development commands' own tests
         # Node's own runner. These start processes and write throwaway

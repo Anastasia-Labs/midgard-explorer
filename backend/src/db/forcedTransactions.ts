@@ -16,13 +16,13 @@ export async function getForcedTransactionsPage(page: number, orderId?: string) 
           tx_order_l1_tx_hash: Uint8Array;
           tx_order_l1_output_index: number;
           tx_id: Uint8Array;
-          operator_validity: string;
+          forced_inclusion_value: Uint8Array;
           status: string;
           inclusion_time: Date;
           projected_header_hash: Uint8Array | null;
         }>
       >`SELECT tx_order_id, tx_order_l1_tx_hash, tx_order_l1_output_index, tx_id,
-           operator_validity, status, inclusion_time, projected_header_hash
+           forced_inclusion_value, status, inclusion_time, projected_header_hash
          FROM forced_transaction_utxos
          WHERE (${orderId ?? null}::text IS NULL OR encode(tx_order_id, 'hex') = ${orderId ?? null})
          ORDER BY inclusion_time DESC, tx_order_id DESC

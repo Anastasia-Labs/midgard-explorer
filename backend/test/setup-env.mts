@@ -1,19 +1,40 @@
-// The suite's environment, loaded before any test module is imported.
+// The suite's environment, set before any test module is imported.
 //
-// `src/config.ts` is normally what loads `.env` through dotenv and
-// dotenv-expand, and at this point in the Vitest lifecycle it has not been
-// imported yet. Several helpers read `process.env.POSTGRES_URL` directly and
-// would otherwise see nothing: the throwaway-database harness fails with "no
-// PostgreSQL URL" against a perfectly configured checkout.
+// The suite never reads the application's `.env`: on a developer machine it
+// holds the live Midgard node's credentials, so a local run read the live node
+// database, and the throwaway harness would have created its databases on that
+// server had a database test been enabled. `EXPLORER_DOTENV=off` stops
+// `src/config.ts` from loading it, and the database comes only from
+// `TEST_POSTGRES_URL`, checked against the application's `.env` first.
 //
-// dotenv's default `override: false` means a variable already provided by the
-// shell wins, which is what lets CI point the suite somewhere else.
-//
-// This replaces a setup file that also guarded the explorer's own test index
-// against pointing at real indexed data. The explorer owns no database now, so
-// there is nothing left to guard: every database-backed test either reads the
-// Midgard node's database or creates a throwaway one it drops afterwards.
-import * as dotenv from "dotenv";
-import { expand } from "dotenv-expand";
+// With no test server named, the suite runs against an address nothing listens
+// on: tests that need a database skip, and fail under REQUIRE_DB=1.
+import { assertDisposableServer } from "./helpers/testTarget.mjs";
 
-expand(dotenv.config());
+process.env.EXPLORER_DOTENV = "off";
+
+const UNCONFIGURED = "postgresql://test-database-not-configured@127.0.0.1:1/none";
+const target = process.env.TEST_POSTGRES_URL || UNCONFIGURED;
+assertDisposableServer(target);
+
+const url = new URL(target);
+process.env.POSTGRES_URL = target;
+process.env.POSTGRES_HOST = url.hostname;
+process.env.POSTGRES_PORT = url.port || "5432";
+process.env.POSTGRES_USER = decodeURIComponent(url.username);
+process.env.POSTGRES_PASSWORD = decodeURIComponent(url.password);
+process.env.POSTGRES_DB = url.pathname.slice(1);
+
+// The settings `src/config.ts` requires, for a suite that loads no `.env`.
+const defaults: Record<string, string> = {
+  BACKEND_PORT: "3101",
+  LOG_LOCATION: "./logs/test",
+  RECENT_BLOCKS_LIMIT: "10",
+  RECENT_TRANSACTIONS_LIMIT: "10",
+  TRANSACTIONS_PER_PAGE: "25",
+  BLOCKS_PER_PAGE: "25",
+  MIDGARD_MANIFEST_PATH: "./test/fixtures/manifest-sample.json",
+};
+for (const [name, value] of Object.entries(defaults)) {
+  if (!process.env[name]) process.env[name] = value;
+}

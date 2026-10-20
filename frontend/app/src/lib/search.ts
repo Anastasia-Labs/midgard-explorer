@@ -16,6 +16,7 @@ import { bech32ChecksumValid } from "./classify";
 
 export type CandidateKind =
   | "transaction"
+  | "output"
   | "block"
   | "blockHeight"
   | "address"
@@ -106,6 +107,32 @@ export function searchCandidates(raw: string): SearchResult {
     return { ok: false, reason: "Looks like an address but contains invalid characters." };
   }
 
+  // An output reference, as every page displays one: the transaction hash, #,
+  // and the output's index. It opens the transaction at that output.
+  const reference = /^([0-9a-fA-F]+)#(\d{1,5})$/.exec(input);
+  if (reference) {
+    const [, hash, index] = reference as unknown as [string, string, string];
+    if (hash.length !== 64) {
+      return {
+        ok: false,
+        reason:
+          "An output reference is a 64-character transaction hash, then # and the output's index.",
+      };
+    }
+    return {
+      ok: true,
+      ambiguous: false,
+      candidates: [
+        {
+          kind: "output",
+          label: "Output",
+          detail: `Output ${Number(index)} of a Midgard transaction`,
+          href: `/transaction/${hash.toLowerCase()}#output-${Number(index)}`,
+        },
+      ],
+    };
+  }
+
   if (HEIGHT.test(input)) {
     const digits = input.replace(/[#,]/g, "");
     // A 56- or 64-digit run is a hash typed without letters, not a height.
@@ -129,7 +156,7 @@ export function searchCandidates(raw: string): SearchResult {
     return {
       ok: false,
       reason:
-        "Not a recognized identifier. Expected a transaction or block hash, a block height, a bech32 address, or an asset fingerprint (asset1…).",
+        "Not a recognized identifier. Expected a transaction or block hash, an output reference (hash#index), a block height, a bech32 address, or an asset fingerprint (asset1…).",
     };
   }
 

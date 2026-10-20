@@ -1,5 +1,7 @@
 "use client";
 
+import { AddressRecord } from "../addressrecord";
+import { ValueCell } from "../amount";
 import {
   Background,
   Controls,
@@ -273,13 +275,33 @@ export function UtxoFlowCanvas({
               <p className="mt-1 break-all font-mono text-sm text-text">
                 {inspectedNode.item.label}
               </p>
-              {inspectedNode.item.address === null ? null : (
+              {inspectedNode.item.address === null ? null : inspectedNode.item.identity !== null &&
+                inspectedNode.item.value !== null ? (
+                // The table's address record: credentials and UTxO preview.
+                <div className="mt-2">
+                  <AddressRecord
+                    fullAddress
+                    address={inspectedNode.item.address}
+                    identity={inspectedNode.item.identity}
+                    utxo={{
+                      txId: inspectedNode.item.ref.txId,
+                      index: inspectedNode.item.ref.index,
+                      value: inspectedNode.item.value,
+                      context: inspectedNode.kind === "input" ? "Input" : "Output",
+                    }}
+                  >
+                    <ValueCell value={inspectedNode.item.value} />
+                  </AddressRecord>
+                </div>
+              ) : (
                 <p className="mt-2 break-all font-mono text-sm text-text-2">
                   {inspectedNode.item.address}
                 </p>
               )}
             </div>
-            {inspectedNode.item.resolved ? <Amount lovelace={inspectedNode.item.lovelace} /> : null}
+            {inspectedNode.item.resolved && inspectedNode.item.value === null ? (
+              <Amount lovelace={inspectedNode.item.lovelace} />
+            ) : null}
           </div>
           <div className="mt-3 flex flex-wrap gap-1">
             {inspectedNode.item.addressKind ? <Chip>{inspectedNode.item.addressKind}</Chip> : null}
@@ -293,10 +315,7 @@ export function UtxoFlowCanvas({
       ) : null}
 
       <svg data-testid="flow-connectors" aria-hidden="true" className="sr-only" />
-      <p className="mt-3 mg-caption text-text-3">
-        Lines route through the transaction: the ledger does not record which input funded which
-        output.
-      </p>
+      <p className="mt-3 mg-caption text-text-3">Inputs are not matched to outputs.</p>
     </div>
   );
 }

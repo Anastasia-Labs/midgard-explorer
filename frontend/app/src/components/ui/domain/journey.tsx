@@ -163,7 +163,9 @@ export function Journey({
         ))}
       </ol>
 
-      {model.explanation ? (
+      {/* Without its own headline the journey sits under a badge whose info
+          tip already gives this explanation, so it is not printed twice. */}
+      {model.explanation && showHeadline ? (
         <p className="px-4 pt-1.5 pb-3 mg-caption leading-relaxed text-text-2">
           {model.explanation}
         </p>

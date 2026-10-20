@@ -1612,6 +1612,82 @@
    }
   },
   {
+   "id": "da_payloads.consensus_profile_id",
+   "table": "da_payloads",
+   "column": "consensus_profile_id",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "da_payloads.validation_traces_root",
+   "table": "da_payloads",
+   "column": "validation_traces_root",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "da_payloads.validation_trace_count",
+   "table": "da_payloads",
+   "column": "validation_trace_count",
+   "type": "bigint",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "da_payloads.block_time",
+   "table": "da_payloads",
+   "column": "block_time",
+   "type": "timestamp with time zone",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
    "id": "deposits_utxos.event_id",
    "table": "deposits_utxos",
    "column": "event_id",
@@ -1984,6 +2060,44 @@
    }
   },
   {
+   "id": "deposits_utxos.l1_event_key",
+   "table": "deposits_utxos",
+   "column": "l1_event_key",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "deposits_utxos.l1_origin_outref",
+   "table": "deposits_utxos",
+   "column": "l1_origin_outref",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
    "id": "forced_transaction_utxos.tx_order_id",
    "table": "forced_transaction_utxos",
    "column": "tx_order_id",
@@ -2208,33 +2322,6 @@
     "contract": [],
     "render": [],
     "test": []
-   }
-  },
-  {
-   "id": "forced_transaction_utxos.operator_validity",
-   "table": "forced_transaction_utxos",
-   "column": "operator_validity",
-   "type": "text",
-   "status": "rendered-presence-verified",
-   "decision": "already-exposed",
-   "delivery": "n/a",
-   "evidence": {
-    "query": [
-     "backend/src/db/forcedTransactions.ts"
-    ],
-    "api": [
-     "backend/src/server/routes/forcedTransactions.ts"
-    ],
-    "contract": [
-     "frontend/contracts/src/bridge.ts"
-    ],
-    "render": [
-     "frontend/app/src/app/forced-transactions/page.tsx"
-    ],
-    "test": [
-     "backend/test/fixtures/schema/midgard-node.sql",
-     "frontend/app/e2e/fixtures/data.mjs"
-    ]
    }
   },
   {
@@ -2471,6 +2558,101 @@
     "contract": [],
     "render": [],
     "test": []
+   }
+  },
+  {
+   "id": "forced_transaction_utxos.consensus_profile_id",
+   "table": "forced_transaction_utxos",
+   "column": "consensus_profile_id",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "forced_transaction_utxos.native_tx_cbor",
+   "table": "forced_transaction_utxos",
+   "column": "native_tx_cbor",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "forced_transaction_utxos.transaction_commitment",
+   "table": "forced_transaction_utxos",
+   "column": "transaction_commitment",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "forced_transaction_utxos.cek_program_material_sidecar_cbor",
+   "table": "forced_transaction_utxos",
+   "column": "cek_program_material_sidecar_cbor",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "forced_transaction_utxos.cek_program_material_sidecar_sha256",
+   "table": "forced_transaction_utxos",
+   "column": "cek_program_material_sidecar_sha256",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
    }
   },
   {
@@ -3074,6 +3256,25 @@
    }
   },
   {
+   "id": "mempool.included_by",
+   "table": "mempool",
+   "column": "included_by",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
    "id": "mempool_ledger.tx_id",
    "table": "mempool_ledger",
    "column": "tx_id",
@@ -3638,6 +3839,44 @@
      "backend/test/fixtures/schema/midgard-node-seed.sql",
      "backend/test/fixtures/schema/midgard-node.sql",
      "frontend/app/e2e/fixtures/data.mjs"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalization_deposits.l1_event_key",
+   "table": "pending_block_finalization_deposits",
+   "column": "l1_event_key",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalization_deposits.l1_origin_outref",
+   "table": "pending_block_finalization_deposits",
+   "column": "l1_origin_outref",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
     ]
    }
   },
@@ -4360,67 +4599,41 @@
    }
   },
   {
-   "id": "pending_block_finalization_utxos.header_hash",
-   "table": "pending_block_finalization_utxos",
-   "column": "header_hash",
+   "id": "pending_block_finalization_txs.cek_program_material_sidecar_cbor",
+   "table": "pending_block_finalization_txs",
+   "column": "cek_program_material_sidecar_cbor",
    "type": "bytea",
    "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
    "evidence": {
     "query": [],
     "api": [],
     "contract": [],
     "render": [],
-    "test": []
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
    }
   },
   {
-   "id": "pending_block_finalization_utxos.outref",
-   "table": "pending_block_finalization_utxos",
-   "column": "outref",
+   "id": "pending_block_finalization_txs.cek_program_material_sidecar_sha256",
+   "table": "pending_block_finalization_txs",
+   "column": "cek_program_material_sidecar_sha256",
    "type": "bytea",
    "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
    "evidence": {
     "query": [],
     "api": [],
     "contract": [],
     "render": [],
-    "test": []
-   }
-  },
-  {
-   "id": "pending_block_finalization_utxos.ordinal",
-   "table": "pending_block_finalization_utxos",
-   "column": "ordinal",
-   "type": "integer",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
-   "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
-   }
-  },
-  {
-   "id": "pending_block_finalization_utxos.output",
-   "table": "pending_block_finalization_utxos",
-   "column": "output",
-   "type": "bytea",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
-   "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
    }
   },
   {
@@ -4594,6 +4807,120 @@
      "backend/test/fixtures/schema/midgard-node-seed.sql",
      "backend/test/fixtures/schema/midgard-node.sql",
      "frontend/app/e2e/fixtures/data.mjs"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalization_withdrawals.validity",
+   "table": "pending_block_finalization_withdrawals",
+   "column": "validity",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalization_withdrawals.validity_detail",
+   "table": "pending_block_finalization_withdrawals",
+   "column": "validity_detail",
+   "type": "jsonb",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalization_withdrawals.classification_revision",
+   "table": "pending_block_finalization_withdrawals",
+   "column": "classification_revision",
+   "type": "integer",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalization_withdrawals.classification_sha256",
+   "table": "pending_block_finalization_withdrawals",
+   "column": "classification_sha256",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalization_withdrawals.l1_event_key",
+   "table": "pending_block_finalization_withdrawals",
+   "column": "l1_event_key",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalization_withdrawals.l1_origin_outref",
+   "table": "pending_block_finalization_withdrawals",
+   "column": "l1_origin_outref",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
     ]
    }
   },
@@ -5057,15 +5384,19 @@
    "table": "pending_block_finalizations",
    "column": "base_tail_header_hash",
    "type": "bytea",
-   "status": "not-read",
+   "status": "referenced-only",
    "decision": "adopt",
    "delivery": "detail",
    "evidence": {
-    "query": [],
+    "query": [
+     "backend/src/db/settlement.ts"
+    ],
     "api": [],
     "contract": [],
     "render": [],
-    "test": []
+    "test": [
+     "backend/test/settlement-status.test.mts"
+    ]
    }
   },
   {
@@ -5665,6 +5996,490 @@
    }
   },
   {
+   "id": "pending_block_finalizations.correction_transition_digest",
+   "table": "pending_block_finalizations",
+   "column": "correction_transition_digest",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.prepared_tx_hash",
+   "table": "pending_block_finalizations",
+   "column": "prepared_tx_hash",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.intended_tx_hash",
+   "table": "pending_block_finalizations",
+   "column": "intended_tx_hash",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.signed_tx_cbor",
+   "table": "pending_block_finalizations",
+   "column": "signed_tx_cbor",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.format_version",
+   "table": "pending_block_finalizations",
+   "column": "format_version",
+   "type": "smallint",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.replay_kind",
+   "table": "pending_block_finalizations",
+   "column": "replay_kind",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.deployment_marker_schema_version",
+   "table": "pending_block_finalizations",
+   "column": "deployment_marker_schema_version",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.deployment_manifest_id",
+   "table": "pending_block_finalizations",
+   "column": "deployment_manifest_id",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.consensus_profile_id",
+   "table": "pending_block_finalizations",
+   "column": "consensus_profile_id",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.expected_validation_traces_root",
+   "table": "pending_block_finalizations",
+   "column": "expected_validation_traces_root",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.expected_validation_trace_count",
+   "table": "pending_block_finalizations",
+   "column": "expected_validation_trace_count",
+   "type": "bigint",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.ledger_delta_spent",
+   "table": "pending_block_finalizations",
+   "column": "ledger_delta_spent",
+   "type": "jsonb",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.ledger_delta_produced",
+   "table": "pending_block_finalizations",
+   "column": "ledger_delta_produced",
+   "type": "jsonb",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.mpf_owner_schema",
+   "table": "pending_block_finalizations",
+   "column": "mpf_owner_schema",
+   "type": "smallint",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.mpf_owner_binary_sha256",
+   "table": "pending_block_finalizations",
+   "column": "mpf_owner_binary_sha256",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.mpf_replay_base_root",
+   "table": "pending_block_finalizations",
+   "column": "mpf_replay_base_root",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.mpf_replay_candidate_root",
+   "table": "pending_block_finalizations",
+   "column": "mpf_replay_candidate_root",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.mpf_replay_event_log",
+   "table": "pending_block_finalizations",
+   "column": "mpf_replay_event_log",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.mpf_replay_event_log_digest",
+   "table": "pending_block_finalizations",
+   "column": "mpf_replay_event_log_digest",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.mpf_replay_event_roots",
+   "table": "pending_block_finalizations",
+   "column": "mpf_replay_event_roots",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.mpf_replay_event_count",
+   "table": "pending_block_finalizations",
+   "column": "mpf_replay_event_count",
+   "type": "integer",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.commit_anchor_hash",
+   "table": "pending_block_finalizations",
+   "column": "commit_anchor_hash",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.commit_anchor_height",
+   "table": "pending_block_finalizations",
+   "column": "commit_anchor_height",
+   "type": "bigint",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.commit_anchor_slot",
+   "table": "pending_block_finalizations",
+   "column": "commit_anchor_slot",
+   "type": "bigint",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "pending_block_finalizations.block_time",
+   "table": "pending_block_finalizations",
+   "column": "block_time",
+   "type": "timestamp with time zone",
+   "status": "rendered-presence-verified",
+   "decision": "already-exposed",
+   "delivery": "n/a",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/stateQueue.ts"
+    ],
+    "contract": [
+     "frontend/contracts/src/state-queue.ts"
+    ],
+    "render": [
+     "frontend/app/src/features/block/StateQueue.tsx"
+    ],
+    "test": [
+     "backend/test/state-queue.test.mts",
+     "frontend/app/test/state-queue.test.tsx"
+    ]
+   },
+   "alias": "blockTime"
+  },
+  {
    "id": "processed_mempool.tx_id",
    "table": "processed_mempool",
    "column": "tx_id",
@@ -5965,6 +6780,25 @@
    }
   },
   {
+   "id": "processed_mempool.included_by",
+   "table": "processed_mempool",
+   "column": "included_by",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
    "id": "tx_admissions.tx_id",
    "table": "tx_admissions",
    "column": "tx_id",
@@ -5972,38 +6806,6 @@
    "status": "referenced-only",
    "decision": "defer",
    "delivery": "n/a",
-   "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
-   }
-  },
-  {
-   "id": "tx_admissions.tx_canonical_cbor",
-   "table": "tx_admissions",
-   "column": "tx_canonical_cbor",
-   "type": "bytea",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
-   "evidence": {
-    "query": [],
-    "api": [],
-    "contract": [],
-    "render": [],
-    "test": []
-   }
-  },
-  {
-   "id": "tx_admissions.tx_canonical_cbor_sha256",
-   "table": "tx_admissions",
-   "column": "tx_canonical_cbor_sha256",
-   "type": "bytea",
-   "status": "not-read",
-   "decision": "adopt",
-   "delivery": "detail",
    "evidence": {
     "query": [],
     "api": [],
@@ -7194,6 +7996,938 @@
     "contract": [],
     "render": [],
     "test": []
+   }
+  },
+  {
+   "id": "withdrawal_utxos.classification_revision",
+   "table": "withdrawal_utxos",
+   "column": "classification_revision",
+   "type": "integer",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "withdrawal_utxos.reopened_from_header_hash",
+   "table": "withdrawal_utxos",
+   "column": "reopened_from_header_hash",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "withdrawal_utxos.l1_event_key",
+   "table": "withdrawal_utxos",
+   "column": "l1_event_key",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "withdrawal_utxos.l1_origin_outref",
+   "table": "withdrawal_utxos",
+   "column": "l1_origin_outref",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "withdrawal_utxos.l2_ledger_outref",
+   "table": "withdrawal_utxos",
+   "column": "l2_ledger_outref",
+   "type": "bytea",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "withdrawal_utxos.l2_ledger_outref_state",
+   "table": "withdrawal_utxos",
+   "column": "l2_ledger_outref_state",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "added by Midgard migrations through 0027 (`f4cf28ca1`); not yet assessed",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.header_hash",
+   "table": "node_landed_blocks",
+   "column": "header_hash",
+   "type": "bytea",
+   "status": "rendered-presence-verified",
+   "decision": "already-exposed",
+   "delivery": "n/a",
+   "alias": "headerHash",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/stateQueue.ts"
+    ],
+    "contract": [
+     "frontend/contracts/src/state-queue.ts"
+    ],
+    "render": [
+     "frontend/app/src/features/block/StateQueue.tsx"
+    ],
+    "test": [
+     "backend/test/state-queue.test.mts",
+     "frontend/app/test/state-queue.test.tsx"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.parent_header_hash",
+   "table": "node_landed_blocks",
+   "column": "parent_header_hash",
+   "type": "bytea",
+   "status": "rendered-presence-verified",
+   "decision": "already-exposed",
+   "delivery": "n/a",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/stateQueue.ts"
+    ],
+    "contract": [
+     "frontend/contracts/src/state-queue.ts"
+    ],
+    "render": [
+     "frontend/app/src/features/block/StateQueue.tsx"
+    ],
+    "test": [
+     "backend/test/state-queue.test.mts",
+     "frontend/app/test/state-queue.test.tsx"
+    ]
+   },
+   "alias": "parentHeaderHash"
+  },
+  {
+   "id": "node_landed_blocks.parent_utxos_root",
+   "table": "node_landed_blocks",
+   "column": "parent_utxos_root",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the block page shows the header's roots",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.utxos_root",
+   "table": "node_landed_blocks",
+   "column": "utxos_root",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the block page shows the header's roots",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.kind",
+   "table": "node_landed_blocks",
+   "column": "kind",
+   "type": "text",
+   "status": "rendered-presence-verified",
+   "decision": "already-exposed",
+   "delivery": "n/a",
+   "alias": "origin",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/stateQueue.ts"
+    ],
+    "contract": [
+     "frontend/contracts/src/state-queue.ts"
+    ],
+    "render": [
+     "frontend/app/src/features/block/StateQueue.tsx"
+    ],
+    "test": [
+     "backend/test/state-queue.test.mts",
+     "frontend/app/test/state-queue.test.tsx"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.state",
+   "table": "node_landed_blocks",
+   "column": "state",
+   "type": "text",
+   "status": "referenced-only",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "filters queued from removed; removed headers are counted",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/state-queue.test.mts"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.applied",
+   "table": "node_landed_blocks",
+   "column": "applied",
+   "type": "boolean",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's own ledger bookkeeping",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.spent",
+   "table": "node_landed_blocks",
+   "column": "spent",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the block page lists the transactions",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.produced_outrefs",
+   "table": "node_landed_blocks",
+   "column": "produced_outrefs",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the block page lists the transactions",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.produced_outputs",
+   "table": "node_landed_blocks",
+   "column": "produced_outputs",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the block page lists the transactions",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.deposit_ids",
+   "table": "node_landed_blocks",
+   "column": "deposit_ids",
+   "type": "bytea[]",
+   "status": "transformed-rendered",
+   "decision": "already-exposed",
+   "delivery": "n/a",
+   "transform": "cardinality -> deposits",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/stateQueue.ts"
+    ],
+    "contract": [
+     "frontend/contracts/src/state-queue.ts"
+    ],
+    "render": [
+     "frontend/app/src/features/block/StateQueue.tsx"
+    ],
+    "test": [
+     "backend/test/state-queue.test.mts",
+     "frontend/app/test/state-queue.test.tsx"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.withdrawals",
+   "table": "node_landed_blocks",
+   "column": "withdrawals",
+   "type": "jsonb",
+   "status": "transformed-rendered",
+   "decision": "already-exposed",
+   "delivery": "n/a",
+   "transform": "jsonb_array_length -> withdrawals",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/stateQueue.ts"
+    ],
+    "contract": [
+     "frontend/contracts/src/state-queue.ts"
+    ],
+    "render": [
+     "frontend/app/src/features/block/StateQueue.tsx"
+    ],
+    "test": [
+     "backend/test/state-queue.test.mts",
+     "frontend/app/test/state-queue.test.tsx"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.forced_ids",
+   "table": "node_landed_blocks",
+   "column": "forced_ids",
+   "type": "bytea[]",
+   "status": "transformed-rendered",
+   "decision": "already-exposed",
+   "delivery": "n/a",
+   "transform": "cardinality -> forcedTransactions",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/stateQueue.ts"
+    ],
+    "contract": [
+     "frontend/contracts/src/state-queue.ts"
+    ],
+    "render": [
+     "frontend/app/src/features/block/StateQueue.tsx"
+    ],
+    "test": [
+     "backend/test/state-queue.test.mts",
+     "frontend/app/test/state-queue.test.tsx"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.tx_ids",
+   "table": "node_landed_blocks",
+   "column": "tx_ids",
+   "type": "bytea[]",
+   "status": "transformed-rendered",
+   "decision": "already-exposed",
+   "delivery": "n/a",
+   "transform": "cardinality -> transactions",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/stateQueue.ts"
+    ],
+    "contract": [
+     "frontend/contracts/src/state-queue.ts"
+    ],
+    "render": [
+     "frontend/app/src/features/block/StateQueue.tsx"
+    ],
+    "test": [
+     "backend/test/state-queue.test.mts",
+     "frontend/app/test/state-queue.test.tsx"
+    ]
+   }
+  },
+  {
+   "id": "node_landed_blocks.processed_at",
+   "table": "node_landed_blocks",
+   "column": "processed_at",
+   "type": "timestamptz",
+   "status": "rendered-presence-verified",
+   "decision": "already-exposed",
+   "delivery": "n/a",
+   "alias": "processedAt",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/stateQueue.ts"
+    ],
+    "contract": [
+     "frontend/contracts/src/state-queue.ts"
+    ],
+    "render": [
+     "frontend/app/src/features/block/StateQueue.tsx"
+    ],
+    "test": [
+     "backend/test/state-queue.test.mts",
+     "frontend/app/test/state-queue.test.tsx"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_ledger_frontier.id",
+   "table": "node_confirmed_ledger_frontier",
+   "column": "id",
+   "type": "boolean",
+   "status": "not-read",
+   "decision": "exclude",
+   "delivery": "n/a",
+   "reason": "the single row's key, always true",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_ledger_frontier.header_hash",
+   "table": "node_confirmed_ledger_frontier",
+   "column": "header_hash",
+   "type": "bytea",
+   "status": "rendered-presence-verified",
+   "decision": "already-exposed",
+   "delivery": "n/a",
+   "alias": "confirmed.headerHash",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/stateQueue.ts"
+    ],
+    "contract": [
+     "frontend/contracts/src/state-queue.ts"
+    ],
+    "render": [
+     "frontend/app/src/features/block/StateQueue.tsx"
+    ],
+    "test": [
+     "backend/test/state-queue.test.mts",
+     "frontend/app/test/state-queue.test.tsx"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_ledger_frontier.utxos_root",
+   "table": "node_confirmed_ledger_frontier",
+   "column": "utxos_root",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the confirmed header's own block page shows it",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_ledger_frontier.updated_at",
+   "table": "node_confirmed_ledger_frontier",
+   "column": "updated_at",
+   "type": "timestamptz",
+   "status": "rendered-presence-verified",
+   "decision": "already-exposed",
+   "delivery": "n/a",
+   "alias": "confirmed.updatedAt",
+   "evidence": {
+    "query": [
+     "backend/src/db/stateQueue.ts"
+    ],
+    "api": [
+     "backend/src/server/routes/stateQueue.ts"
+    ],
+    "contract": [
+     "frontend/contracts/src/state-queue.ts"
+    ],
+    "render": [
+     "frontend/app/src/features/block/StateQueue.tsx"
+    ],
+    "test": [
+     "backend/test/state-queue.test.mts",
+     "frontend/app/test/state-queue.test.tsx"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.header_hash",
+   "table": "node_confirmed_merges",
+   "column": "header_hash",
+   "type": "bytea",
+   "status": "referenced-only",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "marks a block merged while a rollback could still undo it",
+   "evidence": {
+    "query": [
+     "backend/src/db/settlement.ts"
+    ],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/settlement-status.test.mts"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.parent_header_hash",
+   "table": "node_confirmed_merges",
+   "column": "parent_header_hash",
+   "type": "bytea",
+   "status": "referenced-only",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "links a merged block to its parent for the ancestry walk",
+   "evidence": {
+    "query": [
+     "backend/src/db/settlement.ts"
+    ],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/settlement-status.test.mts"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.parent_utxos_root",
+   "table": "node_confirmed_merges",
+   "column": "parent_utxos_root",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.utxos_root",
+   "table": "node_confirmed_merges",
+   "column": "utxos_root",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.kind",
+   "table": "node_confirmed_merges",
+   "column": "kind",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.applied",
+   "table": "node_confirmed_merges",
+   "column": "applied",
+   "type": "boolean",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.spent",
+   "table": "node_confirmed_merges",
+   "column": "spent",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.produced_outrefs",
+   "table": "node_confirmed_merges",
+   "column": "produced_outrefs",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.produced_outputs",
+   "table": "node_confirmed_merges",
+   "column": "produced_outputs",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.deposit_ids",
+   "table": "node_confirmed_merges",
+   "column": "deposit_ids",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.withdrawals",
+   "table": "node_confirmed_merges",
+   "column": "withdrawals",
+   "type": "jsonb",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.forced_ids",
+   "table": "node_confirmed_merges",
+   "column": "forced_ids",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.tx_ids",
+   "table": "node_confirmed_merges",
+   "column": "tx_ids",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.consumed_deposit_ids",
+   "table": "node_confirmed_merges",
+   "column": "consumed_deposit_ids",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.finalized_withdrawal_ids",
+   "table": "node_confirmed_merges",
+   "column": "finalized_withdrawal_ids",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.finalized_forced_ids",
+   "table": "node_confirmed_merges",
+   "column": "finalized_forced_ids",
+   "type": "bytea[]",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.merge_slot",
+   "table": "node_confirmed_merges",
+   "column": "merge_slot",
+   "type": "bigint",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the merge's Cardano point; a candidate for the block's settlement details",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.merge_out_ref",
+   "table": "node_confirmed_merges",
+   "column": "merge_out_ref",
+   "type": "text",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the merge's Cardano point; a candidate for the block's settlement details",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
+   }
+  },
+  {
+   "id": "node_confirmed_merges.folded_at",
+   "table": "node_confirmed_merges",
+   "column": "folded_at",
+   "type": "timestamptz",
+   "status": "not-read",
+   "decision": "defer",
+   "delivery": "n/a",
+   "reason": "the node's record for undoing the merge",
+   "evidence": {
+    "query": [],
+    "api": [],
+    "contract": [],
+    "render": [],
+    "test": [
+     "backend/test/fixtures/schema/midgard-node.sql"
+    ]
    }
   }
  ]

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Client } from "pg";
+import { assertDisposableServer } from "./testTarget.mjs";
 
 /**
  * Isolated benchmark and test databases.
@@ -70,15 +71,18 @@ export function assertThrowawayName(name: string): void {
 /**
  * Which PostgreSQL server the harness operates on.
  *
- * Defaults to `POSTGRES_URL`, but the benchmark harness passes
- * `BENCH_POSTGRES_URL` instead. That separation matters: throwaway databases
- * were landing on the same instance as the live Midgard node, so a benchmark
- * competed with the node for CPU and shared buffers and the number it produced
- * described the contention rather than the query.
+ * Only a server named for the purpose: `TEST_POSTGRES_URL`, or the URL the
+ * benchmark harness passes from `BENCH_POSTGRES_URL`. It never falls back to
+ * `POSTGRES_URL`, the application's setting: on a developer machine that names
+ * the live Midgard node's server. The target is checked against the
+ * application's `.env` before anything connects to it.
  */
 export function serverUrl(baseUrl?: string): string {
-  const base = baseUrl ?? process.env.POSTGRES_URL;
-  if (!base) throw new Error("no PostgreSQL URL: set POSTGRES_URL or pass one");
+  const base = baseUrl ?? process.env.TEST_POSTGRES_URL;
+  if (!base) {
+    throw new Error("no test PostgreSQL server: set TEST_POSTGRES_URL to a disposable server");
+  }
+  assertDisposableServer(base);
   return base;
 }
 

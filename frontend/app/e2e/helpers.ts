@@ -8,6 +8,11 @@ import { test as base, expect, type Page } from "@playwright/test";
 export const FIXTURE_PORT = Number(process.env.FIXTURE_PORT ?? 3101);
 export const FIXTURE = `http://127.0.0.1:${FIXTURE_PORT}`;
 
+/** Where an applied block stands, as the backend derives it from the node's
+ * follower: in the queue, merged, final, or not yet placed. */
+export const APPLIED_STATUSES = ["waiting_to_merge", "merged", "finalized", "locally_applied"];
+export const APPLIED_LABEL = /^(Waiting to merge|Merged|Finalized|Merge not recorded)$/;
+
 /** Drives the fixture backend's fault injection. */
 export async function inject(page: Page, params: string) {
   const res = await page.request.post(`${FIXTURE}/__control?${params}`);
@@ -51,8 +56,18 @@ export const test = base.extend<{ cleanFixture: void; pinnedClock: void }>({
   cleanFixture: [
     async ({ request }, use) => {
       await request.post(`${FIXTURE}/__control?fail=&slow=0&health=`);
+      const resetAt = Date.now();
       await use();
-      await request.post(`${FIXTURE}/__control?fail=&slow=0&health=`);
+      // The teardown reset failed once (2026-10-20, "socket hang up", not
+      // reproduced in 120 reruns). The idle time since the first reset is
+      // the evidence a keep-alive race would leave, so a failure carries it.
+      try {
+        await request.post(`${FIXTURE}/__control?fail=&slow=0&health=`);
+      } catch (error) {
+        throw new Error(
+          `fixture reset failed ${Date.now() - resetAt} ms after the first reset: ${String(error)}`,
+        );
+      }
     },
     { auto: true },
   ],

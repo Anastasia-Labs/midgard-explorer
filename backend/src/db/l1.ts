@@ -39,6 +39,13 @@ const toIdentity = (entry: ValidatorEntry): ValidatorIdentity => ({
 
 /** Every validator the manifest declares. Throws when the manifest cannot be
  * read, which is a configuration failure and not an empty result. */
+/** Whether this process has a deployment manifest to describe. ADR 0003 lets a
+ * development instance serve L2 reads without one, so the routes that only
+ * describe the manifest ask this first rather than throwing. */
+export function manifestConfigured(): boolean {
+  return config.MIDGARD_MANIFEST_PATH !== undefined;
+}
+
 export function getManifestValidators(): ValidatorEntry[] {
   return loadManifest(config.MIDGARD_MANIFEST_PATH).validators;
 }

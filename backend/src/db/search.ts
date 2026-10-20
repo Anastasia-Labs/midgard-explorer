@@ -1,6 +1,6 @@
 import { prisma } from "../db";
 import { readConsistently } from "./consistent";
-import { getManifestValidators } from "./l1";
+import { getManifestValidators, manifestConfigured } from "./l1";
 
 /** Prefix search over identifiers.
  *
@@ -139,7 +139,7 @@ export async function searchByPrefix(prefix: string): Promise<SearchHit[]> {
       height: t.height,
       headerHash: t.header_hash,
     })),
-    ...getManifestValidators()
+    ...(manifestConfigured() ? getManifestValidators() : [])
       .filter((row) => row.scriptHash.startsWith(lower))
       .map((row): SearchHit => ({ kind: "validator", scriptHash: row.scriptHash, family: row.family })),
     ...deposits.map((row): SearchHit => ({ kind: "deposit", eventId: row.event_id, txHash: row.tx_hash })),

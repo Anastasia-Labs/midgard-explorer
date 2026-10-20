@@ -31,6 +31,9 @@ export const NODE_TABLES = [
   "immutable",
   "mempool",
   "mempool_ledger",
+  "node_confirmed_ledger_frontier",
+  "node_confirmed_merges",
+  "node_landed_blocks",
   "pending_block_finalization_deposits",
   "pending_block_finalization_forced_transactions",
   "pending_block_finalization_txs",
@@ -47,15 +50,20 @@ export type Queryable = {
   $queryRawUnsafe: <T>(sql: string, ...values: unknown[]) => Promise<T>;
 };
 
-/** `to_regclass` returns null for a relation that does not exist rather than
- * raising, so one round trip can report every missing table at once instead of
- * failing on the first. */
+/** The tables the connected role cannot read: those that do not exist, and
+ * those it has no SELECT on, which fail a query just the same. `to_regclass`
+ * returns null for a relation that does not exist rather than raising, so one
+ * round trip can report every one at once instead of failing on the first. */
 export async function missingRelations(
   client: Queryable,
   tables: readonly string[],
 ): Promise<string[]> {
   const selects = tables
-    .map((_, i) => `to_regclass($${i + 1}) IS NOT NULL AS "t${i}"`)
+    .map(
+      (_, i) =>
+        `CASE WHEN to_regclass($${i + 1}) IS NULL THEN false ` +
+        `ELSE has_table_privilege(to_regclass($${i + 1}), 'SELECT') END AS "t${i}"`,
+    )
     .join(", ");
   const [row] = await client.$queryRawUnsafe<Array<Record<string, boolean>>>(
     `SELECT ${selects};`,
@@ -72,7 +80,7 @@ async function assertTables(
   const missing = await missingRelations(client, tables);
   if (missing.length > 0) {
     throw new Error(
-      `${label} is missing ${missing.length} required ` +
+      `${label} is missing, or does not let this role read, ${missing.length} required ` +
         `${missing.length === 1 ? "relation" : "relations"}: ${missing.join(", ")}`,
     );
   }

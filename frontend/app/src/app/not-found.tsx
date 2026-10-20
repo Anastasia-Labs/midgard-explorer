@@ -17,10 +17,7 @@ export default function NotFound() {
       <h1 className="mt-2 font-display text-2xl font-semibold tracking-tight text-page-title sm:text-title">
         Page not found
       </h1>
-      <p className="mt-2 text-body text-page-copy">
-        No block, transaction, or address matches this path. Try searching for an identifier, or
-        return to the overview.
-      </p>
+      <p className="mt-2 text-body text-page-copy">Nothing matches this path.</p>
       <div className="mx-auto mt-5 max-w-md">
         <SearchBox variant="hero" />
       </div>

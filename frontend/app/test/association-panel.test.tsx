@@ -3,6 +3,18 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { Association, DeploymentContext } from "@midgard-explorer/contracts";
 import { CardanoAssociation, hasRecordedSettlement } from "../src/components/ui/domain/association";
+import { SettlementDetails } from "../src/components/ui/domain/settlementdetails";
+import type { JourneyModel } from "../src/lib/journey";
+import { statusOf } from "../src/lib/status-registry";
+
+const journey: JourneyModel = {
+  kind: "block",
+  outcome: "complete",
+  headline: "",
+  explanation: "",
+  stages: [],
+  rawStatus: "finalized",
+};
 
 /**
  * The rule this panel exists to keep: nothing it says is presented as
@@ -54,11 +66,43 @@ const association = (over: Record<string, unknown> = {}): Association =>
     ...over,
   }) as unknown as Association;
 
+/** The journal wrote `locally_applied`; finalized is the explorer's reading
+ * of the follower's tables. */
+const derived = () =>
+  association({
+    state: "finalized",
+    evidence: [
+      {
+        source: "midgard_finalization_journal",
+        transactionHash: NODE_HASH,
+        outputIndex: null,
+        blockHeight: null,
+        observedAt: null,
+        rawState: "locally_applied",
+      },
+    ],
+  });
+
+describe("a settlement whose state is derived", () => {
+  it("shows the state once, and never as the journal's word", () => {
+    render(<SettlementDetails association={derived()} context={context} journey={journey} />);
+    expect(screen.getByText("Finalized")).toBeTruthy();
+    expect(screen.queryByText(/reported by/)).toBeNull();
+    expect(screen.queryByText(statusOf("locally_applied").label)).toBeNull();
+  });
+
+  it("lists the journal's record by its hash, without a state it did not write", () => {
+    render(<CardanoAssociation association={derived()} context={context} />);
+    expect(screen.getByText("Midgard node")).toBeTruthy();
+    expect(screen.queryByText(statusOf("locally_applied").label)).toBeNull();
+  });
+});
+
 describe("a settlement the node reported", () => {
   it("attributes the transaction to the node", () => {
     render(<CardanoAssociation association={association()} context={context} />);
     expect(screen.getByText("Settlement transaction reported by the node")).toBeTruthy();
-    expect(screen.getByText(/does not check Cardano itself/)).toBeTruthy();
+    expect(screen.getByText(/not checked on Cardano/)).toBeTruthy();
     expect(screen.getByText("Midgard node")).toBeTruthy();
   });
 
@@ -72,12 +116,11 @@ describe("a settlement the node reported", () => {
     }
   });
 
-  it("keeps the settlement link and states the node's state in the reader's words", () => {
+  it("keeps the settlement link, and shows no raw state code", () => {
     const { container } = render(
       <CardanoAssociation association={association()} context={context} />,
     );
     expect(container.querySelector(`a[href="/l1/transaction/${NODE_HASH}"]`)).toBeTruthy();
-    expect(container.textContent).toContain("Finalized");
     expect(container.textContent).not.toContain("finalized");
   });
 
@@ -85,7 +128,7 @@ describe("a settlement the node reported", () => {
     const { container } = render(
       <CardanoAssociation association={association()} context={context} />,
     );
-    expect(container.textContent).toContain("Node database on Preprod, up to date (lag 3s)");
+    expect(container.textContent).toContain("Node database · Preprod · up to date (lag 3s)");
     expect(container.textContent).not.toMatch(/primary on preprod/);
   });
 
@@ -123,7 +166,7 @@ describe("a record with no settlement transaction", () => {
       />,
     );
     expect(screen.getByText("Settlement could not be established")).toBeTruthy();
-    expect(screen.getByText(/says nothing about whether settlement happened/)).toBeTruthy();
+    expect(screen.getByText(/Not a sign it went unsettled/)).toBeTruthy();
   });
 });
 
@@ -182,7 +225,7 @@ describe("a state this build does not recognise", () => {
         context={context}
       />,
     );
-    expect(screen.getByText(/does not recognise the state/i)).toBeTruthy();
+    expect(screen.getByText(/Unrecognized settlement state/)).toBeTruthy();
     expect((container.textContent ?? "").includes("Midgard node")).toBe(true);
   });
 });

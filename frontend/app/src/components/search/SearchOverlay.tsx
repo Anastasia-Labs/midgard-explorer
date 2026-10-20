@@ -200,9 +200,9 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
           </div>
 
           <p className="mt-2 mg-caption text-text-3">
-            Transaction or block hash · block height · bech32 address · asset fingerprint (
-            <span className="font-mono">asset1…</span>) · or the first {MIN_PREFIX}+ characters of a
-            hash
+            Transaction or block hash · output (hash#index) · block height · bech32 address · asset
+            fingerprint (<span className="font-mono">asset1…</span>) · or the first {MIN_PREFIX}+
+            characters of a hash
           </p>
 
           {reason !== null ? (
@@ -235,10 +235,17 @@ export function SearchBox({ variant }: { variant: SearchVariant }) {
                             candidate's own contextual name ("Minting policy",
                             "Block #40") and says more than the generic type
                             name would. `blockHeight` is a way of naming a
-                            block, not a separate kind of record. */}
+                            block, not a separate kind of record, and an
+                            output is part of a transaction. */}
                         <span className="flex items-center gap-1.5 text-sm font-medium text-text">
                           <EntityIcon
-                            kind={c.kind === "blockHeight" ? "block" : c.kind}
+                            kind={
+                              c.kind === "blockHeight"
+                                ? "block"
+                                : c.kind === "output"
+                                  ? "transaction"
+                                  : c.kind
+                            }
                             size={14}
                           />
                           {c.label}

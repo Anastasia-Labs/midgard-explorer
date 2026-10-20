@@ -2,6 +2,7 @@ import { prisma } from "../db";
 import { readConsistently, type NodeReader } from "./consistent";
 import { config } from "../config";
 import { toBytes } from "../utils";
+import { SETTLED_CHAIN, settlementStatus } from "./settlement";
 
 
 
@@ -9,22 +10,27 @@ import { toBytes } from "../utils";
 // Checks tiers in priority order: immutable (committed), processed_mempool
 // (pending_commit), mempool (accepted). A tx may exist in multiple tiers
 // transiently. `pending` flags unconfirmed txs; `source` records the tier found.
+// `inBlock` says a block includes it: a mempool row stays where it is, marked
+// with that block in `included_by` (Midgard migration 0013), until the block's
+// fold is final, so finding it in a mempool tier does not make it pending.
 export async function getTransaction(txId: string, db: NodeReader = prisma) {
   const txBytes = toBytes(txId);
   const immutableRow = await db.immutableTx.findUnique({
     where: { tx_id: txBytes },
   });
   if (immutableRow) {
-    return { ...immutableRow, pending: false, source: "immutable" as const };
+    return { ...immutableRow, pending: false, inBlock: true, source: "immutable" as const };
   }
 
   const processedRow = await db.processedMempoolTx.findUnique({
     where: { tx_id: txBytes },
   });
   if (processedRow) {
+    const inBlock = processedRow.included_by !== null;
     return {
       ...processedRow,
-      pending: true,
+      pending: !inBlock,
+      inBlock,
       source: "processed_mempool" as const,
     };
   }
@@ -33,7 +39,8 @@ export async function getTransaction(txId: string, db: NodeReader = prisma) {
     where: { tx_id: txBytes },
   });
   if (mempoolRow) {
-    return { ...mempoolRow, pending: true, source: "mempool" as const };
+    const inBlock = mempoolRow.included_by !== null;
+    return { ...mempoolRow, pending: !inBlock, inBlock, source: "mempool" as const };
   }
 
   // The journal payload survives merge even when `blocks` no longer does.
@@ -46,8 +53,33 @@ export async function getTransaction(txId: string, db: NodeReader = prisma) {
      ORDER BY source_time_stamp_tz DESC LIMIT 1;`;
   const journal = journalRows[0];
   return journal
-    ? { ...journal, pending: false, source: "journal" as const }
+    ? { ...journal, pending: false, inBlock: true, source: "journal" as const }
     : null;
+}
+
+/**
+ * Transaction bodies by id, from every tier `getTransaction` reads, in one
+ * round trip. Used to describe a spent input from the transaction that
+ * created it, after its output has left the ledger. Ids not held are absent.
+ */
+export async function getTransactionBodies(
+  txIds: readonly string[],
+  db: NodeReader = prisma,
+): Promise<Map<string, Uint8Array>> {
+  const found = new Map<string, Uint8Array>();
+  if (txIds.length === 0) return found;
+  const ids = [...new Set(txIds)].map((id) => Buffer.from(toBytes(id)));
+  const rows = await db.$queryRaw<Array<{ tx_id: Uint8Array; tx: Uint8Array }>>`
+    SELECT tx_id, tx FROM immutable WHERE tx_id = ANY(${ids})
+    UNION ALL SELECT tx_id, tx FROM processed_mempool WHERE tx_id = ANY(${ids})
+    UNION ALL SELECT tx_id, tx FROM mempool WHERE tx_id = ANY(${ids})
+    UNION ALL SELECT member_id AS tx_id, payload_cbor AS tx
+      FROM pending_block_finalization_txs WHERE member_id = ANY(${ids});`;
+  for (const row of rows) {
+    const key = Buffer.from(row.tx_id).toString("hex");
+    if (!found.has(key)) found.set(key, row.tx);
+  }
+  return found;
 }
 
 export type TxLifecycle =
@@ -209,14 +241,15 @@ export function transactionsPageRows(
   limit: number,
   filter: string | null,
 ) {
-  return db.$queryRaw<TransactionPageRow[]>`WITH page AS (
+  return db.$queryRaw<TransactionPageRow[]>`WITH RECURSIVE ${SETTLED_CHAIN}, page AS (
       -- Keys only. Sorting with the transaction bytes attached carried
       -- every row before the page through the sort, which spilled to disk
       -- on a deep page; the bytes are read for the page's rows alone.
-      SELECT j.header_hash, j.member_id, j.ordinal, f.block_end_time, f.status
+      SELECT j.header_hash, j.member_id, j.ordinal, f.block_end_time,
+             ${settlementStatus("f")} AS status
         FROM pending_block_finalization_txs AS j
         JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
-       WHERE ${filter}::text IS NULL OR f.status = ${filter}
+       WHERE ${filter}::text IS NULL OR ${settlementStatus("f")} = ${filter}
        ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC,
                 j.ordinal ASC
       OFFSET ${offset}
@@ -252,10 +285,11 @@ export async function getTransactionsPage(page: number, status?: string) {
     Promise.all(  [
       transactionsPageRows(db, offset, limit, filter),
       db.$queryRaw<Array<{ n: bigint }>>`
+        WITH RECURSIVE ${SETTLED_CHAIN}
         SELECT COUNT(*)::bigint AS n
           FROM pending_block_finalization_txs AS j
           JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
-         WHERE ${filter}::text IS NULL OR f.status = ${filter};`.then((r) =>
+         WHERE ${filter}::text IS NULL OR ${settlementStatus("f")} = ${filter};`.then((r) =>
         Number(r[0]?.n ?? 0n),
       ),
     ]),

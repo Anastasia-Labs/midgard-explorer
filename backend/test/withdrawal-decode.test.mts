@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { Data } from "@lucid-evolution/lucid";
+import * as SDK from "@al-ft/midgard-sdk";
 import {
   decodeWithdrawalAddress,
   decodeWithdrawalValue,
@@ -42,6 +44,24 @@ describe("canonical withdrawal field decoding", () => {
       value: null,
       error: "Failed to decode l1_address as Midgard SDK Plutus data.",
     });
+  });
+});
+
+/** The SDK at Midgard f4cf28ca1 writes a pointer stake credential as one flat
+ * constructor of its three integers, as the ledger and the Aiken stdlib do. */
+describe("a pointer stake credential", () => {
+  it("is recognised and reported as unsupported, not as undecodable", () => {
+    const pointer = Data.to(
+      {
+        paymentCredential: { PublicKeyCredential: ["e3".repeat(28)] },
+        stakeCredential: {
+          Pointer: { slotNumber: 1n, transactionIndex: 2n, certificateIndex: 3n },
+        },
+      },
+      SDK.AddressData,
+    );
+    const result = decodeWithdrawalAddress(Buffer.from(pointer, "hex"), "preprod");
+    expect(result.error).toBe("Pointer stake credentials are not supported.");
   });
 });
 

@@ -163,3 +163,32 @@ describe("parseConfig", () => {
     });
   });
 });
+
+/** The public source reads an archive and node HTTP. It needs no database,
+ * so it must boot with no database setting at all, and it must refuse to
+ * boot without the three things it does read. */
+describe("the public source", () => {
+  const { POSTGRES_URL: _u, POSTGRES_HOST: _h, POSTGRES_PORT: _p, POSTGRES_USER: _s, POSTGRES_PASSWORD: _w, POSTGRES_DB: _d, ...noDatabase } = valid;
+  const publicEnv = {
+    ...noDatabase,
+    L2_SOURCE: "public",
+    ARCHIVE_DIR: "./test/fixtures",
+    MIDGARD_NODE_URL: "http://127.0.0.1:3000",
+  };
+
+  it("boots with no database setting", () => {
+    const c = parseConfig(publicEnv);
+    expect(c.L2_SOURCE).toBe("public");
+    expect(c.POSTGRES_URL).toBeUndefined();
+  });
+
+  it("names each setting it reads when one is missing", () => {
+    const { ARCHIVE_DIR: _a, MIDGARD_NODE_URL: _n, MIDGARD_MANIFEST_PATH: _m, ...rest } = publicEnv;
+    expect(() => parseConfig(rest)).toThrow(/ARCHIVE_DIR[\s\S]*MIDGARD_NODE_URL[\s\S]*MIDGARD_MANIFEST_PATH|MIDGARD_MANIFEST_PATH[\s\S]*ARCHIVE_DIR/);
+  });
+
+  it("leaves the replica source requiring its database, by default", () => {
+    expect(parseConfig(valid).L2_SOURCE).toBe("replica");
+    expect(() => parseConfig(noDatabase)).toThrow(/POSTGRES_URL/);
+  });
+});

@@ -113,7 +113,9 @@ test.describe("task performance", () => {
       await page.waitForURL(new RegExp(`/transaction/${hash}$`));
       // The answer is the record header's badge. It used to be the journey's
       // own heading, one of three places this page stated a lifecycle.
-      return page.locator('[data-region="identity"]').getByText(/Committed|Finalized/);
+      return page
+        .locator('[data-region="identity"]')
+        .getByText(/Committed|Waiting to merge|Merged|Merge not recorded|Finalized/);
     });
     expect(r.steps).toBeLessThanOrEqual(3);
   });
@@ -134,7 +136,7 @@ test.describe("task performance", () => {
       await page.waitForURL(new RegExp(`/transaction/${hash}$`));
       return page
         .getByText(
-          /Final on Cardano|Finalized|Pending submission|Submitted|Awaiting stability|Settlement/,
+          /Waiting to merge|Merged|Merge not recorded|Final on Cardano|Finalized|Pending submission|Submitted|Awaiting stability|Settlement/,
         )
         .first();
     });
@@ -155,7 +157,7 @@ test.describe("task performance", () => {
       return page
         .locator('[data-region="identity"]')
         .getByText(
-          /^Finalized$|awaiting Cardano finality|No finalization record yet|Finalization abandoned|Settlement stage not recognized/,
+          /^Waiting to merge$|^Merged$|^Merge not recorded$|^Finalized$|awaiting Cardano finality|No finalization record yet|Finalization abandoned|Settlement stage not recognized/,
         )
         .first();
     });

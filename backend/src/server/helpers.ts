@@ -1,3 +1,4 @@
+import type { Response } from "express";
 /**
  * Rewrites BigInt values as strings so a response can be serialized.
  *
@@ -29,3 +30,18 @@ export const bigintStringify = (value: unknown): unknown => {
   }
   return out;
 };
+
+/**
+ * The answer from a route that only describes the deployment manifest, on an
+ * instance that has none configured. A typed reason rather than a 500, so the
+ * interface can say the information is unavailable here instead of reporting
+ * an internal error and offering a retry that cannot help.
+ */
+export const sendManifestNotConfigured = (res: Response) =>
+  res
+    .status(503)
+    .set("Cache-Control", "no-store")
+    .json({
+      error: "This explorer has no deployment manifest configured.",
+      unavailable: "manifest_not_configured",
+    });

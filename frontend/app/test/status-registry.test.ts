@@ -11,6 +11,15 @@ const NODE_CODES = {
     "submitted_local_finalization_pending",
     "submitted_unconfirmed",
     "observed_waiting_stability",
+    "locally_applied",
+    // Not node codes: the backend derives these for an applied block from the
+    // node's follower tables (backend/src/db/settlement.ts).
+    "waiting_to_merge",
+    "merged",
+    // Not a node code: the explorer's public source sends it for a block whose
+    // settlement it does not read.
+    "not_observed",
+    // An older node's terminal status, before Midgard migration 0011.
     "finalized",
     "abandoned",
   ],
@@ -26,6 +35,10 @@ const NODE_CODES = {
     "UnpayableWithdrawalValue",
   ],
   forced_validity: [
+    // The verdict a current node encodes in forced_inclusion_value.
+    "ForcedTxValid",
+    "ForcedTxInvalid",
+    // The codes an older node stored in operator_validity.
     "NonExistentInputUtxo",
     "InvalidSignature",
     "FailedScript",
@@ -80,6 +93,8 @@ describe("tone semantics", () => {
     expect(success).not.toContain("consumed");
     expect(success).not.toContain("pending_commit");
     expect(success).not.toContain("observed_waiting_stability");
+    // Applied, merged or waiting: none of them is a claim of finality on Cardano.
+    expect(success).not.toContain("locally_applied");
   });
 
   it("uses danger only for terminal failures", () => {

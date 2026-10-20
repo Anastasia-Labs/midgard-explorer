@@ -31,9 +31,7 @@ export function MerkleRoots({ commitments }: { commitments: BlockCommitments | n
   ];
   return (
     <>
-      <p className="px-4 pt-4 mg-caption text-text-3">
-        As the node recorded them. The explorer does not recompute them.
-      </p>
+      <p className="px-4 pt-4 mg-caption text-text-3">Not recomputed by the explorer.</p>
       <ul className="divide-y divide-border">
         {roots.map(([label, pair]) => (
           <li key={label} className="grid gap-2 p-4 sm:grid-cols-[12rem_1fr]">

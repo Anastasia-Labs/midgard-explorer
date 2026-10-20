@@ -73,8 +73,16 @@ const directCommitments = async (reader: PrismaClient, key: Buffer) => {
     deposits: pair("deposits"),
     withdrawals: pair("withdrawals"),
     forced_transactions: pair("forced_transactions"),
-    transition_trace: { base: null, expected: row.expected_transition_trace_root, changed: null },
-    event_to_step: { base: null, expected: row.expected_event_to_step_root, changed: null },
+    transition_trace: {
+      base: null,
+      expected: row.expected_transition_trace_root,
+      changed: null,
+    },
+    event_to_step: {
+      base: null,
+      expected: row.expected_event_to_step_root,
+      changed: null,
+    },
   };
 };
 
@@ -143,10 +151,12 @@ db("the merged block reads", () => {
           expect(summary.header, hash).toEqual(
             (await wholeTableHeader(reader, key))[0] ?? null,
           );
-          expect(summary.da, hash).toEqual(await getBlockDaMetadata(hash, reader));
-          expect(summary.finalization, hash).toEqual(
-            await getBlockFinalization(hash, reader),
+          expect(summary.da, hash).toEqual(
+            await getBlockDaMetadata(hash, reader),
           );
+          const separate = await getBlockFinalization(hash, reader);
+          expect(summary.finalization, hash).toEqual(separate.finalization);
+          expect(summary.journalStatus, hash).toEqual(separate.journalStatus);
           const commitments = await directCommitments(reader, key);
           expect(summary.commitments, hash).toEqual(commitments);
           if (commitments) compared.add(String(commitments.deposits.changed));
@@ -162,9 +172,13 @@ db("the merged block reads", () => {
         }
         // Every branch of the outer joins was taken, and events were compared
         // rather than a run of empty lists.
-        expect([...shapes].sort()).toEqual(
-          ["false/false/false", "true/false/false", "true/false/true", "true/true/false", "true/true/true"],
-        );
+        expect([...shapes].sort()).toEqual([
+          "false/false/false",
+          "true/false/false",
+          "true/false/true",
+          "true/true/false",
+          "true/true/true",
+        ]);
         expect(events).toBeGreaterThan(0);
         // Both answers of the root comparison were produced, not only "differs".
         expect([...compared].sort()).toEqual(["false", "true"]);

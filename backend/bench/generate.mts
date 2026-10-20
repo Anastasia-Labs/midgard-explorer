@@ -85,7 +85,6 @@ export const LOAD_ORDER = [
   "pending_block_finalization_deposits",
   "pending_block_finalization_withdrawals",
   "pending_block_finalization_forced_transactions",
-  "pending_block_finalization_utxos",
   "pending_block_finalization_transition_trace",
   "pending_block_finalization_event_to_step",
   "da_payloads",
@@ -106,6 +105,16 @@ const hash28 = (label: string): Buffer =>
   createHash("sha256").update(label).digest().subarray(0, 28);
 
 /** A deterministic 32-byte hash. */
+/** The validation-trace root the node schema requires when a block has none. */
+const EMPTY_VALIDATION_TRACES_ROOT =
+  "0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8";
+/** Stands in for CEK program material, which the explorer never reads. */
+const CEK_SIDECAR = createHash("sha256").update("bench:cek_program_material_sidecar").digest();
+const cekSidecar = () => ({
+  cek_program_material_sidecar_cbor: CEK_SIDECAR,
+  cek_program_material_sidecar_sha256: createHash("sha256").update(CEK_SIDECAR).digest(),
+});
+
 const hash32 = (label: string): Buffer =>
   createHash("sha256").update(label).digest();
 
@@ -281,13 +290,14 @@ function* buildBatches(
       height === activeIndex
         ? (profile.statusMix.activeState as string)
         : pick(next(), [
-            ["finalized", profile.statusMix.finalized],
+            // The node's terminal status for an applied block. The profile
+            // keeps the share under its older name.
+            ["locally_applied", profile.statusMix.finalized],
             ["abandoned", profile.statusMix.abandoned],
           ]);
 
     // Transactions for this block, spent out of the live UTxO graph.
     const transactions: ShapedTx[] = [];
-    const spentUtxos: Utxo[] = [];
     for (let i = 0; i < shape.l2Transactions; i += 1) {
       const step = ledger.spend({
         inputs: shape.inputs,
@@ -295,7 +305,6 @@ function* buildBatches(
       });
       if (!step) break;
       transactions.push(step.tx);
-      spentUtxos.push(...step.spent);
     }
 
     const counts: BlockCounts = {
@@ -340,7 +349,7 @@ function* buildBatches(
       blocks.push(block);
     }
 
-    emitBlockRows(tables, block, profile, spentUtxos, next, seq);
+    emitBlockRows(tables, block, profile, next, seq);
 
     // Hand the batch over and start an empty one. The ledger and the last block
     // survive because later work needs them; the rows do not.
@@ -425,7 +434,6 @@ function emitBlockRows(
   tables: Record<string, Row[]>,
   block: GeneratedBlock,
   profile: Profile,
-  spent: readonly Utxo[],
   next: () => number,
   /**
    * Monotonic across the whole run, not across the current batch.
@@ -467,12 +475,29 @@ function emitBlockRows(
     expected_deposit_count: BigInt(counts.deposits),
     expected_total_event_count: BigInt(counts.totalEvents),
     expected_transition_step_count: BigInt(counts.transitionSteps),
+    // Bound to the consensus profile, a v1 record and the plain ledger-delta
+    // replay, with one validation trace per forced or L2 transaction under a
+    // root that is the empty-trace root only for none.
+    consensus_profile_id: "midgard-consensus-v1",
+    format_version: 1,
+    replay_kind: "ledger_delta_v1",
+    deployment_marker_schema_version: "midgard-deployment-marker-v1",
+    deployment_manifest_id: hash32(`manifest:${profile.name}`).toString("hex"),
+    expected_validation_trace_count: BigInt(validationTraces(counts)),
+    expected_validation_traces_root: validationTracesRoot(counts, block.height),
+    ledger_delta_spent: "[]",
+    ledger_delta_produced: "[]",
+    block_time: block.blockEndTime,
     ...block.roots,
   });
 
   tables.da_payloads.push({
     header_hash: headerHash,
-    version: 2,
+    version: 1,
+    consensus_profile_id: "midgard-consensus-v1",
+    validation_trace_count: BigInt(validationTraces(counts)),
+    validation_traces_root: validationTracesRoot(counts, block.height),
+    block_time: block.blockEndTime,
     payload_cbor: hash32(`da:${block.height}`),
     payload_sha256: hash32(`da-sha:${block.height}`),
     utxos_root: block.roots.expected_utxos_root,
@@ -505,6 +530,7 @@ function emitBlockRows(
       source_table: "immutable",
       source_id: txId,
       source_time_stamp_tz: block.blockEndTime,
+      ...cekSidecar(),
     });
     tables.immutable.push({
       tx_id: txId,
@@ -526,7 +552,7 @@ function emitBlockRows(
         created_at: block.blockEndTime,
       });
     }
-    emitAdmission(tables, txId, Buffer.from(tx.bytes), block, profile, next, seq);
+    emitAdmission(tables, txId, block, profile, next, seq);
     tables.mempool_tx_deltas.push({
       tx_id: txId,
       spent_cbor: Buffer.from(tx.bytes).subarray(0, 64),
@@ -536,14 +562,12 @@ function emitBlockRows(
 
   emitEvents(tables, block, profile, next);
   emitTrace(tables, block);
-  emitSpentUtxoMembers(tables, block, spent);
 }
 
 /** `tx_admissions`, honouring the two CHECK constraints on lease and terminal time. */
 function emitAdmission(
   tables: Record<string, Row[]>,
   txId: Buffer,
-  canonicalCbor: Buffer,
   block: GeneratedBlock,
   profile: Profile,
   next: () => number,
@@ -559,8 +583,6 @@ function emitAdmission(
   const validating = status === "validating";
   tables.tx_admissions.push({
     tx_id: txId,
-    tx_canonical_cbor: canonicalCbor,
-    tx_canonical_cbor_sha256: createHash("sha256").update(canonicalCbor).digest(),
     submit_source: "native",
     status,
     // check1: a lease exists on `validating` and nowhere else.
@@ -647,17 +669,21 @@ function emitEvents(
       // The check constraints require both of these whenever status is not
       // `awaiting`, so a `projected` row without them will not insert.
       settlement_event_info: payload(`withdrawal-settle:${block.height}:${i}`),
-      // Withdrawals have their own validity vocabulary. `TxIsValid` belongs to
-      // `forced_transaction_utxos.operator_validity` and is rejected here.
+      // Withdrawals have their own validity vocabulary.
       validity: "WithdrawalIsValid",
       projected_header_hash: headerHash,
       status: "projected",
       created_at: block.blockStartTime,
       updated_at: block.blockEndTime,
     });
-    tables.pending_block_finalization_withdrawals.push(
-      memberRow(headerHash, eventId, i, "withdrawal_utxos", block.blockEndTime),
-    );
+    tables.pending_block_finalization_withdrawals.push({
+      ...memberRow(headerHash, eventId, i, "withdrawal_utxos", block.blockEndTime),
+      // The member row records the classification the block applied.
+      validity: "WithdrawalIsValid",
+      validity_detail: "{}",
+      classification_revision: 0,
+      classification_sha256: hash32(`withdrawal-class:${block.height}:${i}`),
+    });
   }
 
   for (let i = 0; i < counts.forcedTransactions; i += 1) {
@@ -671,7 +697,11 @@ function emitEvents(
       tx_id: hash32(`forced-tx:${block.height}:${i}`),
       tx_compact: hash32(`forced-compact:${block.height}:${i}`),
       forced_inclusion_value: hash32(`forced-value:${block.height}:${i}`),
-      operator_validity: "TxIsValid",
+      // The exact proof material the node stores for a forced transaction.
+      consensus_profile_id: "midgard-consensus-v1",
+      native_tx_cbor: hash32(`forced-native:${block.height}:${i}`),
+      transaction_commitment: hash32(`forced-commitment:${block.height}:${i}`),
+      ...cekSidecar(),
       inclusion_time: block.blockEndTime,
       projected_header_hash: headerHash,
       status: "projected",
@@ -689,6 +719,18 @@ function emitEvents(
     );
   }
 }
+
+/** One validation trace per forced or L2 transaction. */
+const validationTraces = (counts: { forcedTransactions: number; l2Transactions: number }): number =>
+  counts.forcedTransactions + counts.l2Transactions;
+
+const validationTracesRoot = (
+  counts: { forcedTransactions: number; l2Transactions: number },
+  height: number,
+): string =>
+  validationTraces(counts) === 0
+    ? EMPTY_VALIDATION_TRACES_ROOT
+    : hash32(`validation-traces:${height}`).toString("hex");
 
 function memberRow(
   headerHash: Buffer,
@@ -723,24 +765,6 @@ function emitTrace(tables: Record<string, Row[]>, block: GeneratedBlock): void {
       memberRow(block.headerHash, stepId, step, "event_to_step", block.blockEndTime),
     );
   }
-}
-
-/** The UTxO set this block consumed, recorded as finalization members. */
-function emitSpentUtxoMembers(
-  tables: Record<string, Row[]>,
-  block: GeneratedBlock,
-  spent: readonly Utxo[],
-): void {
-  // Four columns, not the eight the other member tables carry. This one keys
-  // on `outref` and stores the `output` directly.
-  spent.forEach((utxo, ordinal) => {
-    tables.pending_block_finalization_utxos.push({
-      header_hash: block.headerHash,
-      outref: utxo.outref,
-      ordinal,
-      output: utxo.output,
-    });
-  });
 }
 
 /**

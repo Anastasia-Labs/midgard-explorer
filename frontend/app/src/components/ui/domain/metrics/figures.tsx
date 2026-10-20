@@ -103,9 +103,9 @@ export function Figure({
 }
 
 /** A number that did not arrive. The tile keeps its place and its label and
- * shows 0 in the muted tone, with no status colour, beside a verdict that says
- * the figures are unavailable. */
-export const DEFAULT_VALUE = "0";
+ * says Unavailable in the muted tone, with no status colour: in this explorer
+ * a missing figure is never shown as a zero that looks measured. */
+export const DEFAULT_VALUE = "Unavailable";
 
 /** A default standing in for a value that did not arrive: muted on screen and
  * named unavailable for a screen reader, so a missing figure is not told apart
@@ -114,7 +114,7 @@ export function Missing({ children = DEFAULT_VALUE }: { children?: React.ReactNo
   return (
     <span className="text-text-3">
       {children}
-      <span className="sr-only"> (unavailable)</span>
+      {children === DEFAULT_VALUE ? null : <span className="sr-only"> (unavailable)</span>}
     </span>
   );
 }

@@ -3,8 +3,18 @@
 import { useRouter } from "next/navigation";
 import { Icon } from "./icons";
 
-export function PageError({ message }: { message: string }) {
+/** `retry={false}` is for an answer this explorer cannot give at all, such as
+ * information its configuration does not provide: it is stated in neutral
+ * text with no retry, because retrying cannot change it. */
+export function PageError({ message, retry = true }: { message: string; retry?: boolean }) {
   const router = useRouter();
+  if (!retry) {
+    return (
+      <section className="overflow-hidden rounded-lg border border-border bg-surface p-8 text-center shadow-(--mg-shadow)">
+        <p className="font-medium text-text-2">{message}</p>
+      </section>
+    );
+  }
   return (
     <section
       role="alert"

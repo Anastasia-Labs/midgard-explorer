@@ -17,6 +17,7 @@ export const SOURCE_KIND_LABEL: Record<SourceKind, string> = {
   replica: "Replica of the node database",
   snapshot: "Snapshot of the node database",
   fixture: "Demo data",
+  archive: "The explorer's archive",
 };
 
 export const FRESHNESS_LABEL: Record<FreshnessState, string> = {
@@ -36,3 +37,6 @@ export const JOURNEY_SOURCE_LABEL: Record<JourneySource, string> = {
 };
 
 export const purposeLabel = (p: string): string => (p === "None" ? "Not stated" : p);
+
+/** An input whose spent output the explorer cannot describe. */
+export const UNRESOLVED_INPUT = "Input details unavailable";

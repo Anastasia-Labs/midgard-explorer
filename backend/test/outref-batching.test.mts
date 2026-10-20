@@ -16,11 +16,12 @@ import type { LedgerOutput } from "../src/db/ledger.js";
  * out either way, which is what the last case here checks.
  */
 
+// Two inputs and several outputs, in the encoding the pinned codec reads.
 const txBytes = (() => {
-  const fixture = JSON.parse(
-    readFileSync(new URL("./fixtures/live-node-2026-07-16.json", import.meta.url), "utf8"),
-  ) as { transaction?: { cborHex?: string } };
-  const hex = fixture.transaction?.cborHex;
+  const corpus = JSON.parse(
+    readFileSync(new URL("./fixtures/shape-corpus.json", import.meta.url), "utf8"),
+  ) as { entries: Array<{ label: string; canonicalTxHex: string }> };
+  const hex = corpus.entries.find((e) => e.label === "multi-input")?.canonicalTxHex;
   return hex ? Buffer.from(hex, "hex") : null;
 })();
 
@@ -44,7 +45,7 @@ function spy() {
 
 describe("outref resolution", () => {
   it("has a transaction to decode, so this gate is not measuring nothing", () => {
-    expect(txBytes, "the live-node fixture carries no transaction CBOR").not.toBeNull();
+    expect(txBytes, "the shape corpus carries no multi-input transaction").not.toBeNull();
   });
 
   it("asks once per input when no bulk lookup is supplied", async () => {

@@ -64,3 +64,7 @@ export function entityOf(kind: EntityKind): Entity {
  * is the only place a hue becomes a colour. */
 export const entityColor = (hue: number): string =>
   `oklch(var(--mg-type-l) var(--mg-type-c) ${hue})`;
+
+/** Where an output reference leads: its transaction, at that output's card. */
+export const outputHref = (txId: string, index: number): string =>
+  `/transaction/${txId}#output-${index}`;

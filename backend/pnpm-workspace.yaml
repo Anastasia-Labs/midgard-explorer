@@ -2,10 +2,13 @@
 # onlyBuiltDependencies/ignoredBuiltDependencies fields). Prisma runs via the
 # PrismaPg driver adapter, so its query-engine build is not needed; cbor-extract
 # is an optional native accelerator for cbor-x that falls back to pure JS.
+# classic-level is the watcher's LevelDB storage; the ingester uses only the
+# watcher's libp2p transport, so its native build is not needed.
 allowBuilds:
   '@prisma/engines': false
   prisma: false
   cbor-extract: false
+  classic-level: false
 
 # Patched transitive releases. These are pinned below Prisma tooling and the
 # vendored Cardano stack, so their parent ranges cannot advance them yet.
@@ -16,7 +19,10 @@ overrides:
   # inside the range its parent already accepts. Pinned to 3.1.6 rather than to
   # the newest 3.1.x on purpose: it clears all four and has been published long
   # enough to have been looked at, which a release from yesterday has not.
-  fast-uri: 3.1.6
+  # Moved to 3.1.8 on 2026-10-19: three later advisories cover 3.1.6 (an
+  # unvalidated port, an unclosed bracket and percent-encoded host case), and
+  # 3.1.8 is the first release clear of all of them.
+  fast-uri: 3.1.8
   # Three moderate advisories published 2026-09-08 cover everything below
   # 4.13.5: an incomplete fix letting `toSSG()` write outside its output
   # directory, unbounded dot-notation nesting in `parseBody()`, and a query
@@ -25,10 +31,29 @@ overrides:
   # @prisma/dev asks for ^4.12.8 and @hono/node-server for ^4, so 4.13.5 is
   # inside both ranges, and it is the first patched release rather than the
   # newest, published long enough to have been looked at.
-  hono: 4.13.5
-  ip-address: 10.3.1
+  # Moved to 4.13.7 on 2026-10-19, the first release clear of an unescaped
+  # string in hono/jsx boundary components.
+  # Moved to 4.13.11 on 2026-10-20, the first release clear of `serveStatic`
+  # decoding the request path twice (GHSA-5r4p-p66f-jhc7).
+  hono: 4.13.11
+  # Four moderate advisories cover everything up to 10.7.0, in IPv6
+  # classification and subnet comparison. It reaches this tree through the
+  # Cardano SDK under Lucid 0.4.31. 10.7.1 is the first release clear of all four.
+  ip-address: 10.7.1
+  # Path traversal through a crafted locale name, below 2.31.0. It reaches this
+  # tree through winston-daily-rotate-file, which asks for ^2.29.1.
+  moment: 2.31.0
   nanoid: 3.3.18
+  # Long passwords rehashed on every iteration, up to 3.1.6. It reaches this
+  # tree through the Cardano SDK, which asks for ^3.1.3.
+  pbkdf2: 3.1.7
   postcss: 8.5.26
+  # IP spoofing through a trust subnet written in IPv4-mapped IPv6 form, below
+  # 2.0.8. express resolves `req.ip` through it, which the rate limiter keys on.
+  # This backend leaves `trust proxy` off and matches its own edge list, so the
+  # trigger is not configured here (test/proxy-trust.test.mts); it is upgraded
+  # anyway because it sits on the request path. express asks for ^2.0.7.
+  proxy-addr: 2.0.8
   # express 5.2.1 asks for ^6.14.0 and resolved 6.15.2, which two advisories
   # cover: an array-limit bypass through bracket-key comma parsing, and a
   # denial of service through an attacker-controlled isBuffer. Unlike every
@@ -37,6 +62,26 @@ overrides:
   # range, so this is a pin forward and not a fork.
   qs: ^6.16.0
   valibot: 1.4.2
+  # The Midgard package graph, vendored from one commit (vendor/PROVENANCE.md).
+  # The packed tarballs name each other by version, so these resolve every
+  # internal reference to the tarball built beside it.
+  '@al-ft/l1-node-transport': file:vendor/midgard/al-ft-l1-node-transport-0.1.0.tgz
+  '@al-ft/lucid-midgard': file:vendor/midgard/al-ft-lucid-midgard-0.1.0.tgz
+  '@al-ft/midgard-core': file:vendor/midgard/al-ft-midgard-core-0.1.0.tgz
+  '@al-ft/midgard-fault-proofs': file:vendor/midgard/al-ft-midgard-fault-proofs-0.1.0.tgz
+  '@al-ft/midgard-l1-follower': file:vendor/midgard/al-ft-midgard-l1-follower-0.1.0.tgz
+  '@al-ft/midgard-sdk': file:vendor/midgard/al-ft-midgard-sdk-0.1.0.tgz
+  '@al-ft/midgard-validation': file:vendor/midgard/al-ft-midgard-validation-0.1.0.tgz
+  midgard-watcher: file:vendor/midgard/midgard-watcher-0.1.0.tgz
+  # Copied from Midgard's own workspace at the vendored commit, so the graph
+  # resolves as it does there: its MPF build, UPLC 2 under Lucid utils 0.2.0
+  # (with the patch below), and the libsodium pin.
+  '@aiken-lang/merkle-patricia-forestry': file:vendor/midgard/mpf-1.3.1-midgard.1.tgz
+  '@lucid-evolution/utils@0.2.0>@harmoniclabs/uplc': 2.0.7
+  '@lucid-evolution/utils@0.2.0>@harmoniclabs/plutus-data': 2.0.1
+  libsodium-wrappers-sumo@0.7.15>libsodium-sumo: 0.7.15
+patchedDependencies:
+  '@lucid-evolution/utils@0.2.0': vendor/midgard/patches/@lucid-evolution__utils@0.2.0.patch
 minimumReleaseAgeExclude:
   - '@hono/node-server@1.19.13 || 2.0.5 || 2.0.10'
   - ip-address@10.1.1 || 10.3.1

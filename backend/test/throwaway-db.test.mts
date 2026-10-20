@@ -61,9 +61,12 @@ db("withThrowawayNodeDb", () => {
       );
       seen = Number(rows[0].n);
     });
-    // The fixture carries 22 tables after SCHEMA-FIXTURE added the four the
-    // coverage scope adopts.
-    expect(seen).toBe(22);
+    // The fixture carries 24 tables: SCHEMA-FIXTURE added the four the coverage
+    // scope adopts, Midgard migration 0026 dropped
+    // pending_block_finalization_utxos, and the state queue and settlement
+    // reads added node_landed_blocks, node_confirmed_ledger_frontier and
+    // node_confirmed_merges.
+    expect(seen).toBe(24);
   }, 60_000);
 
   it("drops the database even when the callback throws", async () => {

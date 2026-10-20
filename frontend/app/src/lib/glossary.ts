@@ -144,6 +144,24 @@ export const GLOSSARY = {
     meaning: "A numbered Cardano period containing many slots.",
     consequence: "Protocol parameters and stake state can change at epoch boundaries.",
   },
+  locallyApplied: {
+    label: "Committed to Cardano",
+    tip: "Commit stable on Cardano and applied. It may still be waiting to merge.",
+    category: "Ledger",
+    meaning:
+      "Blocks whose commit reached the required depth on Cardano and that the node applied to its own ledger.",
+    consequence:
+      "A committed block is final only once it merges into the confirmed state; the block list shows which have.",
+  },
+  lastRecordUpdate: {
+    label: "Block end to last record update",
+    tip: "From a block's end to the last update of the node's record of it.",
+    category: "Explorer",
+    meaning:
+      "The time from a block's end to the last update of the node's record of it, over every block the node applied.",
+    consequence:
+      "It is not the time the node took to apply a block: the node also updates an applied block's record when it records a submission, and records no separate application time.",
+  },
   l1Finality: {
     label: "L1 settlement",
     tip: "Final on Cardano, so these can no longer be reversed.",

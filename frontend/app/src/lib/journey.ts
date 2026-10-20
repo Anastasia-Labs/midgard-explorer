@@ -67,8 +67,24 @@ const TERMINAL_FAILURES = new Set(["rejected"]);
 const UNKNOWN_STAGE_EXPLANATION =
   "The node reported a settlement stage this explorer does not recognize, so finality cannot be stated here. The raw status is shown as reported.";
 
-/** The only finalization status that means settled on L1. */
+/** The only finalization status that means settled on L1: merged, past the
+ * point a rollback can undo. An older node writes it itself; for a current one
+ * the backend derives it from the follower's tables. */
 const L1_TERMINAL_SUCCESS = "finalized";
+
+/**
+ * Where a block the node applied stands, short of final. Since Midgard
+ * migration 0011 the node writes `locally_applied` and never "final"; the
+ * backend reads the follower's tables to say which of these it is, and leaves
+ * `locally_applied` only when none of them is recorded yet.
+ */
+const APPLIED: Record<string, { label: string; outcome: "active" | "unknown" }> = {
+  waiting_to_merge: { label: "Waiting to merge", outcome: "active" },
+  merged: { label: "Merged", outcome: "active" },
+  locally_applied: { label: "Merge not recorded", outcome: "unknown" },
+};
+const appliedOf = (status: string | undefined) =>
+  status === undefined ? undefined : APPLIED[status];
 
 /**
  * The headline over a settled record, and the strongest claim either page
@@ -235,6 +251,7 @@ function l1Stages(finalization: BlockFinalization | null, detail: L1Detail): Jou
   }
 
   const isFinal = finalization.status === L1_TERMINAL_SUCCESS;
+  const applied = appliedOf(finalization.status);
   const isAbandoned = finalization.status === L1_TERMINAL_FAILURE;
   const [observed, observedKind] = recorded(finalization.observedConfirmedAt, true);
   const onRail = detail === "full";
@@ -261,15 +278,16 @@ function l1Stages(finalization: BlockFinalization | null, detail: L1Detail): Jou
     onRail,
   );
 
+  const terminal = isFinal || isAbandoned;
   const final = stage(
     "final",
-    isAbandoned ? "Abandoned" : "Final on Cardano",
+    isAbandoned ? "Abandoned" : applied ? applied.label : "Final on Cardano",
     isFinal ? "reached" : isAbandoned ? "failed" : "current",
     "pending_block_finalizations",
     // `updatedAt` is the settlement transition's own timestamp; it only stands
     // for the terminal stage once the block actually reached one.
-    isFinal || isAbandoned ? finalization.updatedAt : null,
-    isFinal || isAbandoned ? "recorded" : "not_recorded",
+    terminal ? finalization.updatedAt : null,
+    terminal ? "recorded" : "not_recorded",
     evidence,
   );
 
@@ -325,6 +343,7 @@ export function transactionJourney(input: {
   const resolved = statusOf(status);
   const failed = TERMINAL_FAILURES.has(status);
   const settled = finalization?.status === L1_TERMINAL_SUCCESS;
+  const applied = appliedOf(finalization?.status);
   const abandoned = finalization?.status === L1_TERMINAL_FAILURE;
 
   const stages = failed
@@ -347,7 +366,9 @@ export function transactionJourney(input: {
         ? "unknown"
         : settled
           ? "complete"
-          : "active";
+          : applied
+            ? applied.outcome
+            : "active";
 
   const headline = failed
     ? "Rejected by the node"
@@ -355,11 +376,13 @@ export function transactionJourney(input: {
       ? "Settlement stage not recognized"
       : settled
         ? SETTLED_HEADLINE
-        : abandoned
-          ? "Finalization abandoned"
-          : inclusion !== null
-            ? "Committed, awaiting Cardano finality"
-            : resolved.label;
+        : applied
+          ? applied.label
+          : abandoned
+            ? "Finalization abandoned"
+            : inclusion !== null
+              ? "Committed, awaiting Cardano finality"
+              : resolved.label;
 
   const explanation = failed
     ? "The node rejected this transaction, so it was never included in a block."
@@ -367,11 +390,13 @@ export function transactionJourney(input: {
       ? UNKNOWN_STAGE_EXPLANATION
       : settled
         ? ""
-        : abandoned
-          ? "The node stopped trying to finalize the block carrying this transaction."
-          : inclusion !== null
-            ? "Reversible until the block carrying it becomes final on Cardano."
-            : resolved.explain;
+        : applied
+          ? statusOf(finalization!.status).explain
+          : abandoned
+            ? "The node stopped trying to finalize the block carrying this transaction."
+            : inclusion !== null
+              ? "Reversible until the block carrying it becomes final on Cardano."
+              : resolved.explain;
 
   return { kind: "transaction", outcome, headline, explanation, stages, rawStatus: status };
 }
@@ -402,6 +427,10 @@ const PROGRESS_ORDER: Record<string, number> = {
   submitted_local_finalization_pending: 2,
   submitted_unconfirmed: 2,
   observed_waiting_stability: 3,
+  // Applied and on its way: in the queue, merged, or not yet placed.
+  locally_applied: 3,
+  waiting_to_merge: 3,
+  merged: 3,
   finalized: 4,
   // Bridge events: observed on L1, projected into the ledger, settled.
   awaiting: 1,
@@ -454,6 +483,7 @@ export function blockJourney(
 
   const resolved = finalization === null ? null : statusOf(finalization.status);
   const settled = finalization?.status === L1_TERMINAL_SUCCESS;
+  const applied = appliedOf(finalization?.status);
   const abandoned = finalization?.status === L1_TERMINAL_FAILURE;
   const hasUnknownStage = stages.some((s) => s.state === "unknown");
 
@@ -463,19 +493,23 @@ export function blockJourney(
       ? "failed"
       : hasUnknownStage || !resolved?.known
         ? "unknown"
-        : "active";
+        : applied
+          ? applied.outcome
+          : "active";
 
   // The headline answers "is this block final?" rather than restating the
   // status code, which the badge beside the title already carries.
   const headline = settled
     ? SETTLED_HEADLINE
-    : abandoned
-      ? "Finalization abandoned"
-      : finalization === null
-        ? "No finalization record yet"
-        : hasUnknownStage
-          ? "Settlement stage not recognized"
-          : "Committed, awaiting Cardano finality";
+    : applied
+      ? applied.label
+      : abandoned
+        ? "Finalization abandoned"
+        : finalization === null
+          ? "No finalization record yet"
+          : hasUnknownStage
+            ? "Settlement stage not recognized"
+            : "Committed, awaiting Cardano finality";
 
   return {
     kind: "block",
@@ -486,9 +520,11 @@ export function blockJourney(
         ? "The node has not recorded a finalization attempt for this block yet, so this block is not yet on its way to Cardano."
         : settled
           ? ""
-          : hasUnknownStage
-            ? UNKNOWN_STAGE_EXPLANATION
-            : (resolved?.explain ?? UNKNOWN_STAGE_EXPLANATION),
+          : applied
+            ? statusOf(finalization!.status).explain
+            : hasUnknownStage
+              ? UNKNOWN_STAGE_EXPLANATION
+              : (resolved?.explain ?? UNKNOWN_STAGE_EXPLANATION),
     stages,
     rawStatus: finalization?.status ?? "none",
   };

@@ -6,7 +6,10 @@ import {
   decodeMidgardTxOutput,
   encodeCbor,
   encodeMidgardAddressText,
+  encodeMidgardFieldPreimage,
   encodeMidgardNativeTxCanonical,
+  encodeMidgardRedeemerWitnessItem,
+  encodeMidgardSpendInputItem,
   encodeMidgardTxOutput,
 } from "@al-ft/midgard-core";
 
@@ -54,7 +57,7 @@ export type CorpusParts = {
   datumTemplate: NonNullable<DecodedOutput["datum"]>;
   /** A real script reference, same source. */
   scriptRefTemplate: NonNullable<DecodedOutput["script_ref"]>;
-  /** One encoded redeemer, `[tag, index, data, [mem, steps]]`. */
+  /** One encoded redeemer witness item, as a §5.1 field preimage. */
   redeemerPreimage: Buffer;
 };
 
@@ -112,12 +115,16 @@ export function loadCorpus(path: string = CORPUS): CorpusParts {
     policyId: corpus.policyId,
     datumTemplate: withDatum.datum,
     scriptRefTemplate: withScriptRef.script_ref,
-    // `[tag, index, data, [mem, steps]]`, the shape `decode/transaction.ts:119`
-    // documents. No corpus entry carries one, so this is built and then read
-    // back by the explorer's own decoder in the tests.
-    redeemerPreimage: Buffer.from(
-      encodeCbor([Buffer.from(encodeCbor([0, 0, 42, [1_000_000, 500_000_000]]))]),
-    ),
+    // No corpus entry carries a redeemer, so one is built with core's own
+    // encoder and read back by the explorer's decoder in the tests.
+    redeemerPreimage: encodeMidgardFieldPreimage([
+      encodeMidgardRedeemerWitnessItem({
+        purpose: "Spend",
+        index: 0n,
+        redeemerCbor: Buffer.from(encodeCbor(42n)),
+        executionUnits: { memory: 1_000_000n, steps: 500_000_000n },
+      }),
+    ]),
   };
 }
 
@@ -155,9 +162,9 @@ function assetNameFor(id: number): string {
  * by policy. */
 const NAMES_PER_POLICY = 4;
 
-/** The CBOR outref `[txId, index]`, exactly as the node stores it. */
+/** The fixed 38-byte out-ref, exactly as the node stores it. */
 export function outrefOf(txId: Uint8Array, index: number): Buffer {
-  return Buffer.from(encodeCbor([Buffer.from(txId), index]));
+  return encodeMidgardSpendInputItem({ txId: Buffer.from(txId), outputIndex: index });
 }
 
 export type OutputSpec = {
@@ -238,9 +245,9 @@ function assemble(
       body: {
         ...parts.body,
         fee,
-        spendInputsPreimageCbor: Buffer.from(encodeCbor([...inputs])),
-        outputsPreimageCbor: Buffer.from(
-          encodeCbor(outputs.map((o) => Buffer.from(o.output))),
+        spendInputsPreimageCbor: encodeMidgardFieldPreimage([...inputs]),
+        outputsPreimageCbor: encodeMidgardFieldPreimage(
+          outputs.map((o) => Buffer.from(o.output)),
         ),
       },
     }),

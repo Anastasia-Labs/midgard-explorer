@@ -120,11 +120,17 @@ const requireConfiguration = (env) => {
   return node;
 };
 
+// `--manifest=optional`: ADR 0003 lets a development instance serve L2 reads
+// with no manifest configured. One that is configured is still probed in full.
+// `/readyz` is unchanged and refuses either way.
 const probeReadiness = async () => {
   step("Checking it can serve");
-  const result = await run("pnpm", ["--silent", "readiness"], { cwd: packageRoot });
+  const result = await run("pnpm", ["--silent", "readiness", "--", "--manifest=optional"], {
+    cwd: packageRoot,
+  });
+  const lines = result.output.split("\n");
   if (result.code !== 0) {
-    for (const line of result.output.split("\n")) {
+    for (const line of lines) {
       if (line.startsWith("NOT READY")) process.stderr.write(`  ${line}\n`);
     }
     die(
@@ -132,7 +138,13 @@ const probeReadiness = async () => {
       "The lines above name the probe that failed. Run: pnpm doctor",
     );
   }
-  say("  node database and manifest are ready");
+  for (const line of lines) {
+    if (line.startsWith("READY")) say(`  ${line.replace(/^READY\s+/, "")} is ready`);
+    if (line.startsWith("SKIPPED")) {
+      say(`  ${line.replace(/^SKIPPED\s+/, "")}`);
+      say("  Responses name no deployment, and /readyz refuses this process.");
+    }
+  }
 };
 
 // --- the server, in the foreground -------------------------------------------

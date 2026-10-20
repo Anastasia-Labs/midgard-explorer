@@ -64,7 +64,10 @@ export default async function ValidatorPage({
       <>
         <Breadcrumbs items={CRUMBS} />
         <IdentityBar title="Validator" overline="Script hash" value={hash} />
-        <PageError message={listErrorMessage(error)} />
+        <PageError
+          message={listErrorMessage(error)}
+          retry={!(error instanceof ApiError) || error.retryable}
+        />
       </>
     );
   }

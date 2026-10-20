@@ -1,4 +1,4 @@
-import { expect, test, FIXTURE } from "./helpers";
+import { APPLIED_LABEL, APPLIED_STATUSES, FIXTURE, expect, test } from "./helpers";
 import type { APIRequestContext, Page } from "@playwright/test";
 
 /**
@@ -81,13 +81,16 @@ test("the fixture produces both records a single source can", async ({ page }) =
 test("a settled block names the node as the source of the hash", async ({ page }) => {
   await gotoBlock(page, "node_reported");
   // The same shape as a settled transaction: the hash in the header, and the
-  // node's state, its reporter and the source in the Details tab.
+  // block's state and the source in the Details tab.
   const identity = page.locator('[data-region="identity"]');
   await expect(identity.getByText("Settlement", { exact: true })).toBeVisible();
-  await expect(identity.getByText("Finalized", { exact: true })).toBeVisible();
+  await expect(identity.getByText(APPLIED_LABEL).first()).toBeVisible();
   await page.getByRole("tab", { name: "Details" }).click();
   const details = page.locator("#panel-details");
-  await expect(details.getByText(/reported by the Midgard node/)).toBeVisible();
+  // The state is where the block stands, read from the follower's tables
+  // for an applied block, so it is never attributed to the journal.
+  await expect(details.getByText(APPLIED_LABEL).first()).toBeVisible();
+  await expect(details.getByText(/reported by/)).toHaveCount(0);
   await expect(details.getByText(/deployment as configured/)).toBeVisible();
 });
 
@@ -115,7 +118,7 @@ test("a settled block claims no independent confirmation anywhere on the page", 
   for (const claim of ["agree", "index", "confirmed", "corroborat", "verified"]) {
     expect(text, `the settlement details claimed "${claim}"`).not.toContain(claim);
   }
-  await expect(page.getByText("Finalized", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(APPLIED_LABEL).first()).toBeVisible();
   // The tab that rendered the decommissioned index is gone, not left empty.
   await expect(page.getByRole("tab", { name: "Cardano evidence" })).toHaveCount(0);
 });
@@ -137,21 +140,24 @@ test("a settled transaction carries its settlement hash in the header and its ev
   const identity = page.locator('[data-region="identity"]');
   await expect(identity.getByText("Settlement", { exact: true })).toBeVisible();
   await expect(identity.locator('a[href^="https://preprod.cexplorer.io/tx/"]')).toBeVisible();
-  await expect(identity.getByText("Finalized", { exact: true })).toBeVisible();
+  await expect(identity.getByText(APPLIED_LABEL).first()).toBeVisible();
 
-  // The Details tab lists the settlement once: the Cardano transaction, the
-  // node's state and who reported it, and every stage in order.
+  // The Details tab lists the settlement once: the Cardano transaction, where
+  // the block stands, and every stage in order.
   await page.getByRole("tab", { name: "Details" }).click();
   const details = page.locator("#panel-details");
   await expect(details.getByText("Settlement", { exact: true })).toBeVisible();
-  await expect(details.getByText(/reported by the Midgard node/)).toBeVisible();
+  // The state is where the block stands, read from the follower's tables
+  // for an applied block, so it is never attributed to the journal.
+  await expect(details.getByText(APPLIED_LABEL).first()).toBeVisible();
+  await expect(details.getByText(/reported by/)).toHaveCount(0);
   await expect(details.locator('a[href^="https://preprod.cexplorer.io/tx/"]')).toHaveCount(1);
 });
 
 test("a settled transaction's Settlement figure opens CExplorer in a new tab", async ({ page }) => {
   const list = await page.request.get(`${FIXTURE}/api/transactions/1`).then((r) => r.json());
-  const tx = (list.rows as Array<{ tx_id: string; finalization_status: string | null }>).find(
-    (r) => r.finalization_status === "finalized",
+  const tx = (list.rows as Array<{ tx_id: string; finalization_status: string | null }>).find((r) =>
+    APPLIED_STATUSES.includes(r.finalization_status ?? ""),
   );
   expect(tx).toBeTruthy();
   await page.goto(`/transaction/${tx!.tx_id}`);

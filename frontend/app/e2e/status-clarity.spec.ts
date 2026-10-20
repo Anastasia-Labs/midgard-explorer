@@ -1,11 +1,13 @@
 import type { APIRequestContext } from "@playwright/test";
-import { FIXTURE, expect, rowRegion, settle, test } from "./helpers";
+import { APPLIED_STATUSES, FIXTURE, expect, rowRegion, settle, test } from "./helpers";
 
 type Row = { tx_id: string; status: string; finalization_status: string | null };
 
 async function unsettledCommitted(request: APIRequestContext) {
   const rows = (await (await request.get(`${FIXTURE}/api/transactions/1`)).json()).rows as Row[];
-  const row = rows.find((r) => r.status === "committed" && r.finalization_status !== "finalized");
+  const row = rows.find(
+    (r) => r.status === "committed" && !APPLIED_STATUSES.includes(r.finalization_status ?? ""),
+  );
   if (!row) throw new Error("fixture has no committed transaction in an unsettled block");
   return row;
 }
@@ -50,7 +52,7 @@ test.describe("status clarity", () => {
     await expect(
       panel
         .getByRole("button", {
-          name: /^(Finalized|Committed|Pending|Submitted|Awaiting|Abandoned)/,
+          name: /^(Waiting to merge|Merged|Merge not recorded|Finalized|Committed|Pending|Submitted|Awaiting|Abandoned)/,
         })
         .first(),
     ).toBeVisible();
@@ -63,10 +65,10 @@ test.describe("status clarity", () => {
     const panel = page.locator("section", {
       has: page.getByRole("heading", { name: "Latest blocks" }),
     });
-    const mark = panel.getByRole("button", { name: "Finalized", exact: true }).first();
+    const mark = panel.getByRole("button", { name: "Waiting to merge", exact: true }).first();
     await expect(mark).toBeVisible();
     await mark.hover();
-    await expect(page.getByRole("tooltip")).toHaveText("Finalized");
+    await expect(page.getByRole("tooltip")).toHaveText("Waiting to merge");
   });
 
   test("a filter with no matches says so, and can be cleared", async ({ page }) => {
@@ -91,7 +93,9 @@ for (const path of [
     // Rows with a status must be on screen, or a count of zero proves nothing.
     await expect(
       rowRegion(page)
-        .getByText(/^(Committed|Finalized|Awaiting|Consumed|Projected|Valid|Accepted)$/)
+        .getByText(
+          /^(Committed|Waiting to merge|Merged|Merge not recorded|Finalized|Awaiting|Consumed|Projected|Valid|Accepted)$/,
+        )
         .first(),
     ).toBeVisible();
     await expect(page.getByText("Status key", { exact: true })).toHaveCount(0);

@@ -100,7 +100,7 @@ test.describe("the flow itself", () => {
     await readyFlow(page);
     // A UTxO transaction does not record which input funded which output. The
     // diagram must not let its own shape imply otherwise.
-    await expect(page.getByText(/does not record which input funded which output/i)).toBeVisible();
+    await expect(page.getByText(/Inputs are not matched to outputs/i)).toBeVisible();
   });
 
   test("marks a script address by more than colour", async ({ page }) => {
@@ -117,7 +117,7 @@ test.describe("the flow itself", () => {
     const hash = await txWithUnresolvedInput(page);
     await page.goto(`/transaction/${hash}?tab=utxo&view=flow`);
     const flow = await readyFlow(page);
-    await expect(flow.getByText(/not resolvable/i).first()).toBeVisible();
+    await expect(flow.getByText(/Input details unavailable/).first()).toBeVisible();
   });
 
   /** The stacked layout under `lg` draws no connectors at all, so a legend
@@ -152,7 +152,9 @@ test.describe("the flow itself", () => {
     const diagram = flow.getByTestId("flow-diagram");
     const box = await diagram.boundingBox();
     expect(box).not.toBeNull();
-    expect(box!.width).toBeLessThanOrEqual(1000);
+    // 72rem: wide enough that each card holds its address and the same icons
+    // the table shows on one line, still well short of a 1440px viewport.
+    expect(box!.width).toBeLessThanOrEqual(1160);
   });
 
   /** Every other fixture is 2-in 2-out, where both columns are the same height
@@ -380,7 +382,7 @@ test.describe("the flow itself", () => {
     await page.goto(`/transaction/${hash}?tab=utxo&view=flow`);
     const flow = await readyFlow(page);
     await expect(flow.locator(".react-flow__node")).toHaveCount(0);
-    await expect(page.getByText(/does not record which input funded which output/i)).toBeVisible();
+    await expect(page.getByText(/Inputs are not matched to outputs/i)).toBeVisible();
   });
 
   test("has no automated violations in either theme", async ({ page }) => {

@@ -2,11 +2,30 @@ import winston, { format } from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
 import { config } from "./config";
 
-const { combine, timestamp, prettyPrint } = format;
+const { combine, errors, timestamp, prettyPrint } = format;
+
+/** `scheme://user:password@` in any connection URL a driver error quotes. */
+const CREDENTIALS = /([a-z][a-z0-9+.-]*:\/\/)[^:@\/\s]+:[^@\s]+@/gi;
+
+const redactCredentials = format((info) => {
+  for (const key of ["message", "stack"] as const) {
+    const value = info[key];
+    if (typeof value === "string") info[key] = value.replace(CREDENTIALS, "$1***:***@");
+  }
+  return info;
+});
+
+/**
+ * One format for every transport. `errors` is what keeps a thrown value's
+ * message and stack: without it winston logs an Error as `{ level, timestamp }`,
+ * and every 500 the server answered was recorded with no cause.
+ */
+export const logFormat = () =>
+  combine(errors({ stack: true }), redactCredentials(), timestamp(), prettyPrint());
 
 export const logger = winston.createLogger({
   level: "info",
-  format: combine(timestamp(), prettyPrint()),
+  format: logFormat(),
   transports: [new winston.transports.Console()],
 });
 
@@ -16,7 +35,7 @@ export const logger = winston.createLogger({
  * it at roughly 280MB. */
 const fileRotateTransport = new DailyRotateFile({
   level: "info",
-  format: combine(timestamp(), prettyPrint()),
+  format: logFormat(),
   filename: `${config.LOG_LOCATION}-%DATE%.log`,
   maxSize: "20m",
   maxFiles: "14d",

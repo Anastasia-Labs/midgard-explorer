@@ -1,4 +1,5 @@
 import type { TransactionWithMeta } from "@midgard-explorer/contracts";
+import { outputHref } from "../../../lib/entities";
 import type { ReactNode } from "react";
 import { AddressRecord } from "../../../components/ui/domain/addressrecord";
 import { ValueCell } from "../../../components/ui/domain/amount";
@@ -111,7 +112,7 @@ export function ReferenceInputs({ tx }: { tx: TransactionWithMeta }) {
             key={`${r.txId}-${r.index}`}
             className="rounded-lg border border-border bg-surface-2/40 p-3"
           >
-            <Identifier value={`${r.txId}#${r.index}`} href={`/transaction/${r.txId}`} />
+            <Identifier value={`${r.txId}#${r.index}`} href={outputHref(r.txId, r.index)} />
             {r.resolved ? (
               <div className="mt-2">
                 <AddressRecord

@@ -176,7 +176,9 @@ test("a record card states its status as text, not a pill", async ({ page }) => 
   await page.goto(`/l1/transaction/${settlement!.l1TxHash}`);
   const card = page.getByRole("heading", { name: "Block settlement" }).locator("xpath=../..");
   const status = card
-    .getByText(/^(Pending submission|Submitted \(.*\)|Awaiting stability|Finalized|Abandoned)$/)
+    .getByText(
+      /^(Pending submission|Submitted \(.*\)|Awaiting stability|Waiting to merge|Merged|Merge not recorded|Finalized|Abandoned)$/,
+    )
     .first();
   await expect(status).toBeVisible();
   const background = await status.evaluate((el) => getComputedStyle(el).backgroundColor);

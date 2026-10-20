@@ -24,21 +24,44 @@ const fixture = JSON.parse(
 const hexToBytes = (hex: string): Uint8Array =>
   Uint8Array.from(Buffer.from(hex, "hex"));
 
+/**
+ * The current encoding, captured from the live Preprod node on 2026-10-19.
+ *
+ * The 2026-07-16 transaction above predates fixed-width out-refs and the
+ * current field preimages, and the pinned codec rejects it, so the
+ * transaction cases read this capture. Its id is the one the node stored, so
+ * the first case checks the decoder against the node rather than against
+ * itself.
+ */
+const current = JSON.parse(
+  readFileSync(join(here, "fixtures/live-node-2026-10-19.json"), "utf8"),
+) as {
+  transaction: { txId: string; cborHex: string };
+  confirmedLedger: Array<{ outrefHex: string; outputHex: string; address: string }>;
+};
+
 describe("decodeTransaction (live-node fixture)", () => {
-  it("decodes the committed transfer byte-for-byte into the expected view", async () => {
-    const view = await decodeTransaction(
-      hexToBytes(fixture.transaction.cborHex),
-    );
-    // bigintStringify matches the API's on-the-wire serialization (bigint -> string).
-    // The captured subset remains byte-for-byte stable while newer,
-    // evidence-bearing fields may extend the response.
-    expect(bigintStringify(view)).toMatchObject(fixture.transaction.expectedView);
+  it("recomputes the id the node stored for its committed transaction", async () => {
+    const view = await decodeTransaction(hexToBytes(current.transaction.cborHex));
+    expect(view.txId).toBe(current.transaction.txId);
+    expect(view.inputs.length).toBeGreaterThan(0);
     expect(view.outputs.every((output) => output.state.status === "unknown")).toBe(true);
     expect(view.outputs.every((output) => output.identity.payment.hash.length === 56)).toBe(true);
     expect(view.requiredObservers).toEqual([]);
-    expect(view.requiredSigners).toEqual([]);
+    // The one required signer is the payment key hash in the address the node
+    // recorded for the output it left unspent: `a2 00 58 39`, a header byte, then the hash.
+    const recorded = Buffer.from(current.confirmedLedger[0]!.outputHex, "hex");
+    expect(view.requiredSigners).toEqual([recorded.subarray(5, 33).toString("hex")]);
     expect(view.auxiliaryDataHash).toBeNull();
     expect(view.capabilities.collateral.state).toBe("not_supported");
+  });
+
+  it("decodes each output to the address and bytes the node's ledger holds", async () => {
+    const view = await decodeTransaction(hexToBytes(current.transaction.cborHex));
+    for (const row of current.confirmedLedger) {
+      const index = Buffer.from(row.outrefHex, "hex").readUInt16BE(36);
+      expect(view.outputs[index]?.address).toBe(row.address);
+    }
   });
 
   it("fails predictably on malformed CBOR instead of silently mis-decoding", async () => {
@@ -48,18 +71,22 @@ describe("decodeTransaction (live-node fixture)", () => {
   });
 
   it("marks produced outputs unspent only when the current ledger resolves them", async () => {
-    const row = fixture.mempoolLedger.find(
-      (candidate: { outputHex: string }) => !candidate.outputHex.startsWith("82"),
-    );
-    expect(row).toBeDefined();
+    const ledger = new Map(current.confirmedLedger.map((row) => [row.outrefHex, row]));
     const view = await decodeTransaction(
-      hexToBytes(fixture.transaction.cborHex),
-      async () => ({
-        address: row.address,
-        output: hexToBytes(row.outputHex),
-      }),
+      hexToBytes(current.transaction.cborHex),
+      async (outref) => {
+        const row = ledger.get(Buffer.from(outref).toString("hex"));
+        return row ? { address: row.address, output: hexToBytes(row.outputHex) } : null;
+      },
     );
-    expect(view.outputs.every((output) => output.state.status === "unspent")).toBe(true);
+    const unspent = view.outputs.filter((output) => output.state.status === "unspent");
+    expect(unspent.map((output) => output.index)).toEqual(
+      current.confirmedLedger.map((row) => Buffer.from(row.outrefHex, "hex").readUInt16BE(36)),
+    );
+    expect(
+      view.outputs.filter((output) => output.state.status !== "unspent")
+        .every((output) => output.state.status === "not_in_current_ledger"),
+    ).toBe(true);
   });
 });
 

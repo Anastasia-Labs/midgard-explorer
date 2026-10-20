@@ -1,7 +1,29 @@
 import { config } from "../config";
 import { loadManifest } from "./manifest";
 import { logger } from "../logger";
-import { readL2Source, type L2FreshnessState, type L2SourceKind } from "./source";
+import { readL2Source, type L2FreshnessState, type L2Source, type L2SourceKind } from "./source";
+import { archiveHoldsFixtures, publicContext } from "../public/context";
+
+/**
+ * The public source, described the way `readL2Source` describes a database.
+ *
+ * An archive fed by a recorded fixture is a fixture, and says so. Otherwise
+ * it is the archive, and how current it is cannot be measured: no header
+ * source tells it what the chain holds now, so its freshness is unknown and
+ * `observedAsOf` is the newest archived block's end time, not a lag.
+ */
+async function readPublicSource(): Promise<L2Source> {
+  const { view } = publicContext();
+  const newest = (await view.blocksPage(1, 1)).rows[0];
+  const fixture = await archiveHoldsFixtures(view);
+  return {
+    kind: fixture ? "fixture" : "archive",
+    database: "archive",
+    observedAsOf: newest === undefined ? null : new Date(Number(newest.endTime)).toISOString(),
+    lagSeconds: null,
+    freshness: fixture ? "synthetic" : "unknown",
+  };
+}
 import type { DeploymentContext } from "./association";
 
 /**
@@ -91,7 +113,7 @@ export async function getSourceIdentity(): Promise<SourceIdentity | null> {
     const { deploymentId, network, createdAt, validators } = loadManifest(
       config.MIDGARD_MANIFEST_PATH,
     );
-    const source = await readL2Source();
+    const source = config.L2_SOURCE === "public" ? await readPublicSource() : await readL2Source();
     identity = {
       deployment: deploymentId,
       network,

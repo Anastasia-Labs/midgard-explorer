@@ -13,13 +13,15 @@ import { L1TxLink } from "../../components/ui/domain/l1link";
 import { RawData } from "../../components/ui/base/rawdata";
 import { SettlementDetails } from "../../components/ui/domain/settlementdetails";
 import { ToneBadge } from "../../components/ui/domain/status";
-import { DataTable, DecodeWarn } from "../../components/ui/base/table";
+import { DataTable, DecodeWarn, Pagination } from "../../components/ui/base/table";
 import { Tabs } from "../../components/ui/base/tabs";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { blockForDisplay } from "../../lib/blockDisplay";
 import { formatDuration, truncateId } from "../../lib/format";
 import { OUTCOME_TONE, blockJourney } from "../../lib/journey";
 import { MerkleRoots } from "./MerkleRoots";
+import { ArchiveEvidence } from "./ArchiveEvidence";
+import { archiveBadge } from "../../lib/evidence";
 import type { BlockResponse } from "@midgard-explorer/contracts";
 
 /**
@@ -32,6 +34,11 @@ import type { BlockResponse } from "@midgard-explorer/contracts";
 export function BlockView({ hash, data }: { hash: string; data: BlockResponse }) {
   const header = data.header;
   const finalization = data.finalization;
+  // Served from the explorer's archive (the public source): its evidence
+  // replaces the node-journal journey, which this source does not read.
+  const archived = data.archive !== undefined;
+  const recordsPage = data.transactionsPage;
+  const pagedRecords = recordsPage !== undefined && recordsPage.pages > 1;
 
   // Fee total over decodable transactions (BigInt: never Number).
   const decodable = data.rows.filter((r) => r.transaction);
@@ -104,8 +111,8 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
           (header.header_withdrawal_count ?? 0) +
           (header.header_forced_transaction_count ?? 0) >
         0
-          ? "This header contains protocol events but no Midgard transactions."
-          : "This header contains no Midgard transactions."
+          ? "Protocol events only."
+          : undefined
       }
     />
   );
@@ -146,11 +153,15 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
         value={hash}
         badges={
           <>
-            <ToneBadge
-              tone={OUTCOME_TONE[journeyModel.outcome]}
-              label={journeyModel.headline}
-              explain={journeyModel.explanation || undefined}
-            />
+            {archived ? (
+              <ToneBadge {...archiveBadge(data.outcome)} />
+            ) : (
+              <ToneBadge
+                tone={OUTCOME_TONE[journeyModel.outcome]}
+                label={journeyModel.headline}
+                explain={journeyModel.explanation || undefined}
+              />
+            )}
             <BlockNav neighbours={data.neighbours} />
           </>
         }
@@ -193,19 +204,36 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
           {
             label: "Total output",
             value: <AdaAmount lovelace={outputLovelace.toString()} />,
-            ...(partial ? { sub: "Decoded transactions only" } : {}),
+            ...(pagedRecords
+              ? { sub: "This page only" }
+              : partial
+                ? { sub: "Decoded transactions only" }
+                : {}),
           },
           {
             label: "Fees",
-            value: decodable.length > 0 ? <AdaAmount lovelace={feeSum.toString()} /> : "Unknown",
+            // A block with no transactions paid no fees: that zero is measured.
+            value:
+              decodable.length > 0 ||
+              (data.rows.length === 0 && header.header_l2_transaction_count === 0) ? (
+                <AdaAmount lovelace={feeSum.toString()} />
+              ) : (
+                "Unknown"
+              ),
+            ...(pagedRecords && decodable.length > 0 ? { sub: "This page only" } : {}),
           },
         ]}
       />
 
-      {journeyModel.outcome !== "complete" ? (
+      {archived && data.evidence ? (
+        <Card className="mb-4" region="evidence">
+          <ArchiveEvidence evidence={data.evidence} />
+        </Card>
+      ) : null}
+      {!archived && journeyModel.outcome !== "complete" ? (
         <Journey model={journeyModel} showHeadline={false} />
       ) : null}
-      {hasRecordedSettlement(data.cardano) ? null : (
+      {archived || hasRecordedSettlement(data.cardano) ? null : (
         <CardanoAssociation association={data.cardano} context={data.midgard} />
       )}
 
@@ -215,8 +243,19 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
           {
             id: "transactions",
             label: "Transactions",
-            count: data.rows.length,
-            content: <Card>{transactionsTab}</Card>,
+            count: recordsPage?.records ?? data.rows.length,
+            content: (
+              <Card>
+                {transactionsTab}
+                {pagedRecords ? (
+                  <Pagination
+                    page={recordsPage.page}
+                    hasNextPage={recordsPage.page < recordsPage.pages}
+                    hrefFor={(n) => `/block/${hash}?page=${n}`}
+                  />
+                ) : null}
+              </Card>
+            ),
           },
           {
             id: "events",
@@ -227,17 +266,16 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
                 {eventCount === 0 ? (
                   <p className="p-4 text-sm text-text-3">
                     {eventTotal === 0
-                      ? "No deposits, withdrawals or forced transactions in this block."
+                      ? "No protocol events in this block."
                       : eventTotal === null
-                        ? "The node recorded no list of this block's protocol events."
-                        : `The header counts ${plural(eventTotal, "protocol event")}, but the node recorded no list of them.`}
+                        ? "No event list recorded."
+                        : `${plural(eventTotal, "protocol event")} in the header · none listed`}
                   </p>
                 ) : (
                   <>
                     {eventTotal !== null && eventTotal !== eventCount ? (
                       <p className="border-b border-border px-4 py-3 mg-caption text-text-3">
-                        The header counts {plural(eventTotal, "protocol event")}. The node recorded{" "}
-                        {eventCount} of them.
+                        {plural(eventTotal, "protocol event")} in the header · {eventCount} listed
                       </p>
                     ) : null}
                     <EventMembers title="Deposits" rows={data.events.deposits} />
@@ -292,16 +330,22 @@ export function BlockView({ hash, data }: { hash: string; data: BlockResponse })
                     </>
                   ) : null}
                   <FactRow label="Payload">
-                    {header.payload_retained_locally ? "Retained locally" : "Not retained locally"}
+                    {archived
+                      ? "Archived by this explorer"
+                      : header.payload_retained_locally
+                        ? "Retained locally"
+                        : "Not retained locally"}
                   </FactRow>
                 </FactGroup>
-                <FactGroup title="Settlement">
-                  <SettlementDetails
-                    association={data.cardano}
-                    context={data.midgard}
-                    journey={journeyModel}
-                  />
-                </FactGroup>
+                {archived ? null : (
+                  <FactGroup title="Settlement">
+                    <SettlementDetails
+                      association={data.cardano}
+                      context={data.midgard}
+                      journey={journeyModel}
+                    />
+                  </FactGroup>
+                )}
               </Card>
             ),
           },

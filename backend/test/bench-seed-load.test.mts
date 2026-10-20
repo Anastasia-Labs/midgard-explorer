@@ -63,7 +63,7 @@ db("seedDataset", () => {
       await seedDataset(client, dataset);
       const { rows } = await client.query<{ n: string }>(
         `SELECT count(*)::text AS n FROM pending_block_finalizations
-          WHERE status NOT IN ('finalized', 'abandoned')`,
+          WHERE status NOT IN ('locally_applied', 'abandoned')`,
       );
       expect(Number(rows[0].n)).toBeLessThanOrEqual(1);
     });
