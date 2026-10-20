@@ -13,7 +13,12 @@ allowBuilds:
 overrides:
   nanoid: 3.3.18
   postcss: 8.5.26
-  sharp: 0.35.4
+  # 0.35.5 is the first release clear of GHSA-wq5f-xc86-pv6w. Next asks for
+  # ^0.35.4.
+  sharp: 0.35.5
+  # Reached through postcss, which asks for ^1.2.1. 1.2.2 is the first release
+  # clear of GHSA-68fv-2mgg-jv7q.
+  source-map-js: 1.2.2
 
 minimumReleaseAgeExclude:
   - postcss@8.5.10 || 8.5.12 || 8.5.18 || 8.5.23
