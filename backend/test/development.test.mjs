@@ -65,12 +65,14 @@ const fixtureRoot = (files = {}) => {
 };
 
 /** Doctor's machine-readable output for one mode. */
-const doctor = (root, mode, ...flags) => {
+const doctor = (root, mode, ...flags) => doctorWith(process.env, root, mode, ...flags);
+
+const doctorWith = (env, root, mode, ...flags) => {
   try {
     const stdout = execFileSync(
       process.execPath,
       [join(repoRoot, "backend", "scripts", "doctor.mjs"), root, mode, "--json", ...flags],
-      { encoding: "utf8", timeout: 120_000 },
+      { encoding: "utf8", timeout: 120_000, env },
     );
     return { code: 0, report: JSON.parse(stdout) };
   } catch (error) {
@@ -606,6 +608,18 @@ describe("doctor", () => {
       "existing",
     ).report;
     assert.equal(check(missing, "existing.manifest-file").status, "fail");
+  });
+
+  it("does not need Docker, which nothing the explorer runs uses", () => {
+    // A daemon nobody can reach, the state of a machine with Docker stopped.
+    const env = { ...process.env, DOCKER_HOST: "unix:///nonexistent/docker.sock" };
+    const { report } = doctorWith(env, fixtureRoot(), "existing");
+    const failed = report.checks.filter(
+      (c) =>
+        (c.status === "fail" || c.status === "error") &&
+        /docker/i.test(`${c.title} ${c.detail} ${c.hint ?? ""}`),
+    );
+    assert.deepEqual(failed.map((c) => c.id), []);
   });
 
   it("exits 2 on an unknown mode", () => {

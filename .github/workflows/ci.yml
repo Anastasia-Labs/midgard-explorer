@@ -483,8 +483,10 @@ jobs:
         run: |
           set -euo pipefail
           pnpm install --frozen-lockfile
+          set -m
           pnpm dev > ../frontend.log 2>&1 &
           echo $! > ../frontend.pid
+          set +m
           for i in $(seq 1 90); do
             curl -sf http://127.0.0.1:3011/ >/dev/null && break
             sleep 3
@@ -712,6 +714,46 @@ jobs:
           set -euo pipefail
           pnpm services:down | tee ../down.log
           grep -q "No containers were started by this package, so none are stopped." ../down.log
+
+      - name: Without Docker, pnpm doctor and pnpm dev still work
+        # The explorer starts no container, so a machine without Docker runs it.
+        # DOCKER_HOST names no daemon for these commands only, and the job's
+        # PostgreSQL service keeps running.
+        working-directory: backend
+        env:
+          DOCKER_HOST: unix:///nonexistent/docker.sock
+        run: |
+          set -euo pipefail
+          if docker info >/dev/null 2>&1; then echo "Docker is still reachable"; exit 1; fi
+          # Doctor refuses a second Next dev server, so the frontend stops first.
+          kill -TERM -"$(cat ../frontend.pid)"
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3011/ >/dev/null || break
+            sleep 1
+          done
+          pnpm doctor
+          set -m
+          pnpm dev > ../backend-nodocker.log 2>&1 &
+          echo $! > ../backend.pid
+          set +m
+          for i in $(seq 1 90); do
+            curl -sf http://127.0.0.1:3101/healthz >/dev/null && break
+            kill -0 "$(cat ../backend.pid)" 2>/dev/null || break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:3101/healthz >/dev/null || { cat ../backend-nodocker.log; exit 1; }
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3101/readyz)
+          [ "$code" = 200 ] || { echo "/readyz answered $code"; exit 1; }
+          group=$(cat ../backend.pid)
+          kill -TERM -"$group"
+          for i in $(seq 1 30); do pgrep -g "$group" >/dev/null || break; sleep 1; done
+          if pgrep -g "$group" >/dev/null; then
+            echo "a process outlived the stop"; pgrep -a -g "$group"; exit 1
+          fi
+          if curl -sf http://127.0.0.1:3101/healthz >/dev/null; then
+            echo "the API kept answering after the stop"; exit 1
+          fi
+          echo "doctor passed, and the API served and stopped, with no Docker"
 
       - if: always()
         run: |

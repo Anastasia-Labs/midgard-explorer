@@ -83,13 +83,6 @@ const requireToolchain = async () => {
   if (major < 24) {
     die(`Node ${process.versions.node} is too old; this package requires 24.`, "Run: nvm use 24");
   }
-  const docker = await run("docker", ["info", "--format", "{{.ServerVersion}}"]);
-  if (docker.code !== 0) {
-    die(
-      "Docker is not reachable.",
-      "The explorer's own PostgreSQL runs in it. Start Docker, then run this again.",
-    );
-  }
 };
 
 const backendEnvPath = join(packageRoot, ".env");

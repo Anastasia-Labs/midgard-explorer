@@ -11,7 +11,6 @@ and forced transactions.
 
 - Node.js 24, the version `.nvmrc` pins and continuous integration runs.
 - pnpm 11, from `corepack enable`.
-- Docker with the Compose v2 plugin. The explorer's own PostgreSQL runs in it.
 - A reachable Midgard node PostgreSQL. That is the only thing this repository
   cannot provide for you.
 
