@@ -6,8 +6,8 @@ name: CI
 #
 #   backend              its own checks, its suites, and the compiled artifact
 #   frontend             its own gate, the browser suite, and demo mode
-#   documented-workflow  the two commands the README tells a contributor to run,
-#                        against a seeded Midgard node database
+#   documented-workflow  the local setup the README describes, run start to
+#                        finish against a seeded Midgard node database
 
 on:
   push:
@@ -380,7 +380,7 @@ jobs:
           retention-days: 30
 
   documented-workflow:
-    name: The two commands the README tells a contributor to run
+    name: Local setup smoke test
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -531,20 +531,35 @@ jobs:
             })();
           '
 
-      - name: Readiness answers for the development setup
-        # Against the backend and its PostgreSQL while both are up. There were
-        # two scopes here and the step proved a narrow one passed where the
-        # strict one refused; the strict scope covered the decommissioned
-        # Cardano index, so what is left is one answer and it must be ready.
+      - name: Without a manifest, development starts and readiness refuses
+        # The README's setup names no manifest. `pnpm dev` warns and serves,
+        # and the check `/readyz` runs refuses on the manifest alone.
         working-directory: backend
         run: |
           set -euo pipefail
-          pnpm --silent readiness
-          if pnpm --silent readiness -- --scope=l2; then
-            echo "a retired scope was accepted"
-            exit 1
-          fi
-          echo "readiness is ready, and a retired scope is refused"
+          grep -q "/readyz refuses this process" ../backend.log
+          status=0
+          pnpm --silent readiness > ../readiness.log 2>&1 || status=$?
+          cat ../readiness.log
+          [ "$status" -eq 1 ] || { echo "strict readiness exited $status"; exit 1; }
+          grep -q "^READY      node database" ../readiness.log
+          grep -q "^NOT READY  manifest" ../readiness.log
+          pnpm --silent readiness -- --manifest=optional
+          code=$(curl -s -o ../readyz.json -w '%{http_code}' http://127.0.0.1:3101/readyz)
+          [ "$code" = 503 ] || { echo "/readyz answered $code"; exit 1; }
+          node -e '
+            const r = require("../readyz.json");
+            const failed = r.checks.filter((c) => !c.ok).map((c) => c.name).join(",");
+            if (r.ready !== false || failed !== "manifest") {
+              console.error("/readyz should fail on the manifest alone:", JSON.stringify(r));
+              process.exit(1);
+            }
+          '
+          # Exit 2 is a refused argument; 1 would only be the missing manifest.
+          status=0
+          pnpm --silent readiness -- --scope=l2 || status=$?
+          [ "$status" -eq 2 ] || { echo "a retired scope exited $status"; exit 1; }
+          echo "serving, not ready, and a retired scope is refused"
 
       - name: The Cardano pages read the node, not an index
         run: |
@@ -626,12 +641,17 @@ jobs:
           fi
           echo "API stopped"
 
+      - name: Add a manifest the way the README describes
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          sed -i 's#^MIDGARD_MANIFEST_PATH=.*#MIDGARD_MANIFEST_PATH=./test/fixtures/manifest-sample.json#' .env
+          pnpm setup
+          grep -q '^MIDGARD_MANIFEST_PATH=./test/fixtures/manifest-sample.json' .env
+
       - name: Starting again is a restart, not a conflict
-        # The container the first run started is still up, and the second run
-        # must not call it adopted: the record carries forward, so the container
-        # this package started stays this package's to stop. Taking the answer
-        # again would call everything adopted and leave `services:down` with
-        # nothing it was allowed to touch.
+        # A second `pnpm dev` after the first one stopped. It must start again
+        # on the same port, and it records no container, because it starts none.
         working-directory: backend
         run: |
           set -euo pipefail
@@ -651,9 +671,17 @@ jobs:
             echo "the second run adopted a container this package had started"
             cat ../backend2.log; exit 1
           fi
-          test "$(cat ../.dev/backend/adopted)" = "" || {
-            echo "the adoption record named a container this package started"
+          test ! -e ../.dev/backend/adopted || {
+            echo "pnpm dev recorded a container, and it starts none"
             cat ../.dev/backend/adopted; exit 1; }
+
+      - name: With a manifest, development starts and readiness passes
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          pnpm --silent readiness
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3101/readyz)
+          [ "$code" = 200 ] || { echo "/readyz answered $code"; cat ../backend2.log; exit 1; }
           # Stopped here, so the boot steps below have the port.
           kill -TERM -"$(cat ../backend.pid)"
           for i in $(seq 1 30); do
@@ -678,11 +706,12 @@ jobs:
           grep -q "Invalid deployment manifest" ../bad-manifest.log
 
       - name: pnpm services:down stops only what it started
+        # `pnpm dev` starts no container, so there is nothing for it to stop.
         working-directory: backend
         run: |
           set -euo pipefail
           pnpm services:down | tee ../down.log
-          grep -q "No volume, database or Midgard state was removed" ../down.log
+          grep -q "No containers were started by this package, so none are stopped." ../down.log
 
       - if: always()
         run: |
