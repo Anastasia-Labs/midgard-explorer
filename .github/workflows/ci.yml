@@ -520,7 +520,9 @@ jobs:
                   process.exit(1);
                 }
               }
-              const list = await (await fetch(app + "/blocks")).text();
+              // React separates adjacent text with an empty comment, so the
+              // HTML reads "Block #<!-- -->7". Compare the text a reader sees.
+              const list = (await (await fetch(app + "/blocks")).text()).replace(/<!-- -->/g, "");
               if (!list.includes("#" + height)) {
                 console.error(`/blocks does not show block #${height}`);
                 process.exit(1);
