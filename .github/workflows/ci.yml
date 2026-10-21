@@ -5,7 +5,8 @@ name: CI
 # on a contributor's machine does.
 #
 #   backend              its own checks, its suites, and the compiled artifact
-#   frontend             its own gate, the browser suite, and demo mode
+#   frontend             its own gate without the browser suite, and demo mode
+#   frontend-e2e         the browser suite, one job per Playwright project
 #   documented-workflow  the local setup the README describes, run start to
 #                        finish against a seeded Midgard node database
 
@@ -317,14 +318,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Install the browser the e2e project uses
-        run: pnpm --filter @midgard-explorer/app exec playwright install --with-deps chromium
-
-      - name: Run the same gate the local script runs
+      - name: Run the same gate the local script runs, without the browser suite
+        # The browser suite runs in frontend-e2e, one job per project.
         run: |
           set -o pipefail
           mkdir -p gate-evidence
-          ./scripts/ci-local.sh 2>&1 | tee gate-evidence/ci-local.log
+          ./scripts/ci-local.sh --fast 2>&1 | tee gate-evidence/ci-local.log
 
       - name: Demo mode serves fixture records, not just a process
         # The quick start's one-command claim: no backend, no Docker, no
@@ -374,6 +373,56 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: frontend-gate-evidence
+          path: frontend/gate-evidence
+          retention-days: 30
+
+  frontend-e2e:
+    name: Frontend browser suite (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # The fixture backend holds fault-injection state, so one project's suite
+    # runs on one worker. Each job here has its own fixture, so the projects
+    # run side by side instead of one after the other.
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [desktop, mobile]
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install the browser the e2e project uses
+        run: pnpm --filter @midgard-explorer/app exec playwright install --with-deps chromium
+
+      - name: Run the browser suite the local script runs
+        run: |
+          set -o pipefail
+          mkdir -p gate-evidence
+          ./scripts/ci-local.sh --e2e --project=${{ matrix.project }} 2>&1 \
+            | tee gate-evidence/e2e-${{ matrix.project }}.log
+
+      - name: Preserve the evidence
+        # The traces and error contexts Playwright writes under test-results
+        # when a test retries or fails, and the suite's own log.
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-e2e-${{ matrix.project }}-evidence
           path: |
             frontend/gate-evidence
             frontend/app/test-results
