@@ -1,0 +1,33 @@
+{
+  // Static checking for the JavaScript tooling, which `tsconfig.json` does not
+  // reach: it has `allowJs` off, so every `.mjs` under `scripts/` has been
+  // unchecked since it was written.
+  //
+  // `snapshot.mjs` is here first because it is the one tool that can destroy a
+  // database: it runs `pg_restore --clean` against a target it decides is
+  // safe. Checking it found a real documentation error, a `writable` parameter
+  // described as a boolean that is an options object, and it types the
+  // manifest fields that a restore reads from a file anyone can supply.
+  //
+  // The files stay `.mjs` and stay directly executable: an operator runs
+  // `node scripts/snapshot.mjs restore <archive>` on a machine with no build
+  // step, so JSDoc rather than TypeScript. The remaining modules are listed
+  // in the order they are worth doing, by what a mistake in them costs, with
+  // the errors a project-wide run attributes to each: `lib/checks.mjs` (48),
+  // `lib/compose.mjs` (22), `coverage-lint.mjs` (21), `setup.mjs` (20).
+  // Adding one means clearing its errors, not widening the include and
+  // suppressing them.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node18",
+    "moduleResolution": "node16",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true
+  },
+  "include": ["scripts/snapshot.mjs"]
+}

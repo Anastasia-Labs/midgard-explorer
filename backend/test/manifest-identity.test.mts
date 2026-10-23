@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { computeDeploymentId, loadManifest } from "../src/indexer/manifest.js";
+import { computeDeploymentId, loadManifest } from "../src/db/manifest.js";
 
 /**
  * A conformance vector for the deployment identity.

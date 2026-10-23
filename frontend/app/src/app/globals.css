@@ -1,0 +1,13 @@
+/* The application's stylesheet, in four parts.
+ *
+ * tokens    what every rule is written in terms of
+ * base      the document's own elements
+ * features  the few components that need a rule Tailwind cannot express
+ * motion    state changes, and the reduced-motion answer to all of them
+ */
+@import "tailwindcss";
+@import "@midgard-explorer/ui/src/tokens.css";
+@import "./styles/tokens.css";
+@import "./styles/base.css";
+@import "./styles/features.css";
+@import "./styles/motion.css";

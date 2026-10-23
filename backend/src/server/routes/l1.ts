@@ -1,18 +1,23 @@
 import { Request, Response } from "express";
 import {
-  getL1BlockHeaders,
-  getL1BlockHeader,
-  getL1Deposits,
-  getL1Summary,
-  getL1Transaction,
-  getL1TransactionsPage,
-  getL1Validator,
-} from "../../db/l1";
-import { parseHexOfLength } from "../validate";
+  PAGE_SIZE,
+  getCardanoActivityPage,
+  getCardanoActivitySummary,
+  getCardanoReferences,
+} from "../../db/cardanoActivity";
+import { getValidator, listValidators } from "../../db/l1";
+import { getDeploymentContext } from "../../db/deployment";
+import { parseHexOfLength, parseHintedPage } from "../validate";
 
-/** Midgard's on-chain footprint on Cardano, read from the explorer's own
- * store. Unlike the rest of the API these answer whether or not the Midgard
- * node is running, because the data came from the chain rather than the node.
+/**
+ * Midgard's Cardano footprint, as the node recorded it.
+ *
+ * These read the node's own database and the deployment manifest. Nothing here
+ * observes Cardano, so nothing here can find a transaction the node never
+ * mentioned, and no response may be presented as a confirmation. Every payload
+ * carries the deployment context, which says which Midgard this is and how
+ * current the records are, so a reader is never given a hash without being told
+ * where it came from.
  *
  * Two conventions live here on purpose, and this is the ruling rather than an
  * oversight:
@@ -22,54 +27,61 @@ import { parseHexOfLength } from "../validate";
  *   show the reader something useful, and there is no wrong resource to serve.
  * - An **identifier** names one specific resource, so a malformed one is a 400.
  *   Coercing it would answer a question the caller did not ask.
+ */
+
+export async function getCardanoActivityRoute(req: Request, res: Response) {
+  // A malformed page is coerced to the first, per the convention note above.
+  // Depth is a different question and is refused: see `parseHintedPage`.
+  const parsedPage = parseHintedPage(req.params.page, PAGE_SIZE);
+  if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
+  const [activity, midgard] = await Promise.all([
+    getCardanoActivityPage(parsedPage.value),
+    getDeploymentContext(),
+  ]);
+  return res.json({ midgard, ...activity });
+}
+
+export async function getCardanoActivitySummaryRoute(_req: Request, res: Response) {
+  const [summary, midgard] = await Promise.all([
+    getCardanoActivitySummary(),
+    getDeploymentContext(),
+  ]);
+  return res.json({ midgard, ...summary });
+}
+
+/**
+ * What Midgard records about one Cardano transaction.
  *
- * Paging stays on the path (`/transactions/:page`) because the frontend
- * already links that way; limits stay on the query string because they modify
- * a request rather than name a resource. */
-
-export async function getL1SummaryRoute(_req: Request, res: Response) {
-  return res.json(await getL1Summary());
-}
-
-export async function getL1TransactionsPageRoute(req: Request, res: Response) {
-  // Coerced, not rejected. See the convention note above: a page number is a
-  // navigation hint and there is no wrong resource to serve.
-  const page = Number(req.params.page);
-  return res.json(await getL1TransactionsPage(page));
-}
-
-export async function getL1TransactionRoute(req: Request, res: Response) {
+ * Empty `references` is a real answer and not a 404: the node holds no record
+ * naming this hash. It is deliberately NOT "this transaction does not exist",
+ * which is a claim about Cardano that nothing here is entitled to make.
+ */
+export async function getCardanoReferenceRoute(req: Request, res: Response) {
   const parsed = parseHexOfLength(req.query.txHash, 64, "txHash");
   if (!parsed.ok) return res.status(400).json({ error: parsed.error });
-  const tx = await getL1Transaction(parsed.value);
-  if (!tx) return res.status(404).json({ error: "Not found." });
-  return res.json(tx);
+  const [references, midgard] = await Promise.all([
+    getCardanoReferences(parsed.value),
+    getDeploymentContext(),
+  ]);
+  return res.json({ midgard, txHash: parsed.value, references });
 }
 
-export async function getL1BlockHeadersRoute(req: Request, res: Response) {
-  const limit = Number(req.query.limit ?? 25);
-  return res.json(await getL1BlockHeaders(limit));
+export async function getValidatorsRoute(_req: Request, res: Response) {
+  const [midgard, validators] = await Promise.all([
+    getDeploymentContext(),
+    Promise.resolve(listValidators()),
+  ]);
+  return res.json({ midgard, ...validators });
 }
 
-export async function getL1BlockHeaderRoute(req: Request, res: Response) {
-  const parsed = parseHexOfLength(req.query.headerHash, 56, "headerHash");
-  if (!parsed.ok) return res.status(400).json({ error: parsed.error });
-  const header = await getL1BlockHeader(parsed.value);
-  if (!header) return res.status(404).json({ error: "Not found." });
-  return res.json(header);
-}
-
-export async function getL1ValidatorRoute(req: Request, res: Response) {
+export async function getValidatorRoute(req: Request, res: Response) {
   const parsed = parseHexOfLength(req.query.scriptHash, 56, "scriptHash");
   if (!parsed.ok) return res.status(400).json({ error: parsed.error });
-  const validator = await getL1Validator(parsed.value);
-  if (!validator) return res.status(404).json({ error: "Not found." });
-  return res.json(validator);
-}
-
-/** Midgard's deposits, newest first. The decoded datum is what makes a row
- * readable; a deposit whose datum did not decode is still listed. */
-export async function getL1DepositsRoute(req: Request, res: Response) {
-  const limit = Number(req.query.limit ?? 25);
-  return res.json(await getL1Deposits(limit));
+  const found = getValidator(parsed.value);
+  // 404 here is about the MANIFEST, not about Cardano: this deployment declares
+  // no such validator. A script hash absent from the manifest may well exist on
+  // chain, and this says nothing either way.
+  if (found === null) return res.status(404).json({ error: "Not found." });
+  const midgard = await getDeploymentContext();
+  return res.json({ midgard, ...found });
 }

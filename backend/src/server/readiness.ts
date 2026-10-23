@@ -58,6 +58,8 @@ const remembered = new WeakMap<
   { at: number; report: ReadinessReport }
 >();
 
+const inFlight = new WeakMap<Record<string, Probe>, Promise<ReadinessReport>>();
+
 /** Runs every probe, in parallel, and reports each one separately. A single
  * aggregate boolean makes an operator guess which dependency is down. */
 export async function checkReadiness(
@@ -70,30 +72,43 @@ export async function checkReadiness(
   if (cacheMs > 0) {
     const last = remembered.get(probes);
     if (last && Date.now() - last.at < cacheMs) return last.report;
+    const pending = inFlight.get(probes);
+    if (pending) return pending;
   }
 
-  const checks = await Promise.all(
-    Object.entries(probes).map(async ([name, probe]) => {
-      const started = Date.now();
-      try {
-        await bounded(probe, timeoutMs);
-        return { name, ok: true, latencyMs: Date.now() - started };
-      } catch (error) {
-        options.onFailure?.(name, error);
-        return { name, ok: false, latencyMs: Date.now() - started };
-      }
-    }),
-  );
+  const run = async (): Promise<ReadinessReport> => {
+    const checks = await Promise.all(
+      Object.entries(probes).map(async ([name, probe]) => {
+        const started = Date.now();
+        try {
+          await bounded(probe, timeoutMs);
+          return { name, ok: true, latencyMs: Date.now() - started };
+        } catch (error) {
+          options.onFailure?.(name, error);
+          return { name, ok: false, latencyMs: Date.now() - started };
+        }
+      }),
+    );
 
-  const report: ReadinessReport = {
-    ready: checks.every((check) => check.ok),
-    now: new Date().toISOString(),
-    checks,
+    const report: ReadinessReport = {
+      ready: checks.every((check) => check.ok),
+      now: new Date().toISOString(),
+      checks,
   };
 
   if (cacheMs > 0) remembered.set(probes, { at: Date.now(), report });
 
   return report;
+  };
+
+  const pending = run();
+  if (cacheMs <= 0) return pending;
+  inFlight.set(probes, pending);
+  try {
+    return await pending;
+  } finally {
+    inFlight.delete(probes);
+  }
 }
 
 /** Readiness is a separate question from liveness. `/healthz` says the process

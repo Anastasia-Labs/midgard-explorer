@@ -146,7 +146,36 @@ model L1Event {
   @@map("l1_event")
 }
 
+/// Which deployment this index belongs to, and the network it read.
+///
+/// At most one row, enforced by a fixed boolean primary key. Only `l1_event`
+/// ever carried a deployment column, so the other five tables could not be
+/// filtered even in principle and a second manifest would merge two deployments
+/// where nothing could separate them again. One binding that refuses a
+/// disagreeing manifest is smaller than a deployment column on every table, and
+/// it fails closed instead of quietly mixing.
+///
+/// The L2 database persists no protocol deployment identity of its own, only a
+/// migration-bundle hash, so this records an operator's assertion rather than
+/// something the explorer can derive.
+model IndexBinding {
+  id                    Boolean  @id @default(true)
+  deploymentId          String   @map("deployment_id")
+  network               String
+  networkMagic          Int?     @map("network_magic")
+  manifestSchemaVersion String?  @map("manifest_schema_version")
+  l2Database            String   @map("l2_database")
+  boundAt               DateTime @default(now()) @map("bound_at")
+
+  @@map("index_binding")
+}
+
 model L1BlockHeader {
+  /// The Midgard block header hash, 28 bytes, taken from the `MBLC` state-queue
+  /// token the commit transaction minted. This held `utxosRoot` until
+  /// `20260902190000_canonical_header_and_binding`: a 32-byte commitment to the
+  /// UTxO set, stored under the name of the identity, which no route could ask
+  /// for. `utxosRoot` below still carries that commitment, correctly.
   headerHash             String  @id @map("header_hash")
   // Nullable on purpose. A commit transaction carries BOTH the new head header
   // and a re-output of the previous queue node, so a header can first be seen

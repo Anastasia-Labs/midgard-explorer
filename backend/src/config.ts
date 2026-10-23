@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { z } from "zod";
 import { Config } from "./types";
 import * as dotenv from "dotenv";
@@ -27,6 +28,17 @@ const boolean = z
 const blank = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((v) => (v === "" ? undefined : v), schema.optional());
 
+/** Whether a path names a file this process can stat. Enough to separate a
+ * manifest that is absent from one that is merely unparsed; what is inside it
+ * is the indexer's and readiness's question, not configuration's. */
+const isReadableFile = (path: string) => {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+};
+
 const shape = {
   BACKEND_PORT: positive,
   // min(1) matters: `CORS_ORIGIN=` in a .env used to pass as the empty string,
@@ -40,10 +52,28 @@ const shape = {
   MIDGARD_READ_REPLICA_URL: blank(required),
   REQUIRE_MIDGARD_READ_REPLICA: boolean.default(false),
   NODE_DB_POOL_MAX: positive.default(8),
-  INDEXER_DB_POOL_MAX: positive.default(5),
   DB_CONNECTION_TIMEOUT_MS: positive.default(5_000),
   DB_IDLE_TIMEOUT_MS: positive.default(30_000),
   DB_STATEMENT_TIMEOUT_MS: positive.default(10_000),
+  /**
+   * Enables the benchmark cache bypass when set. Absent in production, and the
+   * bypass then does not exist at all rather than being merely unused.
+   *
+   * A secret rather than a bare header: on a public deployment a header anyone
+   * could send would let any client disable the response cache and turn the
+   * request amplification these caches prevent into a denial of service. Short
+   * values are rejected for the same reason.
+   */
+  BENCH_CACHE_BYPASS_TOKEN: blank(z.string().min(16)),
+  /**
+   * The Prometheus listener's port. Unset, there is no listener at all. It is
+   * its own port rather than a route on the API, so the edge proxy, which
+   * forwards every `/api/` path, never publishes it.
+   */
+  METRICS_PORT: blank(positive),
+  /** Loopback by default. A container deployment may name a private address
+   * its scraper reaches; nothing may publish this port to the internet. */
+  METRICS_HOST: required.default("127.0.0.1"),
   RESPONSE_CACHE_MAX_ENTRIES: positive.default(1_000),
   // Declared in the Config type and passed into the cache, but never parsed:
   // the `as Config` cast below hid the mismatch, so the value was `undefined`
@@ -106,17 +136,15 @@ const shape = {
   RECENT_TRANSACTIONS_LIMIT: positive,
   TRANSACTIONS_PER_PAGE: positive,
   BLOCKS_PER_PAGE: positive,
-  INDEXER_POSTGRES_URL: required,
-  KOIOS_BASE_URL: required,
-  MIDGARD_MANIFEST_PATH: required,
-  L1_SYNC_INTERVAL_MS: positive,
-  // The indexing loop. Default true so a single-process deployment behaves as
-  // it always has; a second API instance sets it false and serves reads only,
-  // because two loops against one index duplicate every Koios request and
-  // race each other's writes.
-  L1_SYNC_ENABLED: boolean.default(true),
+  // Required where it is read, not everywhere.
+  //
+  // The manifest names the L1 deployment: which contracts to follow, and which
+  // network the addresses belong to. An explorer serving L2 blocks and
+  // transactions never opens it, and used to be refused at boot over a file it
+  // would not have read. `/readyz` is unchanged: probeManifest still runs in
+  // the default scope, so an instance without one is never in rotation.
+  MIDGARD_MANIFEST_PATH: blank(required),
   // Zero is meaningful here: it means every pass is a full rescan from genesis.
-  L1_REORG_LOOKBACK_BLOCKS: z.coerce.number().int().nonnegative(),
 } as const;
 
 /** The names the backend reads, exported so `.env.example` can be checked
@@ -126,6 +154,13 @@ export const CONFIG_KEYS = Object.keys(shape);
 export const configSchema = z
   .object(shape)
   .superRefine((value, ctx) => {
+    if (value.METRICS_PORT !== undefined && value.METRICS_PORT === value.BACKEND_PORT) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["METRICS_PORT"],
+        message: "must differ from BACKEND_PORT: metrics are never served on the API port",
+      });
+    }
     if (
       value.REQUIRE_MIDGARD_READ_REPLICA &&
       value.MIDGARD_READ_REPLICA_URL === undefined
@@ -148,6 +183,18 @@ export const configSchema = z
         path: ["TRUSTED_PROXY_PEERS"],
         message:
           "must name the edge's address or CIDR when TRUSTED_PROXY_MODE is single-edge",
+      });
+    }
+    // The manifest names the deployment every response is attributed to, and
+    // the validators the Cardano pages describe. It used to be demanded only
+    // when the indexer ran; the indexer is gone and the attribution is not, so
+    // it is checked whenever one is configured.
+    if (value.MIDGARD_MANIFEST_PATH !== undefined
+        && !isReadableFile(value.MIDGARD_MANIFEST_PATH)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["MIDGARD_MANIFEST_PATH"],
+        message: `names no readable file: ${value.MIDGARD_MANIFEST_PATH}`,
       });
     }
   });

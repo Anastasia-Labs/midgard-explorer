@@ -1,0 +1,422 @@
+{
+  "mode": "baseline",
+  "hardware": "existing-minimum-2-core",
+  "profile": "target",
+  "environment": {
+    "postgresVersion": "PostgreSQL 17.11 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "settings": {
+      "shared_buffers": "327688kB",
+      "work_mem": "4096kB",
+      "effective_cache_size": "1310728kB",
+      "max_parallel_workers_per_gather": "2",
+      "random_page_cost": "4",
+      "track_io_timing": "on",
+      "block_size": "8192"
+    },
+    "cpuCount": 2,
+    "cpuModel": "12th Gen Intel(R) Core(TM) i7-12700H",
+    "totalMemoryBytes": 12544897024,
+    "freeDiskBytes": 33918709760,
+    "nodeVersion": "v24.14.1",
+    "gitCommit": "7b1731d56b697660e9bac18456bd6c978f6cf0da",
+    "gitDirty": false,
+    "buildHash": "e1dd97cccb0d8df42c6a55e50bdd44305f6d8912fed8737045bde3bff3cbbc7e",
+    "capturedAt": "2026-09-04T19:39:38.378Z"
+  },
+  "warnings": [],
+  "datasetChecksum": {
+    "digest": "af2e13744187e353822e0ca26bfb2e847489bfe4c47a95b6da67e2b2bfd76f8e",
+    "tables": {
+      "address_history": 99284,
+      "blocks": 37011,
+      "confirmed_ledger": 30481,
+      "da_payloads": 5000,
+      "deposits_utxos": 3741,
+      "forced_transaction_utxos": 276,
+      "immutable": 37016,
+      "mempool": 200,
+      "mempool_ledger": 30479,
+      "mempool_tx_deltas": 37011,
+      "pending_block_finalization_deposits": 3741,
+      "pending_block_finalization_event_to_step": 42715,
+      "pending_block_finalization_forced_transactions": 276,
+      "pending_block_finalization_transition_trace": 42715,
+      "pending_block_finalization_txs": 37011,
+      "pending_block_finalization_utxos": 82432,
+      "pending_block_finalization_withdrawals": 1687,
+      "pending_block_finalizations": 5000,
+      "processed_mempool": 80,
+      "tx_admissions": 37011,
+      "tx_rejections": 2958,
+      "withdrawal_utxos": 1687
+    },
+    "rows": 537812
+  },
+  "indexChecksum": {
+    "digest": "8d89c4a60216cece7a36818b473d7a0b9092b536c974b24b875062ee982bbea5",
+    "tables": {
+      "index_binding": 0,
+      "l1_block_header": 9,
+      "l1_event": 297,
+      "l1_protocol_params": 9,
+      "l1_redeemer": 312,
+      "l1_tx": 281,
+      "l1_tx_asset": 1714,
+      "l1_tx_io": 2767,
+      "sync_cursor": 3
+    },
+    "rows": 5392
+  },
+  "iterations": 1000,
+  "serverConfig": {
+    "apiRateLimitMax": 1000000
+  },
+  "scope": "backend-only",
+  "build": {
+    "commit": "7b1731d56b697660e9bac18456bd6c978f6cf0da",
+    "builtAt": "2026-09-04T19:39:38.329Z"
+  },
+  "coverage": {
+    "measured": [
+      "blocks-list-page-1",
+      "blocks-list-page-deep",
+      "transactions-list-page-1",
+      "transactions-list-page-deep",
+      "block-detail",
+      "transaction-detail",
+      "search-prefix",
+      "metrics",
+      "metrics-cached",
+      "asset-roster",
+      "address-history",
+      "blocks-list-saturation"
+    ],
+    "excluded": [
+      {
+        "workload": "overview-aggregate",
+        "reason": "origin is frontend: not served by the backend under test"
+      }
+    ]
+  },
+  "results": [
+    {
+      "workload": "blocks-list-page-1",
+      "verdict": "FAIL",
+      "breaches": [
+        "statements 5 over 4"
+      ],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 33.7922980000003,
+        "p95Ms": 37.919284000003245,
+        "p99Ms": 41.98008500000287,
+        "maxMs": 89.53875800000242,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 29.240351136838576,
+        "wireBytes": 9294,
+        "uncompressedBytes": 0
+      },
+      "dbWork": {
+        "statements": 5.002,
+        "sharedBlocks": 4772.596,
+        "tempBytes": 0,
+        "execMs": 27.772443232999965
+      }
+    },
+    {
+      "workload": "blocks-list-page-deep",
+      "verdict": "FAIL",
+      "breaches": [
+        "statements 5 over 4"
+      ],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 35.40866400000232,
+        "p95Ms": 40.099425000007614,
+        "p99Ms": 44.98764900000242,
+        "maxMs": 61.16892100000405,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 27.900728285246988,
+        "wireBytes": 9295,
+        "uncompressedBytes": 0
+      },
+      "dbWork": {
+        "statements": 5,
+        "sharedBlocks": 4588,
+        "tempBytes": 0,
+        "execMs": 29.093348692999967
+      }
+    },
+    {
+      "workload": "transactions-list-page-1",
+      "verdict": "FAIL",
+      "breaches": [
+        "statements 5 over 4"
+      ],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 54.27543399998103,
+        "p95Ms": 59.10450600000331,
+        "p99Ms": 65.62547999998787,
+        "maxMs": 1026.4035320000112,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 17.893328570979083,
+        "wireBytes": 68261,
+        "uncompressedBytes": 0
+      },
+      "dbWork": {
+        "statements": 5,
+        "sharedBlocks": 4946,
+        "tempBytes": 0,
+        "execMs": 43.744836668
+      }
+    },
+    {
+      "workload": "transactions-list-page-deep",
+      "verdict": "FAIL",
+      "breaches": [
+        "statements 5 over 4",
+        "temp bytes 3003.9 KB over 0.0 KB"
+      ],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 58.18001099998946,
+        "p95Ms": 71.44585600000573,
+        "p99Ms": 90.82260200000019,
+        "maxMs": 219.61947500001406,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 16.520036114402703,
+        "wireBytes": 49946,
+        "uncompressedBytes": 0
+      },
+      "dbWork": {
+        "statements": 5,
+        "sharedBlocks": 7654,
+        "tempBytes": 3075989.504,
+        "execMs": 49.88222435700004
+      }
+    },
+    {
+      "workload": "block-detail",
+      "verdict": "FAIL",
+      "breaches": [
+        "statements 19 over 8"
+      ],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 23.850291000009747,
+        "p95Ms": 32.33226900000591,
+        "p99Ms": 44.84322800001246,
+        "maxMs": 92.2381620000233,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 39.89289685263418,
+        "wireBytes": 7476,
+        "uncompressedBytes": 31301
+      },
+      "dbWork": {
+        "statements": 19.005,
+        "sharedBlocks": 2673.454,
+        "tempBytes": 0,
+        "execMs": 12.116249107000012
+      }
+    },
+    {
+      "workload": "transaction-detail",
+      "verdict": "FAIL",
+      "breaches": [
+        "statements 16 over 8"
+      ],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 16.076035999984015,
+        "p95Ms": 22.96632100001443,
+        "p99Ms": 29.164511000009952,
+        "maxMs": 38.100875000003725,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 58.56109412757955,
+        "wireBytes": 5071,
+        "uncompressedBytes": 4367
+      },
+      "dbWork": {
+        "statements": 16.004,
+        "sharedBlocks": 1084.623,
+        "tempBytes": 0,
+        "execMs": 5.567568774999996
+      }
+    },
+    {
+      "workload": "search-prefix",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 20.518295000016224,
+        "p95Ms": 23.699296000006143,
+        "p99Ms": 25.647108000004664,
+        "maxMs": 37.40638099994976,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 47.769880735399965,
+        "wireBytes": 145,
+        "uncompressedBytes": 0
+      },
+      "dbWork": {
+        "statements": 9,
+        "sharedBlocks": 5384.006,
+        "tempBytes": 0,
+        "execMs": 13.628510761999996
+      }
+    },
+    {
+      "workload": "metrics",
+      "verdict": "FAIL",
+      "breaches": [
+        "statements 12 over 9"
+      ],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 57.54019099997822,
+        "p95Ms": 65.94091999996454,
+        "p99Ms": 76.18832300003851,
+        "maxMs": 141.6111909999745,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 17.047542406209843,
+        "wireBytes": 3181,
+        "uncompressedBytes": 0
+      },
+      "dbWork": {
+        "statements": 12,
+        "sharedBlocks": 12552.008,
+        "tempBytes": 15278080,
+        "execMs": 46.26793778700003
+      }
+    },
+    {
+      "workload": "metrics-cached",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 0.6181100000394508,
+        "p95Ms": 1.1238359999842942,
+        "p99Ms": 1.6520069999969564,
+        "maxMs": 14.432856999977957,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 1334.9183263594612,
+        "wireBytes": 3181,
+        "uncompressedBytes": 0
+      },
+      "dbWork": {
+        "statements": 0,
+        "sharedBlocks": 0,
+        "tempBytes": 0,
+        "execMs": 0
+      }
+    },
+    {
+      "workload": "asset-roster",
+      "verdict": "FAIL",
+      "breaches": [
+        "statements 5 over 2"
+      ],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 211.24791299999924,
+        "p95Ms": 240.39788500004215,
+        "p99Ms": 260.5049519999884,
+        "maxMs": 432.8818580000079,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 4.67051365212986,
+        "wireBytes": 18837,
+        "uncompressedBytes": 0
+      },
+      "dbWork": {
+        "statements": 5,
+        "sharedBlocks": 2616,
+        "tempBytes": 14745600,
+        "execMs": 70.67755729899999
+      }
+    },
+    {
+      "workload": "address-history",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 206.7513190000318,
+        "p95Ms": 231.7477680000011,
+        "p99Ms": 283.2716669999063,
+        "maxMs": 526.4722439999459,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 4.768712585142699,
+        "wireBytes": 87595,
+        "uncompressedBytes": 0
+      },
+      "dbWork": {
+        "statements": 6,
+        "sharedBlocks": 21742.943,
+        "tempBytes": 98829549.568,
+        "execMs": 184.91374327600005
+      }
+    },
+    {
+      "workload": "blocks-list-saturation",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 636.8917430000147,
+        "p95Ms": 699.7067200000165,
+        "p99Ms": 726.7116479999386,
+        "maxMs": 771.0812450000085,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 49.97183935687434,
+        "wireBytes": 9294,
+        "uncompressedBytes": 0
+      },
+      "dbWork": {
+        "statements": 5,
+        "sharedBlocks": 4588.084,
+        "tempBytes": 0,
+        "execMs": 137.59002256399992
+      }
+    }
+  ],
+  "startedAt": "2026-09-04T19:39:35.111Z",
+  "finishedAt": "2026-09-04T19:52:37.283Z"
+}

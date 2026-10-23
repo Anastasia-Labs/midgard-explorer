@@ -1,0 +1,937 @@
+import type { Page } from "@playwright/test";
+import {
+  FIXTURE,
+  expect,
+  expectNoViolationsInBothThemes,
+  firstBlockHash,
+  isNarrow,
+  rowRegion,
+  settle,
+  test,
+  txAwaitingFinality,
+  txInAbandonedBlock,
+  txWithStatus,
+} from "./helpers";
+
+/** Populated-state coverage: the states the July 2026 design review could not
+ * judge because no data was available. Every assertion here needs real rows. */
+
+const fixtureAddress = async (page: Page, i: number): Promise<string> => {
+  const rows = await page.request
+    .get(`${FIXTURE}/api/deposits/1`)
+    .then(async (r) => (await r.json()).rows as Array<{ ledger_address: string }>);
+  const unique = [...new Set(rows.map((r) => r.ledger_address))];
+  const address = unique[i];
+  if (!address) throw new Error(`no fixture address at index ${i}`);
+  return address;
+};
+
+test.describe("populated lists", () => {
+  test("blocks list shows rows and a total", async ({ page }) => {
+    await page.goto("/blocks");
+    await expect(rowRegion(page)).toBeVisible();
+    await expect(page.getByText(/^[\d,]+ blocks?$/)).toBeVisible();
+    await expect(rowRegion(page).locator("tr, li")).not.toHaveCount(0);
+  });
+
+  test("a deposit-only header has no synthetic height and opens by hash", async ({ page }) => {
+    const response = await page.request.get(`${FIXTURE}/api/blocks/1`);
+    const body = await response.json();
+    const row = body.rows.find((candidate: { height: number | null }) => candidate.height === null);
+    expect(row).toBeDefined();
+    expect(row.header_hash).toBe("6f77bd238790f437971176e41b6c04ecf8eb04af01cf6c8fedfbcc8b");
+
+    await page.goto(`/block/${row.header_hash}`);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Header");
+    await expect(page.getByText("Block #0", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByText("This header contains protocol events but no Midgard transactions."),
+    ).toBeVisible();
+
+    await page.getByRole("tab", { name: "Details" }).click();
+    await expect(page.locator("#panel-details").getByText("Retained locally")).toBeVisible();
+
+    await page.getByRole("tab", { name: /Protocol events/ }).click();
+    await expect(page.getByRole("heading", { name: /Deposits/ })).toContainText("(1)");
+    await expect(page.getByText(/published|attested|DA-network available/i)).toHaveCount(0);
+  });
+
+  test("transactions list flags rows that failed to decode", async ({ page }) => {
+    await page.goto("/transactions");
+    await expect(rowRegion(page).getByText("Partial decode").first()).toBeVisible();
+  });
+
+  test("deposits list shows the L1 to L2 direction without a status key", async ({ page }) => {
+    await page.goto("/deposits");
+    await expect(page.getByText("L1", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("L2", { exact: true }).first()).toBeVisible();
+    await expect(rowRegion(page).locator("tr, li").first()).toBeVisible();
+    await expect(page.getByText("Status key")).toHaveCount(0);
+    await expect(rowRegion(page).getByRole("button", { name: /^About (?!.*decode)/ })).toHaveCount(
+      0,
+    );
+  });
+
+  test("deposit ledger IDs are not linked as ordinary Midgard transactions", async ({ page }) => {
+    const deposits = await page.request
+      .get(`${FIXTURE}/api/deposits/1`)
+      .then(async (response) => (await response.json()).rows as Array<{ ledger_tx_id: string }>);
+    const id = deposits[0]!.ledger_tx_id;
+    await page.goto("/deposits");
+    await expect(page.locator(`a[href="/transaction/${id}"]`)).toHaveCount(0);
+  });
+
+  test("withdrawals separate validity from lifecycle status", async ({ page }) => {
+    await page.goto("/withdrawals");
+    if (await isNarrow(page)) {
+      // Below sm the table is replaced by ledger rows; validity moves into the
+      // per-row disclosure rather than disappearing.
+      await page.getByText("Details").first().click();
+      await expect(page.getByText("Validity").first()).toBeVisible();
+    } else {
+      await expect(page.getByRole("columnheader", { name: "Validity" })).toBeVisible();
+      await expect(page.getByRole("columnheader", { name: "Status" })).toBeVisible();
+    }
+  });
+
+  test("withdrawals show the canonical bech32 address and decoded value", async ({ page }) => {
+    await page.goto("/withdrawals");
+    await expect(
+      rowRegion(page)
+        .getByText(/addr_test1/)
+        .first(),
+    ).toBeVisible();
+    await expect(rowRegion(page).getByText(/₳/).first()).toBeVisible();
+  });
+
+  test("withdrawal outrefs are not linked as transaction hashes", async ({ page }) => {
+    const withdrawals = await page.request
+      .get(`${FIXTURE}/api/withdrawals/1`)
+      .then(async (response) => (await response.json()).rows as Array<{ l2_outref: string }>);
+    const outref = withdrawals[0]!.l2_outref;
+    await page.goto("/withdrawals");
+    await expect(page.locator(`a[href="/transaction/${outref}"]`)).toHaveCount(0);
+  });
+
+  test("an undecodable bridge row says so instead of showing a wrong amount", async ({ page }) => {
+    await page.goto("/deposits");
+    await expect(rowRegion(page).getByText("undecodable").first()).toBeVisible();
+  });
+
+  test("every known bridge status renders a labelled badge", async ({ page }) => {
+    await page.goto("/deposits");
+    for (const label of ["Awaiting", "Projected", "Consumed"]) {
+      await expect(rowRegion(page).getByText(label, { exact: true }).first()).toBeVisible();
+    }
+  });
+
+  /** A deposit names two things a reader can follow: the Midgard address the
+   * funds landed at, which has a page here, and the Cardano transaction they
+   * came from, which does not. The rule is that neither is bare text.
+   *
+   * There was a third column, the Cardano funding address, decoded by the
+   * explorer's own chain index. That index is decommissioned and the node does
+   * not record the sender, so the column is gone rather than reading "Not
+   * indexed" against every row for ever. */
+  test("marks the Midgard address and links the Cardano transaction out", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await page.goto("/deposits");
+    await settle(page);
+
+    // Filtered on the identicon rather than on the address text: the column
+    // truncates, so a row whose address reads `addr_te…mzgz` does not match a
+    // search for `addr_test` and the assertion below would find nothing to make.
+    const row = rowRegion(page)
+      .getByRole("row")
+      .filter({ has: page.locator('svg[viewBox="0 0 5 5"]') })
+      .first();
+    // The Midgard address carries its identicon, as every address on the site
+    // does, rather than being printed as a string.
+    await expect(row.locator('svg[viewBox="0 0 5 5"]')).toHaveCount(1);
+    // And the deposit's Cardano transaction leaves the explorer, because this
+    // explorer has no page for a transaction it did not record.
+    await expect(row.locator('a[href*="cexplorer.io/tx/"]').first()).toBeVisible();
+  });
+
+  test("known deposit statuses stay readable at desktop width", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/deposits");
+    await settle(page);
+
+    const projected = rowRegion(page).getByText("Projected", { exact: true }).first();
+    await expect(projected).toBeVisible();
+
+    // Measured after hydration, not before it.
+    //
+    // `Timestamp` renders the absolute instant on the server, because a
+    // relative one cannot be computed there, and swaps to the short form when
+    // it hydrates. The "Included" column is 184px wide for the first moment of
+    // this page's life and 92px afterwards, so a single measurement taken in
+    // between reported a table needing 1465px inside a 1390px scroller that is
+    // exactly 1390px a second later. It failed about one run in six, locally
+    // and hosted, against a page with nothing wrong with it.
+    //
+    // Polling the invariant rather than waiting for the layout to go quiet: a
+    // table that is genuinely too wide never comes back under its container, so
+    // this still fails for the reason it was written to catch.
+    await expect
+      .poll(
+        () =>
+          projected.evaluate((element) => {
+            const scroller = element.closest("table")?.parentElement;
+            return scroller ? scroller.scrollWidth - scroller.clientWidth : Number.NaN;
+          }),
+        {
+          message: "deposits table still needs internal scrolling at desktop width",
+          timeout: 15_000,
+        },
+      )
+      .toBeLessThanOrEqual(1);
+
+    const layout = await projected.evaluate((element) => {
+      const tableScroller = element.closest("table")?.parentElement;
+      const label = Array.from(element.childNodes).find(
+        (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim() === "Projected",
+      );
+      if (!label) throw new Error("Projected badge has no direct label text node");
+      const range = document.createRange();
+      // Measure the label, not the marker and help control that share its
+      // badge. Each inline child has its own client rectangle even when all
+      // three occupy the same line.
+      range.selectNodeContents(label);
+      return {
+        lineBoxes: range.getClientRects().length,
+        pageWidth: document.documentElement.clientWidth,
+        pageScrollWidth: document.documentElement.scrollWidth,
+        tableScroller: tableScroller
+          ? {
+              className: tableScroller.className,
+              clientWidth: tableScroller.clientWidth,
+              scrollWidth: tableScroller.scrollWidth,
+              overflowX: getComputedStyle(tableScroller).overflowX,
+              right: Math.round(tableScroller.getBoundingClientRect().right),
+            }
+          : null,
+      };
+    });
+
+    expect(layout.lineBoxes, "Projected split across multiple lines").toBe(1);
+    expect(layout.tableScroller, "deposits table has no scroll container").not.toBeNull();
+    expect(layout.tableScroller!.overflowX).toBe("auto");
+    expect(
+      layout.tableScroller!.scrollWidth,
+      `deposits table needs internal scrolling at desktop width: ${layout.tableScroller!.scrollWidth}px > ${layout.tableScroller!.clientWidth}px`,
+    ).toBeLessThanOrEqual(layout.tableScroller!.clientWidth + 1);
+    expect(
+      layout.pageScrollWidth,
+      `deposits page overflows: ${layout.pageScrollWidth}px > ${layout.pageWidth}px`,
+    ).toBeLessThanOrEqual(layout.pageWidth + 1);
+  });
+
+  test("mobile rows keep identity, status and amount without horizontal scroll", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/deposits");
+    await expect(page.getByText("Details").first()).toBeVisible();
+    await settle(page);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    );
+    expect(overflow).toBe(false);
+  });
+});
+
+test.describe("list filtering and export", () => {
+  test("a status filter narrows the whole list, not just the page in view", async ({ page }) => {
+    await page.goto("/blocks");
+    const total = async () => {
+      const text = await page.getByText(/^[\d,]+ blocks?$/).textContent();
+      return Number((text ?? "").replace(/[^0-9]/g, ""));
+    };
+    const before = await total();
+
+    await page.getByLabel("L1 settlement").selectOption("finalized");
+    await expect(page).toHaveURL(/status=finalized/);
+    // Polled, not read once. The URL changes before the filtered total is
+    // rendered, so a single read observes the pre-filter figure whenever the
+    // re-render lands late, and the result then depends on how busy the machine
+    // is rather than on the code. A control that filtered only the rows that
+    // happened to arrive leaves the total untouched forever, so this still
+    // fails for the reason it exists.
+    await expect.poll(total).toBeLessThan(before);
+    expect(await total()).toBeGreaterThan(0);
+  });
+
+  test("the filtered view survives being copied out of the address bar", async ({ page }) => {
+    await page.goto("/blocks?status=finalized");
+    await expect(page.getByLabel("L1 settlement")).toHaveValue("finalized");
+    await expect(rowRegion(page).locator("tr, li")).not.toHaveCount(0);
+  });
+
+  test("changing the filter returns to the first page", async ({ page }) => {
+    await page.goto("/blocks?page=2");
+    await page.getByLabel("L1 settlement").selectOption("finalized");
+    await expect(page).not.toHaveURL(/page=2/);
+  });
+
+  test("export covers the rows in view and says how many", async ({ page }) => {
+    await page.goto("/blocks");
+    const tools = page.locator('[data-region="list-tools"]');
+    await expect(tools.getByText(/rows in view/)).toBeVisible();
+    const download = page.waitForEvent("download");
+    await tools.getByRole("button", { name: "CSV" }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toMatch(/^midgard-blocks-page-1\.csv$/);
+  });
+
+  test("the transactions list filters and exports too", async ({ page }) => {
+    await page.goto("/transactions");
+    await expect(page.getByLabel("L1 settlement")).toBeVisible();
+    const download = page.waitForEvent("download");
+    await page.locator('[data-region="list-tools"]').getByRole("button", { name: "JSON" }).click();
+    expect((await download).suggestedFilename()).toMatch(/\.json$/);
+  });
+});
+
+test.describe("operational metrics", () => {
+  test("answers whether the chain is healthy before anything else", async ({ page }) => {
+    await page.goto("/");
+    const metrics = page.locator('[data-region="metrics"]');
+    await expect(metrics).toBeVisible();
+    await expect(metrics.getByText("Chain tip")).toBeVisible();
+    await expect(metrics.getByText("Transactions")).toBeVisible();
+  });
+
+  test("states a health verdict in words, above the figures", async ({ page }) => {
+    // The panel used to be five figures of equal weight under a heading
+    // reading "Network health", and never said whether health was good. The
+    // reader had to know that a 33% abandonment rate is bad, which is exactly
+    // the knowledge someone arriving at an explorer does not have.
+    await page.goto("/");
+    const verdict = page.locator('[data-region="verdict"]');
+    await expect(verdict).toBeVisible();
+
+    // The fixture chain abandons a third of its settlements, so the verdict
+    // must not be the reassuring one. A green light on a degraded chain is the
+    // single worst thing this panel could do.
+    await expect(verdict.locator("p").first()).toContainText(/^(Degraded|Slow|Overdue) · /);
+
+    // Every reason cites a figure, so a reader can disagree with the judgement.
+    const reasons = await verdict.locator("li").allInnerTexts();
+    expect(reasons.length).toBeGreaterThan(0);
+    for (const reason of reasons) expect(reason).toMatch(/\d/);
+
+    // The notice stays readable while the primary figures lead visually.
+    const sizes = await verdict.evaluate((el) => ({
+      headline: parseFloat(getComputedStyle(el.querySelector("p > span:last-child")!).fontSize),
+    }));
+    // The largest figure, not the first span: the panel gained label spans that
+    // precede each figure, so `.first()` measured a 12px label and compared the
+    // headline against that instead of against the primary read.
+    const figure = await page
+      .locator('[data-region="metrics"] span')
+      .evaluateAll((els) =>
+        Math.max(...els.map((el) => parseFloat(getComputedStyle(el).fontSize))),
+      );
+    expect(sizes.headline).toBeGreaterThanOrEqual(14);
+    expect(sizes.headline).toBeLessThan(figure);
+  });
+
+  test("says when the window covers less history than its label", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText(/^Since \d{4}-\d{2}-\d{2} /)).toBeVisible();
+  });
+
+  test("marks an hour that produced no blocks instead of smoothing over it", async ({ page }) => {
+    await page.goto("/");
+    const chart = page.getByRole("img", { name: /^blocks per hour/ });
+    await expect(chart).toBeVisible();
+    await expect(chart.locator("rect.fill-warning").first()).toBeVisible();
+  });
+
+  /** The overview says only how many blocks wait and how long; the block
+   * itself is one step away, on the network health page. */
+  test("notes waiting settlements and links the oldest block from network health", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(page.locator('[data-region="settlement-notice"]')).toContainText(
+      /awaiting settlement · oldest/,
+    );
+    await page.getByRole("link", { name: "Details" }).click();
+    await expect(page).toHaveURL(/\/health$/);
+    const oldest = page.locator("dt", { hasText: "Oldest awaiting" }).locator("..");
+    await oldest.getByRole("link").click();
+    await expect(page).toHaveURL(/\/block\/[0-9a-f]{56}/);
+  });
+
+  test("network health keeps every row when metrics fail", async ({ page }) => {
+    await page.request.post(`${FIXTURE}/__control?fail=metrics`);
+    try {
+      await page.goto("/health");
+      await expect(page.locator('[data-region="verdict"]')).toContainText("Figures unavailable");
+      for (const label of ["Chain tip", "Settled", "Queue"]) {
+        await expect(page.locator("dt", { hasText: label }).first()).toBeVisible();
+      }
+      await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+    } finally {
+      await page.request.post(`${FIXTURE}/__control`);
+    }
+  });
+
+  /** Nine rows where the lists sit side by side, five on a phone. */
+  test("shows nine latest rows on desktop and five on a phone", async ({ page }) => {
+    for (const [width, rows] of [
+      [1440, 9],
+      [390, 5],
+    ] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/");
+      for (const name of ["Latest blocks", "Latest transactions"]) {
+        const list = page.locator("section", { has: page.getByRole("heading", { name }) });
+        await expect(list.locator("li:visible")).toHaveCount(rows);
+      }
+    }
+  });
+
+  test("latest transactions on the overview name no block", async ({ page }) => {
+    await page.goto("/");
+    const txs = page.locator("section", {
+      has: page.getByRole("heading", { name: "Latest transactions" }),
+    });
+    await expect(txs.locator('a[href^="/transaction/"]').first()).toBeVisible();
+    await expect(txs.locator('a[href^="/block/"]')).toHaveCount(0);
+  });
+
+  test("Cardano activity shows every kind and the record total", async ({ page }) => {
+    await page.goto("/");
+    const panel = page.locator("section", {
+      has: page.getByRole("heading", { name: /Cardano activity/ }),
+    });
+    for (const label of [
+      "Block settlements",
+      "Deposits",
+      "Withdrawals",
+      "Forced transactions",
+      "Records",
+    ]) {
+      await expect(panel.locator("dt", { hasText: label })).toBeVisible();
+    }
+  });
+
+  test("the panel survives a metrics failure without blanking the page", async ({ page }) => {
+    await page.request.post(`${FIXTURE}/__control?fail=metrics`);
+    try {
+      await page.goto("/");
+      // The panel says so once, in the same grammar it uses when it can
+      // judge, and keeps every tile, the chart and the queue in place with
+      // default values rather than collapsing to a message.
+      const verdict = page.locator('[data-region="verdict"]');
+      await expect(verdict).toContainText("Figures unavailable");
+      const metrics = page.locator('[data-region="metrics"]');
+      await expect(metrics.getByText("Chain tip")).toBeVisible();
+      await expect(metrics.getByText("Transactions")).toBeVisible();
+      await expect(
+        page.getByRole("img", { name: "Blocks per hour are unavailable." }),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry" }).first()).toBeVisible();
+      // The rest of the overview still has to work.
+      await expect(page.getByText("Latest blocks")).toBeVisible();
+    } finally {
+      await page.request.post(`${FIXTURE}/__control`);
+    }
+  });
+});
+
+test.describe("native assets", () => {
+  const roster = async (page: Page) =>
+    page.request.get(`${FIXTURE}/api/assets`).then(async (r) => {
+      const body = await r.json();
+      return body.rows as Array<{ policyId: string; assetName: string }>;
+    });
+
+  test("the roster lists every asset on the ledger with its fingerprint", async ({ page }) => {
+    await page.goto("/assets");
+    await expect(page.getByRole("heading", { level: 1, name: "Native assets" })).toBeVisible();
+    await expect(rowRegion(page)).toBeVisible();
+    // The fingerprint is the identifier worth comparing; a display name is not
+    // unique and a policy ID is 56 characters of noise.
+    await expect(
+      rowRegion(page)
+        .getByText(/^asset1/)
+        .first(),
+    ).toBeVisible();
+  });
+
+  test("a readable name is shown as text, with its bytes alongside", async ({ page }) => {
+    await page.goto("/assets");
+    await expect(rowRegion(page)).toBeVisible();
+    await expect(rowRegion(page).getByText("MIDGARD").first()).toBeVisible();
+    await expect(rowRegion(page).getByText("PATATE").first()).toBeVisible();
+  });
+
+  test("bytes that are not text stay hex rather than becoming a guess", async ({ page }) => {
+    await page.goto("/assets");
+    await expect(rowRegion(page)).toBeVisible();
+    await expect(rowRegion(page).getByText("fffe0102").first()).toBeVisible();
+  });
+
+  test("a name carrying a bidi override is never rendered as text", async ({ page }) => {
+    // "USD" + U+202E + "C" renders as "USDC" reversed, which is how one token
+    // is made to read as another. It must appear as its bytes.
+    await page.goto("/assets");
+    await expect(rowRegion(page)).toBeVisible();
+    await expect(rowRegion(page).getByText("555344e280ae43").first()).toBeVisible();
+    await expect(page.getByText("USD‮C")).toHaveCount(0);
+  });
+
+  test("an asset page names the asset, its policy and its holders", async ({ page }) => {
+    const rows = await roster(page);
+    const row = rows.find((r) => r.assetName === "504154415445");
+    // Asserted, not skipped. The fixture is committed and ours: a roster
+    // without this asset is a fixture defect, and skipping would retire the
+    // coverage silently the moment somebody edited the data.
+    expect(row, "the fixture roster has no PATATE asset").toBeTruthy();
+    await page.goto(`/asset/${row!.policyId}${row!.assetName}`);
+    await expect(page.getByRole("heading", { level: 1, name: "PATATE" })).toBeVisible();
+    await expect(page.getByText("Fingerprint (CIP-14)")).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Holders/ })).toBeVisible();
+    // Scoped to the page body: the search dialog's help text also mentions
+    // asset1..., and it is present but hidden.
+    await expect(
+      page
+        .getByRole("main")
+        .getByText(/^asset1/)
+        .first(),
+    ).toBeVisible();
+  });
+
+  test("the asset page says its total describes the ledger now, not history", async ({ page }) => {
+    const rows = await roster(page);
+    await page.goto(`/asset/${rows[0]!.policyId}${rows[0]!.assetName}`);
+    // Said beside the figure it qualifies, not in a separate line below.
+    const identity = page.locator('[data-region="identity"]');
+    await expect(identity.getByText("Current ledger", { exact: true })).toBeVisible();
+    await expect(identity.getByText("UTxOs scanned")).toBeVisible();
+  });
+
+  test("a quantity past the safe integer range is not rounded", async ({ page }) => {
+    const rows = await roster(page);
+    const row = rows.find((r) => r.assetName === "fffe0102");
+    expect(row, "the fixture roster has no large-supply asset").toBeTruthy();
+    await page.goto(`/asset/${row!.policyId}${row!.assetName}`);
+    // Number("18446744073709551615") is 18446744073709552000.
+    await expect(page.getByText("18,446,744,073,709,551,615").first()).toBeVisible();
+  });
+
+  test("a malformed asset unit renders the not-found page", async ({ page }) => {
+    await page.goto("/asset/nothex");
+    await expect(page.getByRole("heading", { level: 1, name: "Page not found" })).toBeVisible();
+  });
+
+  test("a malformed asset unit responds with HTTP 404", async ({ page }) => {
+    const res = await page.goto("/asset/nothex");
+    expect(res?.status()).toBe(404);
+  });
+
+  test("each holder links to its address page", async ({ page }) => {
+    const rows = await roster(page);
+    await page.goto(`/asset/${rows[0]!.policyId}${rows[0]!.assetName}`);
+    const link = rowRegion(page).getByRole("link").first();
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", /^\/address\/addr_test/);
+  });
+});
+
+test.describe("block detail", () => {
+  test("shows height, settlement in the header and the details tab", async ({ page }) => {
+    const hash = await firstBlockHash(page);
+    await page.goto(`/block/${hash}`);
+    await expect(page.getByRole("heading", { level: 1, name: /Block #/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Transactions/ })).toBeVisible();
+    // One header answers "is this block final?": the headline and the
+    // settlement transaction, with the stages one tab away.
+    const identity = page.locator('[data-region="identity"]');
+    await expect(identity.getByText("Finalized", { exact: true })).toBeVisible();
+    await expect(identity.locator('a[href^="https://preprod.cexplorer.io/tx/"]')).toBeVisible();
+
+    await page.getByRole("tab", { name: "Details" }).click();
+    await expect(page).toHaveURL(/tab=details/);
+    const details = page.locator("#panel-details");
+    await expect(details.getByText("Queued for Cardano")).toBeVisible();
+    await expect(details.getByText("Started")).toBeVisible();
+    await expect(details.getByText("Closed")).toBeVisible();
+  });
+
+  test("tab selection survives a reload because it lives in the URL", async ({ page }) => {
+    const hash = await firstBlockHash(page);
+    await page.goto(`/block/${hash}`);
+    await page.getByRole("tab", { name: "Details" }).click();
+    await expect(page).toHaveURL(/tab=details/);
+    await page.reload();
+    await expect(page.getByRole("tab", { name: "Details" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  test("the events tab never contradicts the header's event count", async ({ page }) => {
+    const hash = await firstBlockHash(page);
+    const body = await page.request
+      .get(`${FIXTURE}/api/block?header_hash=${hash}`)
+      .then((r) => r.json());
+    const counted =
+      body.header.header_deposit_count +
+      body.header.header_withdrawal_count +
+      body.header.header_forced_transaction_count;
+    const listed =
+      body.events.deposits.length +
+      body.events.withdrawals.length +
+      body.events.forced_transactions.length;
+    await page.goto(`/block/${hash}?tab=events`);
+    const panel = page.locator("#panel-events");
+    if (counted > 0) {
+      await expect(panel.getByText(/No deposits, withdrawals or forced transactions/)).toHaveCount(
+        0,
+      );
+    }
+    if (counted !== listed) {
+      await expect(panel.getByText(/The header counts \d+ protocol events?/)).toBeVisible();
+    }
+  });
+
+  test("an old data availability link opens the details tab", async ({ page }) => {
+    const hash = await firstBlockHash(page);
+    await page.goto(`/block/${hash}?tab=da`);
+    await expect(page.getByRole("tab", { name: "Details" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  test("arrow keys move between tabs", async ({ page }) => {
+    const hash = await firstBlockHash(page);
+    await page.goto(`/block/${hash}`);
+    await page.getByRole("tab", { name: /Transactions/ }).focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByRole("tab", { name: /Protocol events/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  test("the raw tab offers the response as JSON", async ({ page }) => {
+    const hash = await firstBlockHash(page);
+    await page.goto(`/block/${hash}?tab=raw`);
+    await expect(page.getByRole("heading", { name: "Block JSON" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy JSON" })).toBeVisible();
+  });
+});
+
+test.describe("transaction lifecycle", () => {
+  test("keeps the explorer-style technical overview for Midgard transactions", async ({ page }) => {
+    await page.goto(`/transaction/${await txAwaitingFinality(page)}`);
+    await page.getByRole("tab", { name: "Details" }).click();
+    const overview = page.locator("#panel-details");
+    // Fee is on the summary band above the tabs and is deliberately not
+    // repeated inside Details. The reader still sees it once, which
+    // is what this test is for; asserting it twice was asserting the
+    // duplication.
+    await expect(
+      page.locator('[data-region="summary"]').getByText("Fee", { exact: true }),
+    ).toBeVisible();
+    await expect(overview.getByText("Fee", { exact: true })).toHaveCount(0);
+    await expect(overview.getByText("Validity interval", { exact: true })).toBeVisible();
+    await expect(overview.getByText("Format version", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What this transaction does" })).toHaveCount(0);
+    // The summary states a transfer or renders nothing. Its old fallback,
+    // "Applied 2 inputs and created 2 outputs", spent a band above the fold
+    // restating the counts the State tab already carries on its tab badge.
+    await expect(page.getByText(/Applied \d+ inputs? and created \d+ outputs?\./)).toHaveCount(0);
+  });
+
+  test("states each address's balance change as a view of the records", async ({ page }) => {
+    const payment = await page.request.get(`${FIXTURE}/__payment-tx`).then((r) => r.json());
+    await page.goto(`/transaction/${payment.txId}`);
+    const movement = page.locator('[data-region="balance-changes"]');
+    await expect(movement.getByText(/^\+/).first()).toBeVisible();
+    // The header carries the summary only, not a second address list.
+    await expect(
+      page.locator('[data-region="identity"] [data-region="balance-changes"]'),
+    ).toHaveCount(0);
+  });
+
+  test("a committed transaction shows the completed lifecycle and its inputs and outputs", async ({
+    page,
+  }) => {
+    const hash = await txAwaitingFinality(page);
+    await page.goto(`/transaction/${hash}`);
+    // One journey replaces the lifecycle chips, admission timeline and
+    // settlement band; per-stage timings live behind its disclosure.
+    const journey = page.getByRole("region", { name: "Protocol journey" });
+    await expect(journey).toBeVisible();
+    // The outcome is stated once, as the record header's badge. It used to be
+    // stated here as well, and beside it the page header carried the node's raw
+    // code, so a settled transaction read "Committed" and "Final on Cardano"
+    // within one screen of each other.
+    await expect(
+      page.locator('[data-region="identity"]').getByText("Committed, awaiting Cardano finality"),
+    ).toBeVisible();
+    await expect(journey.getByText("Committed, awaiting Cardano finality")).toHaveCount(0);
+    await journey.getByText("Stage timings and evidence").click();
+    // The label appears on the rail and again in the details grid; the details
+    // entry is the one that carries the recorded timestamp.
+    await expect(journey.getByRole("group").getByText("Validated")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Inputs & outputs", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Inputs \(/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Outputs \(/ })).toBeVisible();
+  });
+
+  test("address movement is optional and identifies unresolved inputs", async ({ page }) => {
+    // The fixture resolves every input on every fourth transaction, which is
+    // the only case where the equation can be checked.
+    const rows = await page.request
+      .get(`${FIXTURE}/api/transactions/1`)
+      .then(async (r) => (await r.json()).rows as Array<{ tx_id: string }>);
+    let complete: string | null = null;
+    let partial: string | null = null;
+    for (const row of rows) {
+      const body = await page.request
+        .get(`${FIXTURE}/api/transaction?tx_hash=${row.tx_id}`)
+        .then((r) => r.json());
+      const inputs = body.transaction?.inputs;
+      if (!inputs) continue;
+      const resolvedAll = inputs.every((i: { resolved: unknown }) => i.resolved !== null);
+      if (resolvedAll && complete === null) complete = row.tx_id;
+      if (!resolvedAll && partial === null) partial = row.tx_id;
+      if (complete && partial) break;
+    }
+
+    expect(
+      complete !== null && partial !== null,
+      "the fixture lacks a transaction with fully resolved inputs, one with partially resolved inputs, or both",
+    ).toBe(true);
+
+    // A transaction whose inputs all resolve shows exact signed amounts; one
+    // with an unresolved input says once that the spent amount is unknown,
+    // rather than printing a net it cannot know.
+    const movement = page.locator('[data-region="balance-changes"]');
+    await page.goto(`/transaction/${complete}`);
+    await expect(movement).toBeVisible();
+    await expect(movement.getByText(/spent amount is unknown/)).toHaveCount(0);
+    await expect(page.locator('[data-region="ledger"]')).toHaveCount(0);
+
+    await page.goto(`/transaction/${partial}`);
+    await expect(movement.getByText(/spent amount is unknown/)).toBeVisible();
+  });
+
+  test("a committed transaction in an abandoned block does not claim finality", async ({
+    page,
+  }) => {
+    // Inclusion in an L2 block is not the end of the story: if the block's
+    // finalization was abandoned, the transaction is committed and unsettled,
+    // and calling that success would be the worst lie the page could tell.
+    await page.goto(`/transaction/${await txInAbandonedBlock(page)}`);
+    const journey = page.getByRole("region", { name: "Protocol journey" });
+    // The outcome is the record header's badge; the rail carries the stage.
+    await expect(
+      page.locator('[data-region="identity"]').getByText("Finalization abandoned"),
+    ).toBeVisible();
+    await expect(journey.getByRole("list").getByText("Abandoned")).toBeVisible();
+    await expect(journey.getByRole("list").getByText("Final on Cardano")).toHaveCount(0);
+  });
+
+  test("a non-terminal transaction announces that it is being watched", async ({ page }) => {
+    const hash = await txWithStatus(page, "pending_commit");
+    await page.goto(`/transaction/${hash}`);
+    await expect(page.getByText("Watching for status updates…")).toBeVisible();
+  });
+
+  test("a committed transaction does not poll", async ({ page }) => {
+    const hash = await txWithStatus(page, "committed");
+    await page.goto(`/transaction/${hash}`);
+    await expect(page.getByText("Watching for status updates…")).toHaveCount(0);
+  });
+
+  test("a rejected transaction shows the reason and the failure path", async ({ page }) => {
+    const hash = await txWithStatus(page, "rejected");
+    await page.goto(`/transaction/${hash}`);
+    await expect(page.getByText("Rejected by the node").first()).toBeVisible();
+    await expect(page.getByText(/below minimum/)).toBeVisible();
+    // The failure must read as a failure on the rail, not as a reached stage.
+    const journey = page.getByRole("region", { name: "Protocol journey" });
+    await expect(journey.getByRole("list").getByText("Rejected")).toBeVisible();
+    // A rejected transaction never entered a block, so no settlement stage.
+    await expect(journey.getByText("Final on Cardano")).toHaveCount(0);
+  });
+
+  test("an undecodable transaction keeps everything that does not need the body", async ({
+    page,
+  }) => {
+    const rows = await page.request
+      .get(`${FIXTURE}/api/transactions/1`)
+      .then(
+        async (r) => (await r.json()).rows as Array<{ tx_id: string; decodeError: string | null }>,
+      );
+    const undecodable = rows.find((r) => r.decodeError);
+    expect(undecodable, "page 1 of the fixture carries no undecodable transaction").toBeTruthy();
+    await page.goto(`/transaction/${undecodable!.tx_id}`);
+    await expect(page.getByText("This transaction's body could not be decoded.")).toBeVisible();
+    // The failure is scoped to the body: the journey comes from the node's own
+    // records and must survive it.
+    const journey = page.getByRole("region", { name: "Protocol journey" });
+    await expect(journey).toBeVisible();
+    await journey.getByText("Stage timings and evidence").click();
+    await expect(
+      journey.getByText("Node admission record", { exact: false }).first(),
+    ).toBeVisible();
+  });
+
+  test("a committed transaction links to its block and its L1 settlement state", async ({
+    page,
+  }) => {
+    const rows = await page.request
+      .get(`${FIXTURE}/api/transactions/1`)
+      .then(async (r) => (await r.json()).rows as Array<{ tx_id: string }>);
+    await page.goto(`/transaction/${rows[0]!.tx_id}`);
+    // The identity header carries the block and the lifecycle outcome, and stage
+    // history sits behind its own disclosure. This used to be scoped to a
+    // "Protocol journey" region, which the page no longer declares.
+    const blockLink = page.getByRole("link", { name: /^Block #\d+$/ }).first();
+    await expect(blockLink).toBeVisible();
+    await expect(blockLink).toHaveAttribute("href", /^\/block\/[0-9a-f]{56}$/);
+    await expect(page.getByText("Finalized", { exact: true }).first()).toBeVisible();
+
+    // Stage history is secondary: it sits in Details, as one ordered list,
+    // rather than on the identity header.
+    await page.getByRole("tab", { name: "Details" }).click();
+    const details = page.locator("#panel-details");
+    await expect(details.getByText("Stages", { exact: true })).toBeVisible();
+    await expect(details.getByText(/^Block #\d+$/).first()).toBeVisible();
+  });
+});
+
+test.describe("address detail", () => {
+  test("uses paged, finalization-aware history with complete values", async ({ page }) => {
+    const address = await fixtureAddress(page, 0);
+    const response = await page.request.get(
+      `${FIXTURE}/api/address?address=${encodeURIComponent(address)}&page=1`,
+    );
+    expect(response.ok()).toBe(true);
+    const body = await response.json();
+    expect(body.historyPage).toBe(1);
+    expect(body.limit).toBe(25);
+    expect(body.txCount).toBeGreaterThanOrEqual(body.history.length);
+    expect(body.history[0].received).toEqual(
+      expect.objectContaining({ lovelace: expect.any(String), assets: expect.any(Object) }),
+    );
+    expect(
+      body.history.some(
+        (row: { finalization_status: string | null }) => row.finalization_status !== null,
+      ),
+    ).toBe(true);
+  });
+
+  test("shows settlement and native-asset movement in activity", async ({ page }) => {
+    await page.goto(`/address/${await fixtureAddress(page, 0)}`);
+    if (await isNarrow(page)) {
+      // Settlement shows in the row's status slot, beside the Midgard status.
+      await expect(
+        rowRegion(page).locator("li").first().getByText("L1", { exact: true }),
+      ).toBeVisible();
+    } else {
+      await expect(page.getByRole("columnheader", { name: "L1 settlement" })).toBeVisible();
+    }
+    await expect(page.getByText(/MIDGARD|PATATE/).first()).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Pagination" })).toBeVisible();
+  });
+
+  test("warns that the balance undercounts when outputs failed to decode", async ({ page }) => {
+    await page.goto(`/address/${await fixtureAddress(page, 1)}`);
+    await expect(page.getByText("Balance is incomplete.")).toBeVisible();
+    // The balance figure itself carries the qualification, beside its claim.
+    await expect(
+      page.locator('[data-region="identity"]').getByText("Incomplete, see below"),
+    ).toBeVisible();
+  });
+
+  test("lists native assets held under its own tab", async ({ page }) => {
+    await page.goto(`/address/${await fixtureAddress(page, 1)}?tab=assets`);
+    await expect(page.getByText("Policy").first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /MIDGARD|PATATE/ }).first()).toBeVisible();
+  });
+
+  test("breaks the balance into the UTxOs that produce it", async ({ page }) => {
+    await page.goto(`/address/${await fixtureAddress(page, 1)}?tab=utxos`);
+    await expect(rowRegion(page).locator("tr, li")).not.toHaveCount(0);
+    // A UTxO the codec cannot read is listed and marked, never dropped: five
+    // rows and a smaller total would be a quieter lie than six and a warning.
+    await expect(page.getByText("Unreadable").first()).toBeVisible();
+  });
+
+  test("offers the request that produced the page", async ({ page }) => {
+    await page.goto(`/address/${await fixtureAddress(page, 1)}?tab=raw`);
+    await expect(page.getByText(/^curl -s /)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy curl" })).toBeVisible();
+  });
+
+  test("does not warn when every output decoded", async ({ page }) => {
+    await page.goto(`/address/${await fixtureAddress(page, 0)}`);
+    await expect(page.getByText("Balance is incomplete.")).toHaveCount(0);
+  });
+});
+
+test.describe("accessibility on populated pages", () => {
+  // One test per route rather than one loop over all of them. A loop shares a
+  // single timeout across nine axe runs, so a slow suite fails the whole sweep
+  // without naming which page was at fault.
+  //
+  // Each test audits light and dark and asserts they rendered differently. The
+  // previous version audited whatever `prefers-color-scheme` Playwright happens
+  // to emulate, which is light, on every route, and then added one test that
+  // asked for light again. Dark shipped unaudited while the report said
+  // otherwise.
+  //
+  // Two full axe passes over a populated page do not fit the default 30s on
+  // every route. Marked slow rather than trimmed: the budget is the thing that
+  // should give here, not the coverage.
+  test.slow();
+  for (const path of [
+    "/",
+    "/blocks",
+    "/transactions",
+    "/deposits",
+    "/withdrawals",
+    "/forced-transactions",
+    "/assets",
+  ]) {
+    test(`${path} has no automated violations with real data in either theme`, async ({ page }) => {
+      await expectNoViolationsInBothThemes(page, path);
+    });
+  }
+
+  test("a block page has no automated violations in either theme", async ({ page }) => {
+    await expectNoViolationsInBothThemes(page, `/block/${await firstBlockHash(page)}`);
+  });
+
+  test("a transaction page has no automated violations in either theme", async ({ page }) => {
+    await expectNoViolationsInBothThemes(
+      page,
+      `/transaction/${await txWithStatus(page, "committed")}`,
+    );
+  });
+
+  test("an address page has no automated violations in either theme", async ({ page }) => {
+    await expectNoViolationsInBothThemes(page, `/address/${await fixtureAddress(page, 1)}`);
+  });
+
+  test("an asset page has no automated violations in either theme", async ({ page }) => {
+    const rows = await page.request
+      .get(`${FIXTURE}/api/assets`)
+      .then(async (r) => (await r.json()).rows as Array<{ policyId: string; assetName: string }>);
+    await expectNoViolationsInBothThemes(page, `/asset/${rows[0]!.policyId}${rows[0]!.assetName}`);
+  });
+});

@@ -2,17 +2,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ queryRaw: vi.fn() }));
 
+/**
+ * The double models the client's contract, including `$transaction`.
+ *
+ * The aggregate now reads inside one `READ ONLY REPEATABLE READ` transaction,
+ * and a stub carrying only `$queryRaw` stopped being a stand-in for the client
+ * the moment that changed: the failure was `prisma.$transaction is not a
+ * function`, which is the double falling behind rather than the query changing.
+ * Running the callback inline keeps these cases about the SQL, which is what
+ * they assert, while still exercising the path through the transaction.
+ */
 vi.mock("../src/db.js", () => ({
   prisma: {
     $queryRaw: mocks.queryRaw,
+    $transaction: (work: (reader: unknown) => unknown) => work({ $queryRaw: mocks.queryRaw }),
     addressHistory: { findMany: vi.fn() },
   },
 }));
 
 import { getAddressHistory } from "../src/db/address.js";
 
-const sqlText = (call: unknown[]) =>
-  Array.from(call[0] as TemplateStringsArray).join(" ");
+const sqlText = (call: unknown[]) => Array.from(call[0] as TemplateStringsArray).join(" ");
 
 describe("address history query", () => {
   beforeEach(() => mocks.queryRaw.mockReset());
@@ -32,6 +42,24 @@ describe("address history query", () => {
     expect(pageSql).toContain("mempool");
     expect(pageSql).toContain("immutable");
     expect(pageSql).toContain("jm.tx_id IS NULL");
+  });
+
+  it("pushes the address into every transaction-tier scan", async () => {
+    mocks.queryRaw
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ total: 0n, first_activity: null, latest_activity: null }]);
+
+    await getAddressHistory("addr_test1example", 1);
+    const pageSql = sqlText(mocks.queryRaw.mock.calls[0]);
+
+    // Without this the planner sorted EVERY transaction body in the database to
+    // resolve DISTINCT ON, then hash-joined the result against ~25 rows: 98.8 MB
+    // of temp spill per request. Restricting each branch to the address's own
+    // tx_ids cannot change which row DISTINCT ON picks for a retained tx_id,
+    // because `activity` keeps only those ids anyway.
+    expect(pageSql).toContain("addr_txs");
+    const branches = pageSql.match(/IN \(SELECT tx_id FROM addr_txs\)/g) ?? [];
+    expect(branches.length).toBeGreaterThanOrEqual(5);
   });
 
   it("bounds pages and reports totals and activity across all rows", async () => {

@@ -67,6 +67,51 @@ describe("cached", () => {
 });
 
 describe("public JSON response cache", () => {
+  it("reuses the GET representation for HEAD without repeating work", async () => {
+    vi.useRealTimers();
+    const app = express();
+    let runs = 0;
+    app.get("/api/head", cachePublicJson(10_000, 10, 1_000), (_req, res) => {
+      res.json({ runs: ++runs });
+    });
+    const server = app.listen(0);
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/head`;
+    try {
+      expect((await fetch(url, { method: "HEAD" })).status).toBe(200);
+      expect(await (await fetch(url)).json()).toEqual({ runs: 1 });
+      const head = await fetch(url, { method: "HEAD" });
+      expect(head.headers.get("x-explorer-cache")).toBe("HIT");
+      expect(await head.text()).toBe("");
+      expect(runs).toBe(1);
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
+  it("does not charge overwritten concurrent fills against the byte budget", async () => {
+    vi.useRealTimers();
+    const app = express();
+    const waiting: Array<() => void> = [];
+    app.get("/api/race", cachePublicJson(10_000, 10, 100), async (_req, res) => {
+      await new Promise<void>((resolve) => {
+        waiting.push(resolve);
+        if (waiting.length >= 10) waiting.forEach((release) => release());
+      });
+      res.json({ value: "x".repeat(30) });
+    });
+    const server = app.listen(0);
+    const port = (server.address() as { port: number }).port;
+    try {
+      const url = `http://127.0.0.1:${port}/api/race`;
+      await Promise.all(Array.from({ length: 10 }, () => fetch(url)));
+      expect((await fetch(url)).headers.get("x-explorer-cache")).toBe("HIT");
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
   it("serves repeated GETs without rerunning the handler", async () => {
     vi.useRealTimers();
     const app = express();

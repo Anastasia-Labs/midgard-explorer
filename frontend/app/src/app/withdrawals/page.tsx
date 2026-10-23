@@ -1,0 +1,261 @@
+import Link from "next/link";
+import type { Metadata } from "next";
+import { ValueCell } from "../../components/ui/domain/amount";
+import { Icon } from "../../components/ui/base/icons";
+import { AddressLink } from "../../components/ui/domain/address";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { L1TxLink } from "../../components/ui/domain/l1link";
+import { InfoTip } from "../../components/ui/base/infotip";
+import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
+import { StatusCell } from "../../components/ui/domain/status";
+import { FilterNote } from "../../components/ui/base/filternote";
+import { recordIdParam } from "../../lib/recordIdParam";
+import { DataTable, Pagination } from "../../components/ui/base/table";
+import { Timestamp } from "../../components/ui/base/timestamp";
+import { api } from "../../lib/api";
+import { countNoun, groupThousands } from "../../lib/format";
+import { parsePage } from "../../lib/parsePage";
+import { listErrorMessage } from "../../lib/serverErrors";
+import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { ListError } from "../../components/ui/base/listerror";
+
+export const metadata: Metadata = {
+  title: "Withdrawals",
+  description: "Withdrawals from Midgard back to Cardano.",
+};
+
+export const dynamic = "force-dynamic";
+
+const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Withdrawals" }];
+
+export default async function WithdrawalsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; id?: string | string[] }>;
+}) {
+  const query = await searchParams;
+  const page = parsePage(query.page);
+  const { id, ignored } = recordIdParam(query.id);
+
+  let data;
+  try {
+    data = await api.withdrawalsPage(page, await viewerInit(), id);
+  } catch (e) {
+    return (
+      <ListError
+        crumbs={CRUMBS}
+        entity="withdrawal"
+        title="Withdrawals"
+        message={listErrorMessage(e)}
+      />
+    );
+  }
+
+  return (
+    <>
+      <Breadcrumbs items={CRUMBS} />
+      <PageHeader
+        entity="withdrawal"
+        title="Withdrawals"
+        meta={
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <L1L2Badge layer="L2" />
+              <Icon name="arrowRight" size={12} className="text-text-3" />
+              <L1L2Badge layer="L1" />
+            </span>
+            <span>
+              <strong className="font-semibold text-text tabular-nums">
+                {groupThousands(String(data.total))}
+              </strong>{" "}
+              {countNoun(data.total, "withdrawal", "withdrawals")}
+            </span>
+          </>
+        }
+      />
+      <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
+        {id && data.rows.length > 0 ? (
+          <FilterNote label="record" value={id} clearHref="/withdrawals" />
+        ) : null}
+        {ignored ? (
+          <FilterNote label="record" value={ignored} clearHref="/withdrawals" ignored />
+        ) : null}
+        <DataTable
+          caption="Withdrawals from Midgard to Cardano"
+          columns={[
+            {
+              header: "Request on Cardano",
+              cell: (r) => (
+                <span className="inline-flex items-center gap-1.5">
+                  <L1TxLink hash={r.withdrawal_l1_tx_hash} destination="cardano" marker={false} />
+                  <span className="font-mono text-micro text-text-3">
+                    #{r.withdrawal_l1_output_index}
+                    <span className="sr-only"> (L1 output index)</span>
+                  </span>
+                </span>
+              ),
+            },
+            {
+              header: "L2 output",
+              cell: (r) => <Identifier value={r.l2_outref} />,
+              hideBelow: "lg",
+            },
+            {
+              header: "L1 address",
+              cell: (r) => (
+                <span className="inline-flex items-center gap-1">
+                  <AddressLink
+                    address={r.l1_address_bech32 ?? r.l1_address}
+                    chain="cardano"
+                    head={10}
+                    tail={8}
+                  />
+                  {r.l1_address_decode_error ? (
+                    <InfoTip
+                      subject="address decode error"
+                      term="partialDecode"
+                      explain={`${r.l1_address_decode_error} Raw Plutus data is shown instead.`}
+                    />
+                  ) : null}
+                </span>
+              ),
+              hideBelow: "lg",
+            },
+            {
+              header: "L2 value",
+              cell: (r) =>
+                r.l2_value ? (
+                  <ValueCell value={r.l2_value} />
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-text-3">
+                    decode error
+                    <InfoTip
+                      subject="value decode error"
+                      term="partialDecode"
+                      explain={`${r.l2_value_decode_error ?? "The canonical decoder did not return a value."} Raw Plutus data is preserved in the API response.`}
+                    />
+                  </span>
+                ),
+              align: "right",
+            },
+            {
+              header: "Validity",
+              cell: (r) =>
+                r.validity === null ? (
+                  <span className="text-text-3">Not validated yet</span>
+                ) : (
+                  <StatusCell status={r.validity} />
+                ),
+              hideBelow: "sm",
+            },
+            {
+              header: "Status",
+              cell: (r) => <StatusCell status={r.status} />,
+            },
+            {
+              header: "Projected block",
+              cell: (r) =>
+                r.projected_header_hash ? (
+                  <Identifier
+                    value={r.projected_header_hash}
+                    href={`/block/${r.projected_header_hash}`}
+                  />
+                ) : (
+                  "Not yet"
+                ),
+              hideBelow: "lg",
+            },
+            {
+              header: "Included",
+              cell: (r) => <Timestamp iso={r.inclusion_time} />,
+              hideBelow: "md",
+              align: "right",
+            },
+          ]}
+          mobileRow={(r) => ({
+            primary: (
+              <AddressLink
+                address={r.l1_address_bech32 ?? r.l1_address}
+                chain="cardano"
+                head={12}
+                tail={8}
+              />
+            ),
+            status: <StatusCell status={r.status} />,
+            meta: <Timestamp iso={r.inclusion_time} />,
+            secondary: r.l2_value ? (
+              <ValueCell value={r.l2_value} />
+            ) : (
+              <span className="text-text-3">decode error</span>
+            ),
+            details: [
+              {
+                label: "L1 tx",
+                value: (
+                  <span className="inline-flex items-center gap-1.5">
+                    <L1TxLink hash={r.withdrawal_l1_tx_hash} destination="cardano" />
+                    <span className="font-mono text-micro text-text-3">
+                      #{r.withdrawal_l1_output_index}
+                    </span>
+                  </span>
+                ),
+              },
+              {
+                label: "L2 output",
+                value: <Identifier value={r.l2_outref} head={8} tail={6} />,
+              },
+              {
+                label: "Validity",
+                value:
+                  r.validity === null ? (
+                    <span className="text-text-3">Not validated yet</span>
+                  ) : (
+                    <StatusCell status={r.validity} />
+                  ),
+              },
+              {
+                label: "Projected block",
+                value: r.projected_header_hash ? (
+                  <Identifier
+                    value={r.projected_header_hash}
+                    href={`/block/${r.projected_header_hash}`}
+                    head={8}
+                    tail={6}
+                  />
+                ) : (
+                  "Not yet"
+                ),
+              },
+            ],
+          })}
+          rows={data.rows}
+          keyOf={(r) => r.event_id}
+          emptyTitle={id ? "No matching withdrawal" : "No withdrawals yet"}
+          {...(id
+            ? {
+                emptyAction: (
+                  <Link
+                    href="/withdrawals"
+                    className="text-link hover:text-link-hover hover:underline"
+                  >
+                    Clear filter
+                  </Link>
+                ),
+              }
+            : {
+                emptyHint:
+                  "Withdrawals appear once an address sends funds from the Midgard ledger back to Cardano.",
+              })}
+        />
+        <Pagination
+          page={page}
+          hasNextPage={data.hasNextPage}
+          total={data.total}
+          limit={data.limit}
+          hrefFor={(p) => `/withdrawals?page=${p}${id ? `&id=${id}` : ""}`}
+        />
+      </section>
+    </>
+  );
+}

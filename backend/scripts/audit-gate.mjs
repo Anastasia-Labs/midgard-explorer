@@ -19,7 +19,19 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
 const here = fileURLToPath(import.meta.url);
-const root = join(dirname(here), "..");
+
+/**
+ * The workspace to audit. This package by default, or the one named on the
+ * command line.
+ *
+ * Both halves of the repository ship to production and only one was gated. The
+ * frontend is the internet-facing half and the larger dependency surface, so an
+ * advisory there reached a deployment with nothing recorded about whether
+ * anyone had considered it. One gate, two workspaces, each with its own
+ * dispositions file, rather than a second copy of this reasoning.
+ */
+const workspaceRoot = () => resolve(process.argv[2] ?? join(dirname(here), ".."));
+const root = workspaceRoot();
 
 /** Importing this module must not run an audit. The suite imports the two
  * pure functions below; everything with an effect sits inside `main`, which
@@ -100,9 +112,11 @@ const loadDispositions = () => {
   return new Map(entries.map((entry) => [entry.id, entry]));
 };
 
-const accepted = loadDispositions();
-
 const main = () => {
+  // Read here rather than at import: a module that audits when it is imported
+  // cannot be imported by the tests that check its pure functions.
+  const accepted = loadDispositions();
+
   /**
    * `pnpm audit` exits non-zero when it FINDS something, which is not a failure
    * to run. The two are told apart by whether a process actually started and

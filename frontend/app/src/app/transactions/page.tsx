@@ -1,0 +1,214 @@
+import type { Metadata } from "next";
+import { BlockRef } from "../../components/ui/domain/blockref";
+import Link from "next/link";
+import { ValueCell } from "../../components/ui/domain/amount";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { ListTools } from "../../components/ui/base/listtools";
+import { StatusCell, StatusPair } from "../../components/ui/domain/status";
+import { ListError } from "../../components/ui/base/listerror";
+import { PageHeader } from "../../components/ui/base/layout";
+import { DataTable, DecodeWarn, Pagination } from "../../components/ui/base/table";
+import { Timestamp } from "../../components/ui/base/timestamp";
+import { HourlyChart } from "../../components/ui/domain/metrics";
+import { api } from "../../lib/api";
+import { countNoun, groupThousands } from "../../lib/format";
+import { parsePage } from "../../lib/parsePage";
+import { legendFor } from "../../lib/status-registry";
+import { listErrorMessage } from "../../lib/serverErrors";
+import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+
+export const metadata: Metadata = {
+  title: "Transactions",
+  description: "Browse Midgard transactions.",
+};
+
+export const dynamic = "force-dynamic";
+
+const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Transactions" }];
+
+export default async function TransactionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; status?: string }>;
+}) {
+  const params = await searchParams;
+  const page = parsePage(params.page);
+  const status = params.status;
+
+  // The hourly chart reads metrics on the side: when that call fails the chart
+  // shows its unavailable state and the list is untouched.
+  const init = await viewerInit();
+  const [pageResult, metricsResult] = await Promise.allSettled([
+    api.txsPage(page, status, init),
+    api.metrics(init),
+  ]);
+  if (pageResult.status === "rejected") {
+    return (
+      <ListError
+        crumbs={CRUMBS}
+        entity="transaction"
+        title="Transactions"
+        message={listErrorMessage(pageResult.reason)}
+      />
+    );
+  }
+  const data = pageResult.value;
+  const metrics = metricsResult.status === "fulfilled" ? metricsResult.value : null;
+
+  return (
+    <>
+      <Breadcrumbs items={CRUMBS} />
+      <PageHeader
+        entity="transaction"
+        title="Transactions"
+        meta={
+          <span>
+            <strong className="font-semibold text-text tabular-nums">
+              {groupThousands(String(data.total))}
+            </strong>{" "}
+            {countNoun(data.total, "transaction", "transactions")}
+          </span>
+        }
+      />
+      <ListTools
+        filterKey="status"
+        filterLabel="L1 settlement"
+        options={legendFor("finalization").map((e) => ({ value: e.code, label: e.label }))}
+        rows={data.rows}
+        filename={`midgard-transactions-page-${page}${status ? `-${status}` : ""}`}
+        columns={[
+          { header: "tx_id", path: "tx_id" },
+          { header: "height", path: "height" },
+          { header: "header_hash", path: "header_hash" },
+          { header: "status", path: "status" },
+          { header: "finalization_status", path: "finalization_status" },
+          { header: "fee", path: "transaction.fee" },
+          { header: "time", path: "time_stamp_tz" },
+        ]}
+      />
+
+      <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
+        <HourlyChart
+          series={metrics?.series ?? null}
+          measure="transactions"
+          hours={metrics?.window.hours ?? 24}
+        />
+        <DataTable
+          caption="Midgard transactions, newest first"
+          columns={[
+            {
+              header: "Transaction",
+              cell: (r) => (
+                <span className="inline-flex items-center gap-2">
+                  <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} />
+                  <DecodeWarn error={r.decodeError} />
+                </span>
+              ),
+            },
+            {
+              header: "L2 status",
+              cell: (r) => <StatusCell status={r.status} />,
+            },
+            {
+              header: "L1 settlement",
+              cell: (r) =>
+                r.finalization_status === null ? (
+                  <span className="text-text-3">Not recorded</span>
+                ) : (
+                  <StatusCell status={r.finalization_status} />
+                ),
+              hideBelow: "sm",
+            },
+            {
+              header: "Block",
+              cell: (r) => <BlockRef hash={r.header_hash} height={r.height} />,
+              hideBelow: "sm",
+            },
+            {
+              header: "In / out",
+              cell: (r) =>
+                r.transaction ? (
+                  <span className="tabular-nums text-text-2">
+                    {r.transaction.inputs.length} → {r.transaction.outputs.length}
+                  </span>
+                ) : (
+                  <span className="text-text-3">Unknown</span>
+                ),
+              hideBelow: "lg",
+              align: "right",
+            },
+            {
+              header: "Fee",
+              cell: (r) =>
+                r.transaction ? (
+                  <ValueCell value={{ lovelace: r.transaction.fee, assets: {} }} />
+                ) : (
+                  "Unknown"
+                ),
+              hideBelow: "md",
+              align: "right",
+            },
+            {
+              header: "Time",
+              cell: (r) => <Timestamp iso={r.time_stamp_tz} />,
+              hideBelow: "md",
+              align: "right",
+            },
+          ]}
+          mobileRow={(r) => ({
+            primary: (
+              <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={6} />
+            ),
+            status: (
+              <span className="inline-flex items-center gap-1.5">
+                <StatusPair l2={r.status} l1={r.finalization_status} />
+                {r.decodeError ? <DecodeWarn error={r.decodeError} /> : null}
+              </span>
+            ),
+            meta: <Timestamp iso={r.time_stamp_tz} />,
+            secondary: r.transaction ? (
+              <ValueCell value={{ lovelace: r.transaction.fee, assets: {} }} />
+            ) : null,
+            details: [
+              {
+                label: "In / out",
+                value: r.transaction
+                  ? `${r.transaction.inputs.length} → ${r.transaction.outputs.length}`
+                  : "Unknown",
+              },
+              {
+                label: "Block",
+                value: <BlockRef hash={r.header_hash} height={r.height} />,
+              },
+            ],
+          })}
+          rows={data.rows}
+          keyOf={(r) => r.tx_id}
+          emptyTitle={status ? "No matching transactions" : "No transactions yet"}
+          {...(status
+            ? {
+                emptyAction: (
+                  <Link
+                    href="/transactions"
+                    className="text-link hover:text-link-hover hover:underline"
+                  >
+                    Clear filter
+                  </Link>
+                ),
+              }
+            : { emptyHint: "Submitted transactions appear here as the node processes them." })}
+        />
+        <Pagination
+          page={page}
+          hasNextPage={data.hasNextPage}
+          total={data.total}
+          limit={data.limit}
+          hrefFor={(p) =>
+            `/transactions?page=${p}${status ? `&status=${encodeURIComponent(status)}` : ""}`
+          }
+        />
+      </section>
+    </>
+  );
+}

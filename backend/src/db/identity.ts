@@ -1,5 +1,4 @@
 import { prisma } from "../db";
-import { indexerPrisma } from "../indexer/db";
 import { logger } from "../logger";
 import { config } from "../config";
 
@@ -21,6 +20,9 @@ import { config } from "../config";
  * old" is the sentence that makes someone look.
  *
  * Credentials are never logged. Only the database name and a freshness marker.
+ *
+ * One database, since the explorer-owned index was decommissioned. The second
+ * report here named a store nothing reads any more.
  */
 export async function reportDatabaseIdentity(): Promise<void> {
   try {
@@ -38,16 +40,5 @@ export async function reportDatabaseIdentity(): Promise<void> {
     );
   } catch (err) {
     logger.error(`Could not identify the node database: ${String(err)}`);
-  }
-
-  try {
-    const [row] = await indexerPrisma.$queryRaw<Array<{ db: string }>>`
-      SELECT current_database() AS db;`;
-    const txs = await indexerPrisma.l1Tx.count();
-    logger.info(
-      `Explorer database: "${row?.db}" (read-write) with ${txs} indexed L1 transactions`,
-    );
-  } catch (err) {
-    logger.error(`Could not identify the explorer database: ${String(err)}`);
   }
 }

@@ -1,39 +1,34 @@
 {
-  "name": "midgard-explorer",
+  "name": "@midgard-explorer/root",
   "private": true,
-  "version": "0.1.0",
-  "description": "Block explorer for Midgard L2",
   "type": "module",
   "packageManager": "pnpm@11.10.0",
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=24"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@tailwindcss/vite": "^4.1.18",
-    "axios": "^1.13.4",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-router-dom": "^7.12.0",
-    "tailwindcss": "^4.1.18"
+    "dev": "pnpm --filter @midgard-explorer/app dev",
+    "dev:demo": "pnpm --filter @midgard-explorer/app dev:demo",
+    "build": "pnpm --filter @midgard-explorer/app build",
+    "start": "pnpm --filter @midgard-explorer/app start",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm exec eslint . && pnpm --filter @midgard-explorer/app lint",
+    "test": "pnpm -r test",
+    "test:e2e": "pnpm --filter @midgard-explorer/app test:e2e",
+    "fixtures": "pnpm --filter @midgard-explorer/app fixtures",
+    "measure": "pnpm --filter @midgard-explorer/app measure",
+    "check:type-scale": "pnpm --filter @midgard-explorer/app check:type-scale",
+    "check:dev-console": "pnpm --filter @midgard-explorer/app check:dev-console",
+    "test:canvas-reliability": "pnpm --filter @midgard-explorer/app test:canvas-reliability",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.1",
-    "@types/node": "^24.10.1",
-    "@types/react": "^19.2.5",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.1.1",
-    "eslint": "^9.39.1",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.4.24",
-    "globals": "^16.5.0",
-    "typescript": "~5.9.3",
-    "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5",
+    "eslint-plugin-react": "7.37.5",
+    "prettier": "3.9.6",
+    "typescript-eslint": "8.65.0"
   }
 }

@@ -1,0 +1,255 @@
+import {
+  decodeAddressResponse,
+  decodeAsset,
+  decodeAssets,
+  decodeMetrics,
+} from "@midgard-explorer/contracts";
+import {
+  decodeBlockByHeight,
+  decodeBlockResponse,
+  decodeBlocksPage,
+  decodeRecentBlocks,
+  decodeTotal,
+} from "@midgard-explorer/contracts";
+import {
+  decodeDepositsPage,
+  decodeForcedTxsPage,
+  decodeWithdrawalsPage,
+} from "@midgard-explorer/contracts";
+import {
+  decodeRecentTxs,
+  decodeTransactionResponse,
+  decodeTxsPage,
+} from "@midgard-explorer/contracts";
+import {
+  decodeCardanoActivityPage,
+  decodeCardanoActivitySummary,
+  decodeCardanoReferences,
+  decodeDeploymentContext,
+  decodeL1Validator,
+  decodeL1Validators,
+} from "@midgard-explorer/contracts";
+import { apiBase } from "./env";
+
+export type ApiErrorCategory =
+  | "network"
+  | "timeout"
+  | "http_400"
+  | "http_404"
+  | "http_422"
+  | "http_5xx"
+  | "http_other"
+  | "malformed_response";
+
+export class ApiError extends Error {
+  constructor(
+    readonly endpoint: string,
+    readonly category: ApiErrorCategory,
+    readonly status: number | null,
+    readonly retryable: boolean,
+    readonly safeMessage: string,
+    override readonly cause?: unknown,
+  ) {
+    super(`${endpoint}: ${category}${status !== null ? ` (${status})` : ""}`);
+    this.name = "ApiError";
+  }
+}
+
+export const categorize = (status: number): ApiErrorCategory =>
+  status === 400
+    ? "http_400"
+    : status === 404
+      ? "http_404"
+      : status === 422
+        ? "http_422"
+        : status >= 500
+          ? "http_5xx"
+          : "http_other";
+
+const SAFE_MESSAGES: Record<ApiErrorCategory, string> = {
+  network: "The explorer API could not be reached.",
+  timeout: "The explorer API took too long to respond.",
+  http_400: "The request was not valid.",
+  http_404: "Not found.",
+  http_422: "This entry could not be decoded by the explorer.",
+  http_5xx: "The explorer API had an internal error.",
+  http_other: "Unexpected response from the explorer API.",
+  malformed_response: "The explorer API returned data in an unexpected shape.",
+};
+
+export const isRetryable = (category: ApiErrorCategory): boolean =>
+  category === "network" || category === "timeout" || category === "http_5xx";
+
+/** Production keeps a generous budget, since a real query may legitimately be
+ * slow. Development fails fast instead: when the API is simply not running,
+ * undici's own 10s connect timeout would otherwise fire first and hold every
+ * skeleton for ~10.5s before the error state could appear, once per poll. */
+const DEFAULT_TIMEOUT_MS = process.env.NODE_ENV === "development" ? 2_000 : 15_000;
+
+export type FetchInit = {
+  signal?: AbortSignal;
+  revalidate?: number;
+  /** Passed straight through. The route handlers use it to forward the original
+   * client address, without which the backend rate-limits every viewer as one
+   * client. */
+  headers?: Record<string, string>;
+};
+
+async function fetchJson<A>(
+  path: string,
+  decode: (body: unknown) => A,
+  init?: FetchInit,
+): Promise<A> {
+  const url = `${apiBase()}${path}`;
+  const timeout = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+  const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
+
+  let res: Response;
+  try {
+    // `next.revalidate` engages Next's server data cache for immutable
+    // resources; ignored in the browser.
+    res = await fetch(url, {
+      signal,
+      ...(init?.headers ? { headers: init.headers } : {}),
+      ...(init?.revalidate !== undefined ? { next: { revalidate: init.revalidate } } : {}),
+    });
+  } catch (cause) {
+    const category: ApiErrorCategory = timeout.aborted ? "timeout" : "network";
+    throw new ApiError(path, category, null, true, SAFE_MESSAGES[category], cause);
+  }
+
+  if (!res.ok) {
+    const category = categorize(res.status);
+    throw new ApiError(path, category, res.status, isRetryable(category), SAFE_MESSAGES[category]);
+  }
+
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch (cause) {
+    throw new ApiError(
+      path,
+      "malformed_response",
+      res.status,
+      false,
+      SAFE_MESSAGES.malformed_response,
+      cause,
+    );
+  }
+
+  try {
+    return decode(body);
+  } catch (cause) {
+    throw new ApiError(
+      path,
+      "malformed_response",
+      res.status,
+      false,
+      SAFE_MESSAGES.malformed_response,
+      cause,
+    );
+  }
+}
+
+export const api = {
+  // Never cached: an operations panel showing a stale tip age is worse than
+  // one that is briefly unavailable.
+  metrics: (init?: FetchInit) => fetchJson("/api/metrics", decodeMetrics, init),
+  assets: (init?: FetchInit) => fetchJson("/api/assets", decodeAssets, init),
+  asset: (policyId: string, assetName: string, init?: FetchInit) =>
+    fetchJson(
+      `/api/asset?policy_id=${encodeURIComponent(policyId)}&asset_name=${encodeURIComponent(assetName)}`,
+      decodeAsset,
+      init,
+    ),
+  block: (headerHash: string, init?: FetchInit) =>
+    fetchJson(`/api/block?header_hash=${encodeURIComponent(headerHash)}`, decodeBlockResponse, {
+      ...init,
+      revalidate: 30,
+    }),
+  transaction: (txHash: string, init?: FetchInit) =>
+    fetchJson(
+      `/api/transaction?tx_hash=${encodeURIComponent(txHash)}`,
+      decodeTransactionResponse,
+      init,
+    ),
+  address: (address: string, page: number = 1, init?: FetchInit, utxoCursor?: string) =>
+    fetchJson(
+      `/api/address?address=${encodeURIComponent(address)}&page=${page}` +
+        (utxoCursor ? `&utxo_cursor=${encodeURIComponent(utxoCursor)}` : ""),
+      decodeAddressResponse,
+      init,
+    ),
+  blockByHeight: (height: number, init?: FetchInit) =>
+    fetchJson(`/api/blocks/by-height/${height}`, decodeBlockByHeight, init),
+  recentBlocks: (init?: FetchInit) => fetchJson("/api/blocks/recent", decodeRecentBlocks, init),
+  totalBlocks: (init?: FetchInit) => fetchJson("/api/blocks/total", decodeTotal, init),
+  blocksPage: (page: number, status?: string, init?: FetchInit) =>
+    fetchJson(
+      `/api/blocks/${page}${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+      decodeBlocksPage,
+      init,
+    ),
+  recentTxs: (init?: FetchInit) => fetchJson("/api/transactions/recent", decodeRecentTxs, init),
+  totalTxs: (init?: FetchInit) => fetchJson("/api/transactions/total", decodeTotal, init),
+  txsPage: (page: number, status?: string, init?: FetchInit) =>
+    fetchJson(
+      `/api/transactions/${page}${status ? `?status=${encodeURIComponent(status)}` : ""}`,
+      decodeTxsPage,
+      init,
+    ),
+  depositsPage: (page: number, init?: FetchInit, id?: string) =>
+    fetchJson(
+      `/api/deposits/${page}${id ? `?id=${encodeURIComponent(id)}` : ""}`,
+      decodeDepositsPage,
+      init,
+    ),
+  withdrawalsPage: (page: number, init?: FetchInit, id?: string) =>
+    fetchJson(
+      `/api/withdrawals/${page}${id ? `?id=${encodeURIComponent(id)}` : ""}`,
+      decodeWithdrawalsPage,
+      init,
+    ),
+  forcedTxsPage: (page: number, init?: FetchInit, id?: string) =>
+    fetchJson(
+      `/api/forced-transactions/${page}${id ? `?id=${encodeURIComponent(id)}` : ""}`,
+      decodeForcedTxsPage,
+      init,
+    ),
+  /** Which Midgard this is and which database the figures came from. Cheap,
+   * node-sourced, and read by the shell on every page. */
+  source: (init?: FetchInit) => fetchJson("/api/source", decodeDeploymentContext, init),
+  cardanoActivity: (page: number, init?: FetchInit) =>
+    fetchJson(`/api/l1/activity/${page}`, decodeCardanoActivityPage, init),
+  cardanoActivitySummary: (init?: FetchInit) =>
+    fetchJson("/api/l1/activity/summary", decodeCardanoActivitySummary, init),
+  cardanoReferences: (txHash: string, init?: FetchInit) =>
+    fetchJson(`/api/l1/reference?txHash=${encodeURIComponent(txHash)}`, decodeCardanoReferences, {
+      ...init,
+      revalidate: 30,
+    }),
+  validators: (init?: FetchInit) =>
+    fetchJson("/api/l1/validators", decodeL1Validators, { ...init, revalidate: 30 }),
+  validator: (scriptHash: string, init?: FetchInit) =>
+    fetchJson(`/api/l1/validator?scriptHash=${encodeURIComponent(scriptHash)}`, decodeL1Validator, {
+      ...init,
+      revalidate: 30,
+    }),
+};
+
+/** Midgard's Cardano footprint, as the node recorded it.
+ *
+ * Decoded through the shared contract rather than by hand, so the app and the
+ * API cannot drift apart. Nothing under this name observes Cardano: the
+ * explorer-owned index that did is decommissioned, and these are the node's own
+ * records of what it submitted and read. */
+export type {
+  ActivityKind,
+  CardanoActivityPage,
+  CardanoActivityRow,
+  CardanoActivitySummary,
+  CardanoReferenceResponse,
+  L1ValidatorIdentity,
+  L1ValidatorResponse,
+  L1ValidatorsResponse,
+} from "@midgard-explorer/contracts";

@@ -1,0 +1,199 @@
+import Link from "next/link";
+import type { Metadata } from "next";
+import { Icon } from "../../components/ui/base/icons";
+import { Identifier } from "../../components/ui/domain/identifier";
+import { L1TxLink } from "../../components/ui/domain/l1link";
+import { L1L2Badge, PageHeader } from "../../components/ui/base/layout";
+import { StatusCell } from "../../components/ui/domain/status";
+import { FilterNote } from "../../components/ui/base/filternote";
+import { recordIdParam } from "../../lib/recordIdParam";
+import { DataTable, Pagination } from "../../components/ui/base/table";
+import { Timestamp } from "../../components/ui/base/timestamp";
+import { api } from "../../lib/api";
+import { countNoun, groupThousands } from "../../lib/format";
+import { parsePage } from "../../lib/parsePage";
+import { listErrorMessage } from "../../lib/serverErrors";
+import { viewerInit } from "../../lib/viewerInit";
+import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { ListError } from "../../components/ui/base/listerror";
+
+export const metadata: Metadata = {
+  title: "Forced transactions",
+  description: "Transaction orders escrowed on Cardano and processed by Midgard.",
+};
+
+export const dynamic = "force-dynamic";
+
+const CRUMBS = [{ label: "Overview", href: "/" }, { label: "Forced transactions" }];
+
+export default async function ForcedTransactionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; id?: string | string[] }>;
+}) {
+  const query = await searchParams;
+  const page = parsePage(query.page);
+  const { id, ignored } = recordIdParam(query.id);
+
+  let data;
+  try {
+    data = await api.forcedTxsPage(page, await viewerInit(), id);
+  } catch (e) {
+    return (
+      <ListError
+        crumbs={CRUMBS}
+        entity="forcedTransaction"
+        title="Forced transactions"
+        message={listErrorMessage(e)}
+      />
+    );
+  }
+
+  return (
+    <>
+      <Breadcrumbs items={CRUMBS} />
+      <PageHeader
+        entity="forcedTransaction"
+        title="Forced transactions"
+        meta={
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <L1L2Badge layer="L1" />
+              <Icon name="arrowRight" size={12} className="text-text-3" />
+              <L1L2Badge layer="L2" />
+            </span>
+            <span>
+              <strong className="font-semibold text-text tabular-nums">
+                {groupThousands(String(data.total))}
+              </strong>{" "}
+              {countNoun(data.total, "order", "orders")}
+            </span>
+          </>
+        }
+      />
+      <section className="overflow-hidden rounded-lg border border-border bg-surface shadow-(--mg-shadow)">
+        {id && data.rows.length > 0 ? (
+          <FilterNote label="record" value={id} clearHref="/forced-transactions" />
+        ) : null}
+        {ignored ? (
+          <FilterNote label="record" value={ignored} clearHref="/forced-transactions" ignored />
+        ) : null}
+        <DataTable
+          caption="Forced transaction orders, newest first"
+          columns={[
+            {
+              header: "Order",
+              cell: (r) => <Identifier value={r.tx_order_id} />,
+            },
+            {
+              header: "Order on Cardano",
+              cell: (r) => (
+                <span className="inline-flex items-center gap-1.5">
+                  <L1TxLink hash={r.tx_order_l1_tx_hash} destination="cardano" marker={false} />
+                  <span className="font-mono text-micro text-text-3">
+                    #{r.tx_order_l1_output_index}
+                    <span className="sr-only"> (L1 output index)</span>
+                  </span>
+                </span>
+              ),
+              hideBelow: "md",
+            },
+            {
+              header: "L2 tx",
+              cell: (r) => <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} />,
+              hideBelow: "sm",
+            },
+            {
+              header: "Operator validity",
+              cell: (r) => <StatusCell status={r.operator_validity} />,
+              hideBelow: "sm",
+            },
+            {
+              header: "Status",
+              cell: (r) => <StatusCell status={r.status} />,
+            },
+            {
+              header: "Projected block",
+              cell: (r) =>
+                r.projected_header_hash ? (
+                  <Identifier
+                    value={r.projected_header_hash}
+                    href={`/block/${r.projected_header_hash}`}
+                  />
+                ) : (
+                  "Not yet"
+                ),
+              hideBelow: "lg",
+            },
+            {
+              header: "Included",
+              cell: (r) => <Timestamp iso={r.inclusion_time} />,
+              hideBelow: "md",
+              align: "right",
+            },
+          ]}
+          mobileRow={(r) => ({
+            primary: (
+              <Identifier value={r.tx_id} href={`/transaction/${r.tx_id}`} head={10} tail={6} />
+            ),
+            status: <StatusCell status={r.status} />,
+            meta: <Timestamp iso={r.inclusion_time} />,
+            secondary: <StatusCell status={r.operator_validity} />,
+            details: [
+              { label: "Order ID", value: <Identifier value={r.tx_order_id} head={8} tail={6} /> },
+              {
+                label: "L1 tx",
+                value: (
+                  <span className="inline-flex items-center gap-1.5">
+                    <L1TxLink hash={r.tx_order_l1_tx_hash} destination="cardano" />
+                    <span className="font-mono text-micro text-text-3">
+                      #{r.tx_order_l1_output_index}
+                    </span>
+                  </span>
+                ),
+              },
+              {
+                label: "Projected block",
+                value: r.projected_header_hash ? (
+                  <Identifier
+                    value={r.projected_header_hash}
+                    href={`/block/${r.projected_header_hash}`}
+                    head={8}
+                    tail={6}
+                  />
+                ) : (
+                  "Not yet"
+                ),
+              },
+            ],
+          })}
+          rows={data.rows}
+          keyOf={(r) => r.tx_order_id}
+          emptyTitle={id ? "No matching forced transaction" : "No forced transactions yet"}
+          {...(id
+            ? {
+                emptyAction: (
+                  <Link
+                    href="/forced-transactions"
+                    className="text-link hover:text-link-hover hover:underline"
+                  >
+                    Clear filter
+                  </Link>
+                ),
+              }
+            : {
+                emptyHint:
+                  "These appear when a user escrows an order on Cardano for the operator to include.",
+              })}
+        />
+        <Pagination
+          page={page}
+          hasNextPage={data.hasNextPage}
+          total={data.total}
+          limit={data.limit}
+          hrefFor={(p) => `/forced-transactions?page=${p}${id ? `&id=${id}` : ""}`}
+        />
+      </section>
+    </>
+  );
+}

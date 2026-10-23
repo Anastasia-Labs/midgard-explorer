@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { prisma } from "../src/db.js";
+import { reachable as isReachable } from "./helpers/reachable.mjs";
 import {
   getBlockDaMetadata,
   getBlockEvents,
@@ -41,19 +42,14 @@ import { toHex } from "../src/utils.js";
  * agrees with itself. A thrown `42883` or `42703` fails the test, which is the
  * whole point.
  *
- * Skipped with a printed reason where no database is reachable, matching the
- * neighbouring suite.
+ * REQUIRE_DB=1 fails when the database is unavailable; optional local runs
+ * print the reason when database assertions cannot run.
  */
 
 let reachable = false;
 
 beforeAll(async () => {
-  try {
-    await prisma.$queryRaw`SELECT 1;`;
-    reachable = true;
-  } catch {
-    reachable = false;
-  }
+  reachable = await isReachable("node", "SQL surface");
 });
 
 afterAll(async () => {
@@ -81,7 +77,7 @@ describe("per-block queries", () => {
     if (!reachable) return skip();
     const hash = await anyHeaderHash();
     if (hash) await getBlockDaMetadata(hash);
-    await expect(getBlockDaMetadata(ABSENT_HASH)).resolves.not.toThrow;
+    await expect(getBlockDaMetadata(ABSENT_HASH)).resolves.toBeNull();
   });
 
   it("runs the finalization and event queries", async () => {

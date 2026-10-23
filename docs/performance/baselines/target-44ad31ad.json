@@ -1,0 +1,479 @@
+{
+  "mode": "baseline",
+  "hardware": "existing-minimum-2-core",
+  "profile": "target",
+  "environment": {
+    "postgresVersion": "PostgreSQL 17.10 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "settings": {
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB",
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "random_page_cost": "4",
+      "track_io_timing": "off",
+      "block_size": "8192"
+    },
+    "cpuCount": 2,
+    "cpuModel": "12th Gen Intel(R) Core(TM) i7-12700H",
+    "totalMemoryBytes": 12544892928,
+    "freeDiskBytes": 29518766080,
+    "nodeVersion": "v24.14.1",
+    "gitCommit": "44ad31ada3dc4ce8065c4ac2036b6a4251073357",
+    "gitDirty": false,
+    "buildHash": "3dae8adb5cdfcd8e4b3c9e37138df7e7a46462fc13435574fcbbe2e0cbbda8d7",
+    "capturedAt": "2026-09-18T17:51:17.513Z"
+  },
+  "warnings": [
+    "track_io_timing is off, so shared-block figures carry no I/O cost",
+    "needs 30 GB free before starting, found 27.5 GB: PostgreSQL needs WAL and temp headroom, and a starved filesystem is what the timing would describe"
+  ],
+  "datasetChecksum": {
+    "digest": "af2e13744187e353822e0ca26bfb2e847489bfe4c47a95b6da67e2b2bfd76f8e",
+    "tables": {
+      "address_history": 99284,
+      "blocks": 37011,
+      "confirmed_ledger": 30481,
+      "da_payloads": 5000,
+      "deposits_utxos": 3741,
+      "forced_transaction_utxos": 276,
+      "immutable": 37016,
+      "mempool": 200,
+      "mempool_ledger": 30479,
+      "mempool_tx_deltas": 37011,
+      "pending_block_finalization_deposits": 3741,
+      "pending_block_finalization_event_to_step": 42715,
+      "pending_block_finalization_forced_transactions": 276,
+      "pending_block_finalization_transition_trace": 42715,
+      "pending_block_finalization_txs": 37011,
+      "pending_block_finalization_utxos": 82432,
+      "pending_block_finalization_withdrawals": 1687,
+      "pending_block_finalizations": 5000,
+      "processed_mempool": 80,
+      "tx_admissions": 37011,
+      "tx_rejections": 2958,
+      "withdrawal_utxos": 1687
+    },
+    "rows": 537812
+  },
+  "settledHashSource": "postgres@localhost:5433/midgard",
+  "settledHashCount": 9,
+  "iterations": 1000,
+  "serverConfig": {
+    "apiRateLimitMax": 1000000,
+    "nodeFlags": [],
+    "startScriptNodeFlags": []
+  },
+  "scope": "full",
+  "build": {
+    "commit": "44ad31ada3dc4ce8065c4ac2036b6a4251073357",
+    "builtAt": "2026-09-18T17:51:13.720Z"
+  },
+  "frontendBuild": {
+    "buildId": "j15mpq5QSF0XXZOTV82Qf",
+    "builtAt": "2026-09-18T17:51:17.471Z"
+  },
+  "peakRssBytes": 701890560,
+  "coverage": {
+    "measured": [
+      "blocks-list-page-1",
+      "blocks-list-page-deep",
+      "transactions-list-page-1",
+      "transactions-list-page-deep",
+      "block-detail",
+      "transaction-detail",
+      "search-prefix",
+      "metrics",
+      "metrics-cached",
+      "asset-roster",
+      "address-history",
+      "overview-aggregate",
+      "blocks-list-saturation"
+    ],
+    "excluded": []
+  },
+  "results": [
+    {
+      "workload": "blocks-list-page-1",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 32.885227000006125,
+        "p95Ms": 37.93565200000012,
+        "p99Ms": 47.36627700000099,
+        "maxMs": 66.9083810000011,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 29.77402278120152,
+        "wireBytes": 9303,
+        "uncompressedBytes": 9303,
+        "encodedBytes": 1431
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 4586.012,
+        "tempBytes": 0,
+        "execMs": 27.488039910999976
+      }
+    },
+    {
+      "workload": "blocks-list-page-deep",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 33.72731699999713,
+        "p95Ms": 46.515884000007645,
+        "p99Ms": 85.93692799999553,
+        "maxMs": 151.99581000000762,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 27.715198825070157,
+        "wireBytes": 9306,
+        "uncompressedBytes": 9306,
+        "encodedBytes": 1439
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 4586,
+        "tempBytes": 0,
+        "execMs": 29.620475799999973
+      }
+    },
+    {
+      "workload": "transactions-list-page-1",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 38.26460500000394,
+        "p95Ms": 47.17744500000845,
+        "p99Ms": 61.099864000003436,
+        "maxMs": 570.4490399999922,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 24.873443335781634,
+        "wireBytes": 68270,
+        "uncompressedBytes": 68270,
+        "encodedBytes": 4518
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 4586.003,
+        "tempBytes": 0,
+        "execMs": 28.543816619999998
+      }
+    },
+    {
+      "workload": "transactions-list-page-deep",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 39.1904649999924,
+        "p95Ms": 68.42193300000508,
+        "p99Ms": 97.99699400001555,
+        "maxMs": 239.83313299997826,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 22.76366786769347,
+        "wireBytes": 49957,
+        "uncompressedBytes": 49957,
+        "encodedBytes": 4678
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 6472.118,
+        "tempBytes": 0,
+        "execMs": 33.353005823999986
+      }
+    },
+    {
+      "workload": "block-detail",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 17.304968000011286,
+        "p95Ms": 24.371103999990737,
+        "p99Ms": 43.63693300000159,
+        "maxMs": 82.12096900001052,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 53.974408229833145,
+        "wireBytes": 8646,
+        "uncompressedBytes": 32471,
+        "encodedBytes": 3860
+      },
+      "dbWork": {
+        "statements": 7.004,
+        "routeStatements": 4.004,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 1394.626,
+        "tempBytes": 0,
+        "execMs": 8.528737518999996
+      }
+    },
+    {
+      "workload": "transaction-detail",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 11.94986599998083,
+        "p95Ms": 16.509545999986585,
+        "p99Ms": 18.779334999999264,
+        "maxMs": 39.924689999985276,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 79.30246858707586,
+        "wireBytes": 5061,
+        "uncompressedBytes": 4357,
+        "encodedBytes": 1769
+      },
+      "dbWork": {
+        "statements": 8.003,
+        "routeStatements": 5.003,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 1056.787,
+        "tempBytes": 0,
+        "execMs": 5.2725936590000035
+      }
+    },
+    {
+      "workload": "search-prefix",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 20.29864700001781,
+        "p95Ms": 27.149634000001242,
+        "p99Ms": 37.47901000001002,
+        "maxMs": 74.26658500000485,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 46.15989789896989,
+        "wireBytes": 145,
+        "uncompressedBytes": 145,
+        "encodedBytes": 145
+      },
+      "dbWork": {
+        "statements": 8,
+        "routeStatements": 5,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 5375,
+        "tempBytes": 0,
+        "execMs": 14.057355269000002
+      }
+    },
+    {
+      "workload": "metrics",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 55.201860999979544,
+        "p95Ms": 67.61605099998997,
+        "p99Ms": 79.10727400000906,
+        "maxMs": 185.80328100000042,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 17.47480112786237,
+        "wireBytes": 3181,
+        "uncompressedBytes": 3181,
+        "encodedBytes": 776
+      },
+      "dbWork": {
+        "statements": 12,
+        "routeStatements": 9,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 12550.008,
+        "tempBytes": 15278080,
+        "execMs": 45.611001433000006
+      }
+    },
+    {
+      "workload": "metrics-cached",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 0.5342539999983273,
+        "p95Ms": 0.7881889999844134,
+        "p99Ms": 1.3249680000008084,
+        "maxMs": 3.637073000019882,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 1656.3044835148457,
+        "wireBytes": 3181,
+        "uncompressedBytes": 3181,
+        "encodedBytes": 776
+      },
+      "dbWork": {
+        "statements": 0,
+        "routeStatements": 0,
+        "transactionControl": 0,
+        "metadataStatements": 0,
+        "sharedBlocks": 0,
+        "tempBytes": 0,
+        "execMs": 0
+      }
+    },
+    {
+      "workload": "asset-roster",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 210.108143999998,
+        "p95Ms": 259.38337999995565,
+        "p99Ms": 447.37051099998644,
+        "maxMs": 755.3410300000105,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 4.547096061063238,
+        "wireBytes": 18837,
+        "uncompressedBytes": 18837,
+        "encodedBytes": 1442
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 2616,
+        "tempBytes": 14745600,
+        "execMs": 73.43583634100003
+      }
+    },
+    {
+      "workload": "address-history",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 114.81658800004516,
+        "p95Ms": 215.3511399999261,
+        "p99Ms": 261.8401900000172,
+        "maxMs": 360.301735999994,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 7.667608172023631,
+        "wireBytes": 87649,
+        "uncompressedBytes": 102353,
+        "encodedBytes": 8451
+      },
+      "dbWork": {
+        "statements": 6,
+        "routeStatements": 3,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 33706.491,
+        "tempBytes": 113770.496,
+        "execMs": 110.67399338900007
+      }
+    },
+    {
+      "workload": "overview-aggregate",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 82.90714499994647,
+        "p95Ms": 96.57670699991286,
+        "p99Ms": 117.71606100001372,
+        "maxMs": 249.19787599996198,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 11.748237255337068,
+        "wireBytes": 11423,
+        "uncompressedBytes": 11423,
+        "encodedBytes": 11423
+      },
+      "dbWork": {
+        "statements": 20.017,
+        "routeStatements": 14.017,
+        "transactionControl": 6,
+        "metadataStatements": 0,
+        "sharedBlocks": 23095.332,
+        "tempBytes": 15278080,
+        "execMs": 148.60967104799985
+      }
+    },
+    {
+      "workload": "blocks-list-saturation",
+      "verdict": "PASS",
+      "breaches": [],
+      "unmeasured": [],
+      "stats": {
+        "count": 1000,
+        "successCount": 1000,
+        "p50Ms": 552.543260000064,
+        "p95Ms": 650.3057669999544,
+        "p99Ms": 793.9243550000247,
+        "maxMs": 830.5116179999895,
+        "errorRate": 0,
+        "timeoutRate": 0,
+        "rps": 56.70076979770052,
+        "wireBytes": 9303,
+        "uncompressedBytes": 9303,
+        "encodedBytes": 1431
+      },
+      "dbWork": {
+        "statements": 5,
+        "routeStatements": 2,
+        "transactionControl": 3,
+        "metadataStatements": 0,
+        "sharedBlocks": 4586.012,
+        "tempBytes": 0,
+        "execMs": 122.1437367310001
+      }
+    }
+  ],
+  "payload": {
+    "at": "edge",
+    "image": "nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10"
+  },
+  "startedAt": "2026-09-18T17:51:11.338Z",
+  "finishedAt": "2026-09-18T18:03:43.277Z"
+}

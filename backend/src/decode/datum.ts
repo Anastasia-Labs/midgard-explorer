@@ -1,21 +1,7 @@
-import { Data } from "@lucid-evolution/lucid";
+// Narrow Lucid imports avoid loading unused wallet and provider modules.
+import { Data } from "@lucid-evolution/plutus";
 
-/**
- * The one safe entry point for turning datum CBOR into a typed value.
- *
- * `Data.from` throws, and a throwing decoder is wrong here: the indexer ingests
- * arbitrary chain data on a timer, so one malformed datum would take down the
- * whole sync tick instead of marking one event undecoded.
- *
- * This is not a new convention. The SDK never calls `Data.from` bare either:
- * `getDatumFromUTxO` (midgard-sdk/src/internals.ts) wraps it in `Effect.try`
- * and fails with `DataCoercionError`, and `parseSafeDatum` in the DCU toolkit
- * does the same for a raw datum string. Neither is importable from this
- * backend, so this is that same shape expressed with the error handling this
- * codebase already uses: return null, never guess. Replace it with an SDK
- * export the moment one ships that takes CBOR bytes.
- */
-
+/** Decode untrusted datum CBOR without failing the whole response. */
 export type DatumResult<T> =
   | { ok: true; value: T }
   | { ok: false; reason: string };

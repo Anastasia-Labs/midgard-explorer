@@ -32,6 +32,37 @@ event within a block, the table name and the explorer's reading of it are both
 wrong. The explorer currently reports both counts as it finds them, which is
 honest but leaves a reader to reconcile two numbers that should agree.
 
+## 3. Rebuilding the node against its existing volume is expected to fail
+
+Not a defect in the data the explorer reads, and the one on this page most
+likely to cost a day.
+
+**What.** The live node database records **12** applied migrations by name:
+`da_payloads_v2`, `deposit_submission_attempts`, `durable_tx_admissions`,
+`forced_transactions`, `initial_schema`, `local_mutation_jobs`,
+`pending_finalization_journal_payloads`, `pending_finalization_trace_members`,
+`pending_finalization_trace_payloads`, `pending_finalization_utxo_payloads`,
+`state_queue_mutation_leases` and `withdrawal_events`. The node checkout that
+runs against it declares **one** migration file,
+`src/database/migrations/sql/0001_initial_schema.sql`. Counted on both sides on
+2026-09-17 and again on 2026-09-18.
+
+**Why it matters here.** The node's migration runner tracks checksums and has a
+`verification_failed` state, so a rebuild against the existing volume is
+expected to fail verification rather than migrate. The explorer reads seven of
+that database's tables, so the failure arrives as an explorer with no data and
+a node that will not start.
+
+**What to do instead.** Do not rebuild the node as routine housekeeping. The
+branch in use is level with its upstream, and the branches that move change
+none of the tables the explorer reads, so there is nothing here to gain from a
+rebuild. If one is genuinely needed, treat it as a data migration with a
+snapshot taken first: `backend/scripts/snapshot.mjs` exists for that and
+refuses any target it did not judge to be its own.
+
+**Not attempted.** Both sides were counted. The rebuild was not run, so the
+failure is expected from the runner's own rules rather than observed.
+
 ## Why these are recorded rather than worked around
 
 A workaround here would be the explorer inventing a plausible figure from data

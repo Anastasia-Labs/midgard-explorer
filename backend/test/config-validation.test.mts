@@ -30,18 +30,13 @@ const valid = {
   RECENT_TRANSACTIONS_LIMIT: "10",
   TRANSACTIONS_PER_PAGE: "25",
   BLOCKS_PER_PAGE: "25",
-  INDEXER_POSTGRES_URL: "postgres://u:p@localhost:5435/midgard_explorer",
-  KOIOS_BASE_URL: "https://preprod.koios.rest/api/v1",
-  MIDGARD_MANIFEST_PATH: "./manifest.json",
-  L1_SYNC_INTERVAL_MS: "60000",
-  L1_REORG_LOOKBACK_BLOCKS: "20",
+  MIDGARD_MANIFEST_PATH: "./test/fixtures/manifest-sample.json",
 };
 
 describe("parseConfig", () => {
   it("accepts a complete environment and returns numbers as numbers", () => {
     const c = parseConfig(valid);
     expect(c.BACKEND_PORT).toBe(3101);
-    expect(c.L1_REORG_LOOKBACK_BLOCKS).toBe(20);
     expect(c.NODE_DB_POOL_MAX).toBe(8);
   });
 
@@ -56,12 +51,6 @@ describe("parseConfig", () => {
     );
   });
 
-  it("rejects an empty string, which is not a configured value", () => {
-    expect(() => parseConfig({ ...valid, KOIOS_BASE_URL: "" })).toThrow(
-      /KOIOS_BASE_URL/,
-    );
-  });
-
   it("rejects a port of zero, which no server listens on", () => {
     expect(() => parseConfig({ ...valid, POSTGRES_PORT: "0" })).toThrow(
       /POSTGRES_PORT/,
@@ -71,14 +60,14 @@ describe("parseConfig", () => {
   it("reports every bad variable at once, not one per restart", () => {
     const err = (() => {
       try {
-        parseConfig({ ...valid, BACKEND_PORT: "no", KOIOS_BASE_URL: "" });
+        parseConfig({ ...valid, BACKEND_PORT: "no", NODE_DB_POOL_MAX: "no" });
       } catch (e) {
         return String(e);
       }
       return "";
     })();
     expect(err).toMatch(/BACKEND_PORT/);
-    expect(err).toMatch(/KOIOS_BASE_URL/);
+    expect(err).toMatch(/NODE_DB_POOL_MAX/);
   });
 
   // Nothing reads these to connect: POSTGRES_URL is the only connection
@@ -125,13 +114,6 @@ describe("parseConfig", () => {
     expect(parsed.TRUSTED_PROXY_PEERS).toEqual(["172.18.0.0/16", "10.0.0.5"]);
   });
 
-  it("allows a reorg lookback of zero, which means scan from genesis", () => {
-    expect(
-      parseConfig({ ...valid, L1_REORG_LOOKBACK_BLOCKS: "0" })
-        .L1_REORG_LOOKBACK_BLOCKS,
-    ).toBe(0);
-  });
-
   it("can require a replica in public production", () => {
     expect(() =>
       parseConfig({ ...valid, REQUIRE_MIDGARD_READ_REPLICA: "true" }),
@@ -145,29 +127,39 @@ describe("parseConfig", () => {
     ).toContain("replica");
   });
 
-  /** One process must index. Two processes running the same sync loop against
-   * one index duplicate every Koios request and race each other's writes, and
-   * the moment a deployment runs more than one API instance that is the
-   * default rather than an accident. */
-  it("indexes by default, so a single-process deployment needs no new setting", () => {
-    expect(parseConfig(valid).L1_SYNC_ENABLED).toBe(true);
-  });
-
-  it("lets an extra read-only instance opt out of indexing", () => {
-    expect(parseConfig({ ...valid, L1_SYNC_ENABLED: "false" }).L1_SYNC_ENABLED).toBe(
-      false,
-    );
-  });
-
-  it("refuses a sync flag that is neither true nor false", () => {
-    expect(() => parseConfig({ ...valid, L1_SYNC_ENABLED: "maybe" })).toThrow(
-      /L1_SYNC_ENABLED/,
-    );
-  });
 
   it("rejects an unbounded or nonsensical pool setting", () => {
     expect(() => parseConfig({ ...valid, NODE_DB_POOL_MAX: "0" })).toThrow(
       /NODE_DB_POOL_MAX/,
     );
+  });
+
+  /* The manifest names the L1 deployment the figures belong to. Nothing in the
+   * explorer writes rows any more, so it is optional everywhere and checked
+   * only where it is set: readiness, not boot, refuses an instance that cannot
+   * attribute what it serves. */
+  describe("MIDGARD_MANIFEST_PATH", () => {
+    /** Optional, and checked when it is there. An explorer with no manifest
+     * serves Midgard figures it cannot attribute to a deployment, which
+     * readiness refuses; a manifest naming no file is a configuration mistake
+     * and is refused here. */
+    it("is accepted when absent, because it is optional", () => {
+      const { MIDGARD_MANIFEST_PATH: _omitted, ...rest } = valid;
+      expect(parseConfig(rest).MIDGARD_MANIFEST_PATH).toBeUndefined();
+    });
+
+    it("must name a readable file when it is set", () => {
+      expect(() =>
+        parseConfig({
+          ...valid,
+          MIDGARD_MANIFEST_PATH: "/nonexistent/manifest.json",
+        }),
+      ).toThrow(/MIDGARD_MANIFEST_PATH/);
+    });
+
+    it("reads an empty value as absent rather than as a path", () => {
+      const parsed = parseConfig({ ...valid, MIDGARD_MANIFEST_PATH: "" });
+      expect(parsed.MIDGARD_MANIFEST_PATH).toBeUndefined();
+    });
   });
 });
