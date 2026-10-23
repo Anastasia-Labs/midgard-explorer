@@ -1,0 +1,78 @@
+# The client address this edge writes is the only one anything behind it may
+# trust. `$proxy_add_x_forwarded_for` APPENDS to whatever the client sent, so a
+# request arriving with a forged chain kept its forged entries and the backend,
+# which read the leftmost entry, believed them. `$remote_addr` replaces the
+# chain with the socket peer nginx actually saw.
+#
+# The backend reads the rightmost entry, and only when TRUSTED_PROXY_MODE is
+# single-edge and TRUSTED_PROXY_PEERS names this edge. The single entry written
+# below is then the identity, and nothing a client sends can change it.
+
+proxy_cache_path /var/cache/nginx/api
+  levels=1:2
+  keys_zone=explorer_api:10m
+  max_size=256m
+  inactive=10m
+  use_temp_path=off;
+
+server {
+  listen 8080;
+  server_name _;
+  server_tokens off;
+
+  # Both probes are always live and are never retained by this proxy.
+  #
+  # `/readyz` is what the page's own status indicator reads. A proxy that
+  # published only `/healthz` answered 404 for it, so every page reported an
+  # unreachable API while the backend and both databases were serving.
+  location ~ ^/(healthz|readyz)$ {
+    proxy_pass http://${BACKEND_ORIGIN};
+    proxy_cache off;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # The edge is the only authority on client identity. `x-real-ip` is cleared
+    # so a client cannot state one under a second spelling that the backend or
+    # a future middleware might read.
+    proxy_set_header X-Real-IP "";
+  }
+
+  location /api/ {
+    proxy_pass http://${BACKEND_ORIGIN};
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    # The edge is the only authority on client identity. `x-real-ip` is cleared
+    # so a client cannot state one under a second spelling that the backend or
+    # a future middleware might read.
+    proxy_set_header X-Real-IP "";
+
+    proxy_connect_timeout 3s;
+    proxy_send_timeout 15s;
+    proxy_read_timeout 15s;
+
+    proxy_cache explorer_api;
+    proxy_cache_methods GET HEAD;
+    proxy_cache_key "$scheme|$request_method|$host|$request_uri";
+    proxy_cache_lock on;
+    proxy_cache_lock_timeout 5s;
+    proxy_cache_revalidate on;
+    proxy_cache_background_update on;
+    # Safe fallback for an older backend during a rolling deployment. Current
+    # backends override it per route with X-Accel-Expires/Cache-Control.
+    proxy_cache_valid 200 10s;
+    # Only an in-flight refresh may use stale data. Upstream failures remain
+    # visible instead of making an explorer look healthy with old state.
+    proxy_cache_use_stale updating;
+    proxy_cache_bypass $http_authorization;
+    proxy_no_cache $http_authorization;
+
+    add_header X-Reverse-Proxy-Cache $upstream_cache_status always;
+  }
+
+  location / {
+    return 404;
+  }
+}

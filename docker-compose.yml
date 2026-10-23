@@ -1,0 +1,62 @@
+services:
+  explorer-api-cache:
+    # Pinned by digest. A tag is a moving pointer: `nginx:1.27-alpine` resolved
+    # to a different image the week after this file was written, so two
+    # deployments from the same commit could run different code. The tag is kept
+    # alongside for readability; the digest is what is actually resolved.
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    container_name: midgard-explorer-api-cache
+    restart: unless-stopped
+    environment:
+      BACKEND_ORIGIN: ${BACKEND_ORIGIN:-host.docker.internal:3101}
+      # Prevent the image's envsubst pass from consuming Nginx's own $variables.
+      NGINX_ENVSUBST_FILTER: BACKEND_ORIGIN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:${API_CACHE_PORT:-3102}:8080"
+    volumes:
+      - ./infra/nginx/explorer-api.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - explorer-api-cache:/var/cache/nginx
+    tmpfs:
+      - /var/run
+      - /var/log/nginx
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  explorer-postgres:
+    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    container_name: midgard-explorer-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${EXPLORER_POSTGRES_USER:-explorer}
+      # No default. A compose file that ships a known password is a known
+      # password in every deployment that used this file as-is, and the
+      # documentation describes this path as production-capable. Compose fails
+      # with "variable is not set" rather than starting with a guessable one.
+      POSTGRES_PASSWORD: ${EXPLORER_POSTGRES_PASSWORD:?set EXPLORER_POSTGRES_PASSWORD before starting}
+      POSTGRES_DB: midgard_explorer
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - explorer-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U explorer -d midgard_explorer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  explorer-api-cache:
+  explorer-pgdata:

@@ -6,3 +6,21 @@ allowBuilds:
   '@prisma/engines': false
   prisma: false
   cbor-extract: false
+
+# Patched transitive releases. These are pinned below Prisma tooling and the
+# vendored Cardano stack, so their parent ranges cannot advance them yet.
+overrides:
+  '@hono/node-server': 2.0.10
+  ip-address: 10.3.1
+  nanoid: 3.3.18
+  postcss: 8.5.26
+  valibot: 1.4.2
+minimumReleaseAgeExclude:
+  - '@hono/node-server@1.19.13 || 2.0.5 || 2.0.10'
+  - ip-address@10.1.1 || 10.3.1
+  - body-parser@2.3.0
+  - fast-uri@3.1.3 || 3.1.4 || 3.1.5
+  - valibot@1.4.2
+  - postcss@8.5.23
+  - hono@4.12.34
+  - nanoid@3.3.17

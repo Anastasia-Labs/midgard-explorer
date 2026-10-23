@@ -1,0 +1,139 @@
+/** Network identity is never guessed. A misconfigured deployment that silently
+ * claims "Preprod" and links to the wrong explorer is a trust defect for an
+ * explorer, so every value is explicit or absent.
+ *
+ * Set MG_STRICT_CONFIG=1 in deployment environments to fail the build when a
+ * required value is missing. Local development renders "Network not
+ * configured".
+ */
+const clean = (s: string | undefined): string | null => {
+  const t = s?.trim();
+  return t === undefined || t === "" ? null : t;
+};
+
+export const NETWORK_LABEL = clean(process.env.NEXT_PUBLIC_NETWORK_LABEL);
+
+/** Where a Cardano transaction is read, as a whole URL with `{hash}` in it.
+ *
+ * A base URL plus a path this module chooses is not provider-neutral: it only
+ * addresses explorers that route transactions the way the one we happened to
+ * pick does. CExplorer serves `/tx/…` and Cardanoscan `/transaction/…`, so a
+ * deployment that switched provider produced links to pages that do not exist.
+ * The deployment supplies the whole shape.
+ */
+const PLACEHOLDER = "{hash}";
+
+const ADDRESS_PLACEHOLDER = "{address}";
+
+const usableTemplate = (raw: string | null, placeholder = PLACEHOLDER): string | null => {
+  if (raw === null || !raw.includes(placeholder)) return null;
+  // A template with no placeholder would send every transaction to one page,
+  // and a non-http scheme is not somewhere a reader should be sent at all.
+  let parsed: URL;
+  try {
+    parsed = new URL(raw.replace(placeholder, "placeholder"));
+  } catch {
+    return null;
+  }
+  return parsed.protocol === "https:" || parsed.protocol === "http:" ? raw : null;
+};
+
+const L1_EXPLORER_TX_TEMPLATE = usableTemplate(clean(process.env.NEXT_PUBLIC_L1_EXPLORER_TX_URL));
+
+/** Where a Cardano address is read. Optional, and unset means an address is
+ * shown without a link rather than sent somewhere guessed from the transaction
+ * template: an explorer that serves `/tx/…` need not serve `/address/…`. */
+const L1_EXPLORER_ADDRESS_TEMPLATE = usableTemplate(
+  clean(process.env.NEXT_PUBLIC_L1_EXPLORER_ADDRESS_URL),
+  ADDRESS_PLACEHOLDER,
+);
+
+const templateHost = (template: string | null): string | null => {
+  if (template === null) return null;
+  try {
+    return new URL(template.replace(PLACEHOLDER, "placeholder")).host;
+  } catch {
+    return null;
+  }
+};
+
+/** What to call the provider in a link. Named so the action can read "View on
+ * CExplorer" rather than "View on the configured Cardano explorer", which
+ * tells a reader nothing about where they are about to go. Falls back to the
+ * host, which is at least true. */
+export const L1_EXPLORER_NAME =
+  L1_EXPLORER_TX_TEMPLATE === null
+    ? null
+    : (clean(process.env.NEXT_PUBLIC_L1_EXPLORER_NAME) ?? templateHost(L1_EXPLORER_TX_TEMPLATE));
+
+export function l1TxUrl(hash: string): string | null {
+  if (L1_EXPLORER_TX_TEMPLATE === null) return null;
+  return L1_EXPLORER_TX_TEMPLATE.replace(PLACEHOLDER, encodeURIComponent(hash));
+}
+
+export function l1AddressUrl(address: string): string | null {
+  if (L1_EXPLORER_ADDRESS_TEMPLATE === null) return null;
+  return L1_EXPLORER_ADDRESS_TEMPLATE.replace(ADDRESS_PLACEHOLDER, encodeURIComponent(address));
+}
+
+/** A URL that a visitor's browser can actually reach.
+ *
+ * `NEXT_PUBLIC_API_BASE` is inlined at build time and defaulted to
+ * `http://localhost:3102`, so a production build that did not set it published
+ * API documentation and copyable examples pointing at each visitor's own
+ * machine. Strict mode is where that has to be caught, because by the time the
+ * page renders the value is already baked into the bundle. */
+function isPublicOrigin(value: string | undefined): boolean {
+  if (value === undefined || value.trim() === "") return false;
+  // The empty string means same-origin and is set deliberately; it is handled
+  // by the caller, not here.
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const host = url.hostname.toLowerCase();
+  return !(
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "0.0.0.0" ||
+    host.endsWith(".local") ||
+    host.endsWith(".localhost")
+  );
+}
+
+export function assertNetworkConfigured(): void {
+  if (process.env.MG_STRICT_CONFIG !== "1") return;
+  const missing: string[] = [];
+  if (NETWORK_LABEL === null) missing.push("NEXT_PUBLIC_NETWORK_LABEL");
+  // Also catches a template that is present but unusable, which reads as
+  // configured to anyone looking at the environment. That is the case a
+  // build-time check exists for.
+  if (L1_EXPLORER_TX_TEMPLATE === null) missing.push("NEXT_PUBLIC_L1_EXPLORER_TX_URL");
+
+  // "" is same-origin behind the proxy and is a valid production choice.
+  const publicBase = process.env.NEXT_PUBLIC_API_BASE;
+  if (publicBase === undefined) {
+    missing.push("NEXT_PUBLIC_API_BASE");
+  } else if (publicBase !== "" && !isPublicOrigin(publicBase)) {
+    missing.push(`NEXT_PUBLIC_API_BASE (not reachable by a visitor: ${publicBase})`);
+  }
+
+  // The server-side base is allowed to be internal, so only its presence and
+  // shape are checked.
+  const serverBase = process.env.API_BASE_SERVER;
+  if (serverBase === undefined || serverBase.trim() === "") {
+    missing.push("API_BASE_SERVER");
+  }
+
+  if (!isPublicOrigin(process.env.NEXT_PUBLIC_SITE_URL)) {
+    missing.push("NEXT_PUBLIC_SITE_URL");
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`Missing required deployment configuration: ${missing.join(", ")}`);
+  }
+}

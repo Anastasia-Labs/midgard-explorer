@@ -1,15 +1,21 @@
 import { Request, Response } from "express";
 import { config } from "../../config";
-import { getLastTransactions } from "../../db/block";
+import { getBlockFinalization, getLastTransactions } from "../../db/block";
 import {
   getTotalTransactions,
   getTransaction,
   getTransactionsPage,
+  getTxAdmission,
+  getTxInclusion,
   getTxLifecycle,
 } from "../../db/transaction";
 import { findOutRef } from "../../db/ledger";
-import { decodeTransaction, decodeTransactionSafe } from "../../decode/transaction";
+import {
+  decodeTransaction,
+  decodeTransactionSafe,
+} from "../../decode/transaction";
 import { isHexOfLength, toHex } from "../../utils";
+import { parsePageParam } from "../validate";
 
 export async function getTransactionRoute(req: Request, res: Response) {
   const txHash = req.query.tx_hash;
@@ -20,11 +26,43 @@ export async function getTransactionRoute(req: Request, res: Response) {
     return res.status(400).json({ error: "Invalid tx_hash." });
   }
 
-  const tx = await getTransaction(txHash);
+  const [tx, admissionRecord] = await Promise.all([
+    getTransaction(txHash),
+    getTxAdmission(txHash),
+  ]);
+  const admission = admissionRecord
+    ? {
+        status: admissionRecord.status,
+        firstSeenAt: admissionRecord.firstSeenAt,
+        validationStartedAt: admissionRecord.validationStartedAt,
+        terminalAt: admissionRecord.terminalAt,
+        updatedAt: admissionRecord.updatedAt,
+        attemptCount: admissionRecord.attemptCount,
+        requestCount: admissionRecord.requestCount,
+        submitSource: admissionRecord.submitSource,
+      }
+    : null;
+  // Inclusion is what makes settlement reachable from a transaction, so it is
+  // resolved for every outcome below, decodable or not.
+  const inclusionRow = await getTxInclusion(txHash);
+  const inclusion = inclusionRow
+    ? {
+        height: inclusionRow.height,
+        header_hash: toHex(inclusionRow.header_hash),
+        time_stamp_tz: inclusionRow.time_stamp_tz,
+      }
+    : null;
+  const finalization = inclusionRow
+    ? await getBlockFinalization(toHex(inclusionRow.header_hash))
+    : null;
+
+  const envelope = { txId: txHash, admission, inclusion, finalization };
+
   if (!tx) {
-    const lifecycle = await getTxLifecycle(txHash);
+    const lifecycle = await getTxLifecycle(txHash, admissionRecord);
     if (lifecycle?.status === "rejected") {
       return res.json({
+        ...envelope,
         transaction: null,
         status: "rejected",
         rejection: {
@@ -35,21 +73,30 @@ export async function getTransactionRoute(req: Request, res: Response) {
       });
     }
     if (lifecycle) {
-      return res.json({ transaction: null, status: lifecycle.status });
+      return res.json({
+        ...envelope,
+        transaction: null,
+        status: lifecycle.status,
+      });
     }
     return res.status(404).json({ error: "Transaction not found." });
   }
 
   const status =
-    tx.source === "immutable"
+    tx.source === "immutable" || tx.source === "journal"
       ? "committed"
       : tx.source === "processed_mempool"
         ? "pending_commit"
         : "accepted";
 
   try {
-    const transaction = await decodeTransaction(tx.tx, findOutRef);
+    // Only this route carries the raw bytes. A list route inlining them would
+    // multiply its response by the size of every transaction on the page.
+    const transaction = await decodeTransaction(tx.tx, findOutRef, {
+      includeCbor: true,
+    });
     return res.json({
+      ...envelope,
       transaction: {
         ...transaction,
         timestamp: tx.time_stamp_tz,
@@ -58,9 +105,16 @@ export async function getTransactionRoute(req: Request, res: Response) {
       status,
     });
   } catch (err) {
-    return res.status(422).json({
-      error: "Failed to decode transaction.",
-      detail: err instanceof Error ? err.message : String(err),
+    // The transaction exists and everything outside its body is known. Losing
+    // the body is not a failed request, so the rest is still returned.
+    return res.json({
+      ...envelope,
+      transaction: null,
+      status,
+      decodeError: {
+        code: "undecodable_body",
+        detail: err instanceof Error ? err.message : String(err),
+      },
     });
   }
 }
@@ -70,35 +124,39 @@ export async function getTotalTransactionsRoute(_req: Request, res: Response) {
   return res.json({ total });
 }
 
-export async function getRecentTransactionsRoute(
-  _req: Request,
-  res: Response,
-) {
+export async function getRecentTransactionsRoute(_req: Request, res: Response) {
   const rows = await getLastTransactions(config.RECENT_TRANSACTIONS_LIMIT);
   const payload = rows.map((row) => ({
-    ...row,
+    height: row.height,
     header_hash: toHex(row.header_hash),
     tx_id: toHex(row.tx_id),
+    time_stamp_tz: row.time_stamp_tz,
+    status: "committed",
   }));
   return res.json({ rows: payload });
 }
 
 export async function getTransactionsPageRoute(req: Request, res: Response) {
-  const page = Number(req.params.page);
-  if (!Number.isFinite(page) || page < 1) {
-    return res.status(400).json({ error: "Invalid page." });
-  }
+  const parsedPage = parsePageParam(req.params.page);
+  if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
+  const page = parsedPage.value;
 
-  const { rows, hasNextPage, total, limit } = await getTransactionsPage(page);
+  const { rows, hasNextPage, total, limit } = await getTransactionsPage(
+    page,
+    typeof req.query.status === "string" ? req.query.status : undefined,
+  );
   const payload = await Promise.all(
     rows.map(async (row) => {
       const decoded = row.tx
         ? await decodeTransactionSafe(row.tx)
         : { transaction: null, error: null as string | null };
       return {
+        height: row.height,
         header_hash: toHex(row.header_hash),
         tx_id: toHex(row.tx_id),
         time_stamp_tz: row.time_stamp_tz,
+        status: row.committed ? "committed" : "pending_commit",
+        finalization_status: row.finalization_status,
         transaction: decoded.transaction,
         decodeError: decoded.error,
       };

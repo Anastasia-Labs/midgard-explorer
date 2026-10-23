@@ -1,0 +1,24 @@
+packages:
+  - app
+  - contracts
+  - ui
+
+# pnpm 11 gates postinstall scripts; sharp powers next/image optimization.
+allowBuilds:
+  sharp: true
+  unrs-resolver: true
+
+# Next currently pins older transitive releases. Keep the override narrow and
+# remove it once Next's own ranges resolve to these patched versions.
+overrides:
+  nanoid: 3.3.18
+  postcss: 8.5.26
+  sharp: 0.35.0
+
+minimumReleaseAgeExclude:
+  - postcss@8.5.10 || 8.5.12 || 8.5.18 || 8.5.23
+  - sharp@0.35.0
+  - brace-expansion@1.1.17 || 1.1.18 || 5.0.8 || 5.0.9
+  - undici@7.29.0
+  - js-yaml@4.3.1
+  - nanoid@3.3.17

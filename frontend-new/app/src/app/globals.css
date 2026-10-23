@@ -1,0 +1,370 @@
+@import "tailwindcss";
+@import "@midgard-explorer/ui/src/tokens.css";
+
+/* Tailwind reads its palette from these; the values live in tokens.css so the
+ * theme can switch without regenerating utilities. */
+@theme inline {
+  --color-bg: var(--mg-bg);
+  --color-surface: var(--mg-surface);
+  --color-surface-2: var(--mg-surface-2);
+  --color-surface-3: var(--mg-surface-3);
+  --color-border: var(--mg-border);
+  --color-border-strong: var(--mg-border-strong);
+  --color-text: var(--mg-text);
+  --color-text-2: var(--mg-text-2);
+  --color-text-3: var(--mg-text-3);
+  --color-page-title: var(--mg-page-title);
+  --color-page-copy: var(--mg-page-copy);
+  --color-accent: var(--mg-accent);
+  --color-accent-hover: var(--mg-accent-hover);
+  --color-on-accent: var(--mg-on-accent);
+  --color-link: var(--mg-link);
+  --color-link-hover: var(--mg-link-hover);
+  --color-info: var(--mg-info);
+  --color-graph-script: var(--mg-graph-script);
+  --color-graph-key: var(--mg-graph-key);
+  --color-success: var(--mg-success);
+  --color-warning: var(--mg-warning);
+  --color-danger: var(--mg-danger);
+
+  --font-sans: var(--font-geist-sans);
+  --font-display: var(--font-platypi);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* The type scale, as tokens rather than as literals at the call site.
+ *
+ * The colour system has been tokenised since the beginning and the type system
+ * never was: the block above names twenty colours and zero sizes, so a writer
+ * reaching for a size had nowhere to reach and typed `text-[11px]`. That is the
+ * whole mechanism behind the sixteen distinct arbitrary sizes now in the tree.
+ * Removing the instances without naming the steps just resets the counter.
+ *
+ * This is deliberately not a parallel scale. Tailwind already ships xs/sm/base/
+ * lg/xl and the app already uses them 100 times; inventing `--text-section` at
+ * 20px next to `text-xl` at 20px would be a second vocabulary for one size.
+ * Only two gaps are real, and only they are filled:
+ *
+ *   --text-body   15px is the body size set below, and Tailwind has no step
+ *                 between sm (14) and base (16). Hence 23 hand-typed
+ *                 `text-[15px]`, every one of them restating the default.
+ *   --text-title  28px sits between 2xl (24) and 3xl (30). Page titles land
+ *                 here and had no name.
+ *
+ * Below body the sizes are role names, not measurements, because the roles are
+ * what a writer chooses between: see the `mg-caption` / `mg-micro` note further
+ * down. `.mg-caption`, `.mg-micro` and `.mg-overline` all read their size from
+ * these tokens, so a tier's size is defined exactly once and the utility and
+ * the `text-*` class can no longer drift apart.
+ *
+ * Everything above 15px is Tailwind's, unchanged: lg 18, xl 20, 2xl 24, 3xl 30.
+ * The overview's metric figures are `text-2xl sm:text-3xl` rather than a named
+ * step, because 26px was one component's private size and nothing else in the
+ * app ever reached for it.
+ *
+ * There is no floor token, deliberately. A minimum is a property of what got
+ * rendered, not of what was declared, and a size can still arrive by
+ * inheritance or from a UA default that no token here governs. That claim is
+ * held by `e2e/type-scale.spec.ts`, which measures it; this block only makes
+ * the sizes nameable, and `scripts/type-scale-check.mjs` keeps them named. */
+@theme {
+  --text-title: 28px;
+  --text-title--line-height: 1.2;
+
+  --text-body: 15px;
+  --text-body--line-height: 1.5;
+
+  --text-caption: 13px;
+  --text-caption--line-height: 1.5;
+
+  --text-micro: 12px;
+  --text-micro--line-height: 1.45;
+}
+
+@layer base {
+  body {
+    background-color: var(--mg-bg);
+    background-image: var(--mg-canvas-texture);
+    background-position: var(--mg-canvas-texture-position);
+    background-size: var(--mg-canvas-texture-size);
+    color: var(--mg-text);
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-size: var(--text-body);
+    line-height: 1.5;
+    /* Slashed zero and fixed digit widths, everywhere, for free: both features
+       already ship inside the files being downloaded. `zero` stops a nought
+       reading as a capital O in an identifier, and `tnum` holds every digit to
+       one width so a column of ada amounts aligns on the decimal point rather
+       than drifting. */
+    font-feature-settings:
+      "zero" 1,
+      "tnum" 1;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--mg-accent) 32%, transparent);
+    color: var(--mg-text);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--mg-focus);
+    outline-offset: 2px;
+    border-radius: 5px;
+  }
+
+  /* Pressed feedback (5.2a). Hover said "this is a control", focus said "the
+     keyboard is here", and nothing said "your press landed". One rule rather
+     than a variant per component, so no control can be left without it.
+     Deliberately small: a control that lurches under the finger is worse than
+     one that does nothing. Collapsed with the rest of the motion vocabulary
+     when reduced motion is asked for. */
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active,
+  a:active,
+  summary:active {
+    transform: scale(0.985);
+  }
+
+  ::-webkit-scrollbar {
+    width: 11px;
+    height: 11px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--mg-border-strong);
+    border: 3px solid var(--mg-bg);
+    border-radius: 7px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* Motion is only used to explain state: page entry, live status, new rows,
+ * popovers, and loading. All of it is disabled under reduced-motion. */
+
+@keyframes mg-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Motion marks state changes, not navigation. A blanket fade on every child of
+   every page animated things that had not changed and delayed first paint of
+   things that had. */
+.mg-enter {
+  animation: mg-fade 0.24s ease-out both;
+}
+
+/* The page's opening band. Static and behind everything: no blur, no
+   translucency over a data surface, nothing that moves. */
+.mg-hero-field {
+  background-image: var(--mg-hero-glow);
+  background-repeat: no-repeat;
+}
+
+/* The chevron for `appearance-none` selects. Two triangles cut from gradients
+   rather than an SVG data URI, so the mark takes its colour from a theme token
+   instead of a hard-coded hex that would need duplicating per theme. */
+.mg-select {
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--mg-text-3) 50%),
+    linear-gradient(135deg, var(--mg-text-3) 50%, transparent 50%);
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-position:
+    right 15px center,
+    right 11px center;
+  background-repeat: no-repeat;
+}
+
+.mg-overline {
+  font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mg-text-3);
+}
+
+/* Two named sizes below body, not three. Still two.
+ *
+ * The small band had drifted to 12px, 12.5px and 13px, which is three tiers a
+ * reader cannot tell apart and a writer cannot choose between. `caption` is
+ * secondary prose: explanations, confidence notes, row subtitles. `micro` is
+ * provenance: source columns, footnotes, the things that must be present and
+ * must not compete. Naming them is what stops a fourth appearing.
+ *
+ * The 2026-08-18 rescale moved caption 12.5 -> 13 and micro stayed at 12, so
+ * the gap between the two tiers doubled and the rule above survives intact.
+ * That is the whole reason the proposed third token for code viewers was
+ * dropped: at 12.5px it would have rebuilt the exact 12/12.5/13 ladder this
+ * paragraph exists to prevent, and it would have done it in the name of
+ * legibility. The CBOR and script viewers use `caption` like everything else.
+ * `overline` is no longer a size either: it was 11.5px, the floor took it to
+ * 12, and at 12 it is `micro` wearing weight, tracking and uppercase. A tier
+ * that differs from another only in treatment does not need its own number.
+ *
+ * Declared in the components layer so a `leading-*` utility alongside either
+ * one still wins; the token sets a default line height, not a fixed one. */
+@layer components {
+  .mg-caption {
+    font-size: var(--text-caption);
+    line-height: 1.5;
+  }
+
+  .mg-micro {
+    font-size: var(--text-micro);
+    line-height: 1.45;
+  }
+}
+
+/* In the light theme, the product name carries the established Midgard green
+ * while the Fjord blue remains contextual ink for page titles and navigation.
+ * Dark mode keeps its quieter white/muted wordmark hierarchy. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .mg-brand-green {
+    color: var(--mg-accent);
+  }
+}
+
+:root[data-theme="light"] .mg-brand-green {
+  color: var(--mg-accent);
+}
+
+@keyframes mg-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Runs three times, not forever: a stable page should come to rest, and an
+   endless animation also blocks any tool that waits for animations to finish. */
+.mg-pulse {
+  animation: mg-pulse 1.6s ease-in-out 3;
+}
+
+.mg-flow-canvas {
+  --xy-background-color: transparent;
+  --xy-background-pattern-dots-color: var(--mg-border-strong);
+  --xy-edge-stroke: var(--mg-border-strong);
+  --xy-edge-stroke-selected: var(--mg-accent);
+  --xy-minimap-background-color: var(--mg-surface);
+  --xy-minimap-mask-background-color: color-mix(in oklab, var(--mg-bg) 65%, transparent);
+  --xy-controls-button-background-color: var(--mg-surface);
+  --xy-controls-button-background-color-hover: var(--mg-surface-3);
+  --xy-controls-button-color: var(--mg-text-2);
+  --xy-controls-button-border-color: var(--mg-border);
+}
+
+.mg-flow-canvas .react-flow__node {
+  transition: transform 240ms ease-out;
+}
+
+.mg-flow-canvas .react-flow__node:focus-visible .mg-flow-node,
+.mg-flow-canvas .react-flow__node.selected .mg-flow-node {
+  box-shadow: 0 0 0 2px var(--mg-focus);
+}
+
+.mg-flow-canvas .react-flow__handle {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--mg-surface);
+  background: var(--mg-border-strong);
+}
+
+.mg-flow-canvas .react-flow__attribution {
+  background: color-mix(in oklab, var(--mg-surface) 88%, transparent);
+  color: var(--mg-text-3);
+}
+
+.mg-flow-canvas .react-flow__attribution a {
+  color: inherit;
+}
+
+@keyframes mg-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.mg-pop {
+  animation: mg-pop 0.13s ease-out both;
+}
+
+@keyframes mg-tint {
+  from {
+    background-color: color-mix(in oklab, var(--mg-accent) 14%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.mg-tint {
+  animation: mg-tint 1.6s ease-out both;
+}
+
+@keyframes mg-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.mg-shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--mg-surface-2) 40%,
+    var(--mg-surface-3) 50%,
+    var(--mg-surface-2) 60%
+  );
+  background-size: 200% 100%;
+  animation: mg-shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  /* The pressed transform is not a transition or an animation, so the rules
+     above do not reach it. Reset it explicitly rather than leave the only
+     movement on the site outside the preference that asks for none. */
+  button:active,
+  [role="button"]:active,
+  a:active,
+  summary:active {
+    transform: none;
+  }
+}

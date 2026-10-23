@@ -1,0 +1,247 @@
+name: CI
+
+# The gate that has only ever run on one machine. Both jobs run the same
+# commands the local scripts run, so a green run here means the same thing a
+# green run there does.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only by default. Without this the token carries whatever the repository
+# default grants, which for many repositories is write to contents, packages and
+# more, handed to every third-party action in the run. Nothing here writes to
+# the repository.
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # The suite refuses any database whose name does not end in `_test`, so
+      # a misconfigured run stops rather than truncating something real.
+      TEST_INDEXER_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_explorer_test
+      INDEXER_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_explorer_ci
+      # The node's database, created and migrated from a versioned fixture
+      # below. Pointing this at a generic empty `postgres` meant every test
+      # that queries a node table skipped on a `SELECT 1` guard that succeeded.
+      POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/midgard_node_ci?schema=public
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: midgard_node_ci
+      BACKEND_PORT: "3101"
+      LOG_LOCATION: ./logs/ci
+      RECENT_BLOCKS_LIMIT: "10"
+      RECENT_TRANSACTIONS_LIMIT: "10"
+      TRANSACTIONS_PER_PAGE: "25"
+      BLOCKS_PER_PAGE: "25"
+      KOIOS_BASE_URL: https://preprod.koios.rest/api/v1
+      # A committed fixture. This pointed at ./manifest.json, which does not
+      # exist in the repository, so anything reading the manifest was testing
+      # the failure path or skipping.
+      MIDGARD_MANIFEST_PATH: ./test/fixtures/manifest-sample.json
+      # DB-backed tests must fail rather than skip. They guarded on a reachable
+      # database and reported success when it was absent.
+      REQUIRE_DB: "1"
+      L1_SYNC_INTERVAL_MS: "60000"
+      L1_REORG_LOOKBACK_BLOCKS: "20"
+      # Nothing in CI may reach Koios or index anything. The API still starts.
+      L1_SYNC_ENABLED: "false"
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate both Prisma clients
+        run: |
+          pnpm prisma:generate
+          pnpm indexer:generate
+
+      - name: Create the databases the suite and the boot check need
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_explorer_test'
+          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_explorer_ci'
+          psql -h localhost -U postgres -c 'CREATE DATABASE midgard_node_ci'
+
+      - name: Apply the Midgard node schema fixture
+        # Derived from prisma/schema.prisma, the read-only model the explorer's
+        # queries are typed against, so the fixture cannot drift from them.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d midgard_node_ci -v ON_ERROR_STOP=1 \
+            -f test/fixtures/schema/midgard-node.sql
+
+      - name: Migrate the test database
+        # `indexer:deploy` targets INDEXER_POSTGRES_URL only, so the database
+        # the suite actually uses needs the same migrations applied to it.
+        run: |
+          pnpm indexer:deploy
+          INDEXER_POSTGRES_URL="$TEST_INDEXER_POSTGRES_URL" pnpm indexer:deploy
+
+      - name: Record a completed reconciliation in the CI index
+        # Readiness refuses an index that has never finished a pass in which
+        # every source completed, which is exactly the state a freshly migrated
+        # database is in, and exactly the state the attribution rollout passes
+        # through. Nothing indexes here (L1_SYNC_ENABLED=false), so the record
+        # is seeded like the node schema above: as a fixture, so the boot check
+        # below tests the server rather than the absence of an indexer. The
+        # probe's discriminating cases are in test/readiness-probes.test.mts.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d midgard_explorer_ci -v ON_ERROR_STOP=1 -c \
+            "INSERT INTO sync_cursor (source, last_block_height, updated_at)
+             VALUES ('l1', 1, now()), ('l1:mints', 1, now()), ('l1:rewards', 1, now())
+             ON CONFLICT (source) DO NOTHING;"
+
+      - name: Open the evidence record
+        # .git/gate-evidence/ is a local directory that is never pushed, so the
+        # only evidence a reviewer could read was on one machine. What the
+        # gate proves is recorded here and uploaded below, on success as well
+        # as failure.
+        run: |
+          mkdir -p gate-evidence
+          {
+            echo "commit     = ${{ github.sha }}"
+            echo "ref        = ${{ github.ref }}"
+            echo "run        = ${{ github.run_id }} attempt ${{ github.run_attempt }}"
+            echo "started    = $(date -Is)"
+            echo "node       = $(node --version)"
+            echo "pnpm       = $(pnpm --version)"
+            echo "migrations = $(ls prisma-indexer/migrations | grep -c '^2')"
+          } > gate-evidence/run.txt
+
+      - name: Dependency advisories, gated on recorded dispositions
+        # `audit:gate`, not `audit`. `pnpm audit` is pnpm's own command and
+        # wins over a script of that name, so this step ran the builtin: it
+        # never read security-advisories.json and exited 1 on the advisory that
+        # is recorded. The name cannot be shadowed.
+        run: |
+          set -o pipefail
+          pnpm run audit:gate 2>&1 | tee gate-evidence/audit.log
+
+      - run: pnpm typecheck
+
+      - name: Tests
+        # `set -o pipefail`, because bash's default would report the exit code
+        # of `tee` and a failing suite would pass the step.
+        run: |
+          set -o pipefail
+          pnpm test 2>&1 | tee gate-evidence/test.log
+
+      - run: pnpm build
+
+      - name: Boot the compiled server and prove both probes
+        # `pnpm test` never runs `dist`. This is the only step that proves the
+        # artifact a deployment would run can start at all: a missing runtime
+        # dependency resolves under ts-node and fails under node.
+        run: |
+          node dist/index.js &
+          SERVER_PID=$!
+          for _ in $(seq 1 30); do
+            sleep 1
+            curl -fsS http://127.0.0.1:3101/healthz > /dev/null && break
+          done
+          curl -fsS http://127.0.0.1:3101/healthz | tee -a gate-evidence/probes.log | grep -q '"status":"ok"'
+          curl -fsS http://127.0.0.1:3101/readyz | tee -a gate-evidence/probes.log | grep -q '"ready":true'
+          kill $SERVER_PID
+
+      - name: Preserve the evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: backend-gate-evidence
+          path: backend/gate-evidence
+          retention-days: 30
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: frontend-new
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 11.10.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend-new/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install the browser the e2e project uses
+        run: pnpm --filter @midgard-explorer/app exec playwright install --with-deps chromium
+
+      - name: Run the same gate the local script runs
+        run: |
+          set -o pipefail
+          mkdir -p gate-evidence
+          ./scripts/ci-local.sh 2>&1 | tee gate-evidence/ci-local.log
+
+      - name: Preserve the evidence
+        # On success too. A green run whose output nobody can read is not
+        # evidence of anything, and the counts in it are what a reviewer needs.
+        # This keeps the textual gate log, and the traces and error contexts
+        # Playwright writes under test-results when a test retries or fails.
+        # The line reporter is what runs here, so there is no HTML report to
+        # collect, and naming one meant the useful directory went unkept.
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-gate-evidence
+          path: |
+            frontend-new/gate-evidence
+            frontend-new/app/test-results
+          retention-days: 30

@@ -1,0 +1,177 @@
+/* Midgard design tokens.
+ *
+ * Dark is the resting default: it applies when the OS expresses no preference.
+ * Light applies when the OS asks for it, unless the user has pinned dark.
+ * `[data-theme]` is set by the pre-paint script in the root layout and always
+ * wins over the media query, so an explicit choice beats the OS in both
+ * directions. Both themes are first-class. */
+
+:root {
+  /* The surface ladder. Steps are set in OKLCH lightness so each one is the
+   * same perceived rise: bg 0.132, surface 0.200, then 0.237 and 0.276. The
+   * previous ladder put bg and surface 0.035 apart, which is below the point a
+   * card reads as sitting on the page rather than painted into it, so the
+   * border was carrying the separation on its own and every panel read flat. */
+  --mg-bg: #060807;
+  --mg-surface: #131714;
+  --mg-surface-2: #1b201c;
+  --mg-surface-3: #242a25;
+  --mg-border: #303831;
+  --mg-border-strong: #434c43;
+  --mg-text: #f1f3ed;
+  --mg-text-2: #a5aea2;
+  /* Raised with the surface ladder, not independently of it. The deepest
+   * surface a muted label sits on is --mg-surface-3, and the old value cleared
+   * 4.5:1 only against the old, darker surfaces: the L1/L2 tag on the bridge
+   * lists dropped to 4.44 the moment the ladder moved. Every foreground token
+   * now clears 4.5:1 on all four surfaces, the tightest being this one at 4.74
+   * on --mg-surface-3. */
+  --mg-text-3: #8c958b;
+  --mg-page-title: #f1f3ed;
+  --mg-page-copy: #a5aea2;
+  /* Grain on the page itself, not on the panels. Every data surface is opaque,
+   * so this shows only in the gutters and behind the hero, which is where the
+   * flatness was visible. Same two-layer dot construction and the same sizes as
+   * light, so the two themes are one design rather than two. Alpha is low
+   * enough that it never competes with a monospace hash on a surface above it. */
+  --mg-canvas-texture:
+    radial-gradient(circle, rgb(198 226 208 / 3.2%) 0 0.65px, transparent 0.85px),
+    radial-gradient(circle, rgb(255 255 255 / 1.8%) 0 0.55px, transparent 0.8px);
+  --mg-canvas-texture-size: 11px 11px, 17px 17px;
+  --mg-canvas-texture-position: 0 0, 4px 7px;
+  --mg-header-bg: var(--mg-bg);
+  --mg-control-bg: var(--mg-bg);
+  --mg-hero-search-bg: color-mix(in oklab, var(--mg-surface-2) 60%, transparent);
+  /* A single wide, static wash behind the page title. It gives the top of the
+   * page somewhere to start instead of beginning at flat black, and it is the
+   * only place in the interface that carries the accent hue without meaning a
+   * status: nothing sits on it, so it cannot be read as encoding anything. */
+  --mg-hero-glow: radial-gradient(
+    120% 150% at 50% -40%,
+    color-mix(in oklab, var(--mg-accent) 9%, transparent) 0%,
+    transparent 70%
+  );
+  /* Graph encodings. Deliberately outside the status palette: --mg-accent and
+   * --mg-success hold the same value, so drawing a script edge in the accent
+   * drew it in the success colour beside a "Valid" badge that meant something
+   * else. A hue means one thing per viewport. */
+  --mg-graph-script: #b78bfa;
+  --mg-graph-key: #4fd1e0;
+  --mg-accent: #18c95b;
+  --mg-accent-hover: #31db70;
+  --mg-on-accent: #04120a;
+  --mg-link: #65a8ff;
+  --mg-link-hover: #8bc2ff;
+  --mg-info: #65a8ff;
+  --mg-success: #18c95b;
+  --mg-warning: #f2b84b;
+  --mg-danger: #f36b6b;
+  --mg-focus: #18c95b;
+  /* Two layers: a tight contact shadow and a wide soft one. A single 1px
+   * shadow at 28% is invisible against a near-black page, which is the other
+   * half of why panels read flat here while the same components read raised in
+   * light. No blur and no translucency: a data surface stays opaque. */
+  --mg-shadow: 0 1px 2px rgb(0 0 0 / 45%), 0 10px 24px -14px rgb(0 0 0 / 60%);
+  /* The top edge of a raised surface, where light would land. One token per
+   * theme rather than a `color-mix` at the call site: the mix that lifts a
+   * dark opaque border toward white makes the light theme's translucent
+   * border vanish against a white card, so each theme states its own. */
+  --mg-bevel: color-mix(in oklab, var(--mg-border-strong) 72%, #ffffff 28%);
+  /* Record-type colour. Only the hue varies per type (see lib/entities.ts);
+   * lightness and chroma are fixed per theme so every type holds the same
+   * weight and the same contrast. Type colour is deliberately separate from
+   * the status colours above: a withdrawal is not a warning. */
+  --mg-type-l: 0.82;
+  --mg-type-c: 0.11;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --mg-bg: #f4f6f7;
+    /* Foreground content is true, bright white. Secondary planes stay only a
+     * few points away from white so controls and hover states remain visible
+     * without making the interface read as grey. */
+    --mg-surface: #ffffff;
+    --mg-surface-2: #f7f9fa;
+    --mg-surface-3: #f0f3f5;
+    --mg-border: rgb(31 55 72 / 16%);
+    --mg-border-strong: rgb(31 55 72 / 28%);
+    --mg-text: #171b1e;
+    --mg-text-2: #454d53;
+    --mg-text-3: #626d74;
+    --mg-page-title: #03654a;
+    --mg-page-copy: #3e6682;
+    --mg-canvas-texture:
+      radial-gradient(circle, rgb(39 79 112 / 4.5%) 0 0.65px, transparent 0.85px),
+      radial-gradient(circle, rgb(23 27 30 / 2.8%) 0 0.55px, transparent 0.8px);
+    --mg-canvas-texture-size: 11px 11px, 17px 17px;
+    --mg-canvas-texture-position: 0 0, 4px 7px;
+    --mg-header-bg: var(--mg-surface);
+    --mg-control-bg: var(--mg-surface);
+    --mg-hero-search-bg: var(--mg-surface);
+    /* Light already starts from a bright page, so the wash has nothing to
+       lift and only tints the title band. */
+    --mg-hero-glow: none;
+    --mg-graph-script: #6d28d9;
+    --mg-graph-key: #0e7490;
+    --mg-accent: #03654a;
+    --mg-accent-hover: #047857;
+    --mg-on-accent: #ffffff;
+    --mg-link: #315f86;
+    --mg-link-hover: #244966;
+    --mg-info: #315f86;
+    --mg-success: #03654a;
+    --mg-warning: #8a5d06;
+    --mg-danger: #b42323;
+    --mg-focus: #315f86;
+    --mg-shadow: 0 1px 3px rgb(31 55 72 / 12%);
+    /* Inverted on purpose. Light arrives from above in both themes, but on
+       a white card the lit edge is the one that reads darker, not lighter. */
+    --mg-bevel: rgb(31 55 72 / 30%);
+    --mg-type-l: 0.45;
+    --mg-type-c: 0.13;
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --mg-bg: #f4f6f7;
+  /* Keep this explicit-theme branch identical to the system-light branch. */
+  --mg-surface: #ffffff;
+  --mg-surface-2: #f7f9fa;
+  --mg-surface-3: #f0f3f5;
+  --mg-border: rgb(31 55 72 / 16%);
+  --mg-border-strong: rgb(31 55 72 / 28%);
+  --mg-text: #171b1e;
+  --mg-text-2: #454d53;
+  --mg-text-3: #626d74;
+  --mg-page-title: #03654a;
+  --mg-page-copy: #3e6682;
+  --mg-canvas-texture:
+    radial-gradient(circle, rgb(39 79 112 / 4.5%) 0 0.65px, transparent 0.85px),
+    radial-gradient(circle, rgb(23 27 30 / 2.8%) 0 0.55px, transparent 0.8px);
+  --mg-canvas-texture-size: 11px 11px, 17px 17px;
+  --mg-canvas-texture-position: 0 0, 4px 7px;
+  --mg-header-bg: var(--mg-surface);
+  --mg-control-bg: var(--mg-surface);
+  --mg-hero-search-bg: var(--mg-surface);
+  --mg-hero-glow: none;
+  --mg-graph-script: #6d28d9;
+  --mg-graph-key: #0e7490;
+  --mg-accent: #03654a;
+  --mg-accent-hover: #047857;
+  --mg-on-accent: #ffffff;
+  --mg-link: #315f86;
+  --mg-link-hover: #244966;
+  --mg-info: #315f86;
+  --mg-success: #03654a;
+  --mg-warning: #8a5d06;
+  --mg-danger: #b42323;
+  --mg-focus: #315f86;
+  --mg-shadow: 0 1px 3px rgb(31 55 72 / 12%);
+  --mg-bevel: rgb(31 55 72 / 30%);
+  --mg-type-l: 0.45;
+  --mg-type-c: 0.13;
+  color-scheme: light;
+}

@@ -11,7 +11,12 @@ This page takes you from a clean machine to an explorer showing live Midgard dat
 | Midgard node HTTP API | Docker (`midgard-node`) | 3000 |
 | Midgard PostgreSQL | Docker (`postgres`) | host 5433 → container 5432 |
 | Explorer backend (Express) | local `pnpm dev` | 3101 |
-| Explorer frontend (Vite) | local `pnpm dev` | 5173 |
+| Explorer web app (Next.js) | local `pnpm dev` | 3001 (see below) |
+
+The web app is `frontend-new/`. Next's dev server defaults to 3000, which the
+node's HTTP API already holds in this setup, so start it on another port. The
+previous Vite client in `frontend/` is kept and still buildable, but it is not
+the app these steps run.
 
 The backend needs only the PostgreSQL connection; it never calls the node's HTTP
 API. The node's Docker stack exposes Postgres on host port 5433.
@@ -128,9 +133,12 @@ pnpm dev        # backend on http://localhost:3101
 In a second terminal:
 
 ```sh
-cd frontend
+cd frontend-new
 pnpm install
-pnpm dev        # frontend on http://localhost:5173, /api proxied to :3101
+# The node holds 3000, so pick another port. The backend runs directly here,
+# rather than behind the bundled proxy that .env.example points at.
+PORT=3001 NEXT_PUBLIC_API_BASE=http://localhost:3101 \
+  API_BASE_SERVER=http://localhost:3101 pnpm dev
 ```
 
 ## Step 6: Verify
@@ -143,7 +151,7 @@ curl -s http://localhost:3101/healthz
 curl -s "http://localhost:3101/api/transaction?tx_hash=<tx hash printed by submit-l2-transfer>"
 ```
 
-Open http://localhost:5173: the home page lists recent blocks and transactions,
+Open http://localhost:3001: the home page lists recent blocks and transactions,
 and the transaction page shows the transfer with its status.
 
 ## Troubleshooting
@@ -160,9 +168,10 @@ and the transaction page shows the transfer with its status.
   `midgard-sdk` tarball moved ahead of `pnpm-lock.yaml`; see the note under
   "How to Run" in the node README.
 - **Backend fails to bind its port**: the node's monitoring stack publishes Loki
-  on host port 3100. The explorer backend uses 3101 for that reason, and the Vite
-  dev proxy targets 3101. If you change `BACKEND_PORT`, update the proxy target in
-  `frontend/vite.config.ts` to match.
+  on host port 3100, and the node's own API holds 3000. The explorer backend uses
+  3101 for that reason. The web app has no dev proxy: it calls whatever
+  `NEXT_PUBLIC_API_BASE` and `API_BASE_SERVER` name, so if you change
+  `BACKEND_PORT`, change those two to match.
 - **Kupo stays `unhealthy` and the node never starts**: Kupo answers `/health`
   with 202 while it indexes and only returns 200 at the chain tip, so Compose can
   declare the dependency failed while Kupo is still working normally. Kupo keeps

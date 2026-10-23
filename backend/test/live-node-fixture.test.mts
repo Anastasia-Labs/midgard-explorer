@@ -30,13 +30,36 @@ describe("decodeTransaction (live-node fixture)", () => {
       hexToBytes(fixture.transaction.cborHex),
     );
     // bigintStringify matches the API's on-the-wire serialization (bigint -> string).
-    expect(bigintStringify(view)).toEqual(fixture.transaction.expectedView);
+    // The captured subset remains byte-for-byte stable while newer,
+    // evidence-bearing fields may extend the response.
+    expect(bigintStringify(view)).toMatchObject(fixture.transaction.expectedView);
+    expect(view.outputs.every((output) => output.state.status === "unknown")).toBe(true);
+    expect(view.outputs.every((output) => output.identity.payment.hash.length === 56)).toBe(true);
+    expect(view.requiredObservers).toEqual([]);
+    expect(view.requiredSigners).toEqual([]);
+    expect(view.auxiliaryDataHash).toBeNull();
+    expect(view.capabilities.collateral.state).toBe("not_supported");
   });
 
   it("fails predictably on malformed CBOR instead of silently mis-decoding", async () => {
     const result = await decodeTransactionSafe(hexToBytes("deadbeef"));
     expect(result.transaction).toBeNull();
     expect(result.error).toBeTruthy();
+  });
+
+  it("marks produced outputs unspent only when the current ledger resolves them", async () => {
+    const row = fixture.mempoolLedger.find(
+      (candidate: { outputHex: string }) => !candidate.outputHex.startsWith("82"),
+    );
+    expect(row).toBeDefined();
+    const view = await decodeTransaction(
+      hexToBytes(fixture.transaction.cborHex),
+      async () => ({
+        address: row.address,
+        output: hexToBytes(row.outputHex),
+      }),
+    );
+    expect(view.outputs.every((output) => output.state.status === "unspent")).toBe(true);
   });
 });
 
