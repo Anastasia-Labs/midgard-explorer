@@ -28,9 +28,11 @@
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
-const repoRoot = process.argv[2];
+// Absolute, because `createRequire` below takes nothing else and `pnpm compat`
+// passes the root as `..`.
+const repoRoot = process.argv[2] === undefined ? undefined : resolve(process.argv[2]);
 const command = process.argv[3];
 const args = process.argv.slice(4);
 
@@ -60,13 +62,16 @@ const nodeTables = () => {
 
 /** Column names per table, parsed from the committed schema fixture.
  *
- * The fixture is generated from prisma/schema.prisma, so its shape is regular:
- * one CREATE TABLE per relation, one column per line, the name first and
- * quoted or bare. Constraint lines are skipped by name. */
+ * The fixture is part Prisma output and part pg_dump: one CREATE TABLE per
+ * relation, one column per line, the name first and quoted or bare.
+ * Constraint lines are skipped by name. */
 const fromFixture = (tables) => {
   const sql = readFileSync(FIXTURE_PATH, "utf8");
   const columns = new Map();
-  const pattern = /CREATE TABLE (?:(?:public|"public")\.)?"?([a-z_]+)"?\s*\(([\s\S]*?)\n\);/g;
+  // pg_dump writes some tables UNLOGGED and ends some with storage parameters,
+  // `) WITH (...);`, which a body ending only at `\n);` would run past.
+  const pattern =
+    /CREATE (?:UNLOGGED )?TABLE (?:(?:public|"public")\.)?"?([a-z_]+)"?\s*\(([\s\S]*?)\n\)(?:\nWITH \([^\n]*\))?;/g;
   for (const [, table, body] of sql.matchAll(pattern)) {
     if (!tables.includes(table)) continue;
     const names = [];

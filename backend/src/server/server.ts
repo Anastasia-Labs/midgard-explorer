@@ -1,5 +1,6 @@
 import express, {
   ErrorRequestHandler,
+  Express,
   NextFunction,
   Request,
   Response,
@@ -9,7 +10,7 @@ import { logger } from "../logger";
 import { registerRoutes } from "./routes";
 import http from "http";
 import { bigintStringify } from "./helpers";
-import { prisma } from "../db";
+import { disconnectPrisma } from "../db";
 import { configureBenchBypass } from "./cache";
 import { reportDatabaseIdentity } from "../db/identity";
 import { mountRateLimits, startRateLimitSweeper } from "./rateLimit";
@@ -17,20 +18,14 @@ import { resolveCorsOrigin, securityHeaders } from "./security";
 import { observeRequests } from "../telemetry/http";
 import { startMetricsServer } from "../telemetry/server";
 
-export const startServer = async () => {
+/**
+ * The Express application with every middleware and route, and nothing that
+ * runs in the background. Separate from `startServer` so a test can serve it on
+ * a real socket without a sweeper, a metrics listener or signal handlers.
+ */
+export const createApp = (): Express => {
   const app = express();
   app.disable("x-powered-by");
-  const server = http.createServer(app);
-
-  // Off unless a token is configured, which production does not set. See the
-  // note in cache.ts: a bare header would let any client disable the caches
-  // that keep `/api/metrics` and `/api/assets` from amplifying request rate.
-  configureBenchBypass(config.BENCH_CACHE_BYPASS_TOKEN);
-  if (config.BENCH_CACHE_BYPASS_TOKEN) {
-    logger.warn(
-      "benchmark cache bypass is ENABLED; this must not be set in production",
-    );
-  }
 
   app.use(observeRequests);
   app.use(securityHeaders);
@@ -69,19 +64,8 @@ export const startServer = async () => {
     limit: config.API_RATE_LIMIT_MAX,
     windowMs: config.API_RATE_LIMIT_WINDOW_MS,
   });
-  startRateLimitSweeper();
 
   registerRoutes(app);
-
-  const metricsServer =
-    config.METRICS_PORT === undefined
-      ? null
-      : startMetricsServer(config.METRICS_HOST, config.METRICS_PORT);
-
-  // Which database this process actually connected to, said out loud at boot.
-  // Deliberately after route registration: naming the source must never keep
-  // the API from coming up.
-  void reportDatabaseIdentity();
 
   // 404 for unmatched routes.
   app.use((_req, res) => {
@@ -102,6 +86,35 @@ export const startServer = async () => {
     res.status(500).json({ error: "Internal server error." });
   };
   app.use(errorHandler);
+
+  return app;
+};
+
+export const startServer = async () => {
+  // Off unless a token is configured, which production does not set. See the
+  // note in cache.ts: a bare header would let any client disable the caches
+  // that keep `/api/metrics` and `/api/assets` from amplifying request rate.
+  configureBenchBypass(config.BENCH_CACHE_BYPASS_TOKEN);
+  if (config.BENCH_CACHE_BYPASS_TOKEN) {
+    logger.warn(
+      "benchmark cache bypass is ENABLED; this must not be set in production",
+    );
+  }
+
+  const app = createApp();
+  const server = http.createServer(app);
+  startRateLimitSweeper();
+
+  const metricsServer =
+    config.METRICS_PORT === undefined
+      ? null
+      : startMetricsServer(config.METRICS_HOST, config.METRICS_PORT);
+
+  // Which database this process actually connected to, said out loud at boot.
+  // Deliberately after route registration: naming the source must never keep
+  // the API from coming up.
+  // The public source opens no database, so it has none to name.
+  if (config.L2_SOURCE === "replica") void reportDatabaseIdentity();
 
   server.on("error", (err) => {
     logger.error(err);
@@ -125,7 +138,7 @@ export const startServer = async () => {
     metricsServer?.close();
 
     void httpDrained.then(async () => {
-      await prisma.$disconnect();
+      await disconnectPrisma();
       logger.info("Shutdown complete.");
       process.exit(0);
     });

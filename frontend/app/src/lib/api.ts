@@ -28,6 +28,7 @@ import {
   decodeDeploymentContext,
   decodeL1Validator,
   decodeL1Validators,
+  decodeStateQueue,
 } from "@midgard-explorer/contracts";
 import { apiBase } from "./env";
 
@@ -39,7 +40,9 @@ export type ApiErrorCategory =
   | "http_422"
   | "http_5xx"
   | "http_other"
-  | "malformed_response";
+  | "malformed_response"
+  | "unavailable"
+  | "upstream";
 
 export class ApiError extends Error {
   constructor(
@@ -49,6 +52,9 @@ export class ApiError extends Error {
     readonly retryable: boolean,
     readonly safeMessage: string,
     override readonly cause?: unknown,
+    /** The error response's parsed body, when it had one: a 404 for a block
+     * the archive knows of carries the block's archive state. */
+    readonly body?: unknown,
   ) {
     super(`${endpoint}: ${category}${status !== null ? ` (${status})` : ""}`);
     this.name = "ApiError";
@@ -75,10 +81,25 @@ const SAFE_MESSAGES: Record<ApiErrorCategory, string> = {
   http_5xx: "The explorer API had an internal error.",
   http_other: "Unexpected response from the explorer API.",
   malformed_response: "The explorer API returned data in an unexpected shape.",
+  unavailable: "This information is unavailable on this explorer.",
+  upstream: "Midgard node not answering.",
+};
+
+/** Why a route could not answer, from its typed body. `unavailable` is a fact
+ * about this deployment and is never retried; `upstream` is the node not
+ * answering, which passes. */
+const reasonCategory = (body: unknown): ApiErrorCategory | null => {
+  if (typeof body !== "object" || body === null) return null;
+  if (typeof (body as { unavailable?: unknown }).unavailable === "string") return "unavailable";
+  if (typeof (body as { upstream?: unknown }).upstream === "string") return "upstream";
+  return null;
 };
 
 export const isRetryable = (category: ApiErrorCategory): boolean =>
-  category === "network" || category === "timeout" || category === "http_5xx";
+  category === "network" ||
+  category === "timeout" ||
+  category === "http_5xx" ||
+  category === "upstream";
 
 /** Production keeps a generous budget, since a real query may legitimately be
  * slow. Development fails fast instead: when the API is simply not running,
@@ -119,8 +140,25 @@ async function fetchJson<A>(
   }
 
   if (!res.ok) {
-    const category = categorize(res.status);
-    throw new ApiError(path, category, res.status, isRetryable(category), SAFE_MESSAGES[category]);
+    // A route that cannot answer on this instance says why in an `unavailable`
+    // field. That is a fact about the deployment, not a fault, so it is its own
+    // category and is never retried.
+    let errorBody: unknown;
+    try {
+      errorBody = await res.json();
+    } catch {
+      errorBody = undefined;
+    }
+    const category = reasonCategory(errorBody) ?? categorize(res.status);
+    throw new ApiError(
+      path,
+      category,
+      res.status,
+      isRetryable(category),
+      SAFE_MESSAGES[category],
+      undefined,
+      errorBody,
+    );
   }
 
   let body: unknown;
@@ -155,6 +193,8 @@ export const api = {
   // Never cached: an operations panel showing a stale tip age is worse than
   // one that is briefly unavailable.
   metrics: (init?: FetchInit) => fetchJson("/api/metrics", decodeMetrics, init),
+  // Never cached: the Blocks page polls it to animate the queue as it moves.
+  stateQueue: (init?: FetchInit) => fetchJson("/api/state-queue", decodeStateQueue, init),
   assets: (init?: FetchInit) => fetchJson("/api/assets", decodeAssets, init),
   asset: (policyId: string, assetName: string, init?: FetchInit) =>
     fetchJson(
@@ -162,11 +202,17 @@ export const api = {
       decodeAsset,
       init,
     ),
-  block: (headerHash: string, init?: FetchInit) =>
-    fetchJson(`/api/block?header_hash=${encodeURIComponent(headerHash)}`, decodeBlockResponse, {
-      ...init,
-      revalidate: 30,
-    }),
+  /** `page` selects one archive page of the block's transactions (public
+   * source); the replica source ignores it. */
+  block: (headerHash: string, init?: FetchInit, page = 1) =>
+    fetchJson(
+      `/api/block?header_hash=${encodeURIComponent(headerHash)}${page > 1 ? `&page=${page}` : ""}`,
+      decodeBlockResponse,
+      {
+        ...init,
+        revalidate: 30,
+      },
+    ),
   transaction: (txHash: string, init?: FetchInit) =>
     fetchJson(
       `/api/transaction?tx_hash=${encodeURIComponent(txHash)}`,

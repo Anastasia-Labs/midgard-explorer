@@ -9,7 +9,8 @@ import { readFileSync } from "node:fs";
  *
  * The fixture carries two DDL dialects, `CREATE TABLE public.x (` from
  * `pg_dump` and `CREATE TABLE "x" (` from the Prisma-era migrations, so both
- * are matched.
+ * are matched, as are pg_dump's `CREATE UNLOGGED TABLE` and a table that ends
+ * with storage parameters (`) WITH (...);`).
  */
 
 const FIXTURE = "test/fixtures/schema/midgard-node.sql";
@@ -28,7 +29,7 @@ const COLUMN = /^"?(\w+)"?\s+((?:"?public"?\.)?"?\w+"?.*)$/;
 export function readSchemaColumns(path: string = FIXTURE): TableColumns {
   const sql = readFileSync(path, "utf8");
   const tables: TableColumns = new Map();
-  const pattern = /CREATE TABLE (?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\);/g;
+  const pattern = /CREATE (?:UNLOGGED )?TABLE (?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\)(?:\nWITH \([^\n]*\))?;/g;
   for (const match of sql.matchAll(pattern)) {
     const [, table, body] = match;
     const columns: Column[] = [];
@@ -67,7 +68,7 @@ export type LengthRule = {
 export function readLengthRules(path: string = FIXTURE): LengthRule[] {
   const sql = readFileSync(path, "utf8");
   const rules: LengthRule[] = [];
-  const pattern = /CREATE TABLE (?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\);/g;
+  const pattern = /CREATE (?:UNLOGGED )?TABLE (?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\)(?:\nWITH \([^\n]*\))?;/g;
   for (const match of sql.matchAll(pattern)) {
     const [, table, body] = match;
     for (const rule of body.matchAll(
@@ -97,7 +98,7 @@ export type ValueRule = { table: string; column: string; allowed: string[] };
 export function readValueRules(path: string = FIXTURE): ValueRule[] {
   const sql = readFileSync(path, "utf8");
   const rules: ValueRule[] = [];
-  const pattern = /CREATE TABLE (?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\);/g;
+  const pattern = /CREATE (?:UNLOGGED )?TABLE (?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\)(?:\nWITH \([^\n]*\))?;/g;
   for (const match of sql.matchAll(pattern)) {
     const [, table, body] = match;
     for (const rule of body.matchAll(
@@ -129,7 +130,7 @@ export function readUniqueRules(path: string = FIXTURE): UniqueRule[] {
     [...list.matchAll(/"?(\w+)"?/g)].map((m) => m[1]);
 
   for (const match of sql.matchAll(
-    /CREATE TABLE (?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\);/g,
+    /CREATE (?:UNLOGGED )?TABLE (?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\n\)(?:\nWITH \([^\n]*\))?;/g,
   )) {
     for (const key of match[2].matchAll(/(?:PRIMARY KEY|UNIQUE)\s*\(([^)]*)\)/g)) {
       rules.push({ table: match[1], columns: columns(key[1]) });

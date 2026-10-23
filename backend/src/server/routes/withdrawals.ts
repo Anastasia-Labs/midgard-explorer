@@ -5,6 +5,7 @@ import {
   decodeWithdrawalValue,
 } from "../../decode/withdrawal";
 import { LIMIT, getWithdrawalsPage } from "../../db/withdrawals";
+import type { Network } from "../../db/bech32";
 import { loadManifest } from "../../db/manifest";
 import { logger } from "../../logger";
 import { toHex } from "../../utils";
@@ -20,7 +21,7 @@ import { parseOptionalHexQuery, parsePageParam } from "../validate";
  * are not encoded. */
 export function networkFor(
   path: string | undefined,
-): "preprod" | "mainnet" | null {
+): Network | null {
   try {
     return loadManifest(path).network;
   } catch (error) {

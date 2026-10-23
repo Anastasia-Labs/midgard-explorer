@@ -41,12 +41,20 @@ export type Reconciliation =
    * known to be current, and hold no hash. */
   | "unavailable";
 
-/** The node's own six, plus two the explorer can observe that it cannot. */
+/** The node's own statuses, the three derived from its follower, and two the
+ * explorer can observe that it cannot. `locally_applied` replaced `finalized`
+ * in Midgard migration 0011: the node applied the block, which is never a
+ * claim of finality on Cardano. `waiting_to_merge`, `merged` and `finalized`
+ * are what db/settlement.ts derives for an applied block; an older node still
+ * writes `finalized` itself. */
 export type SettlementState =
   | "pending_submission"
   | "submitted_local_finalization_pending"
   | "submitted_unconfirmed"
   | "observed_waiting_stability"
+  | "locally_applied"
+  | "waiting_to_merge"
+  | "merged"
   | "finalized"
   | "abandoned"
   | "orphaned"
@@ -57,13 +65,18 @@ const NODE_STATES = new Set<SettlementState>([
   "submitted_local_finalization_pending",
   "submitted_unconfirmed",
   "observed_waiting_stability",
+  "locally_applied",
+  "waiting_to_merge",
+  "merged",
   "finalized",
   "abandoned",
 ]);
 
 /** An unrecognised status is preserved as `unknown` rather than mapped onto the
  * nearest known one, which would assert protocol knowledge this build lacks. */
-export const settlementState = (raw: string | null | undefined): SettlementState =>
+export const settlementState = (
+  raw: string | null | undefined,
+): SettlementState =>
   raw !== null && raw !== undefined && NODE_STATES.has(raw as SettlementState)
     ? (raw as SettlementState)
     : "unknown";
@@ -148,7 +161,12 @@ export type Association =
 export type SettlementInputs = {
   /** What the node says it submitted. Null when it has recorded no attempt. */
   nodeHash: string | null;
+  /** Where the block stands: the journal's status, or for an applied block
+   * the state derived from the follower's tables (db/settlement.ts). */
   nodeStatus: string | null;
+  /** The journal's own status, as the node wrote it. The evidence row names
+   * the journal as its source, so it carries this, never a derived state. */
+  journalStatus: string | null;
   nodeObservedAt: string | null;
   /**
    * How current the node's own data is, which decides what its silence is
@@ -166,8 +184,9 @@ export type SettlementInputs = {
  * about a copy of it. `synthetic` qualifies: fixture data is the whole world of
  * a fixture deployment. A snapshot does not, and neither does a standby that is
  * behind or whose currency could not be established. */
-export const nodeSilenceIsAboutMidgard = (freshness: L2FreshnessState): boolean =>
-  freshness === "live" || freshness === "synthetic";
+export const nodeSilenceIsAboutMidgard = (
+  freshness: L2FreshnessState,
+): boolean => freshness === "live" || freshness === "synthetic";
 
 /**
  * What the node's records support saying about one settlement.
@@ -182,13 +201,17 @@ export function reconcile(inputs: SettlementInputs): Reconciliation {
   // an empty record would invent some.
   if (inputs.nodeHash !== null) return "node_reported";
   // No hash, and the node's own currency decides what that absence is worth.
-  return nodeSilenceIsAboutMidgard(inputs.nodeFreshness) ? "none" : "unavailable";
+  return nodeSilenceIsAboutMidgard(inputs.nodeFreshness)
+    ? "none"
+    : "unavailable";
 }
 
 /** The node's record, as the node wrote it. One source, so one row, and the
  * row is present whenever the node has anything to say at all. */
-export function settlementEvidence(inputs: SettlementInputs): CardanoEvidence[] {
-  return inputs.nodeHash === null && inputs.nodeStatus === null
+export function settlementEvidence(
+  inputs: SettlementInputs,
+): CardanoEvidence[] {
+  return inputs.nodeHash === null && inputs.journalStatus === null
     ? []
     : [
         {
@@ -197,12 +220,16 @@ export function settlementEvidence(inputs: SettlementInputs): CardanoEvidence[] 
           outputIndex: null,
           blockHeight: null,
           observedAt: inputs.nodeObservedAt,
-          rawState: inputs.nodeStatus,
+          rawState: inputs.journalStatus,
         },
       ];
 }
 
-type Identity = { deploymentId: string | null; network: string; l2ObservedAsOf: string | null };
+type Identity = {
+  deploymentId: string | null;
+  network: string;
+  l2ObservedAsOf: string | null;
+};
 
 const common = (
   identity: Identity,

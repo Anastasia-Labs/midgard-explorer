@@ -1,43 +1,91 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
- * The vendored codec self-reports version 0.1.0 and always has, and its
- * package.json carries no gitHead, so neither field can detect drift. The
- * checksum can.
+ * The vendored Midgard package graph.
  *
- * If this fails, the tarball was rebuilt or replaced. Update PROVENANCE.md in
- * the same commit and say which Midgard commit the new one came from.
+ * Every package self-reports version 0.1.0 and carries no gitHead, so neither
+ * field identifies the code. The record that does is vendor/midgard/manifest.json,
+ * written by scripts/vendor-midgard.sh: the commit, the deployment profile the
+ * packages were compiled for, and a sha256 per tarball and patch.
+ *
+ * If this fails, a tarball was rebuilt or replaced. Rerun the script for the
+ * commit and profile you mean, and update PROVENANCE.md in the same change.
  */
 
-const EXPECTED_SHA256 =
-  "8f488be84d8343e0440cb664ff6ac5185b60bde0b0dc303200c57a749f69ada5";
+const vendor = (path: string) => new URL(`../vendor/${path}`, import.meta.url);
+const text = (path: string) => readFileSync(vendor(path), "utf8");
+const sha256 = (path: string) =>
+  createHash("sha256").update(readFileSync(vendor(path))).digest("hex");
 
-const read = (name: string) =>
-  readFileSync(new URL(`../vendor/${name}`, import.meta.url));
+type Manifest = {
+  commit: string;
+  profile: string;
+  tarballs: Record<string, string>;
+  patches: Record<string, string>;
+};
+const manifest = JSON.parse(text("midgard/manifest.json")) as Manifest;
+const provenance = text("PROVENANCE.md");
 
-describe("vendored @al-ft/midgard-core", () => {
-  it("is the tarball recorded in PROVENANCE.md", () => {
-    const digest = createHash("sha256")
-      .update(read("al-ft-midgard-core.tgz"))
-      .digest("hex");
-    expect(digest).toBe(EXPECTED_SHA256);
+describe("the vendored Midgard graph", () => {
+  it("names one full commit and one deployment profile", () => {
+    expect(manifest.commit).toMatch(/^[0-9a-f]{40}$/);
+    expect(manifest.profile).toBe("preprod-testing");
   });
 
-  it("has a provenance record carrying that same checksum", () => {
-    expect(read("PROVENANCE.md").toString("utf8")).toContain(EXPECTED_SHA256);
+  it("holds exactly the tarballs the manifest records, with those checksums", () => {
+    const onDisk = readdirSync(vendor("midgard")).filter((f) => f.endsWith(".tgz"));
+    expect(onDisk.sort()).toEqual(Object.keys(manifest.tarballs).sort());
+    for (const [file, digest] of Object.entries(manifest.tarballs)) {
+      expect(sha256(`midgard/${file}`), file).toBe(digest);
+    }
+    for (const [file, digest] of Object.entries(manifest.patches)) {
+      expect(sha256(`midgard/patches/${file}`), file).toBe(digest);
+    }
   });
 
-  // The Lucid pin is the only field that distinguishes one build of this
-  // package from another, since every one of them reports version 0.1.0.
-  it("still declares the Lucid version the provenance record assumes", async () => {
-    const pkg = JSON.parse(
-      readFileSync(
-        new URL("../node_modules/@al-ft/midgard-core/package.json", import.meta.url),
-        "utf8",
-      ),
+  it("is described by PROVENANCE.md: commit, profile and every checksum", () => {
+    expect(provenance).toContain(manifest.commit);
+    expect(provenance).toContain(manifest.profile);
+    for (const digest of [
+      ...Object.values(manifest.tarballs),
+      ...Object.values(manifest.patches),
+    ]) {
+      expect(provenance).toContain(digest);
+    }
+  });
+
+  it("resolves every internal reference to the tarball beside it", () => {
+    const workspace = readFileSync(
+      new URL("../pnpm-workspace.yaml", import.meta.url),
+      "utf8",
     );
-    expect(pkg.dependencies["@lucid-evolution/lucid"]).toBe("0.4.31");
+    for (const file of Object.keys(manifest.tarballs)) {
+      expect(workspace, file).toContain(`file:vendor/midgard/${file}`);
+    }
+    for (const file of Object.keys(manifest.patches)) {
+      expect(workspace, file).toContain(`vendor/midgard/patches/${file}`);
+    }
+  });
+
+  // Core and the SDK take Lucid as a peer. A backend on another Lucid would
+  // hand them its own, which is the mismatch this pins against.
+  it("installs the Lucid release the graph was built against", () => {
+    const installed = (name: string) =>
+      JSON.parse(
+        readFileSync(
+          new URL(`../node_modules/${name}/package.json`, import.meta.url),
+          "utf8",
+        ),
+      );
+    const lucid = installed("@lucid-evolution/lucid").version;
+    // Core lists Lucid as a dependency, the SDK as a peer.
+    const wanted = (name: string) => {
+      const pkg = installed(name);
+      return pkg.dependencies?.["@lucid-evolution/lucid"] ?? pkg.peerDependencies?.["@lucid-evolution/lucid"];
+    };
+    expect(wanted("@al-ft/midgard-core")).toBe(lucid);
+    expect(wanted("@al-ft/midgard-sdk")).toBe(lucid);
   });
 });

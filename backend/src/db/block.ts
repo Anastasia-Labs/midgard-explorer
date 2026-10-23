@@ -2,6 +2,7 @@ import { config } from "../config";
 import { prisma } from "../db";
 import { readConsistently, type NodeReader } from "./consistent";
 import { toHex } from "../utils";
+import { SETTLED_CHAIN, settlementStatus } from "./settlement";
 
 export type BlockTxRecord = {
   height: number | null;
@@ -99,6 +100,8 @@ const daMetadataFrom = (row: DaMetadataRow) => ({
 
 type FinalizationRow = {
   status: string;
+  /** The journal's own status; `status` is derived (db/settlement.ts). */
+  journal_status: string;
   submitted_tx_hash: Uint8Array | null;
   block_end_time: Date;
   created_at: Date;
@@ -106,9 +109,11 @@ type FinalizationRow = {
   observed_confirmed_at_ms: bigint | null;
 };
 
-const finalizationFrom = (row: FinalizationRow) => ({
+const finalizationFrom = (row: Omit<FinalizationRow, "journal_status">) => ({
   status: row.status,
-  submitted_tx_hash: row.submitted_tx_hash ? toHex(row.submitted_tx_hash) : null,
+  submitted_tx_hash: row.submitted_tx_hash
+    ? toHex(row.submitted_tx_hash)
+    : null,
   blockEndTime: row.block_end_time,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -152,9 +157,15 @@ const rootPair = (base: string | null, expected: string | null): RootPair => ({
 /** Roots are already 64-character hex text, so they pass through unchanged. */
 const commitmentsFrom = (row: CommitmentsRow) => ({
   utxos: rootPair(row.base_utxos_root, row.expected_utxos_root),
-  transactions: rootPair(row.base_transactions_root, row.expected_transactions_root),
+  transactions: rootPair(
+    row.base_transactions_root,
+    row.expected_transactions_root,
+  ),
   deposits: rootPair(row.base_deposits_root, row.expected_deposits_root),
-  withdrawals: rootPair(row.base_withdrawals_root, row.expected_withdrawals_root),
+  withdrawals: rootPair(
+    row.base_withdrawals_root,
+    row.expected_withdrawals_root,
+  ),
   forced_transactions: rootPair(
     row.base_forced_transactions_root,
     row.expected_forced_transactions_root,
@@ -184,10 +195,13 @@ type BlockSummaryRow = BlockHeaderRecord & {
  * Each source is narrowed to the key before the outer joins. Filtering on the
  * joined `COALESCE` instead joined both tables whole on every request: 3 to
  * 4.5 ms at `target` and growing with the chain, against 0.13 to 0.24 ms. */
-export async function getBlockSummary(headerHash: string, db: NodeReader = prisma) {
+export async function getBlockSummary(
+  headerHash: string,
+  db: NodeReader = prisma,
+) {
   const key = Buffer.from(headerHash, "hex");
   const rows = await db.$queryRaw<BlockSummaryRow[]>`
-    WITH f AS (
+    WITH RECURSIVE ${SETTLED_CHAIN}, f AS (
       SELECT * FROM pending_block_finalizations WHERE header_hash = ${key}
     ), d AS (
       SELECT * FROM da_payloads WHERE header_hash = ${key}
@@ -223,7 +237,8 @@ export async function getBlockSummary(headerHash: string, db: NodeReader = prism
            d.block_start_time AS da_block_start_time,
            d.block_end_time AS da_block_end_time,
            (f.header_hash IS NOT NULL) AS has_finalization,
-           f.status AS fin_status,
+           ${settlementStatus("f")} AS fin_status,
+           f.status AS fin_journal_status,
            f.submitted_tx_hash AS fin_submitted_tx_hash,
            f.block_end_time AS fin_block_end_time,
            f.created_at AS fin_created_at,
@@ -246,7 +261,14 @@ export async function getBlockSummary(headerHash: string, db: NodeReader = prism
       FULL OUTER JOIN materialized AS b
         ON b.header_hash = COALESCE(f.header_hash, d.header_hash);`;
   const row = rows[0];
-  if (!row) return { header: null, da: null, finalization: null, commitments: null };
+  if (!row)
+    return {
+      header: null,
+      da: null,
+      finalization: null,
+      commitments: null,
+      journalStatus: null,
+    };
   const header: BlockHeaderRecord = {
     header_hash: row.header_hash,
     height: row.height,
@@ -299,16 +321,26 @@ export async function getBlockSummary(headerHash: string, db: NodeReader = prism
         expected_transactions_root: row.fin_expected_transactions_root,
         expected_deposits_root: row.fin_expected_deposits_root,
         expected_withdrawals_root: row.fin_expected_withdrawals_root,
-        expected_forced_transactions_root: row.fin_expected_forced_transactions_root,
+        expected_forced_transactions_root:
+          row.fin_expected_forced_transactions_root,
         expected_transition_trace_root: row.fin_expected_transition_trace_root,
         expected_event_to_step_root: row.fin_expected_event_to_step_root,
       })
     : null;
-  return { header, da, finalization, commitments };
+  return {
+    header,
+    da,
+    finalization,
+    commitments,
+    journalStatus: row.has_finalization ? row.fin_journal_status : null,
+  };
 }
 
 /** One header summary. See `getBlockSummary`, which this reads. */
-export async function getBlockHeader(headerHash: string, db: NodeReader = prisma) {
+export async function getBlockHeader(
+  headerHash: string,
+  db: NodeReader = prisma,
+) {
   return (await getBlockSummary(headerHash, db)).header;
 }
 
@@ -329,7 +361,7 @@ export type BlockListRecord = {
 
 const listSelect = async (count: number): Promise<BlockListRecord[]> =>
   prisma.$queryRaw<BlockListRecord[]>`
-    WITH legacy AS (
+    WITH RECURSIVE ${SETTLED_CHAIN}, legacy AS (
       SELECT header_hash, MIN(height)::int AS height, COUNT(*)::bigint AS count
         FROM blocks GROUP BY header_hash
     ), first_tx AS (
@@ -348,7 +380,7 @@ const listSelect = async (count: number): Promise<BlockListRecord[]> =>
            f.expected_forced_transaction_count AS header_forced_transaction_count,
            COALESCE(l.count, 0)::bigint AS materialized_l2_transaction_count,
            (d.header_hash IS NOT NULL) AS payload_retained_locally,
-           f.status AS finalization_status
+           ${settlementStatus("f")} AS finalization_status
       FROM pending_block_finalizations AS f
       LEFT JOIN legacy AS l ON l.header_hash = f.header_hash
       LEFT JOIN first_tx AS t ON t.header_hash = f.header_hash
@@ -371,12 +403,12 @@ export async function getLastTransactions(count: number) {
       finalization_status: string;
     }>
   >`
-    WITH legacy AS (
+    WITH RECURSIVE ${SETTLED_CHAIN}, legacy AS (
       SELECT header_hash, MIN(height)::int AS height FROM blocks GROUP BY header_hash
     )
     SELECT l.height, j.header_hash, j.member_id AS tx_id,
            j.source_time_stamp_tz AS time_stamp_tz,
-           f.status AS finalization_status
+           ${settlementStatus("f")} AS finalization_status
       FROM pending_block_finalization_txs AS j
       JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
       LEFT JOIN legacy AS l ON l.header_hash = j.header_hash
@@ -399,7 +431,10 @@ export async function getTotalBlocks() {
   return Number(rows[0]?.n ?? 0n);
 }
 
-export async function getBlockDaMetadata(headerHash: string, db: NodeReader = prisma) {
+export async function getBlockDaMetadata(
+  headerHash: string,
+  db: NodeReader = prisma,
+) {
   const key = Buffer.from(headerHash, "hex");
   const rows = await db.$queryRaw<DaMetadataRow[]>`
     SELECT utxos_root, transactions_root, deposits_root, withdrawals_root,
@@ -412,14 +447,24 @@ export async function getBlockDaMetadata(headerHash: string, db: NodeReader = pr
   return row ? daMetadataFrom(row) : null;
 }
 
-export async function getBlockFinalization(headerHash: string, db: NodeReader = prisma) {
+export async function getBlockFinalization(
+  headerHash: string,
+  db: NodeReader = prisma,
+) {
   const key = Buffer.from(headerHash, "hex");
   const rows = await db.$queryRaw<FinalizationRow[]>`
-    SELECT status, submitted_tx_hash, block_end_time, created_at, updated_at,
-           observed_confirmed_at_ms
-      FROM pending_block_finalizations WHERE header_hash = ${key};`;
+    WITH RECURSIVE ${SETTLED_CHAIN}
+    SELECT ${settlementStatus("f")} AS status, f.status AS journal_status,
+           f.submitted_tx_hash, f.block_end_time,
+           f.created_at, f.updated_at, f.observed_confirmed_at_ms
+      FROM pending_block_finalizations AS f WHERE f.header_hash = ${key};`;
   const row = rows[0];
-  return row ? finalizationFrom(row) : null;
+  // The same pair `getBlockSummary` returns: the response's finalization, and
+  // beside it the journal's own word for the evidence row.
+  return {
+    finalization: row ? finalizationFrom(row) : null,
+    journalStatus: row ? row.journal_status : null,
+  };
 }
 
 export type BlockEventMember = {
@@ -432,7 +477,10 @@ export type BlockEventMember = {
  * payload bytes remain in the raw node journal and are not duplicated in JSON.
  * One statement over the three event tables, tagged by source, rather than a
  * round trip per table. */
-export async function getBlockEvents(headerHash: string, db: NodeReader = prisma) {
+export async function getBlockEvents(
+  headerHash: string,
+  db: NodeReader = prisma,
+) {
   const key = Buffer.from(headerHash, "hex");
   const rows = await db.$queryRaw<Array<BlockEventMember & { kind: string }>>`
     SELECT 'deposit' AS kind, member_id, ordinal, source_time_stamp_tz
@@ -466,9 +514,9 @@ export async function getBlocksPage(page: number, status?: string) {
   const filter = status && status.length > 0 ? status : null;
   // Rows and total in one snapshot: see `readConsistently`.
   const [rows, total] = await readConsistently(async (db) =>
-    Promise.all(  [
+    Promise.all([
       db.$queryRaw<BlockListRecord[]>`
-        WITH legacy AS (
+        WITH RECURSIVE ${SETTLED_CHAIN}, legacy AS (
           SELECT header_hash, MIN(height)::int AS height, COUNT(*)::bigint AS count
             FROM blocks GROUP BY header_hash
         ), first_tx AS (
@@ -484,18 +532,19 @@ export async function getBlocksPage(page: number, status?: string) {
                f.expected_forced_transaction_count AS header_forced_transaction_count,
                COALESCE(l.count, 0)::bigint AS materialized_l2_transaction_count,
                (d.header_hash IS NOT NULL) AS payload_retained_locally,
-               f.status AS finalization_status
+               ${settlementStatus("f")} AS finalization_status
           FROM pending_block_finalizations AS f
           LEFT JOIN legacy AS l ON l.header_hash = f.header_hash
           LEFT JOIN first_tx AS t ON t.header_hash = f.header_hash
           LEFT JOIN da_payloads AS d ON d.header_hash = f.header_hash
-         WHERE ${filter}::text IS NULL OR f.status = ${filter}
+         WHERE ${filter}::text IS NULL OR ${settlementStatus("f")} = ${filter}
          ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC
          OFFSET ${offset} LIMIT ${limit};`,
       db.$queryRaw<Array<{ n: bigint }>>`
-        SELECT COUNT(*)::bigint AS n FROM pending_block_finalizations
-         WHERE ${filter}::text IS NULL OR status = ${filter};`.then((r) =>
-        Number(r[0]?.n ?? 0n),
+        WITH RECURSIVE ${SETTLED_CHAIN}
+        SELECT COUNT(*)::bigint AS n FROM pending_block_finalizations AS f
+         WHERE ${filter}::text IS NULL OR ${settlementStatus("f")} = ${filter};`.then(
+        (r) => Number(r[0]?.n ?? 0n),
       ),
     ]),
   );

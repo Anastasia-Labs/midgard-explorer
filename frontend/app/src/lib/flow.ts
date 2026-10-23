@@ -1,4 +1,5 @@
-import type { TransactionView } from "@midgard-explorer/contracts";
+import type { AddressIdentityView, TransactionView, ValueView } from "@midgard-explorer/contracts";
+import { outputHref } from "./entities";
 import type { FlowEdgeFacts } from "./flowEdge";
 
 /**
@@ -42,6 +43,13 @@ export type FlowNode = {
   hasDatum: boolean;
   hasScriptRef: boolean;
   resolved: boolean;
+  /** The output this node is, as `txId#index`: for an input, the output it
+   * spends. */
+  ref: { txId: string; index: number };
+  /** What the table shows beside an address: its credentials and full value.
+   * Null for an input whose spend side did not resolve. */
+  identity: AddressIdentityView | null;
+  value: ValueView | null;
 };
 
 export type FlowSide = {
@@ -140,12 +148,15 @@ export function flowModel(tx: TransactionView, budget: number = FLOW_NODE_BUDGET
     addressKind: input.resolved?.addressKind ?? null,
     lovelace: input.resolved ? BigInt(input.resolved.value.lovelace) : 0n,
     assetCount: input.resolved ? countAssets(input.resolved.value.assets) : 0,
-    // An input always links to the transaction that produced it, whether or not
-    // the spend side still resolves.
-    href: `/transaction/${input.txId}`,
+    // An input always links to the output it spends, whether or not the
+    // spend side still resolves.
+    href: outputHref(input.txId, input.index),
     hasDatum: false,
     hasScriptRef: false,
     resolved: input.resolved !== null,
+    ref: { txId: input.txId, index: input.index },
+    identity: input.resolved?.identity ?? null,
+    value: input.resolved?.value ?? null,
   }));
 
   const outputNodes: FlowNode[] = tx.outputs.map((output, i) => ({
@@ -160,6 +171,9 @@ export function flowModel(tx: TransactionView, budget: number = FLOW_NODE_BUDGET
     hasDatum: output.hasDatum,
     hasScriptRef: output.hasScriptRef,
     resolved: true,
+    ref: { txId: tx.txId, index: output.index },
+    identity: output.identity,
+    value: output.value,
   }));
 
   return {

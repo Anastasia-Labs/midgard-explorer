@@ -1,42 +1,27 @@
 // Narrow Lucid imports avoid loading unused wallet and provider modules.
-import { type Credential, type Network } from "@lucid-evolution/core-types";
-import { Data } from "@lucid-evolution/plutus";
+import { type Credential } from "@lucid-evolution/core-types";
 import { credentialToAddress } from "@lucid-evolution/utils";
+import { lucidNetwork, type Network } from "../db/bech32";
 import { decodeDatumResult } from "./datum";
 import type { AssetMap, ValueView } from "./types";
 
-/** Kept structurally identical to midgard-sdk/src/common.ts. The node writes
- * these columns with Data.to(value, SDK.Value/SDK.AddressData). */
-export const WithdrawalValueSchema = Data.Map(
-  Data.Bytes(),
-  Data.Map(Data.Bytes(), Data.Integer()),
-);
+type Sdk = typeof import("@al-ft/midgard-sdk", { with: { "resolution-mode": "import" } });
 
-const Hash28 = Data.Bytes({ minLength: 28, maxLength: 28 });
-export const WithdrawalCredentialSchema = Data.Enum([
-  Data.Object({ PublicKeyCredential: Data.Tuple([Hash28]) }),
-  Data.Object({ ScriptCredential: Data.Tuple([Hash28]) }),
-]);
-export const WithdrawalAddressSchema = Data.Object({
-  paymentCredential: WithdrawalCredentialSchema,
-  stakeCredential: Data.Nullable(
-    Data.Enum([
-      Data.Object({ Inline: Data.Tuple([WithdrawalCredentialSchema]) }),
-      Data.Object({
-        Pointer: Data.Tuple([
-          Data.Object({
-            slotNumber: Data.Integer(),
-            transactionIndex: Data.Integer(),
-            certificateIndex: Data.Integer(),
-          }),
-        ]),
-      }),
-    ]),
-  ),
-});
+/**
+ * The SDK the node writes these columns with: `Data.to(value, SDK.Value)` and
+ * `Data.to(address, SDK.AddressData)`. Read back with the same schemas rather
+ * than copies of them, which had already drifted: the SDK writes a pointer
+ * stake credential flat, and the copy still expected it wrapped in a tuple.
+ *
+ * Loaded synchronously because the route maps rows synchronously. Node 24
+ * loads the package's ESM build with `require`.
+ */
+const sdk = (): Sdk =>
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require("@al-ft/midgard-sdk") as Sdk;
 
-type WithdrawalCredential = Data.Static<typeof WithdrawalCredentialSchema>;
-type WithdrawalAddress = Data.Static<typeof WithdrawalAddressSchema>;
+type WithdrawalAddress = import("@al-ft/midgard-sdk", { with: { "resolution-mode": "import" } }).AddressData;
+type WithdrawalCredential = WithdrawalAddress["paymentCredential"];
 type WithdrawalValue = Map<string, Map<string, bigint>>;
 
 export type FieldDecode<T> =
@@ -47,7 +32,7 @@ export function decodeWithdrawalValue(
 ): FieldDecode<ValueView> {
   const result = decodeDatumResult<WithdrawalValue>(
     Buffer.from(bytes).toString("hex"),
-    WithdrawalValueSchema,
+    sdk().ValueSchema,
   );
   if (!result.ok) {
     return {
@@ -79,11 +64,11 @@ const credential = (value: WithdrawalCredential): Credential =>
 
 export function decodeWithdrawalAddress(
   bytes: Uint8Array,
-  network: "preprod" | "mainnet",
+  network: Network,
 ): FieldDecode<string> {
   const result = decodeDatumResult<WithdrawalAddress>(
     Buffer.from(bytes).toString("hex"),
-    WithdrawalAddressSchema,
+    sdk().AddressSchema,
   );
   if (!result.ok) {
     return {
@@ -109,7 +94,7 @@ export function decodeWithdrawalAddress(
         : credential(decoded.stakeCredential.Inline[0]);
     return {
       value: credentialToAddress(
-        (network === "mainnet" ? "Mainnet" : "Preprod") as Network,
+        lucidNetwork(network),
         credential(decoded.paymentCredential),
         stake,
       ),

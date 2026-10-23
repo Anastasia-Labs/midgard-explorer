@@ -4,6 +4,7 @@ import { getBlockFinalization, getLastTransactions } from "../../db/block";
 import {
   getTotalTransactions,
   getTransaction,
+  getTransactionBodies,
   getTransactionsPage,
   getTxAdmission,
   getTxInclusion,
@@ -54,6 +55,7 @@ export async function getTransactionRoute(req: Request, res: Response) {
     admissionRecord,
     inclusionRow,
     finalization,
+    journalStatus,
     lifecycle,
     decoded,
   } = await readConsistently(async (db) => {
@@ -72,6 +74,8 @@ export async function getTransactionRoute(req: Request, res: Response) {
           includeCbor: true,
           // Every input, reference input and output resolved in one statement.
           bulkLookup: (refs) => findOutRefs(refs, db),
+          // A spent input, from the transaction that created it.
+          creatingTransactions: (txIds) => getTransactionBodies(txIds, db),
         }).then(
           (view) => ({ view, error: null as string | null }),
           (error: unknown) => ({
@@ -84,7 +88,10 @@ export async function getTransactionRoute(req: Request, res: Response) {
       tx: txRow,
       admissionRecord: admission,
       inclusionRow: inclusion,
-      finalization: settlement,
+      // The journal's own word goes to the evidence row only; the response's
+      // finalization keeps its contract shape.
+      finalization: settlement?.finalization ?? null,
+      journalStatus: settlement?.journalStatus ?? null,
       lifecycle: life,
       decoded: body,
     };
@@ -127,6 +134,7 @@ export async function getTransactionRoute(req: Request, res: Response) {
     {
       nodeHash: finalization?.submitted_tx_hash ?? null,
       nodeStatus: finalization?.status ?? null,
+      journalStatus,
       nodeObservedAt: finalization?.updatedAt?.toISOString() ?? null,
       // What the node's silence is worth. A snapshot cannot settle whether the
       // live node holds a finalization record it does not.
@@ -166,7 +174,10 @@ export async function getTransactionRoute(req: Request, res: Response) {
     return res.status(404).json({ error: "Transaction not found." });
   }
 
-  const status = transactionStatus({ source: tx.source });
+  const status = transactionStatus({
+    source: tx.source,
+    hasHeaderHash: tx.inBlock,
+  });
 
   // Decoded inside the snapshot above. Only this route carries the raw bytes:
   // a list route inlining them would multiply its response by the size of every
@@ -220,11 +231,20 @@ export async function getRecentTransactionsRoute(_req: Request, res: Response) {
 }
 
 export async function getTransactionsPageRoute(req: Request, res: Response) {
-  const parsedPage = parsePageParam(req.params.page, config.TRANSACTIONS_PER_PAGE);
+  const parsedPage = parsePageParam(
+    req.params.page,
+    config.TRANSACTIONS_PER_PAGE,
+  );
   if (!parsedPage.ok) return res.status(400).json({ error: parsedPage.error });
   const page = parsedPage.value;
 
-  const { rows, hasNextPage, total, limit, page: served } = await getTransactionsPage(
+  const {
+    rows,
+    hasNextPage,
+    total,
+    limit,
+    page: served,
+  } = await getTransactionsPage(
     page,
     typeof req.query.status === "string" ? req.query.status : undefined,
   );

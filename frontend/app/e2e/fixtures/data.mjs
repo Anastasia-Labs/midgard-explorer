@@ -403,36 +403,51 @@ export const blockDa = (height) =>
  * committed transaction landed in an abandoned block, and "committed, awaiting
  * L1 finality" (the most common real state there is) could not be produced at
  * all. Eight entries are co-prime with the seven lifecycle statuses, so every
- * pairing occurs. `finalized` appears twice, which is both what makes the
- * length eight and a fair weighting: most blocks do settle. */
+ * pairing occurs. `locally_applied`, the node's terminal status since Midgard
+ * migration 0011, appears twice, which is both what makes the length eight and
+ * a fair weighting: most blocks do get applied. */
 const FINALIZATION_STATUSES = [
-  "finalized",
+  "locally_applied",
   "observed_waiting_stability",
   "submitted_unconfirmed",
   "submitted_local_finalization_pending",
   "pending_submission",
   "abandoned",
   "some_future_finalization_stage",
-  "finalized",
+  "locally_applied",
 ];
+
+/* An applied block's settlement, as the backend derives it from the follower,
+   matching the state queue below: header 24 is the confirmed state, 25 onwards
+   wait to merge. 23 and 24 are merged but still undoable, older ones final, and
+   31 is applied before the follower has placed it. */
+const APPLIED_STATUSES = new Set(["locally_applied", "waiting_to_merge", "merged", "finalized"]);
+const appliedStatus = (height) =>
+  height === 31
+    ? "locally_applied"
+    : height >= 25
+      ? "waiting_to_merge"
+      : height >= 23
+        ? "merged"
+        : "finalized";
 
 export const blockFinalization = (height) => {
   if (height === 11) return null;
-  const status = FINALIZATION_STATUSES[height % FINALIZATION_STATUSES.length];
+  const cycled = FINALIZATION_STATUSES[height % FINALIZATION_STATUSES.length];
+  const status = cycled === "locally_applied" ? appliedStatus(height) : cycled;
   const blockEndMs = Date.UTC(2026, 6, 28, 12, 0, 0) - (40 - height) * 21_000;
   const createdMs = blockEndMs + 1_400;
   const observed =
-    status === "observed_waiting_stability" || status === "finalized"
+    status === "observed_waiting_stability" || APPLIED_STATUSES.has(status)
       ? new Date(createdMs + 18_000).toISOString()
       : null;
-  const updatedMs =
-    status === "finalized"
-      ? createdMs + 42_000
-      : status === "abandoned"
-        ? createdMs + 35_000
-        : observed
-          ? new Date(observed).getTime()
-          : createdMs + 4_000;
+  const updatedMs = APPLIED_STATUSES.has(status)
+    ? createdMs + 42_000
+    : status === "abandoned"
+      ? createdMs + 35_000
+      : observed
+        ? new Date(observed).getTime()
+        : createdMs + 4_000;
   return {
     status,
     submitted_tx_hash: status === "pending_submission" ? null : l1TxHash(height),
@@ -823,7 +838,9 @@ export const metrics = () => {
 
   const finalizations = BLOCKS.map((b) => blockFinalization(b.number)).filter((f) => f !== null);
   const byStatus = (s) => finalizations.filter((f) => f.status === s).length;
-  const unsettled = finalizations.filter((f) => !["finalized", "abandoned"].includes(f.status));
+  const unsettled = finalizations.filter(
+    (f) => !APPLIED_STATUSES.has(f.status) && f.status !== "abandoned",
+  );
   const oldest = unsettled
     .slice()
     .sort((a, b) => new Date(a.blockEndTime) - new Date(b.blockEndTime))[0];
@@ -892,11 +909,11 @@ export const metrics = () => {
       settlementLatency: {
         p50Ms: 43_400,
         p95Ms: 61_200,
-        sampleCount: byStatus("finalized"),
+        sampleCount: finalizations.filter((f) => APPLIED_STATUSES.has(f.status)).length,
         source:
           "pending_block_finalizations.updated_at - pending_block_finalizations.block_end_time",
       },
-      finalized: byStatus("finalized"),
+      finalized: finalizations.filter((f) => APPLIED_STATUSES.has(f.status)).length,
       pending: unsettled.length,
       abandoned: byStatus("abandoned"),
       oldestUnsettled:
@@ -977,5 +994,67 @@ export const asset = (policyId, assetName) => {
     })),
     holdersTruncated: false,
     coverage: COVERAGE,
+  };
+};
+
+/* The state queue. Headers 25 to 40 wait to merge on top of header 24, so the
+   response windows them: four oldest, four hidden, eight newest. The default
+   is still, so a test reads one fixed queue.
+
+   With `tick` set, the queue moves the way a running node's does: a commit
+   goes out, lands at the tail two ticks later, and every third tick the oldest
+   header merges into the confirmed state. Headers past 40 have no block page
+   here; they exist only to keep the queue moving. */
+const QUEUE_HEAD = 4;
+const QUEUE_TAIL = 8;
+const queueHash = (n) => BLOCKS.find((b) => b.number === n)?.header_hash ?? blockHash(n);
+
+/** @param {number | null} [tick] */
+export const stateQueue = (tick = null) => {
+  const k = tick ?? 0;
+  const tail = 40 + Math.floor(k / 2);
+  const confirmedAt = Math.min(24 + Math.floor(k / 3), tail - 1);
+  // The still queue shares the rest of the fixture's clock; a moving one is live.
+  const now = tick === null ? Date.UTC(2026, 6, 28, 12, 0, 0) : Date.now();
+  const block = (n) => ({
+    headerHash: queueHash(n),
+    parentHeaderHash: queueHash(n - 1),
+    origin: n % 5 === 0 ? "foreign" : "own",
+    transactions: n === 39 ? 0 : txCountForBlock(n),
+    deposits: n === 39 ? 1 : 0,
+    withdrawals: 0,
+    forcedTransactions: 0,
+    processedAt: new Date(now - (tail - n) * 20_000 - 5_000).toISOString(),
+    // This node's commit time and Cardano transaction; another operator's
+    // block has neither here.
+    blockTime: n % 5 === 0 ? null : new Date(now - (tail - n) * 20_000 - 65_000).toISOString(),
+    commitTxHash: n % 5 === 0 ? null : l1TxHash(n),
+  });
+  const queued = Array.from({ length: tail - confirmedAt }, (_, i) => block(confirmedAt + 1 + i));
+  const oldest = queued.slice(0, QUEUE_HEAD);
+  const newest = queued.slice(Math.max(QUEUE_HEAD, queued.length - QUEUE_TAIL));
+  return {
+    observedAt: new Date(now).toISOString(),
+    confirmed: {
+      headerHash: queueHash(confirmedAt),
+      updatedAt: new Date(now - 60_000).toISOString(),
+    },
+    depth: queued.length,
+    linked: queued.length,
+    oldest,
+    newest,
+    hidden: queued.length - oldest.length - newest.length,
+    committing:
+      tick === null
+        ? null
+        : {
+            headerHash: blockHash(tail + 1),
+            status: k % 2 === 0 ? "pending_submission" : "submitted_unconfirmed",
+            blockTime: new Date(now - 4_000).toISOString(),
+          },
+    removed: 0,
+    removedBlocks: [],
+    // preprod-testing's block maturity: fifteen minutes from commit.
+    maturityMs: 900_000,
   };
 };

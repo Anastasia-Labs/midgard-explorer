@@ -69,7 +69,8 @@ describe("flow model", () => {
 
   it("carries the outref of an input so the node can link to where it came from", () => {
     const model = flowModel(tx({ inputs: [input("5000000", 3)] }));
-    expect(model.inputs.nodes[0]?.href).toBe(`/transaction/${"aa".repeat(32)}`);
+    // It opens the exact output the input spends.
+    expect(model.inputs.nodes[0]?.href).toBe(`/transaction/${"aa".repeat(32)}#output-3`);
     expect(model.inputs.nodes[0]?.label).toBe(`${"aa".repeat(32)}#3`);
   });
 

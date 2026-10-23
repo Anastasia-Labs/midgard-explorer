@@ -33,6 +33,22 @@ describe("unambiguous inputs still resolve in one step", () => {
   });
 });
 
+describe("an output reference", () => {
+  const tx = "6dfc3b93ec67845a63e65fe14796f1eb68d2bfdf41dc47976e28a4180a6f10ab";
+
+  it("routes hash#index, as the explorer displays it, to that output on its transaction", () => {
+    const r = searchCandidates(`${tx.toUpperCase()}#1`);
+    expect(r.ok && r.candidates).toEqual([
+      expect.objectContaining({ kind: "output", href: `/transaction/${tx}#output-1` }),
+    ]);
+  });
+
+  it("explains a reference whose hash is not a transaction hash", () => {
+    const r = searchCandidates(`${tx.slice(0, 56)}#1`);
+    expect(r.ok).toBe(false);
+  });
+});
+
 describe("ambiguous inputs are offered, never guessed", () => {
   it("offers both readings of 56 hex", () => {
     // A block header hash and a minting policy are both 28 bytes. Picking one

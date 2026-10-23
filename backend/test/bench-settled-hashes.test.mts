@@ -50,6 +50,12 @@ const insertFinalization = async (
     "header_hash", "submitted_tx_hash", "block_end_time", "block_start_time",
     "status", "created_at", "updated_at", "state_queue_lease_token",
     "base_snapshot_id", "base_tail_header_hash", "header_cbor",
+    // Midgard f4cf28ca1 binds each journal row to the consensus profile, a v1
+    // record, the plain ledger-delta replay and its validation traces.
+    "consensus_profile_id", "format_version", "replay_kind",
+    "deployment_marker_schema_version", "deployment_manifest_id",
+    "expected_validation_traces_root", "expected_validation_trace_count",
+    "ledger_delta_spent", "ledger_delta_produced", "block_time",
     ...ROOTS, ...COUNTS,
   ];
   const at = "2026-09-01T10:00:00Z";
@@ -57,8 +63,13 @@ const insertFinalization = async (
     headerHash, submitted, at, at,
     // The node's own vocabulary: a row with no submitted transaction is one it
     // has not sent yet.
-    submitted === null ? "pending_submission" : "finalized",
+    submitted === null ? "pending_submission" : "locally_applied",
     at, at, lease, "snapshot", hash28(0x00), Buffer.alloc(1),
+    "midgard-consensus-v1", 1, "ledger_delta_v1", "midgard-deployment-marker-v1",
+    "0".repeat(64),
+    // No events, so no validation traces, under the root the schema reserves for none.
+    "0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8", 0,
+    "[]", "[]", at,
     ...ROOTS.map(() => "0".repeat(64)),
     ...COUNTS.map(() => 0),
   ];

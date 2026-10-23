@@ -44,7 +44,13 @@ export const ForcedTxRow = Schema.Struct({
   tx_order_l1_tx_hash: HexString,
   tx_order_l1_output_index: Schema.Number,
   tx_id: HexString,
+  /** The operator's verdict, read from the node's forced inclusion value:
+   * `ForcedTxValid`, `ForcedTxInvalid`, or `Unknown` when the value does not
+   * decode. Older nodes stored other codes here, so it stays an open string. */
   operator_validity: StatusString,
+  /** For an invalid verdict, the rejection reason's name. Absent from older
+   * backends. */
+  operator_verdict_reason: Schema.optional(Schema.NullOr(Schema.String)),
   status: StatusString,
   inclusion_time: IsoTimestamp,
   projected_header_hash: Schema.NullOr(HexString),

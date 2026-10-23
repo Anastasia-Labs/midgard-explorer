@@ -8,13 +8,15 @@ import { Count, PageHeader } from "../../components/ui/base/layout";
 import { DataTable, Pagination } from "../../components/ui/base/table";
 import { Timestamp } from "../../components/ui/base/timestamp";
 import { HourlyChart } from "../../components/ui/domain/metrics";
-import { api } from "../../lib/api";
+import { ApiError, api } from "../../lib/api";
 import { countNoun, groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
-import { legendFor } from "../../lib/status-registry";
+import { ARCHIVE_FILTER_REASON, readsArchive } from "../../lib/evidence";
+import { filterOptionsFor } from "../../lib/status-registry";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
 import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
+import { StateQueue } from "../../features/block/StateQueue";
 import { ListError } from "../../components/ui/base/listerror";
 
 export const metadata: Metadata = {
@@ -38,9 +40,11 @@ export default async function BlocksPage({
   // The hourly chart reads metrics on the side: when that call fails the chart
   // shows its unavailable state and the list is untouched.
   const init = await viewerInit();
-  const [pageResult, metricsResult] = await Promise.allSettled([
+  const [pageResult, metricsResult, sourceResult, queueResult] = await Promise.allSettled([
     api.blocksPage(page, status, init),
     api.metrics(init),
+    api.source(init),
+    api.stateQueue(init),
   ]);
   if (pageResult.status === "rejected") {
     return (
@@ -54,6 +58,12 @@ export default async function BlocksPage({
   }
   const data = pageResult.value;
   const metrics = metricsResult.status === "fulfilled" ? metricsResult.value : null;
+  const archive = sourceResult.status === "fulfilled" && readsArchive(sourceResult.value);
+  const queue = queueResult.status === "fulfilled" ? queueResult.value : null;
+  const queueUnavailable =
+    queueResult.status === "rejected" &&
+    queueResult.reason instanceof ApiError &&
+    queueResult.reason.category === "unavailable";
 
   return (
     <>
@@ -70,10 +80,12 @@ export default async function BlocksPage({
           </span>
         }
       />
+      <StateQueue initial={queue} unavailable={queueUnavailable} />
       <ListTools
         filterKey="status"
         filterLabel="L1 settlement"
-        options={legendFor("finalization").map((e) => ({ value: e.code, label: e.label }))}
+        options={filterOptionsFor("finalization")}
+        filterUnavailable={archive ? ARCHIVE_FILTER_REASON : undefined}
         rows={data.rows}
         filename={`midgard-blocks-page-${page}${status ? `-${status}` : ""}`}
         columns={[

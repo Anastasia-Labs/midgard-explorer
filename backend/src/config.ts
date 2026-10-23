@@ -7,7 +7,10 @@ import { expand } from "dotenv-expand";
 // expand() resolves ${VAR} references in .env (e.g. POSTGRES_URL is built from the
 // discrete POSTGRES_* vars). Prisma 6's engine did this internally; the v7 driver
 // adapter reads process.env directly, so we own the expansion here.
-expand(dotenv.config());
+//
+// The test suite sets EXPLORER_DOTENV=off: `.env` holds the application's
+// credentials, which on a developer machine name the live node's server.
+if (process.env.EXPLORER_DOTENV !== "off") expand(dotenv.config());
 
 /** A required setting. An empty string counts as missing: `FOO=` in a .env file
  * is the most common way a setting goes absent, and it used to pass straight
@@ -46,7 +49,18 @@ const shape = {
   // production wildcard guard and emitted an empty Access-Control-Allow-Origin,
   // with nothing anywhere saying so.
   CORS_ORIGIN: required.default("*"),
-  POSTGRES_URL: required,
+  /**
+   * Where Midgard data comes from. `replica` reads the node's PostgreSQL;
+   * `public` reads the explorer's archive of DA payloads and the node's public
+   * HTTP API, and opens no database at all.
+   */
+  L2_SOURCE: z.enum(["replica", "public"]).default("replica"),
+  /** The archive directory, for the public source. */
+  ARCHIVE_DIR: blank(required),
+  /** The node's public HTTP API, for the public source's live reads. */
+  MIDGARD_NODE_URL: blank(z.string().url()),
+  // Required by the replica source only; checked below.
+  POSTGRES_URL: blank(required),
   // Optional locally for backwards compatibility. Production can make the
   // replica mandatory with REQUIRE_MIDGARD_READ_REPLICA=true.
   MIDGARD_READ_REPLICA_URL: blank(required),
@@ -154,6 +168,18 @@ export const CONFIG_KEYS = Object.keys(shape);
 export const configSchema = z
   .object(shape)
   .superRefine((value, ctx) => {
+    const requireFor = (source: string, keys: Array<keyof typeof value>) => {
+      for (const key of keys) {
+        if (value[key] === undefined) {
+          ctx.addIssue({ code: "custom", path: [key], message: `is required when L2_SOURCE is ${source}` });
+        }
+      }
+    };
+    if (value.L2_SOURCE === "public") {
+      requireFor("public", ["ARCHIVE_DIR", "MIDGARD_NODE_URL", "MIDGARD_MANIFEST_PATH"]);
+    } else {
+      requireFor("replica", ["POSTGRES_URL"]);
+    }
     if (value.METRICS_PORT !== undefined && value.METRICS_PORT === value.BACKEND_PORT) {
       ctx.addIssue({
         code: "custom",

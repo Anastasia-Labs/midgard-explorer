@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { reachable as isReachable } from "./helpers/reachable.mjs";
+import { withThrowawayNodeDb } from "./helpers/throwawayDb.mjs";
 import {
   NODE_TABLES,
   missingRelations,
@@ -48,6 +49,35 @@ describe("readiness probes", () => {
     if (!reachable) return;
     const { prisma } = await import("../src/db.js");
     expect(await missingRelations(prisma as unknown as Queryable, NODE_TABLES)).toEqual([]);
+  });
+
+  /** A table that exists but the connected role cannot read fails every page
+   * that queries it, so readiness has to report it the same as a missing one.
+   * The role is granted one table, so the case tells privilege from existence. */
+  it("names a table the connected role cannot read", async () => {
+    if (!reachable) return;
+    let missing: string[] = [];
+    await withThrowawayNodeDb(async (admin) => {
+      await admin.query(`DO $$ BEGIN
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'readiness_probe_reader') THEN
+          CREATE ROLE readiness_probe_reader NOLOGIN;
+        END IF;
+      END $$`);
+      await admin.query("GRANT USAGE ON SCHEMA public TO readiness_probe_reader");
+      await admin.query("GRANT SELECT ON public.blocks TO readiness_probe_reader");
+      const asReader: Queryable = {
+        $queryRawUnsafe: (async (sql: string, ...values: unknown[]) =>
+          (await admin.query(sql, values)).rows) as Queryable["$queryRawUnsafe"],
+      };
+      await admin.query("BEGIN");
+      try {
+        await admin.query("SET LOCAL ROLE readiness_probe_reader");
+        missing = await missingRelations(asReader, NODE_TABLES);
+      } finally {
+        await admin.query("ROLLBACK");
+      }
+    });
+    expect(missing).toEqual(NODE_TABLES.filter((t) => t !== "blocks"));
   });
 
   it("accepts the manifest this repository ships", async () => {

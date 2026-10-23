@@ -45,7 +45,13 @@ const CASES: Array<{
     at: 768,
     column: "State",
     inRow: async (row) => {
-      await expect(row.getByText(/Finalized|Awaiting|Consumed|Projected/).first()).toBeVisible();
+      await expect(
+        row
+          .getByText(
+            /Waiting to merge|Merged|Merge not recorded|Finalized|Awaiting|Consumed|Projected/,
+          )
+          .first(),
+      ).toBeVisible();
     },
   },
 ];

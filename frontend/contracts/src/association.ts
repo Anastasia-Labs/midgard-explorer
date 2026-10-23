@@ -22,8 +22,11 @@ import { Hash28, Hash32, IsoTimestamp } from "./primitives";
  * therefore reported a restored snapshot of real data as a test fixture. Those
  * are different claims: a snapshot is real and possibly stale, a fixture is
  * synthetic and never was true.
+ *
+ * `archive` is the public source: the explorer's own archive of DA payloads,
+ * each verified against its header, read with no node database at all.
  */
-export const SourceKind = Schema.Literal("primary", "replica", "snapshot", "fixture");
+export const SourceKind = Schema.Literal("primary", "replica", "snapshot", "fixture", "archive");
 export type SourceKind = Schema.Schema.Type<typeof SourceKind>;
 
 /**
@@ -133,16 +136,24 @@ export type Reconciliation = Schema.Schema.Type<typeof Reconciliation>;
 
 /**
  * Settlement states, taken from the node's own vocabulary rather than invented
- * alongside it. The node's six are its `pending_block_finalizations.status`
- * check constraint verbatim. `orphaned` is added because it is an explorer
+ * alongside it: its `pending_block_finalizations.status` check constraint,
+ * where Midgard migration 0011 renamed `finalized` to `locally_applied`, plus
+ * `finalized` for an older node. `waiting_to_merge`, `merged` and `finalized`
+ * are also derived for an applied block from the node's follower tables. `orphaned` is added because it is an explorer
  * observation the node has no state for, and `unknown` preserves a status this
  * build does not recognise instead of mapping it onto the nearest one.
+ *
+ * A bundle deployed before `locally_applied` existed rejects it as a malformed
+ * response, so the frontend that knows it ships before a backend that sends it.
  */
 export const SettlementState = Schema.Literal(
   "pending_submission",
   "submitted_local_finalization_pending",
   "submitted_unconfirmed",
   "observed_waiting_stability",
+  "locally_applied",
+  "waiting_to_merge",
+  "merged",
   "finalized",
   "abandoned",
   "orphaned",

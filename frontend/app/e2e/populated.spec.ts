@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test";
 import {
+  APPLIED_LABEL,
   FIXTURE,
   expect,
   expectNoViolationsInBothThemes,
@@ -44,9 +45,7 @@ test.describe("populated lists", () => {
     await page.goto(`/block/${row.header_hash}`);
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Header");
     await expect(page.getByText("Block #0", { exact: true })).toHaveCount(0);
-    await expect(
-      page.getByText("This header contains protocol events but no Midgard transactions."),
-    ).toBeVisible();
+    await expect(page.getByText("Protocol events only.")).toBeVisible();
 
     await page.getByRole("tab", { name: "Details" }).click();
     await expect(page.locator("#panel-details").getByText("Retained locally")).toBeVisible();
@@ -371,7 +370,7 @@ test.describe("operational metrics", () => {
     try {
       await page.goto("/health");
       await expect(page.locator('[data-region="verdict"]')).toContainText("Figures unavailable");
-      for (const label of ["Chain tip", "Settled", "Queue"]) {
+      for (const label of ["Chain tip", "Committed to Cardano", "Queue"]) {
         await expect(page.locator("dt", { hasText: label }).first()).toBeVisible();
       }
       await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
@@ -553,7 +552,7 @@ test.describe("block detail", () => {
     // One header answers "is this block final?": the headline and the
     // settlement transaction, with the stages one tab away.
     const identity = page.locator('[data-region="identity"]');
-    await expect(identity.getByText("Finalized", { exact: true })).toBeVisible();
+    await expect(identity.getByText(APPLIED_LABEL).first()).toBeVisible();
     await expect(identity.locator('a[href^="https://preprod.cexplorer.io/tx/"]')).toBeVisible();
 
     await page.getByRole("tab", { name: "Details" }).click();
@@ -592,12 +591,10 @@ test.describe("block detail", () => {
     await page.goto(`/block/${hash}?tab=events`);
     const panel = page.locator("#panel-events");
     if (counted > 0) {
-      await expect(panel.getByText(/No deposits, withdrawals or forced transactions/)).toHaveCount(
-        0,
-      );
+      await expect(panel.getByText(/No protocol events in this block/)).toHaveCount(0);
     }
     if (counted !== listed) {
-      await expect(panel.getByText(/The header counts \d+ protocol events?/)).toBeVisible();
+      await expect(panel.getByText(/\d+ protocol events? in the header/)).toBeVisible();
     }
   });
 
@@ -721,11 +718,11 @@ test.describe("transaction lifecycle", () => {
     const movement = page.locator('[data-region="balance-changes"]');
     await page.goto(`/transaction/${complete}`);
     await expect(movement).toBeVisible();
-    await expect(movement.getByText(/spent amount is unknown/)).toHaveCount(0);
+    await expect(movement.getByText(/Spent amount unknown/)).toHaveCount(0);
     await expect(page.locator('[data-region="ledger"]')).toHaveCount(0);
 
     await page.goto(`/transaction/${partial}`);
-    await expect(movement.getByText(/spent amount is unknown/)).toBeVisible();
+    await expect(movement.getByText(/Spent amount unknown/)).toBeVisible();
   });
 
   test("a committed transaction in an abandoned block does not claim finality", async ({
@@ -803,7 +800,7 @@ test.describe("transaction lifecycle", () => {
     const blockLink = page.getByRole("link", { name: /^Block #\d+$/ }).first();
     await expect(blockLink).toBeVisible();
     await expect(blockLink).toHaveAttribute("href", /^\/block\/[0-9a-f]{56}$/);
-    await expect(page.getByText("Finalized", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(APPLIED_LABEL).first()).toBeVisible();
 
     // Stage history is secondary: it sits in Details, as one ordered list,
     // rather than on the identity header.
@@ -869,7 +866,9 @@ test.describe("address detail", () => {
     await expect(rowRegion(page).locator("tr, li")).not.toHaveCount(0);
     // A UTxO the codec cannot read is listed and marked, never dropped: five
     // rows and a smaller total would be a quieter lie than six and a warning.
-    await expect(page.getByText("Unreadable").first()).toBeVisible();
+    await expect(
+      page.getByText("Unreadable", { exact: true }).filter({ visible: true }).first(),
+    ).toBeVisible();
   });
 
   test("offers the request that produced the page", async ({ page }) => {

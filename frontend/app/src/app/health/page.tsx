@@ -143,7 +143,7 @@ export default async function HealthPage() {
         </FactGroup>
 
         <FactGroup title="Settlement on Cardano">
-          <FactRow label="Settled" term="l1Finality">
+          <FactRow label="Committed to Cardano" term="locallyApplied">
             {count(finality?.finalized)}
           </FactRow>
           <FactRow label="Awaiting settlement" term="awaitingSettlement">
@@ -170,7 +170,9 @@ export default async function HealthPage() {
               </span>
             )}
           </FactRow>
-          <FactRow label="Time to settle, all time">{latency(finality?.settlementLatency)}</FactRow>
+          <FactRow label="Block end to last record update, all time" term="lastRecordUpdate">
+            {latency(finality?.settlementLatency)}
+          </FactRow>
         </FactGroup>
 
         <FactGroup title="Admission">

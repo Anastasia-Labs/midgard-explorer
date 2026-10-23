@@ -112,6 +112,86 @@ export const BlockNeighbours = Schema.Struct({
 });
 export type BlockNeighbours = Schema.Schema.Type<typeof BlockNeighbours>;
 
+/**
+ * Where a block is in the explorer's archive (public source only).
+ *
+ * `awaiting`: a header the archive knows of, as an archived block's parent or
+ * a seed, that no run has fetched. `archiving`: a run started on it recently.
+ * `failed`: the last run could not fetch or verify it, for `reason`.
+ */
+export const ArchiveState = Schema.Struct({
+  state: Schema.Literal("awaiting", "archiving", "failed", "archived"),
+  at: Schema.NullOr(IsoTimestamp),
+  reason: Schema.NullOr(Schema.String),
+});
+export type ArchiveState = Schema.Schema.Type<typeof ArchiveState>;
+
+/** Where one observation came from, and when. An operator's observation
+ * names the operator here: it is provenance, not proof. */
+export const Observation = Schema.Struct({
+  source: Schema.String,
+  chainPoint: Schema.NullOr(Schema.String),
+  at: IsoTimestamp,
+});
+export type Observation = Schema.Schema.Type<typeof Observation>;
+
+/**
+ * One fact about a block, stated on its own. `pass` and `fail` are checks this
+ * explorer ran; `recorded` is an outcome some source recorded, in `value`;
+ * `not_run` is a check that needs an input this source lacks; `unknown` is a
+ * fact no observation covers. `reason` is a typed code, never prose, and an
+ * unknown fact is never a zero.
+ */
+export const EvidenceLine = Schema.Struct({
+  state: Schema.Literal("pass", "fail", "recorded", "not_run", "unknown", "not_applicable"),
+  value: Schema.NullOr(Schema.String),
+  reason: Schema.NullOr(Schema.String),
+  observation: Schema.NullOr(Observation),
+});
+export type EvidenceLine = Schema.Schema.Type<typeof EvidenceLine>;
+
+export const BlockEvidence = Schema.Struct({
+  payloadIntegrity: EvidenceLine,
+  headerBinding: EvidenceLine,
+  roots: EvidenceLine,
+  l1Observation: EvidenceLine,
+  daStatus: EvidenceLine,
+  maturity: EvidenceLine,
+  localApplication: EvidenceLine,
+  merge: EvidenceLine,
+  withdrawalPayment: EvidenceLine,
+});
+export type BlockEvidence = Schema.Schema.Type<typeof BlockEvidence>;
+
+/**
+ * A recorded fate of a header that left the queue. Merged by ancestry names
+ * the confirmed header it was read under (`anchor`) and the view that read
+ * it, and carries no merge transaction or depth: it was not observed directly.
+ */
+export const BlockOutcome = Schema.Struct({
+  outcome: Schema.Literal("merged", "removed", "unresolved"),
+  evidence: Schema.String,
+  anchor: Schema.NullOr(HexString),
+  view: Schema.NullOr(Schema.String),
+  observation: Observation,
+});
+export type BlockOutcome = Schema.Schema.Type<typeof BlockOutcome>;
+
+/** Which archive page of the block's transactions `rows` holds. */
+export const RecordsPage = Schema.Struct({
+  page: Schema.Number,
+  pages: Schema.Number,
+  records: Schema.Number,
+});
+export type RecordsPage = Schema.Schema.Type<typeof RecordsPage>;
+
+/** A 404 for a header the archive knows of but does not hold. */
+export const BlockNotArchived = Schema.Struct({
+  error: Schema.String,
+  archive: ArchiveState,
+});
+export type BlockNotArchived = Schema.Schema.Type<typeof BlockNotArchived>;
+
 export const BlockResponse = Schema.Struct({
   /** Which deployment answered, and how current its L2 source is. */
   midgard: Schema.optional(DeploymentContext),
@@ -132,6 +212,11 @@ export const BlockResponse = Schema.Struct({
   commitments: Schema.optional(Schema.NullOr(BlockCommitments)),
   neighbours: BlockNeighbours,
   events: BlockEvents,
+  /** Public source only. Optional so pages built before it still decode. */
+  archive: Schema.optional(ArchiveState),
+  evidence: Schema.optional(BlockEvidence),
+  outcome: Schema.optional(Schema.NullOr(BlockOutcome)),
+  transactionsPage: Schema.optional(RecordsPage),
 });
 export type BlockResponse = Schema.Schema.Type<typeof BlockResponse>;
 
@@ -190,6 +275,7 @@ export const BlocksPageResponse = paged(BlocksPageRow);
 export type BlocksPageResponse = Schema.Schema.Type<typeof BlocksPageResponse>;
 
 export const decodeBlockResponse = Schema.decodeUnknownSync(BlockResponse);
+export const decodeBlockNotArchived = Schema.decodeUnknownSync(BlockNotArchived);
 export const decodeRecentBlocks = Schema.decodeUnknownSync(RecentBlocksResponse);
 export const decodeBlockByHeight = Schema.decodeUnknownSync(BlockByHeightResponse);
 export const decodeTotal = Schema.decodeUnknownSync(TotalResponse);

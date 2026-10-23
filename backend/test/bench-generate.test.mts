@@ -65,11 +65,11 @@ describe("generateDataset", () => {
       "submitted_local_finalization_pending",
       "submitted_unconfirmed",
       "observed_waiting_stability",
-      "finalized",
+      "locally_applied",
       "abandoned",
     ]);
     const nonTerminal = dataset.blocks.filter(
-      (b) => b.status !== "finalized" && b.status !== "abandoned",
+      (b) => b.status !== "locally_applied" && b.status !== "abandoned",
     );
     for (const block of dataset.blocks) expect(permitted.has(block.status)).toBe(true);
     expect(nonTerminal.length).toBe(PROFILES.small.statusMix.activeRows);

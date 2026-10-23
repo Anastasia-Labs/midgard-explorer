@@ -11,7 +11,6 @@ and forced transactions.
 
 - Node.js 24, the version `.nvmrc` pins and continuous integration runs.
 - pnpm 11, from `corepack enable`.
-- Docker with the Compose v2 plugin. The explorer's own PostgreSQL runs in it.
 - A reachable Midgard node PostgreSQL. That is the only thing this repository
   cannot provide for you.
 
@@ -35,9 +34,11 @@ pnpm dev
 
 Open <http://127.0.0.1:3011>.
 
-`pnpm dev` in `backend/` checks the configured Midgard node database and
-deployment manifest, then runs the API on <http://127.0.0.1:3101>. It does not
-start PostgreSQL or apply migrations. Ctrl-C stops the API.
+`pnpm dev` in `backend/` checks the configured Midgard node database and, when
+`MIDGARD_MANIFEST_PATH` is set, the deployment manifest. Then it runs the API on
+<http://127.0.0.1:3101>. With no manifest it warns and starts: responses name no
+deployment, and `/readyz` refuses the process. It does not start PostgreSQL or
+apply migrations. Ctrl-C stops the API.
 
 ## Start it without a Midgard node
 
@@ -114,6 +115,14 @@ cd frontend
 pnpm build
 pnpm start
 ```
+
+Deploy the frontend before the backend whenever the contracts gain a value. A
+deployed page decodes every response against its own contracts, and a value it
+does not know fails the whole response. The frontend built from this branch
+reads both the previous backend and this one; the previous frontend cannot read
+this backend's settlement states (`waiting_to_merge`, `merged`,
+`locally_applied`) or its `archive` source kind.
+`frontend/app/test/consumer-compatibility.test.ts` holds both halves.
 
 Two probes answer separate questions, and a deployment should use them
 according to what it is routing:

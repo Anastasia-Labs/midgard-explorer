@@ -137,18 +137,9 @@ export default async function AssetsPage() {
         <dl className="grid gap-px bg-border sm:grid-cols-3">
           {(
             [
-              [
-                "Name",
-                "Bytes chosen by whoever minted the asset. Shown as text only when it decodes cleanly and re-encodes to exactly those bytes; otherwise the hex stands as the name.",
-              ],
-              [
-                "Policy",
-                "The minting script's hash. Two assets can share a name and differ only here, which is why a name alone never identifies one.",
-              ],
-              [
-                "Fingerprint",
-                "CIP-14: one short, unique identifier over policy and name together. This is the one to compare between tools.",
-              ],
+              ["Name", "Set by the minter; shown as hex when it is not text."],
+              ["Policy", "The minting script's hash."],
+              ["Fingerprint", "CIP-14 ID. Compare this one across tools."],
             ] as const
           ).map(([term, body]) => (
             <div key={term} className="bg-surface px-4 py-3">

@@ -1,3 +1,4 @@
+import { UNRESOLVED_INPUT } from "../../../lib/labels";
 import type { TransactionView } from "@midgard-explorer/contracts";
 import { AssetHierarchy, ValueCell } from "../../../components/ui/domain/amount";
 import { AddressRecord } from "../../../components/ui/domain/addressrecord";
@@ -7,6 +8,7 @@ import { Card, Chip, Callout } from "../../../components/ui/base/layout";
 import { ReferenceScript } from "../../../components/ui/domain/scriptdata";
 import { SemanticLabel, SemanticValue } from "../../../components/ui/base/semantic";
 import { OutputState } from "./shared";
+import { outputHref } from "../../../lib/entities";
 import { UtxoFlow } from "../../../components/ui/domain/utxoflow";
 import { BalanceChanges } from "../../../components/ui/domain/ledger";
 import { ledgerEquation } from "../../../lib/ledger";
@@ -34,7 +36,7 @@ export function StateTab({ tx, proposed = false }: { tx: TransactionView; propos
               >
                 <Identifier
                   value={`${input.txId}#${input.index}`}
-                  href={`/transaction/${input.txId}`}
+                  href={outputHref(input.txId, input.index)}
                 />
                 {input.resolved ? (
                   <>
@@ -54,7 +56,7 @@ export function StateTab({ tx, proposed = false }: { tx: TransactionView; propos
                     </div>
                   </>
                 ) : (
-                  <p className="mt-2 text-sm text-text-3">Input details unavailable.</p>
+                  <p className="mt-2 text-sm text-text-3">{UNRESOLVED_INPUT}</p>
                 )}
               </li>
             ))}
@@ -73,10 +75,13 @@ export function StateTab({ tx, proposed = false }: { tx: TransactionView; propos
             {tx.outputs.map((output) => (
               <li
                 key={output.index}
+                // The anchor every reference to this output opens, below the
+                // sticky header, marked while it is the page's target.
+                id={`output-${output.index}`}
                 // Neutral by default: an accent on every output encodes nothing.
                 // Accent is reserved for something provable (belongs to the
                 // viewed address, carries a mint, holds a datum or script ref).
-                className="rounded-lg border border-border bg-surface-2/40 p-3"
+                className="scroll-mt-20 rounded-lg border border-border bg-surface-2/40 p-3 target:border-focus target:ring-2 target:ring-focus/40"
               >
                 <AddressRecord
                   address={output.address}

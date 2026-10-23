@@ -25,7 +25,11 @@ export function ListTools<Row>({
   rows,
   filename,
   columns,
+  filterUnavailable,
 }: {
+  /** Why this source cannot filter the list. Set, the filter is disabled and
+   * the reason sits beside it, rather than a choice that answers with an error. */
+  filterUnavailable?: string | undefined;
   /** Query-string key the filter reads and writes. */
   filterKey: string;
   filterLabel: string;
@@ -94,20 +98,22 @@ export function ListTools<Row>({
       data-region="list-tools"
       className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-surface px-3 py-2"
     >
-      <span className="flex min-w-0 flex-1 items-center gap-2">
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
         <label htmlFor={`filter-${filterKey}`} className="mg-overline">
           {filterLabel}
         </label>
         <select
           id={`filter-${filterKey}`}
           value={active}
+          disabled={filterUnavailable !== undefined}
+          aria-describedby={filterUnavailable !== undefined ? `filter-${filterKey}-why` : undefined}
           onChange={(e) => setFilter(e.target.value)}
           /* `appearance-none` plus an inlined chevron. Left native, this was
              the one control on the page rendered by the operating system
              rather than by the design, and it looked unfinished beside
              everything around it. The arrow is a background image so the
              control stays a real <select> for keyboard and screen readers. */
-          className="mg-select h-9 min-w-0 flex-1 appearance-none rounded border border-border-strong bg-(--mg-control-bg) py-0 pl-2.5 pr-8 text-sm text-text transition-colors hover:border-text-3 focus-visible:border-focus sm:flex-none"
+          className="mg-select h-9 min-w-0 flex-1 appearance-none rounded border border-border-strong bg-(--mg-control-bg) py-0 pl-2.5 pr-8 text-sm text-text transition-colors hover:border-text-3 focus-visible:border-focus disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
         >
           <option value="">All</option>
           {options.map((o) => (
@@ -116,7 +122,12 @@ export function ListTools<Row>({
             </option>
           ))}
         </select>
-        {active !== "" ? (
+        {filterUnavailable !== undefined ? (
+          <span id={`filter-${filterKey}-why`} className="w-full mg-caption text-text-3 sm:w-auto">
+            {filterUnavailable}
+          </span>
+        ) : null}
+        {active !== "" && filterUnavailable === undefined ? (
           <button
             type="button"
             onClick={() => setFilter("")}

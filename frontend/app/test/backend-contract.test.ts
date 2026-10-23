@@ -12,14 +12,14 @@ import * as C from "@midgard-explorer/contracts";
  * so the join worked in every test and in no deployment, and three pages
  * shipped dead links behind a green suite.
  *
- * Opt-in by design. It needs a running backend, so it skips when there is none
+ * Opt-in by design. It needs an explicit BACKEND_URL, so it skips when none is set
  * and fails loudly when `REQUIRE_BACKEND=1` says one should be there. A CI job
  * that sets that flag cannot report a pass it never measured.
  *
  *   BACKEND_URL=http://127.0.0.1:3101 REQUIRE_BACKEND=1 pnpm test
  */
 
-const BASE = process.env.BACKEND_URL ?? "http://127.0.0.1:3101";
+const BASE = process.env.BACKEND_URL;
 const REQUIRED = process.env.REQUIRE_BACKEND === "1";
 
 let reachable = false;
@@ -50,6 +50,10 @@ const satisfies = async (path: string, schema: Schema.Schema<never, never, never
 };
 
 beforeAll(async () => {
+  if (!BASE) {
+    if (REQUIRED) throw new Error("REQUIRE_BACKEND=1 needs an explicit BACKEND_URL");
+    return;
+  }
   try {
     await get("/healthz", PROBE_TIMEOUT_MS);
     reachable = true;
@@ -59,7 +63,7 @@ beforeAll(async () => {
   }
 });
 
-describe("the backend answers the shapes the frontend decodes", () => {
+describe.skipIf(!BASE && !REQUIRED)("the backend answers the shapes the frontend decodes", () => {
   it("was reachable when REQUIRE_BACKEND is set", () => {
     if (!REQUIRED) return;
     expect(reachable).toBe(true);
@@ -97,6 +101,11 @@ describe("the backend answers the shapes the frontend decodes", () => {
   it("the overview's metrics, with the work waiting for a block", async () => {
     if (!reachable) return;
     await satisfies("/api/metrics", C.MetricsResponse);
+  });
+
+  it("the state queue, read from the node's follower tables", async () => {
+    if (!reachable) return;
+    await satisfies("/api/state-queue", C.StateQueueResponse);
   });
 
   it("the node-recorded Cardano activity and its summary", async () => {

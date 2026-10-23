@@ -45,9 +45,26 @@ describe("the transaction JSON on the Raw tab", () => {
     expect(cut.cborTruncated).toBe(true);
   });
 
+  it("states the settlement's state, not the journal's word for it", () => {
+    const cardano = {
+      l1TxHash: "ab".repeat(32),
+      state: "finalized",
+      evidence: [
+        {
+          source: "midgard_finalization_journal",
+          transactionHash: "ab".repeat(32),
+          rawState: "locally_applied",
+        },
+      ],
+    } as unknown as Association;
+    const settled = transactionForDisplay({ tx, status: "committed", inclusion: null, cardano });
+    expect(settled.settlement).toEqual({ l1TxHash: "ab".repeat(32), state: "finalized" });
+  });
+
   it("states settlement as the L1 hash and the node's state", () => {
     const cardano = {
       l1TxHash: "ab".repeat(32),
+      state: "finalized",
       evidence: [
         {
           source: "midgard_finalization_journal",

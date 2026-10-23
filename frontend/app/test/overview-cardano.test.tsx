@@ -54,8 +54,8 @@ it("keeps every figure and the bridge links when Cardano data fails, and offers 
   const retry = vi.fn();
   render(<L1Activity summary={null} onRetry={retry} />);
   for (const label of ["Block settlements", "Deposits", "Withdrawals", "Forced transactions"]) {
-    // A default, named unavailable for a screen reader.
-    expect(valueOf(label)?.textContent).toBe("0 (unavailable)");
+    // Never a zero that looks measured: a real empty result is the next case.
+    expect(valueOf(label)?.textContent).toBe("Unavailable");
   }
   expect(dtFor("Records")).toBeDefined();
   expect(

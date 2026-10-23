@@ -36,12 +36,19 @@ import {
   decodeMidgardNativeByteListPreimage,
   decodeMidgardTxOutput,
   encodeMidgardAddressText,
-  encodeCbor,
+  encodeMidgardSpendInputItem,
 } from "@al-ft/midgard-core";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CORPUS = join(here, "..", "test", "fixtures", "shape-corpus.json");
 const OUT = join(here, "..", "test", "fixtures", "schema", "midgard-node-seed.sql");
+
+/** The validation-trace root the node schema requires when a block has none. */
+const EMPTY_VALIDATION_TRACES_ROOT =
+  "0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8";
+
+/** Stands in for CEK program material, which the explorer never reads. */
+const CEK_SIDECAR_PLACEHOLDER = createHash("sha256").update("seed:cek_program_material_sidecar").digest();
 
 /** Fixed, so the file does not change because the day did. */
 const EPOCH = Date.parse("2026-01-01T00:00:00.000Z");
@@ -67,7 +74,7 @@ const SCHEMA = join(here, "..", "test", "fixtures", "schema", "midgard-node.sql"
 const columnsOf = (table) => {
   const sql = readFileSync(SCHEMA, "utf8");
   const pattern = new RegExp(
-    `CREATE TABLE (?:(?:public|"public")\\.)?"?${table}"?\\s*\\(([\\s\\S]*?)\\n\\);`,
+    `CREATE (?:UNLOGGED )?TABLE (?:(?:public|"public")\\.)?"?${table}"?\\s*\\(([\\s\\S]*?)\\n\\)(?:\\nWITH \\([^\\n]*\\))?;`,
   );
   const body = sql.match(pattern)?.[1];
   if (!body) throw new Error(`no CREATE TABLE for ${table} in the schema fixture`);
@@ -96,7 +103,7 @@ const columnsOf = (table) => {
 const constraintsOf = (table) => {
   const sql = readFileSync(SCHEMA, "utf8");
   const pattern = new RegExp(
-    `CREATE TABLE (?:(?:public|"public")\\.)?"?${table}"?\\s*\\(([\\s\\S]*?)\\n\\);`,
+    `CREATE (?:UNLOGGED )?TABLE (?:(?:public|"public")\\.)?"?${table}"?\\s*\\(([\\s\\S]*?)\\n\\)(?:\\nWITH \\([^\\n]*\\))?;`,
   );
   const body = sql.match(pattern)?.[1] ?? "";
   const hexLength = new Map();
@@ -171,7 +178,8 @@ const transactions = entries.map(([key, entry], position) => {
     return {
       index,
       output: Buffer.from(output),
-      outref: Buffer.from(encodeCbor([txId, index])),
+      // The ledger keys an output by the fixed 38-byte out-ref.
+      outref: encodeMidgardSpendInputItem({ txId, outputIndex: index }),
       address,
     };
   });
@@ -267,9 +275,12 @@ for (const [i, block] of blocks.entries()) {
     insert("pending_block_finalizations", {
       header_hash: bytea(block.headerHash),
       block_end_time: `'${block.at}'`,
-      // The status column accepts a fixed vocabulary. `finalized` is the
-      // state a committed block reaches, which is what these rows describe.
-      status: `'finalized'`,
+      // The status column accepts a fixed vocabulary. `locally_applied` is the
+      // state a committed block reaches on the node, which is what these rows
+      // describe. It says nothing about finality on Cardano.
+      status: `'locally_applied'`,
+      // The schema requires the block time to cover the block's end.
+      block_time: `'${block.at}'`,
       submitted_tx_hash: bytea(block.txId),
       // What the header claims the block carries. Every block list in the
       // explorer reads this column, and the member rows written below are the
@@ -289,6 +300,18 @@ for (const [i, block] of blocks.entries()) {
       expected_l2_transaction_count: transactions[i] === undefined ? "0" : "1",
       expected_total_event_count: transactions[i] === undefined ? "0" : "1",
       expected_transition_step_count: transactions[i] === undefined ? "0" : "1",
+      // The journal binds each block to the consensus profile, a v1 record
+      // and the plain ledger-delta replay, and checks one validation trace per
+      // L2 transaction under a root that is the empty-trace root only for none.
+      consensus_profile_id: `'midgard-consensus-v1'`,
+      format_version: "1",
+      replay_kind: `'ledger_delta_v1'`,
+      deployment_marker_schema_version: `'midgard-deployment-marker-v1'`,
+      expected_validation_trace_count: transactions[i] === undefined ? "0" : "1",
+      expected_validation_traces_root:
+        transactions[i] === undefined
+          ? `'${EMPTY_VALIDATION_TRACES_ROOT}'`
+          : `'${createHash("sha256").update(`seed:validation_traces_root:${i}`).digest("hex")}'`,
     }),
   );
 }
@@ -307,6 +330,10 @@ for (const [i, tx] of transactions.entries()) {
       source_table: `'immutable'`,
       source_id: bytea(tx.txId),
       source_time_stamp_tz: `'${block.at}'`,
+      // The node stores CEK program material beside each transaction; the
+      // explorer never reads it. A placeholder of the shape the schema checks.
+      cek_program_material_sidecar_cbor: bytea(CEK_SIDECAR_PLACEHOLDER),
+      cek_program_material_sidecar_sha256: bytea(createHash("sha256").update(CEK_SIDECAR_PLACEHOLDER).digest()),
     }),
   );
 }
@@ -321,8 +348,14 @@ for (const [i, block] of blocks.entries()) {
   lines.push(
     insert("da_payloads", {
       header_hash: bytea(block.headerHash),
-      // The table accepts version 2 only.
-      version: "2",
+      // The table accepts version 1 only, with the consensus profile it binds.
+      version: "1",
+      consensus_profile_id: `'midgard-consensus-v1'`,
+      // One validation trace per forced or L2 transaction, so one here, and a
+      // root other than the empty-trace root the schema reserves for zero.
+      validation_trace_count: "1",
+      validation_traces_root: `'${createHash("sha256").update("seed:validation_traces_root").digest("hex")}'`,
+      block_time: `'${block.at}'`,
       payload_cbor: bytea(transactions[i].bytes),
       payload_sha256: bytea(createHash("sha256").update(transactions[i].bytes).digest()),
       // The counts satisfy the table's own arithmetic constraints: the total is

@@ -471,8 +471,8 @@ describe("restoring into a database the tool may write", () => {
  * /dev/null and passed against the defect it was written to catch. */
 const bulkInsert = (salt: string, from: number | string, to: number | string) =>
   `INSERT INTO tx_admissions ` +
-  `(tx_id, tx_canonical_cbor, tx_canonical_cbor_sha256, arrival_seq, status, submit_source) ` +
-  `SELECT decode(md5(g::text || ${salt}) || md5(${salt} || g::text), 'hex'), '\\x00'::bytea, decode(md5(g::text) || md5(g::text), 'hex'), ` +
+  `(tx_id, arrival_seq, status, submit_source) ` +
+  `SELECT decode(md5(g::text || ${salt}) || md5(${salt} || g::text), 'hex'), ` +
   `g + 5000000, 'queued'::tx_admission_status, 'backfill' ` +
   `FROM generate_series(${from}, ${to}) g`;
 

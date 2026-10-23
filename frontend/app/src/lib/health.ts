@@ -194,8 +194,9 @@ export function networkHealth(metrics: MetricsResponse | null): NetworkHealth {
   }
 }
 
-/** Settlement problems, worst first. Abandonment is the serious one: a block
- * that gave up on L1 is not going to settle later on its own. */
+/** Settlement problems, worst first. Abandonment is the serious one. Since
+ * Midgard f4cf28ca1 the node revives an abandoned block whose commit later
+ * lands on its state queue, but never one a correction removed. */
 function settlementReasons(finality: MetricsResponse["finality"]): string[] {
   const out: string[] = [];
   const attempts = finality.finalized + finality.abandoned;
@@ -204,7 +205,7 @@ function settlementReasons(finality: MetricsResponse["finality"]): string[] {
     const share = finality.abandoned / attempts;
     if (share > ABANDONED_SHARE) {
       out.push(
-        `${finality.abandoned} of ${attempts} settlement attempts were abandoned (${pct(share)}). An abandoned block does not settle later by itself.`,
+        `${finality.abandoned} of ${attempts} settlement attempts abandoned (${pct(share)})`,
       );
     }
   }
@@ -215,7 +216,7 @@ function settlementReasons(finality: MetricsResponse["finality"]): string[] {
     const waitedMs = oldest.waitingSeconds * 1000;
     if (waitedMs > p95 * 3) {
       out.push(
-        `The oldest unsettled block has been waiting ${seconds(oldest.waitingSeconds)}, well past the ${seconds(p95 / 1000)} that 95% of blocks take.`,
+        `Oldest unsettled block waiting ${seconds(oldest.waitingSeconds)} (95% settle within ${seconds(p95 / 1000)})`,
       );
     }
   }

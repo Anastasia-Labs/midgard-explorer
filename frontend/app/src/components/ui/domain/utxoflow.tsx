@@ -1,5 +1,6 @@
 "use client";
 
+import { UNRESOLVED_INPUT } from "../../../lib/labels";
 import dynamic from "next/dynamic";
 import type { CSSProperties } from "react";
 import { useCallback, useState } from "react";
@@ -9,6 +10,7 @@ import { flowEdgeVisual, maxEdgeLovelace, type FlowEdgeFacts } from "../../../li
 import { formatAda } from "../../../lib/format";
 import { Icon } from "../base/icons";
 import { AddressLink } from "./address";
+import { AddressRecord } from "./addressrecord";
 import { Identifier } from "./identifier";
 import { Chip } from "../base/layout";
 
@@ -63,16 +65,27 @@ function StaticNode({ node }: { node: FlowNode }) {
       ) : null}
 
       {node.address === null ? (
-        <p className="mt-1.5 mg-caption text-text-3">
-          Spend side not resolvable (spent or pruned).
-        </p>
+        <p className="mt-1.5 mg-caption text-text-3">{UNRESOLVED_INPUT}</p>
+      ) : node.identity !== null && node.value !== null ? (
+        <div className="mt-1.5 min-w-0">
+          {/* The table's address record: the same mark, credentials and UTxO
+              preview, so the diagram answers what the table answers. */}
+          <AddressRecord
+            address={node.address}
+            identity={node.identity}
+            utxo={{
+              txId: node.ref.txId,
+              index: node.ref.index,
+              value: node.value,
+              context: node.kind === "input" ? "Input" : "Output",
+            }}
+          >
+            {/* The amount and chips follow below, in the diagram's own compact form. */}
+            {null}
+          </AddressRecord>
+        </div>
       ) : (
         <div className="mt-1.5 min-w-0">
-          {/* The same mark the tables use. The diagram is the one view where a
-              reader compares two addresses without either being on screen in
-              full, which is exactly what the mark is for. `size` is smaller
-              than a table row's: a node card is a tighter space and the mark
-              is a hint, not a heading. */}
           <AddressLink
             address={node.address}
             href={node.href ?? undefined}
@@ -222,7 +235,7 @@ function StaticFlow({ tx, large }: { tx: TransactionView; large: boolean }) {
         // The connector columns were 56px, which squeezed a bezier drawn across
         // a square viewBox into a hook. 96px gives the curve room to read as a
         // curve without taking width from the node columns.
-        className="mx-auto grid w-full max-w-[62rem] grid-cols-1 items-stretch gap-y-2 lg:grid-cols-[minmax(0,1fr)_96px_176px_96px_minmax(0,1fr)] lg:gap-y-0"
+        className="mx-auto grid w-full max-w-[72rem] grid-cols-1 items-stretch gap-y-2 lg:grid-cols-[minmax(0,1fr)_96px_176px_96px_minmax(0,1fr)] lg:gap-y-0"
       >
         <div>
           <p className="mb-1 mg-overline text-text-3 lg:hidden">Consumed inputs</p>
@@ -282,12 +295,7 @@ function FlowLegend() {
  * describes lines that only the desktop layout draws, but this holds at every
  * width, and folding it into the legend silently dropped it on mobile. */
 function FlowRouting() {
-  return (
-    <p className="mt-3 mg-caption text-text-3">
-      Lines route through the transaction: the ledger does not record which input funded which
-      output.
-    </p>
-  );
+  return <p className="mt-3 mg-caption text-text-3">Inputs are not matched to outputs.</p>;
 }
 
 export function UtxoFlow({ tx }: { tx: TransactionView }) {

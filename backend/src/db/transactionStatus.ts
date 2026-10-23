@@ -20,11 +20,10 @@ export type LedgerTier = "immutable" | "processed_mempool" | "mempool" | "journa
 export type TransactionStatus = "committed" | "pending_commit" | "accepted" | "unknown";
 
 /**
- * `hasHeaderHash` is the address route's extra condition and belongs here.
- *
- * A history row carrying a header hash is in a block, whatever tier its
- * payload was found in. The detail route cannot reach that case, so it passes
- * false rather than inventing a hash to satisfy an argument.
+ * `hasHeaderHash` says a block includes the transaction, whatever tier its
+ * payload was found in. The address route reads it from the journal. The
+ * detail route reads it from the mempool row itself, which a block marks in
+ * `included_by` and leaves in place until the block's fold is final.
  */
 export function transactionStatus({
   source,

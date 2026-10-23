@@ -34,20 +34,17 @@ const VERDICT: Record<Association["reconciliation"], Wording> = {
   node_reported: {
     tone: "neutral",
     title: "Settlement transaction reported by the node",
-    detail:
-      "This is the Cardano transaction the Midgard node recorded for this record. This explorer does not check Cardano itself, so the hash is the node's own report and not a confirmation. Copy it to check it on Cardano.",
+    detail: "The node's own record, not checked on Cardano.",
   },
   none: {
     tone: "neutral",
     title: "No settlement transaction recorded",
-    detail:
-      "The node has recorded no Cardano transaction for this record. Nothing else is consulted here, so this is what the node reports rather than a search of the chain.",
+    detail: "None recorded by the node.",
   },
   unavailable: {
     tone: "warning",
     title: "Settlement could not be established",
-    detail:
-      "The Midgard data being read is a copy that is not known to be current, and it holds no settlement transaction for this record. A newer record may exist. This says nothing about whether settlement happened.",
+    detail: "The data may be out of date. Not a sign it went unsettled.",
   },
 };
 
@@ -68,8 +65,7 @@ const PROVENANCE_KINDS: ReadonlySet<Association["kind"]> = new Set([
 const PROVENANCE: Wording = {
   tone: "neutral",
   title: "Recorded by the node",
-  detail:
-    "This is where the record came from on Cardano, as the Midgard node recorded it. This explorer does not check Cardano itself.",
+  detail: "Where it came from on Cardano, as the node recorded it.",
 };
 
 /** A state this build has no wording for. Never a verdict: it says only that
@@ -80,9 +76,8 @@ const PROVENANCE: Wording = {
  * `undefined.tone` and took the whole page down. */
 const UNRECOGNIZED: Wording = {
   tone: "warning",
-  title: "This explorer does not recognise the state of this record",
-  detail:
-    "The backend reported a settlement state this page has no wording for, so nothing is stated about it here. The source records below are shown as they were returned.",
+  title: "Unrecognized settlement state",
+  detail: "Records below are shown as returned.",
 };
 
 /** Plain names for the five relationships. "Settlement" and "provenance" are
@@ -125,9 +120,12 @@ export function sourceText(context: DeploymentContext): string {
     context.freshness.lagSeconds === null
       ? state
       : `${state} (lag ${formatDuration(context.freshness.lagSeconds * 1000)})`;
-  return `${SOURCE_KIND_LABEL[context.sourceKind] ?? context.sourceKind} on ${networkName(context.network)}, ${freshness}${
-    context.identityState === "configured" ? ", deployment as configured" : ""
-  }`;
+  return [
+    SOURCE_KIND_LABEL[context.sourceKind] ?? context.sourceKind,
+    networkName(context.network),
+    freshness,
+    ...(context.identityState === "configured" ? ["deployment as configured"] : []),
+  ].join(" · ");
 }
 
 /**
@@ -194,7 +192,10 @@ export function CardanoAssociation({
             ) : (
               <Identifier value={item.transactionHash} head={10} tail={6} />
             )}
-            {item.rawState === null ? null : (
+            {/* The journal writes `locally_applied` for a block whose state
+                the explorer reads from the follower's tables, so its word is
+                left out here rather than shown beside a different state. */}
+            {item.rawState === null || item.source === "midgard_finalization_journal" ? null : (
               <StatusBadge status={item.rawState} variant="text" explain={false} className="ml-2" />
             )}
           </Row>

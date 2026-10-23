@@ -73,7 +73,7 @@ export function DataTable<T>({
   errorMessage?: string;
   onRetry?: () => void;
   emptyTitle?: string;
-  emptyHint?: string;
+  emptyHint?: string | undefined;
   emptyAction?: ReactNode;
   mobileRow?: (row: T) => LedgerRowSpec;
 }) {

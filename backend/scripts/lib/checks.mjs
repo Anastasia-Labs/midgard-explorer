@@ -548,39 +548,6 @@ export const CHECKS = [
 
   // --- existing mode --------------------------------------------------------
   {
-    id: "existing.docker",
-    title: "Docker daemon",
-    modes: REAL_DATA,
-    run: async () => {
-      try {
-        const { stdout } = await run("docker", ["info", "--format", "{{.ServerVersion}}"], {
-          timeout: 20_000,
-        });
-        return pass(`server ${stdout.trim()}`);
-      } catch (error) {
-        return fail(
-          "not reachable",
-          String(error?.message ?? "").includes("ENOENT")
-            ? "Docker is not installed. The explorer's own PostgreSQL runs in it."
-            : "Start Docker. The explorer's own PostgreSQL and API cache run in it.",
-        );
-      }
-    },
-  },
-  {
-    id: "existing.compose",
-    title: "Docker Compose",
-    modes: REAL_DATA,
-    run: async () => {
-      try {
-        const { stdout } = await run("docker", ["compose", "version", "--short"], { timeout: 20_000 });
-        return pass(stdout.trim());
-      } catch {
-        return fail("`docker compose` is unavailable", "Install the Compose v2 plugin");
-      }
-    },
-  },
-  {
     id: "existing.node-db-reachable",
     title: "Midgard PostgreSQL",
     modes: REAL_DATA,

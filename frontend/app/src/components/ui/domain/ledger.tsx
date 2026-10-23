@@ -102,14 +102,10 @@ export function BalanceChanges({
     <Card region="balance-changes">
       {proposed || unknown > 0 ? (
         <div className="space-y-1 border-b border-border px-4 py-3 mg-caption text-text-2">
-          {proposed ? (
-            <p>Proposed: this transaction is not in a block yet, so nothing has changed.</p>
-          ) : null}
+          {proposed ? <p>Not in a block yet.</p> : null}
           {unknown > 0 ? (
             <p>
-              {unknown} address{unknown === 1 ? "" : "es"} spent an input the ledger no longer
-              holds, so {unknown === 1 ? "its" : "their"} spent amount is unknown. Only what{" "}
-              {unknown === 1 ? "it" : "they"} received is shown.
+              Spent amount unknown for {unknown} address{unknown === 1 ? "" : "es"}
             </p>
           ) : null}
         </div>

@@ -77,10 +77,13 @@ const insertForced = (client: import("pg").Client, id: number, at: string) =>
   client.query(
     `INSERT INTO forced_transaction_utxos
        (tx_order_id, tx_order_l1_tx_hash, tx_order_l1_output_index, asset_name,
-        raw_datum, tx_id, tx_compact, forced_inclusion_value, operator_validity,
+        raw_datum, tx_id, tx_compact, forced_inclusion_value,
+        consensus_profile_id, native_tx_cbor, transaction_commitment,
+        cek_program_material_sidecar_cbor, cek_program_material_sidecar_sha256,
         inclusion_time, status, created_at, updated_at)
-     VALUES ($1, $2, 0, $3, $3, $4, $3, $3, 'TxIsValid', $5, 'awaiting', $5, $5)`,
-    [hex(id), hex(id + 1), blob, hex(id + 2), at],
+     VALUES ($1, $2, 0, $3, $3, $4, $3, $3,
+             'midgard-consensus-v1', $3, $6, $3, $6, $5, 'awaiting', $5, $5)`,
+    [hex(id), hex(id + 1), blob, hex(id + 2), at, hex(0x5c)],
   );
 
 const past = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();

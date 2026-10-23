@@ -13,6 +13,7 @@ describe("labels", () => {
   it("names networks, sources and purposes in plain words", () => {
     expect(networkName("preprod")).toBe("Preprod");
     expect(networkName("mainnet")).toBe("Mainnet");
+    expect(networkName("custom")).toBe("Devnet");
     expect(networkName("custom-7")).toBe("custom-7");
     expect(SOURCE_KIND_LABEL.primary).toBe("Node database");
     expect(FRESHNESS_LABEL.lagging).toBe("behind");

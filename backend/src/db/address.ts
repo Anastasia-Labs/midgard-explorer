@@ -1,5 +1,6 @@
 import { prisma } from "../db";
 import { readConsistently, type NodeReader } from "./consistent";
+import { SETTLED_CHAIN, settlementStatus } from "./settlement";
 
 /** History rows per page. Exported so the route can bound the page depth it
  * accepts before any statement is issued. */
@@ -108,7 +109,7 @@ export async function getAddressHistory(
   const [rows, summaryRows] = await inOwnTransaction(async (db) =>
     Promise.all([
     db.$queryRaw<AddressHistoryRecord[]>`
-      WITH addr_txs AS (
+      WITH RECURSIVE ${SETTLED_CHAIN}, addr_txs AS (
         SELECT tx_id FROM address_history WHERE address = ${address}
       ), tx_candidates AS (
         SELECT tx_id, tx, time_stamp_tz, 'immutable'::text AS source, 1 AS priority
@@ -136,7 +137,7 @@ export async function getAddressHistory(
         SELECT DISTINCT ON (j.member_id)
                j.member_id AS tx_id, j.header_hash,
                j.source_time_stamp_tz AS time_stamp_tz,
-               f.block_end_time, f.status AS finalization_status
+               f.block_end_time, ${settlementStatus("f")} AS finalization_status
           FROM pending_block_finalization_txs AS j
           JOIN pending_block_finalizations AS f ON f.header_hash = j.header_hash
          WHERE j.member_id IN (SELECT tx_id FROM addr_txs)

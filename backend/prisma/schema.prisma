@@ -50,6 +50,9 @@ model MempoolTx {
   tx_id        Bytes    @id
   tx           Bytes
   time_stamp_tz DateTime @default(now())
+  /// The header hash of the block that includes this transaction (Midgard
+  /// migration 0013). Pending means unmarked.
+  included_by  Bytes?
 
   @@map("mempool")
 }
@@ -58,6 +61,9 @@ model ProcessedMempoolTx {
   tx_id        Bytes    @id
   tx           Bytes
   time_stamp_tz DateTime @default(now())
+  /// The header hash of the block that includes this transaction (Midgard
+  /// migration 0013). Pending means unmarked.
+  included_by  Bytes?
 
   @@map("processed_mempool")
 }
@@ -74,8 +80,9 @@ model Blocks {
 }
 
 model AddressHistory {
-  tx_id   Bytes
-  address String
+  tx_id      Bytes
+  address    String
+  created_at DateTime @default(now()) @db.Timestamptz
 
   @@unique([tx_id, address], map: "address_history_tx_id_address_key")
   @@map("address_history")

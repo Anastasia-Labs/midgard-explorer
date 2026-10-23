@@ -34,6 +34,7 @@ import {
   metrics,
   asset,
   assets,
+  stateQueue,
 } from "./data.mjs";
 
 /* The deployment context and association every detail response now carries.
@@ -73,6 +74,9 @@ const SETTLEMENT_STATES = new Set([
   "submitted_local_finalization_pending",
   "submitted_unconfirmed",
   "observed_waiting_stability",
+  "locally_applied",
+  "waiting_to_merge",
+  "merged",
   "finalized",
   "abandoned",
   "orphaned",
@@ -182,7 +186,7 @@ const LIMIT = 25;
 /** Answered by `GET /__control` so the suite can identify this process. */
 const FIXTURE_ID = "midgard-explorer-e2e";
 
-const state = { fail: null, slowMs: 0, health: null };
+const state = { fail: null, slowMs: 0, health: null, queueSince: null };
 
 /** The fixture chain abandons a third of its settlements, which is the state
  * most of the suite needs. `POST /__control?health=healthy` returns the same
@@ -299,6 +303,14 @@ const routes = [
     () => (state.health === "healthy" ? healthyMetrics() : metrics()),
   ],
   ["assets", /^\/api\/assets$/, () => assets()],
+  [
+    "state-queue",
+    /^\/api\/state-queue$/,
+    () =>
+      stateQueue(
+        state.queueSince === null ? null : Math.floor((Date.now() - state.queueSince) / 6_000),
+      ),
+  ],
   [
     "search",
     /^\/api\/search$/,
@@ -679,6 +691,8 @@ const server = createServer(async (req, res) => {
     state.fail = url.searchParams.get("fail");
     state.slowMs = Number(url.searchParams.get("slow") ?? 0);
     state.health = url.searchParams.get("health") || null;
+    // `queue=live` sets the state queue moving from this moment.
+    state.queueSince = url.searchParams.get("queue") === "live" ? Date.now() : null;
     return json(res, { ok: true, ...state });
   }
 
@@ -759,6 +773,13 @@ const server = createServer(async (req, res) => {
   }
 
   return fail(res, 404, "not_found", url.pathname);
+});
+
+// A dropped client socket, logged with its code, so a suite failure that
+// names a hang-up can be matched to what this process saw.
+server.on("clientError", (error, socket) => {
+  console.error(`[fixture] clientError ${error.code ?? error.message}`);
+  socket.destroy();
 });
 
 server.listen(PORT, "127.0.0.1", () => {

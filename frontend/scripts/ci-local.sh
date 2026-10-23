@@ -2,8 +2,10 @@
 # CI parity for frontend. Run this before proposing any commit; a
 # from-memory subset of checks is not a gate.
 #
-#   ./scripts/ci-local.sh          full gate
-#   ./scripts/ci-local.sh --fast   skip the e2e suite
+#   ./scripts/ci-local.sh                     full gate
+#   ./scripts/ci-local.sh --fast              skip the e2e suite
+#   ./scripts/ci-local.sh --e2e [args...]     only the e2e suite; args go to
+#                                             Playwright, e.g. --project=mobile
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -12,6 +14,24 @@ FAST=0
 [[ "${1:-}" == "--fast" ]] && FAST=1
 
 step() { printf '\n\033[1m=== %s ===\033[0m\n' "$1"; }
+
+# Playwright builds with same-origin public URLs and an explicit server-side
+# fixture URL. This exercises the real strict assertion during next build.
+# Dedicated ports and disabled reuse prevent adopting an unrelated server.
+e2e() {
+  E2E_PORT=3210 FIXTURE_PORT=3211 \
+    pnpm --filter @midgard-explorer/app exec playwright test "$@"
+}
+
+# CI runs each Playwright project as its own job, so the one-worker suite is
+# split across machines rather than queued on one.
+if [[ "${1:-}" == "--e2e" ]]; then
+  shift
+  step "e2e (fixture backend) $*"
+  e2e "$@"
+  printf '\n\033[1;32mE2e green: %s\033[0m\n' "${*:-every project}"
+  exit 0
+fi
 
 step "node / pnpm versions"
 node -v
@@ -70,11 +90,7 @@ pnpm --filter @midgard-explorer/app exec vitest run
 
 if [[ $FAST -eq 0 ]]; then
   step "e2e (fixture backend), which owns the only strict production build"
-  # Playwright builds with same-origin public URLs and an explicit server-side
-  # fixture URL. This exercises the real strict assertion during next build.
-  # Dedicated ports and disabled reuse prevent adopting an unrelated server.
-  E2E_PORT=3210 FIXTURE_PORT=3211 \
-    pnpm --filter @midgard-explorer/app exec playwright test
+  e2e
 else
   # Nothing builds the application on this path, so the strict build stays
   # here. The public API base used to default to localhost, so a production

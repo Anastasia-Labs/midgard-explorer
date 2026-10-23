@@ -1,5 +1,6 @@
 "use client";
 
+import { UNRESOLVED_INPUT } from "../../../../lib/labels";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { FlowGraphNode } from "../../../../lib/flow";
 import { formatAda, truncateId } from "../../../../lib/format";
@@ -130,9 +131,7 @@ function UtxoCard({
       ) : null}
 
       {item.address === null ? (
-        <p className="mt-1.5 mg-caption text-text-3">
-          Spend side not resolvable (spent or pruned).
-        </p>
+        <p className="mt-1.5 mg-caption text-text-3">{UNRESOLVED_INPUT}</p>
       ) : (
         <div className="mt-1.5">
           <NodeLink href={item.href ?? `/address/${item.address}`}>{short(item.address)}</NodeLink>

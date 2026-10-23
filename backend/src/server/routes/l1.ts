@@ -5,8 +5,9 @@ import {
   getCardanoActivitySummary,
   getCardanoReferences,
 } from "../../db/cardanoActivity";
-import { getValidator, listValidators } from "../../db/l1";
+import { getValidator, listValidators, manifestConfigured } from "../../db/l1";
 import { getDeploymentContext } from "../../db/deployment";
+import { sendManifestNotConfigured } from "../helpers";
 import { parseHexOfLength, parseHintedPage } from "../validate";
 
 /**
@@ -67,6 +68,7 @@ export async function getCardanoReferenceRoute(req: Request, res: Response) {
 }
 
 export async function getValidatorsRoute(_req: Request, res: Response) {
+  if (!manifestConfigured()) return sendManifestNotConfigured(res);
   const [midgard, validators] = await Promise.all([
     getDeploymentContext(),
     Promise.resolve(listValidators()),
@@ -77,6 +79,7 @@ export async function getValidatorsRoute(_req: Request, res: Response) {
 export async function getValidatorRoute(req: Request, res: Response) {
   const parsed = parseHexOfLength(req.query.scriptHash, 56, "scriptHash");
   if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+  if (!manifestConfigured()) return sendManifestNotConfigured(res);
   const found = getValidator(parsed.value);
   // 404 here is about the MANIFEST, not about Cardano: this deployment declares
   // no such validator. A script hash absent from the manifest may well exist on

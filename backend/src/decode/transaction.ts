@@ -1,4 +1,4 @@
-import { getCodec } from "./codec";
+import { getCodec, type MidgardCodec } from "./codec";
 import type {
   AddressKind,
   AddressIdentityView,
@@ -44,6 +44,14 @@ export type DecodeOptions = {
    * anything the batch missed still falls back to the single lookup.
    */
   bulkLookup?: (outrefs: Uint8Array[]) => Promise<Map<string, { address: string; output: Uint8Array }>>;
+  /**
+   * The bodies of the transactions that created this transaction's inputs, by
+   * transaction id (hex). Consulted only for an input the ledger lookups did
+   * not resolve: once an output is spent it leaves the ledger, but the
+   * transaction that made it still lists it. Never used for this
+   * transaction's own outputs, whose ledger presence is what their state says.
+   */
+  creatingTransactions?: (txIds: string[]) => Promise<Map<string, Uint8Array>>;
 };
 
 /**
@@ -116,12 +124,13 @@ const jsonSafe = (value: unknown): unknown => {
   return value;
 };
 
-/** `[tag, index, data, [mem, steps]]` is the Cardano redeemer shape. Anything
- * else keeps its bytes and leaves the structured fields null rather than
- * guessing at a layout this codec does not define. */
+/** A Midgard redeemer witness item: `84 <purpose> <index> <redeemer as bytes>
+ * 82 <mem> <steps>`. The redeemer data is a byte string holding its own CBOR.
+ * An item that does not decode keeps its bytes and leaves the structured fields
+ * null rather than guessing at a layout. */
 const readRedeemer = (
   item: Uint8Array,
-  decodeCbor: (b: Uint8Array) => unknown,
+  codec: MidgardCodec,
 ): RedeemerView => {
   const view: RedeemerView = {
     cborHex: toHex(item),
@@ -131,36 +140,29 @@ const readRedeemer = (
     data: null,
     exUnits: null,
   };
-  let parsed: unknown;
+  let witness: ReturnType<MidgardCodec["decodeMidgardRedeemerWitnessItem"]>;
   try {
-    parsed = decodeCbor(item);
+    witness = codec.decodeMidgardRedeemerWitnessItem(item);
   } catch {
     return view;
   }
-  if (!Array.isArray(parsed) || parsed.length < 4) return view;
-  const [tag, index, data, units] = parsed as [
-    unknown,
-    unknown,
-    unknown,
-    unknown,
-  ];
-  const numeric = (v: unknown): number | null =>
-    typeof v === "bigint" || typeof v === "number" ? Number(v) : null;
-  const exUnits =
-    Array.isArray(units) && units.length >= 2
-      ? {
-          mem: BigInt(units[0] as number | bigint),
-          steps: BigInt(units[1] as number | bigint),
-        }
-      : null;
-  const numericTag = numeric(tag);
+  const tag: number = codec.MIDGARD_REDEEMER_PURPOSE_TAGS[witness.purpose];
+  let data: unknown = toHex(witness.redeemerCbor);
+  try {
+    data = jsonSafe(codec.decodeSingleCbor(witness.redeemerCbor));
+  } catch {
+    // Data that is not one CBOR item stays as its hex.
+  }
   return {
     ...view,
-    tag: numericTag,
-    purpose: numericTag === null ? null : redeemerPurpose(numericTag),
-    index: numeric(index),
-    data: jsonSafe(data),
-    exUnits,
+    tag,
+    purpose: redeemerPurpose(tag),
+    index: Number(witness.index),
+    data,
+    exUnits: {
+      mem: BigInt(witness.executionUnits.memory),
+      steps: BigInt(witness.executionUnits.steps),
+    },
   };
 };
 
@@ -244,13 +246,11 @@ export async function decodeTransaction(
     };
   };
 
-  // Each spend/reference input preimage item is a standard CBOR [txid, index] pair.
+  // Each spend/reference input preimage item is the fixed 38-byte out-ref,
+  // whose two-byte index a generic strict CBOR decoder rejects as non-minimal.
   const decodeOutRef = (bytes: Uint8Array): OutRef => {
-    const [txId, index] = codec.decodeSingleCbor(bytes) as [
-      Uint8Array,
-      number | bigint,
-    ];
-    return { txId: toHex(txId), index: Number(index) };
+    const { txId, outputIndex } = codec.decodeMidgardSpendInputItem(bytes);
+    return { txId: toHex(txId), index: outputIndex };
   };
 
   const resolveInputWith = async (
@@ -296,7 +296,7 @@ export async function decodeTransaction(
   // one-row queries. The test asserts the total call count for exactly that
   // reason, and it is what caught the omission.
   const outputOutrefs = outputItems.map((_, index) =>
-    codec.encodeCbor([txIdBytes, BigInt(index)]),
+    codec.encodeMidgardSpendInputItem({ txId: Buffer.from(txIdBytes), outputIndex: index }),
   );
   const prefetched =
     options?.bulkLookup && lookup
@@ -323,10 +323,52 @@ export async function decodeTransaction(
           return requested.has(key) ? null : lookup ? await lookup(outref) : null;
         };
 
-  const inputs = await mapBounded(spendItems, (item) => resolveInputWith(resolve, item));
-  const referenceInputs = await mapBounded(referenceItems, (item) =>
+  const fromLedger = await mapBounded(spendItems, (item) => resolveInputWith(resolve, item));
+  const referenceFromLedger = await mapBounded(referenceItems, (item) =>
     resolveInputWith(resolve, item),
   );
+
+  // Inputs the ledger no longer holds, resolved from the bodies of the
+  // transactions that created them, in one call for all of them.
+  const unresolved = [...fromLedger, ...referenceFromLedger].filter((i) => i.resolved === null);
+  const creators =
+    options?.creatingTransactions && unresolved.length > 0
+      ? await options.creatingTransactions([...new Set(unresolved.map((i) => i.txId))])
+      : new Map<string, Uint8Array>();
+  const outputsOf = new Map<string, Uint8Array[]>();
+  // A creator this codec cannot read (an older codec, a CML-format genesis
+  // output) resolves nothing, so the input stays unresolved as it was before
+  // this fallback, rather than failing the whole transaction view.
+  const fromCreator: OutRefLookup = async (outref) => {
+    const { txId, index } = decodeOutRef(outref);
+    const body = creators.get(txId);
+    if (body === undefined) return null;
+    if (!outputsOf.has(txId)) {
+      try {
+        const creator = codec.decodeMidgardNativeTxFullFromCanonicalCbor(Buffer.from(body));
+        outputsOf.set(
+          txId,
+          codec.decodeMidgardNativeByteListPreimage(creator.body.outputsPreimageCbor),
+        );
+      } catch {
+        outputsOf.set(txId, []);
+      }
+    }
+    const item = outputsOf.get(txId)![index];
+    if (item === undefined) return null;
+    try {
+      const output = codec.decodeMidgardTxOutput(item);
+      return { address: codec.encodeMidgardAddressText(output.address), output: item };
+    } catch {
+      return null;
+    }
+  };
+  const completed = (views: InputView[], items: Uint8Array[]) =>
+    mapBounded(views, async (view, i) =>
+      view.resolved !== null || creators.size === 0 ? view : resolveInputWith(fromCreator, items[i]!),
+    );
+  const inputs = await completed(fromLedger, spendItems);
+  const referenceInputs = await completed(referenceFromLedger, referenceItems);
 
   const txId = toHex(txIdBytes);
   const outputs: OutputView[] = await mapBounded(
@@ -411,11 +453,11 @@ export async function decodeTransaction(
     ? { policyIds: [...decodedMint.policyIds], assets: mintedAssets() }
     : null;
 
-  // Witness preimages are CBOR lists. The counts stay so existing readers keep
-  // working; the lists beside them are what a developer debugging a script
-  // actually needs.
+  // Witness preimages are §5.1 field preimages, read with the codec's own field
+  // decoder. The counts stay so existing readers keep working; the lists beside
+  // them are what a developer debugging a script actually needs.
   const countItems = (preimage: Uint8Array): number =>
-    (codec.decodeSingleCbor(preimage) as unknown[]).length;
+    codec.decodeMidgardNativeByteListPreimage(preimage).length;
 
   const scripts: ScriptWitnessView[] = codec
     .decodeMidgardVersionedScriptListPreimage(
@@ -433,7 +475,7 @@ export async function decodeTransaction(
     .decodeMidgardNativeByteListPreimage(
       full.witnessSet.redeemerTxWitsPreimageCbor,
     )
-    .map((item) => readRedeemer(item, (b) => codec.decodeSingleCbor(b)));
+    .map((item) => readRedeemer(item, codec));
 
   const noneTime = codec.MIDGARD_POSIX_TIME_NONE;
   const noneNetwork = codec.MIDGARD_NATIVE_NETWORK_ID_NONE;
@@ -580,12 +622,9 @@ export async function decodeUtxos(
     let txId: string | null = null;
     let index: number | null = null;
     try {
-      const [id, i] = codec.decodeSingleCbor(row.outref) as [
-        Uint8Array,
-        number | bigint,
-      ];
-      txId = toHex(id);
-      index = Number(i);
+      const ref = codec.decodeMidgardSpendInputItem(row.outref);
+      txId = toHex(ref.txId);
+      index = ref.outputIndex;
     } catch {
       // Leave the pair null; outRefHex still identifies the entry.
     }

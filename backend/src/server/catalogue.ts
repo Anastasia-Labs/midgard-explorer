@@ -17,6 +17,7 @@ import { getDepositsPageRoute } from "./routes/deposits";
 import { getWithdrawalsPageRoute } from "./routes/withdrawals";
 import { getForcedTransactionsPageRoute } from "./routes/forcedTransactions";
 import { getMetricsRoute } from "./routes/metrics";
+import { getStateQueueRoute } from "./routes/stateQueue";
 import { getAssetRoute, getAssetsRoute } from "./routes/asset";
 import { getSearchRoute } from "./routes/search";
 import { postVitalsRoute } from "./routes/vitals";
@@ -37,6 +38,7 @@ import { getSourceRoute } from "./routes/source";
 import { buildOpenApiDocument, type OpenApiDocument } from "./openapi";
 import { cachePublicJson } from "./cache";
 import { config } from "../config";
+import { publicHandler } from "../public/catalogue";
 import { HASH28_HEX, HASH32_HEX } from "../utils";
 
 /**
@@ -325,6 +327,16 @@ export const ENDPOINTS: readonly Endpoint[] = [
     rateLimited: true,
   }),
   endpoint(
+    "/api/state-queue",
+    "Blocks",
+    "Show the state queue: the confirmed header, the headers waiting to merge, and this node's commits on their way",
+    getStateQueueRoute,
+    {
+      rateLimited: true,
+      cacheSeconds: 3,
+    },
+  ),
+  endpoint(
     "/api/blocks/:page",
     "Blocks",
     "List blocks by page",
@@ -459,10 +471,15 @@ export function documentationPath(path: string): string {
   return path.replace(/:(\w+)/g, "{$1}");
 }
 
+/** The handler a route uses under the configured L2 source. */
+const handlerFor = (route: Endpoint): RequestHandler =>
+  config.L2_SOURCE === "public" ? publicHandler(route.path, route.handler) : route.handler;
+
 export function registerCatalogue(app: Express): void {
   for (const route of ENDPOINTS) {
+    const handler = handlerFor(route);
     if (route.method === "post") {
-      app.post(route.path, route.handler);
+      app.post(route.path, handler);
       continue;
     }
     app.get(
@@ -472,7 +489,7 @@ export function registerCatalogue(app: Express): void {
         config.RESPONSE_CACHE_MAX_ENTRIES,
         config.RESPONSE_CACHE_MAX_BYTES,
       ),
-      route.handler,
+      handler,
     );
   }
 }

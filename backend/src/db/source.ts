@@ -15,7 +15,7 @@ import { prisma } from "../db";
  * it would have called a snapshot a fixture and understated it.
  */
 
-export type L2SourceKind = "primary" | "replica" | "snapshot" | "fixture";
+export type L2SourceKind = "primary" | "replica" | "snapshot" | "fixture" | "archive";
 
 export type L2FreshnessState = "live" | "lagging" | "stale" | "fixed" | "synthetic" | "unknown";
 
@@ -100,7 +100,7 @@ export type SourceProbe = {
  * fixed, a fixture is synthetic, and a replica answers for itself below. The
  * second-based thresholds this used to apply were dead the moment replicas
  * stopped reporting a lag: every remaining caller passed null. */
-const freshnessFor = (kind: Exclude<L2SourceKind, "replica">): L2FreshnessState =>
+const freshnessFor = (kind: Exclude<L2SourceKind, "replica" | "archive">): L2FreshnessState =>
   kind === "fixture" ? "synthetic" : kind === "snapshot" ? "fixed" : "live";
 
 /**

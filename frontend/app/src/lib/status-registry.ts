@@ -6,8 +6,15 @@
  *   database/txAdmissions.ts               tx lifecycle
  *   database/deposits.ts                   awaiting | projected | consumed
  *   database/withdrawals.ts                awaiting | projected | finalized + 8 validity codes
- *   database/forcedTransactions.ts         awaiting | projected | finalized + 6 validity codes
+ *   database/forcedTransactions.ts         awaiting | projected | finalized, and the
+ *                                          verdict in forced_inclusion_value
  *   database/pendingBlockFinalizations.ts  6 finalization statuses
+ *
+ * Midgard migration 0011 renamed the terminal `finalized` to `locally_applied`.
+ * The backend now derives `waiting_to_merge`, `merged` and `finalized` for an
+ * applied block from the follower's tables; `finalized` is also what an older
+ * node writes itself. The six forced-transaction codes stay for
+ * the `operator_validity` column an older node still has.
  *
  * Tone semantics (docs/redesign-prompt.md:111-128):
  *   info    - active, in progress
@@ -128,17 +135,39 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "Awaiting stability",
     "The node reports seeing it on Cardano and is waiting for the required chain-stability depth. A short rollback could still remove it.",
   ),
-  finalized: e(
+  // `locally_applied` is the node's own code; the other three are derived
+  // from the node's follower tables by the backend (db/settlement.ts).
+  locally_applied: e(
     "finalization",
-    "success",
-    "Finalized",
-    "The node reports this settled on Cardano. It treats the Midgard block and every transaction in it as irreversible.",
+    "neutral",
+    "Merge not recorded",
+    "The node applied this block. Its place in the state queue is not recorded yet.",
   ),
+  waiting_to_merge: e(
+    "finalization",
+    "warning",
+    "Waiting to merge",
+    "In the state queue on Cardano. After merging, it still waits for the Cardano rollback window to pass before finality.",
+  ),
+  merged: e(
+    "finalization",
+    "info",
+    "Merged",
+    "Merged into the confirmed state. A Cardano rollback could still undo it.",
+  ),
+  // Sent by the public source, which reads no settlement record at all.
+  not_observed: e(
+    "finalization",
+    "neutral",
+    "Not observed",
+    "This explorer reads its archive of block payloads, not Cardano or the node's records. It cannot say where this block is in settlement.",
+  ),
+  finalized: e("finalization", "success", "Finalized", "Final. Midgard treats it as permanent."),
   abandoned: e(
     "finalization",
     "danger",
     "Abandoned",
-    "The node abandoned the finalization attempt; this block did not settle. Its Midgard transactions must not be treated as final.",
+    "The node abandoned this block's finalization, so it has not settled. The node can revive it if its commit later lands on Cardano, but never one a correction removed.",
   ),
 
   // --- transaction validity --------------------------------------------
@@ -205,7 +234,21 @@ export const STATUS_REGISTRY: Record<string, StatusEntry> = {
     "The value cannot be paid out on Cardano. Its amount or asset bundle must be changed to form a valid output.",
   ),
 
-  // --- forced-transaction operator validity (6 codes) -------------------
+  // --- forced-transaction operator verdict ------------------------------
+  ForcedTxValid: e(
+    "forced_validity",
+    "success",
+    "Valid",
+    "The operator judged the forced transaction valid. Its state change applies if the block carrying it remains in the chain.",
+  ),
+  ForcedTxInvalid: e(
+    "forced_validity",
+    "danger",
+    "Invalid",
+    "The operator judged the forced transaction invalid, for the reason shown beside it. Its requested state change is not applied.",
+  ),
+
+  // --- forced-transaction operator validity, an older node (6 codes) -----
   NonExistentInputUtxo: e(
     "forced_validity",
     "danger",
@@ -259,6 +302,16 @@ export function statusOf(status: string): ResolvedStatus {
       "The backend reported a status this explorer does not recognize. Treat it as unresolved and inspect the raw response before relying on it.",
     known: false,
   };
+}
+
+/** Codes the explorer sends that no node stores, so no list can filter on them. */
+const EXPLORER_CODES = new Set(["not_observed"]);
+
+/** The statuses a list can filter by: the node's own codes. */
+export function filterOptionsFor(kind: StatusKind): Array<{ value: string; label: string }> {
+  return legendFor(kind)
+    .filter((e) => !EXPLORER_CODES.has(e.code))
+    .map((e) => ({ value: e.code, label: e.label }));
 }
 
 export function legendFor(kind: StatusKind): Array<StatusEntry & { code: string }> {

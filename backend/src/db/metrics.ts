@@ -1,6 +1,24 @@
 import { readConsistently, type NodeReader } from "./consistent";
 import { toHex } from "../utils";
 
+/**
+ * The node's terminal status for a block it applied (Midgard migration 0011
+ * renamed `finalized` to it). It says the node applied the block; whether the
+ * block is final on Cardano comes from the L1 follower, which this explorer
+ * does not read.
+ */
+export const APPLIED_BLOCK_STATUS = "locally_applied";
+
+/** The statuses of a block the node is still working on: the four its unique
+ * index allows at most one row in. `locally_applied` and `abandoned` are
+ * terminal, and an abandoned block can be revived. */
+export const ACTIVE_BLOCK_STATUSES = [
+  "pending_submission",
+  "submitted_local_finalization_pending",
+  "submitted_unconfirmed",
+  "observed_waiting_stability",
+] as const;
+
 /** Operational metrics for the overview.
  *
  * Three rules govern everything in this file, because an operations panel that
@@ -122,7 +140,7 @@ export async function getMetrics(reader?: NodeReader): Promise<MetricsResponse> 
     // shown side by side, so a block finalised between two of them made the
     // tip newer than the backlog it was counted against.
     Promise.all([
-    // A chain tip is finalized journal evidence, not merely the newest
+    // A chain tip is the newest block the node applied, not merely the newest
     // transaction row. Height remains a nullable legacy aid.
     db.$queryRaw<
       Array<{
@@ -137,7 +155,7 @@ export async function getMetrics(reader?: NodeReader): Promise<MetricsResponse> 
       SELECT f.header_hash, l.height, f.block_end_time AS at
         FROM pending_block_finalizations AS f
         LEFT JOIN legacy AS l ON l.header_hash = f.header_hash
-       WHERE f.status = 'finalized'
+       WHERE f.status = 'locally_applied'
        ORDER BY f.block_end_time DESC, encode(f.header_hash, 'hex') DESC
        LIMIT 1;`,
 
@@ -147,9 +165,9 @@ export async function getMetrics(reader?: NodeReader): Promise<MetricsResponse> 
         FROM pending_block_finalizations AS f
         LEFT JOIN pending_block_finalization_txs AS j
           ON j.header_hash = f.header_hash
-       WHERE f.status = 'finalized' AND f.block_end_time >= ${start};`,
+       WHERE f.status = 'locally_applied' AND f.block_end_time >= ${start};`,
 
-    // Interval between consecutive finalized header closes.
+    // Interval between consecutive applied header closes.
     db.$queryRaw<
       Array<{ p50: number | null; p95: number | null; n: bigint }>
     >`
@@ -158,7 +176,7 @@ export async function getMetrics(reader?: NodeReader): Promise<MetricsResponse> 
                  ORDER BY block_end_time, encode(header_hash, 'hex')
                )) AS gap
           FROM pending_block_finalizations
-         WHERE status = 'finalized' AND block_end_time >= ${start}
+         WHERE status = 'locally_applied' AND block_end_time >= ${start}
       )
       SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY gap) AS p50,
              percentile_cont(0.95) WITHIN GROUP (ORDER BY gap) AS p95,
@@ -226,17 +244,18 @@ export async function getMetrics(reader?: NodeReader): Promise<MetricsResponse> 
         abandoned: bigint;
       }>
     >`
-      SELECT MIN(block_end_time) FILTER (WHERE status = 'finalized') AS at,
+      SELECT MIN(block_end_time) FILTER (WHERE status = 'locally_applied') AS at,
              percentile_cont(0.5) WITHIN GROUP (
                ORDER BY EXTRACT(EPOCH FROM updated_at - block_end_time) * 1000)
-               FILTER (WHERE status = 'finalized' AND updated_at > block_end_time) AS p50,
+               FILTER (WHERE status = 'locally_applied' AND updated_at > block_end_time) AS p50,
              percentile_cont(0.95) WITHIN GROUP (
                ORDER BY EXTRACT(EPOCH FROM updated_at - block_end_time) * 1000)
-               FILTER (WHERE status = 'finalized' AND updated_at > block_end_time) AS p95,
+               FILTER (WHERE status = 'locally_applied' AND updated_at > block_end_time) AS p95,
              COUNT(*) FILTER (
-               WHERE status = 'finalized' AND updated_at > block_end_time)::bigint AS n,
-             COUNT(*) FILTER (WHERE status = 'finalized')::bigint AS finalized,
-             COUNT(*) FILTER (WHERE status NOT IN ('finalized', 'abandoned'))::bigint AS pending,
+               WHERE status = 'locally_applied' AND updated_at > block_end_time)::bigint AS n,
+             COUNT(*) FILTER (WHERE status = 'locally_applied')::bigint AS finalized,
+             COUNT(*) FILTER (
+               WHERE status = ANY(${[...ACTIVE_BLOCK_STATUSES]}::text[]))::bigint AS pending,
              COUNT(*) FILTER (WHERE status = 'abandoned')::bigint AS abandoned
         FROM pending_block_finalizations;`,
 
@@ -245,7 +264,7 @@ export async function getMetrics(reader?: NodeReader): Promise<MetricsResponse> 
     >`
       SELECT header_hash, status, block_end_time
         FROM pending_block_finalizations
-       WHERE status NOT IN ('finalized', 'abandoned')
+       WHERE status = ANY(${[...ACTIVE_BLOCK_STATUSES]}::text[])
        ORDER BY block_end_time ASC
        LIMIT 1;`,
 
@@ -274,7 +293,7 @@ export async function getMetrics(reader?: NodeReader): Promise<MetricsResponse> 
              COALESCE(COUNT(j.member_id), 0)::bigint AS txs
         FROM hours AS h
         LEFT JOIN pending_block_finalizations AS f
-          ON f.status = 'finalized'
+          ON f.status = 'locally_applied'
          AND date_trunc('hour', f.block_end_time) = h.hour
         LEFT JOIN pending_block_finalization_txs AS j
           ON j.header_hash = f.header_hash
@@ -297,12 +316,16 @@ export async function getMetrics(reader?: NodeReader): Promise<MetricsResponse> 
       WITH waiting AS (
         -- A skipped submission moves transactions from mempool into
         -- processed_mempool, and the node draws candidates from both; a
-        -- transaction in both counts once, from its earlier time.
+        -- transaction in both counts once, from its earlier time. A row a
+        -- block includes carries that block's hash in included_by until the
+        -- block's fold is final, and the node skips it: pending means unmarked.
         SELECT 'transaction' AS kind, MIN(since) AS since
           FROM (
             SELECT tx_id, time_stamp_tz AS since FROM mempool
+             WHERE included_by IS NULL
             UNION ALL
             SELECT tx_id, time_stamp_tz FROM processed_mempool
+             WHERE included_by IS NULL
           ) AS pending
          GROUP BY tx_id
         UNION ALL

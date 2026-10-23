@@ -13,7 +13,8 @@ import { HourlyChart } from "../../components/ui/domain/metrics";
 import { api } from "../../lib/api";
 import { countNoun, groupThousands } from "../../lib/format";
 import { parsePage } from "../../lib/parsePage";
-import { legendFor } from "../../lib/status-registry";
+import { ARCHIVE_FILTER_REASON, readsArchive } from "../../lib/evidence";
+import { filterOptionsFor } from "../../lib/status-registry";
 import { listErrorMessage } from "../../lib/serverErrors";
 import { viewerInit } from "../../lib/viewerInit";
 import { Breadcrumbs } from "../../components/ui/base/breadcrumbs";
@@ -39,9 +40,10 @@ export default async function TransactionsPage({
   // The hourly chart reads metrics on the side: when that call fails the chart
   // shows its unavailable state and the list is untouched.
   const init = await viewerInit();
-  const [pageResult, metricsResult] = await Promise.allSettled([
+  const [pageResult, metricsResult, sourceResult] = await Promise.allSettled([
     api.txsPage(page, status, init),
     api.metrics(init),
+    api.source(init),
   ]);
   if (pageResult.status === "rejected") {
     return (
@@ -55,6 +57,7 @@ export default async function TransactionsPage({
   }
   const data = pageResult.value;
   const metrics = metricsResult.status === "fulfilled" ? metricsResult.value : null;
+  const archive = sourceResult.status === "fulfilled" && readsArchive(sourceResult.value);
 
   return (
     <>
@@ -74,7 +77,8 @@ export default async function TransactionsPage({
       <ListTools
         filterKey="status"
         filterLabel="L1 settlement"
-        options={legendFor("finalization").map((e) => ({ value: e.code, label: e.label }))}
+        options={filterOptionsFor("finalization")}
+        filterUnavailable={archive ? ARCHIVE_FILTER_REASON : undefined}
         rows={data.rows}
         filename={`midgard-transactions-page-${page}${status ? `-${status}` : ""}`}
         columns={[
@@ -184,7 +188,7 @@ export default async function TransactionsPage({
             ],
           })}
           rows={data.rows}
-          keyOf={(r) => r.tx_id}
+          keyOf={(r) => `${r.tx_id}:${r.header_hash}`}
           emptyTitle={status ? "No matching transactions" : "No transactions yet"}
           {...(status
             ? {

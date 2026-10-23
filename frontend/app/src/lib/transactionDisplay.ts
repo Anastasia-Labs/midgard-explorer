@@ -20,7 +20,7 @@ export function transactionForDisplay({
   cardano: Association | null | undefined;
 }) {
   const l1TxHash = cardano && "l1TxHash" in cardano ? cardano.l1TxHash : null;
-  const l1State = cardano?.evidence.find((item) => item.rawState !== null)?.rawState ?? null;
+  const l1State = cardano && "state" in cardano ? cardano.state : null;
   return {
     txId: tx.txId,
     status,

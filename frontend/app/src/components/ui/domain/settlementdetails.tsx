@@ -2,13 +2,13 @@ import type { Association, DeploymentContext } from "@midgard-explorer/contracts
 import { L1TxLink } from "./l1link";
 import { StatusBadge } from "./status";
 import { Timestamp } from "../base/timestamp";
-import { SOURCE_LABEL, sourceText } from "./association";
+import { sourceText } from "./association";
 import { formatTimestamp } from "../../../lib/format";
 import type { JourneyModel } from "../../../lib/journey";
 import { FactRow } from "../base/facts";
 
-/** Settlement as a flat list: the Cardano transaction once, the node's state,
- * where that came from, and every stage in order.
+/** Settlement as a flat list: the Cardano transaction once, where the block
+ * stands, where that came from, and every stage in order.
  *
  * It replaces a journey card and a Cardano card nested inside a disclosure,
  * which showed the same hash twice and explained the source in a paragraph. */
@@ -22,7 +22,9 @@ export function SettlementDetails({
   journey: JourneyModel;
 }) {
   const hash = association && "l1TxHash" in association ? (association.l1TxHash ?? null) : null;
-  const node = association?.evidence.find((item) => item.rawState !== null) ?? null;
+  // The settlement's state, not the journal's word: for an applied block it is
+  // read from the follower's tables, which the journal does not write.
+  const state = association && "state" in association ? association.state : null;
   return (
     <>
       <FactRow label="Cardano transaction">
@@ -32,14 +34,9 @@ export function SettlementDetails({
           <L1TxLink hash={hash} destination="cardano" />
         )}
       </FactRow>
-      {node?.rawState ? (
+      {state !== null && state !== "unknown" ? (
         <FactRow label="State">
-          <span className="inline-flex flex-wrap items-center gap-2">
-            <StatusBadge status={node.rawState} variant="text" explain={false} />
-            <span className="mg-caption text-text-3">
-              reported by the {SOURCE_LABEL[node.source] ?? node.source}
-            </span>
-          </span>
+          <StatusBadge status={state} variant="text" explain={false} />
         </FactRow>
       ) : null}
       {association?.l2ObservedAsOf ? (

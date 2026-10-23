@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { manifestConfigured } from "../../db/l1";
 import { MIN_PREFIX, searchAddress, searchByPrefix } from "../../db/search";
 
 /** Prefix search. Returns an empty result rather than an error for a prefix
@@ -17,5 +18,9 @@ export async function getSearchRoute(req: Request, res: Response) {
     return res.json({ hits: [], minPrefix: MIN_PREFIX, tooShort: prefix.length < MIN_PREFIX });
   }
   const hits = await searchByPrefix(prefix);
-  return res.json({ hits, minPrefix: MIN_PREFIX, tooShort: false });
+  // Validators are matched against the manifest. With none configured that
+  // lookup is skipped, and the response says so rather than letting an
+  // omission read as "no validator matched".
+  const unsearched = manifestConfigured() ? {} : { unsearched: ["validator"] };
+  return res.json({ hits, minPrefix: MIN_PREFIX, tooShort: false, ...unsearched });
 }

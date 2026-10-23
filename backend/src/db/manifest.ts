@@ -3,7 +3,12 @@ import { CANONICAL_HASH28, CANONICAL_HASH32 } from "../utils";
 import { readFileSync, statSync } from "node:fs";
 import { z } from "zod";
 import { logger } from "../logger";
-import { scriptHashToAddress, scriptHashToRewardAddress } from "./bech32";
+import {
+  isNetwork,
+  scriptHashToAddress,
+  scriptHashToRewardAddress,
+  type Network,
+} from "./bech32";
 
 /**
  * The purposes a manifest entry name can declare.
@@ -44,11 +49,27 @@ export function contractFamily(entryName: string): string {
   return entryName;
 }
 
-/** Schema versions this indexer knows how to read. A version outside this set
+/** Schema versions this backend knows how to read. A version outside this set
  * is refused rather than read on a guess: an unknown layout that happens to
- * carry a `contracts` key would otherwise index silently against fields that
+ * carry a `contracts` key would otherwise be read silently against fields that
  * moved. */
-const SUPPORTED_SCHEMA_VERSIONS = new Set(["midgard-deployment-manifest-v2"]);
+const V1 = "midgard-deployment-manifest-v1";
+export const SUPPORTED_SCHEMA_VERSIONS = new Set([V1, "midgard-deployment-manifest-v2"]);
+
+type ManifestIdentity = typeof import("@al-ft/midgard-core/deployment-manifest-identity", {
+  with: { "resolution-mode": "import" },
+});
+
+/**
+ * Midgard's own manifest verifier, from the vendored core.
+ *
+ * Loaded synchronously because the manifest is read synchronously, at boot and
+ * on every request through the mtime cache. Node 24 loads the package's
+ * CommonJS build, and the ESM modules it reaches, with `require`.
+ */
+const manifestIdentity = (): ManifestIdentity =>
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require("@al-ft/midgard-core/deployment-manifest-identity") as ManifestIdentity;
 
 /**
  * Compiled scripts reviewed and recorded as unimplemented placeholders.
@@ -269,7 +290,7 @@ export function loadManifest(path: string | undefined): Manifest {
 export type Manifest = {
   /** Absent on a pre-`manifestId` manifest, which is what makes it legacy. */
   schemaVersion: string | null;
-  network: "preprod" | "mainnet";
+  network: Network;
   /** The canonical identity every indexed row is attributed to. Never a shared
    * constant, so two deployments can never merge in one table. */
   deploymentId: string;
@@ -298,6 +319,18 @@ export type Manifest = {
   scanTargets: ValidatorEntry[];
   placeholderHashes: Set<string>;
   referenceScriptAuthPolicy: string | null;
+  /** How long a committed header waits in the state queue before it may
+   * merge, from the consensus profile. Null when the manifest predates it. */
+  blockMaturityMs: number | null;
+};
+
+/** The consensus profile's block maturity, read from the raw document because
+ * the identity schema does not carry it. Anything but a positive whole number
+ * is treated as absent rather than guessed. */
+const blockMaturityOf = (raw: unknown): number | null => {
+  const value = (raw as { consensusProfile?: { limits?: { blockMaturityMs?: unknown } } })
+    ?.consensusProfile?.limits?.blockMaturityMs;
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
 };
 
 /**
@@ -313,6 +346,10 @@ export type Manifest = {
 function classifyPlaceholders(
   path: string,
   contracts: Record<string, { scriptHash?: string; contract?: { cborHex: string } }>,
+  /** Every hash was checked against its compiled script (a v1 manifest), so a
+   * hash under more than one family is one script reused, which a v1 catalogue
+   * does: the live Preprod manifest shares 14 hashes this way. */
+  scriptsVerified = false,
 ): Set<string> {
   const familiesByHash = new Map<string, Set<string>>();
   const scriptsByHash = new Map<string, string | undefined>();
@@ -331,7 +368,7 @@ function classifyPlaceholders(
       placeholders.add(hash);
       continue;
     }
-    if (families.size === 1) continue;
+    if (families.size === 1 || scriptsVerified) continue;
 
     const shared = Object.entries(contracts)
       .filter(([, entry]) => entry.scriptHash === hash)
@@ -390,13 +427,12 @@ export function parseManifest(path: string): Manifest {
     );
   }
 
-  const networkStr = doc.network.toLowerCase();
-  if (networkStr !== "mainnet" && networkStr !== "preprod") {
+  const network = doc.network.toLowerCase();
+  if (!isNetwork(network)) {
     throw new Error(
       `Manifest at ${path} has unrecognized network value: ${doc.network}`,
     );
   }
-  const network: "preprod" | "mainnet" = networkStr;
 
   if (Number.isNaN(new Date(doc.createdAt).getTime())) {
     throw new Error(
@@ -409,13 +445,19 @@ export function parseManifest(path: string): Manifest {
   // writing the field, and the derived value would then disagree with every
   // row already attributed to the declared identity.
   let deploymentId: string;
-  if (doc.schemaVersion !== undefined) {
+  if (doc.schemaVersion === V1) {
+    deploymentId = verifiedV1DeploymentId(path, raw);
+  } else if (doc.schemaVersion !== undefined) {
     deploymentId = verifiedV2DeploymentId(path, doc, raw);
   } else {
     deploymentId = legacyDeploymentId(network, doc.contracts);
   }
 
-  const placeholderHashes = classifyPlaceholders(path, doc.contracts);
+  const placeholderHashes = classifyPlaceholders(
+    path,
+    doc.contracts,
+    doc.schemaVersion === V1,
+  );
 
   const entries: ValidatorEntry[] = [];
   for (const [name, entry] of Object.entries(doc.contracts)) {
@@ -466,6 +508,7 @@ export function parseManifest(path: string): Manifest {
     scanTargets,
     placeholderHashes,
     referenceScriptAuthPolicy,
+    blockMaturityMs: blockMaturityOf(raw),
   };
 }
 
@@ -482,6 +525,28 @@ function dedupe(
     out.push(entry);
   }
   return out;
+}
+
+/**
+ * The identity of a v1 manifest, as Midgard's verifier establishes it.
+ *
+ * The finalized-manifest verifier recomputes the id over the whole document,
+ * checks the consensus profile, the deployment profile binding, economics,
+ * availability and the L1 slot configuration against the profile the vendored
+ * packages were built for, and checks every contract's script hash against its
+ * compiled script. A manifest it refuses describes a deployment this build
+ * cannot read, so the refusal is reported as it is rather than worked around.
+ */
+function verifiedV1DeploymentId(path: string, raw: unknown): string {
+  try {
+    const verified = manifestIdentity().verifyFinalizedDeploymentManifest(raw);
+    return verified.manifestId;
+  } catch (err) {
+    throw new Error(
+      `Manifest at ${path} fails Midgard's deployment manifest verification ` +
+        `for the deployment profile this build carries: ${(err as Error).message}`,
+    );
+  }
 }
 
 /**

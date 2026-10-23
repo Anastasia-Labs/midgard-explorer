@@ -161,3 +161,37 @@ describe("api client error mapping", () => {
     expect(seen[0]).toContain("header_hash=ab%2Fcd%3Fe");
   });
 });
+
+describe("a route that names why it cannot answer", () => {
+  it("raises unavailable, not an internal error, and does not offer a retry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          {
+            error: "This explorer has no deployment manifest configured.",
+            unavailable: "manifest_not_configured",
+          },
+          503,
+        ),
+      ),
+    );
+    const err = await api.validator("ab".repeat(28)).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    const e = err as ApiError;
+    expect(e.category).toBe("unavailable");
+    expect(e.retryable).toBe(false);
+    expect(e.status).toBe(503);
+    expect(e.safeMessage).toMatch(/unavailable/i);
+  });
+
+  it("keeps a plain 503 an internal error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("down", { status: 503 })),
+    );
+    const err = (await api.validator("ab".repeat(28)).catch((e: unknown) => e)) as ApiError;
+    expect(err.category).toBe("http_5xx");
+    expect(err.retryable).toBe(true);
+  });
+});

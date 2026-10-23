@@ -8,7 +8,6 @@ Every command below runs in this directory.
 ## Before you start
 
 - Node.js 24 and pnpm 11, from `corepack enable`.
-- Docker with the Compose v2 plugin. The explorer's own PostgreSQL runs in it.
 - A reachable Midgard node PostgreSQL, with its host, port, user, password and
   database name to hand.
 

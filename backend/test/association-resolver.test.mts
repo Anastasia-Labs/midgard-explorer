@@ -38,6 +38,7 @@ const identity = {
 const inputs = (over: Partial<SettlementInputs> = {}): SettlementInputs => ({
   nodeHash: NODE_HASH,
   nodeStatus: "finalized",
+  journalStatus: "finalized",
   nodeObservedAt: "2026-09-02T00:00:00Z",
   // A live node by default, so a case that cares about reading a snapshot or a
   // standby that is behind says so.
@@ -55,14 +56,28 @@ describe("reconcile", () => {
    * claims a comparison this explorer cannot perform.
    */
   it("can only reach the three verdicts one source supports", () => {
-    const allowed = new Set<Reconciliation>(["node_reported", "none", "unavailable"]);
-    const freshness = ["live", "synthetic", "fixed", "lagging", "unknown"] as const;
+    const allowed = new Set<Reconciliation>([
+      "node_reported",
+      "none",
+      "unavailable",
+    ]);
+    const freshness = [
+      "live",
+      "synthetic",
+      "fixed",
+      "lagging",
+      "unknown",
+    ] as const;
     let checked = 0;
     for (const nodeHash of [null, NODE_HASH]) {
       for (const nodeStatus of [null, "finalized", "pending_submission"]) {
         for (const nodeFreshness of freshness) {
-          const verdict = reconcile(inputs({ nodeHash, nodeStatus, nodeFreshness }));
-          expect(allowed.has(verdict), `${verdict} from a single source`).toBe(true);
+          const verdict = reconcile(
+            inputs({ nodeHash, nodeStatus, nodeFreshness }),
+          );
+          expect(allowed.has(verdict), `${verdict} from a single source`).toBe(
+            true,
+          );
           checked += 1;
         }
       }
@@ -79,37 +94,71 @@ describe("reconcile", () => {
   /** A record with no hash is not settlement evidence, and `node_reported`
    * would present it as if it were. */
   it("does not report a record with no hash as reported by the node", () => {
-    expect(reconcile(inputs({ nodeHash: null, nodeStatus: "pending_submission" }))).toBe("none");
-    expect(reconcile(inputs({ nodeHash: null, nodeStatus: null }))).toBe("none");
+    expect(
+      reconcile(inputs({ nodeHash: null, nodeStatus: "pending_submission" })),
+    ).toBe("none");
+    expect(reconcile(inputs({ nodeHash: null, nodeStatus: null }))).toBe(
+      "none",
+    );
   });
 
   /** With one source, an absence is only as good as that source's currency. */
   it("does not turn a copy's silence into a settled absence", () => {
-    expect(reconcile(inputs({ nodeHash: null, nodeFreshness: "fixed" }))).toBe("unavailable");
-    expect(reconcile(inputs({ nodeHash: null, nodeFreshness: "lagging" }))).toBe("unavailable");
-    expect(reconcile(inputs({ nodeHash: null, nodeFreshness: "unknown" }))).toBe("unavailable");
+    expect(reconcile(inputs({ nodeHash: null, nodeFreshness: "fixed" }))).toBe(
+      "unavailable",
+    );
+    expect(
+      reconcile(inputs({ nodeHash: null, nodeFreshness: "lagging" })),
+    ).toBe("unavailable");
+    expect(
+      reconcile(inputs({ nodeHash: null, nodeFreshness: "unknown" })),
+    ).toBe("unavailable");
     // Fixture data is the whole world of a fixture deployment, so its silence
     // does establish an absence.
-    expect(reconcile(inputs({ nodeHash: null, nodeFreshness: "synthetic" }))).toBe("none");
+    expect(
+      reconcile(inputs({ nodeHash: null, nodeFreshness: "synthetic" })),
+    ).toBe("none");
   });
 });
 
 describe("evidence", () => {
   it("carries the node's record, and only the node's", () => {
     const evidence = settlementEvidence(inputs());
-    expect(evidence.map((row) => row.source)).toEqual(["midgard_finalization_journal"]);
+    expect(evidence.map((row) => row.source)).toEqual([
+      "midgard_finalization_journal",
+    ]);
     expect(evidence[0]?.transactionHash).toBe(NODE_HASH);
     expect(evidence[0]?.rawState).toBe("finalized");
   });
 
   it("carries a status with no hash, because the record still exists", () => {
-    const evidence = settlementEvidence(inputs({ nodeHash: null, nodeStatus: "pending_submission" }));
+    const evidence = settlementEvidence(
+      inputs({ nodeHash: null, nodeStatus: "pending_submission" }),
+    );
     expect(evidence).toHaveLength(1);
     expect(evidence[0]?.transactionHash).toBeNull();
   });
 
+  /** The journal writes `locally_applied`; finalized, merged and waiting to
+   * merge are the explorer's reading of the follower's tables. The evidence
+   * row names the journal as its source, so it carries the journal's word. */
+  it("carries the journal's own word when the state is derived", () => {
+    const derived = inputs({
+      nodeStatus: "finalized",
+      journalStatus: "locally_applied",
+    });
+    expect(settlementEvidence(derived)[0]?.rawState).toBe("locally_applied");
+    expect(blockSettlement(identity, HEADER, derived)).toMatchObject({
+      state: "finalized",
+    });
+  });
+
   it("carries nothing when the node has no record at all", () => {
-    expect(settlementEvidence(inputs({ nodeHash: null, nodeStatus: null }))).toEqual([]);
+    expect(
+      settlementEvidence(
+        inputs({ nodeHash: null, nodeStatus: null, journalStatus: null }),
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -117,7 +166,9 @@ describe("settlement states", () => {
   /** The node's own six, preserved verbatim. */
   it("keeps the node's vocabulary", () => {
     expect(settlementState("finalized")).toBe("finalized");
-    expect(settlementState("submitted_unconfirmed")).toBe("submitted_unconfirmed");
+    expect(settlementState("submitted_unconfirmed")).toBe(
+      "submitted_unconfirmed",
+    );
     expect(settlementState("abandoned")).toBe("abandoned");
   });
 
@@ -144,33 +195,61 @@ describe("relationships", () => {
   /** Many L2 transactions share one settlement transaction, and nothing about
    * that changes the L1 identity each of them reports. */
   it("gives every transaction in one block the same settlement hash", () => {
-    const first = transactionSettlement(identity, "1".repeat(64), HEADER, inputs());
-    const second = transactionSettlement(identity, "2".repeat(64), HEADER, inputs());
-    expect(first.kind === "l2_transaction_settlement" && first.l1TxHash).toBe(NODE_HASH);
-    expect(second.kind === "l2_transaction_settlement" && second.l1TxHash).toBe(NODE_HASH);
+    const first = transactionSettlement(
+      identity,
+      "1".repeat(64),
+      HEADER,
+      inputs(),
+    );
+    const second = transactionSettlement(
+      identity,
+      "2".repeat(64),
+      HEADER,
+      inputs(),
+    );
+    expect(first.kind === "l2_transaction_settlement" && first.l1TxHash).toBe(
+      NODE_HASH,
+    );
+    expect(second.kind === "l2_transaction_settlement" && second.l1TxHash).toBe(
+      NODE_HASH,
+    );
   });
 
   /** A transaction with no inclusion has no settlement to report, and saying
    * "none" is different from saying nothing could be established. */
   it("reports none for a transaction that is in no block", () => {
-    const association = transactionSettlement(identity, "1".repeat(64), null, inputs({
-      nodeHash: null,
-      nodeStatus: null,
-    }));
+    const association = transactionSettlement(
+      identity,
+      "1".repeat(64),
+      null,
+      inputs({
+        nodeHash: null,
+        nodeStatus: null,
+      }),
+    );
     expect(association.reconciliation).toBe("none");
-    expect(association.kind === "l2_transaction_settlement" && association.l1TxHash).toBeNull();
-    expect(association.kind === "l2_transaction_settlement" && association.state).toBe("unknown");
+    expect(
+      association.kind === "l2_transaction_settlement" && association.l1TxHash,
+    ).toBeNull();
+    expect(
+      association.kind === "l2_transaction_settlement" && association.state,
+    ).toBe("unknown");
   });
 
   /** "In no block" comes from the node's ledger alone, so a copy of it cannot
    * support the claim: the live node may have included this transaction after
    * the copy was taken. */
   it("does not report none for an unincluded transaction read from a copy", () => {
-    const association = transactionSettlement(identity, "1".repeat(64), null, inputs({
-      nodeHash: null,
-      nodeStatus: null,
-      nodeFreshness: "fixed",
-    }));
+    const association = transactionSettlement(
+      identity,
+      "1".repeat(64),
+      null,
+      inputs({
+        nodeHash: null,
+        nodeStatus: null,
+        nodeFreshness: "fixed",
+      }),
+    );
     expect(association.reconciliation).toBe("unavailable");
   });
 
@@ -179,11 +258,25 @@ describe("relationships", () => {
    * not change. */
   it("reports bridge relationships as the node's record", () => {
     const deposit = depositOrigin(identity, NODE_HASH, "d".repeat(64), null);
-    const withdrawal = withdrawalRequest(identity, NODE_HASH, 2, "outref", null);
-    const forced = forcedTransactionOrder(identity, NODE_HASH, 0, "t".repeat(64), null);
+    const withdrawal = withdrawalRequest(
+      identity,
+      NODE_HASH,
+      2,
+      "outref",
+      null,
+    );
+    const forced = forcedTransactionOrder(
+      identity,
+      NODE_HASH,
+      0,
+      "t".repeat(64),
+      null,
+    );
     for (const association of [deposit, withdrawal, forced]) {
       expect(association.reconciliation).toBe("node_reported");
-      expect(association.evidence.map((row) => row.source)).toEqual(["midgard_bridge_record"]);
+      expect(association.evidence.map((row) => row.source)).toEqual([
+        "midgard_bridge_record",
+      ]);
     }
     expect(deposit.kind).toBe("deposit_origin");
     expect(withdrawal.kind).toBe("withdrawal_request");

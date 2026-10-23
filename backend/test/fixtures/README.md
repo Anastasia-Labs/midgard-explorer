@@ -37,3 +37,29 @@ Balances for addresses holding array-form outputs are undercounts by design:
 the decoder skips what it cannot decode and reports the count in
 `undecodedOutputs`. These fixtures pin that behavior; they do not assert the
 undercounted values are the addresses' true holdings.
+
+The pinned codec (Midgard `f4cf28ca1`) rejects this snapshot's transaction,
+which predates fixed-width out-refs and the current field preimages. The
+balance cases still read it; the transaction cases read the capture below.
+
+# `live-node-2026-10-19.json`
+
+The live Preprod node's only committed transaction (`immutable`) and its only
+UTxO (`confirmed_ledger`), read on 2026-10-19 from the deployment with manifest
+`c3d841f2e75d61e90a394f36789ea79d67bfac7801aed325ca552dfb5b8fbfbb`. That
+node's consensus profile equals Midgard `f4cf28ca1`'s. `txId` is the id the
+node stored, so a decoder that recomputes it is checked against the node, not
+against itself.
+
+It holds no deposit, forced transaction, script, redeemer or mint: the
+deployment had none. Those shapes come from `shape-corpus.json` and from
+transactions the tests build with Midgard's own encoders.
+
+# `manifest-v1-*-preprod-testing.json.gz`
+
+Deployment manifests written by Midgard's own test helper,
+`finalizedManifest()` (`demo/midgard-core/tests/deployment-manifest-identity.finalized-manifest.ts`),
+at the commit in the name, with the `preprod-testing` profile. The
+`f4cf28ca1` one is the manifest the pinned packages accept. The `b9511834c`
+one carries the later consensus profile and is the case they refuse. Gzipped
+because each is about 490 KB of compiled scripts and neither is edited.
