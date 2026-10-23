@@ -39,7 +39,7 @@ overrides:
   # Four moderate advisories cover everything up to 10.7.0, in IPv6
   # classification and subnet comparison. It reaches this tree through the
   # Cardano SDK under Lucid 0.4.31. 10.7.1 is the first release clear of all four.
-  ip-address: 10.7.1
+  ip-address: 10.7.4
   # Path traversal through a crafted locale name, below 2.31.0. It reaches this
   # tree through winston-daily-rotate-file, which asks for ^2.29.1.
   moment: 2.31.0
