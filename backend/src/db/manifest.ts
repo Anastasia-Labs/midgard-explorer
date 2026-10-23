@@ -3,7 +3,12 @@ import { CANONICAL_HASH28, CANONICAL_HASH32 } from "../utils";
 import { readFileSync, statSync } from "node:fs";
 import { z } from "zod";
 import { logger } from "../logger";
-import { scriptHashToAddress, scriptHashToRewardAddress } from "./bech32";
+import {
+  isNetwork,
+  scriptHashToAddress,
+  scriptHashToRewardAddress,
+  type Network,
+} from "./bech32";
 
 /**
  * The purposes a manifest entry name can declare.
@@ -285,7 +290,7 @@ export function loadManifest(path: string | undefined): Manifest {
 export type Manifest = {
   /** Absent on a pre-`manifestId` manifest, which is what makes it legacy. */
   schemaVersion: string | null;
-  network: "preprod" | "mainnet";
+  network: Network;
   /** The canonical identity every indexed row is attributed to. Never a shared
    * constant, so two deployments can never merge in one table. */
   deploymentId: string;
@@ -422,13 +427,12 @@ export function parseManifest(path: string): Manifest {
     );
   }
 
-  const networkStr = doc.network.toLowerCase();
-  if (networkStr !== "mainnet" && networkStr !== "preprod") {
+  const network = doc.network.toLowerCase();
+  if (!isNetwork(network)) {
     throw new Error(
       `Manifest at ${path} has unrecognized network value: ${doc.network}`,
     );
   }
-  const network: "preprod" | "mainnet" = networkStr;
 
   if (Number.isNaN(new Date(doc.createdAt).getTime())) {
     throw new Error(

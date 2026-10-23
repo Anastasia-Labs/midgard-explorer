@@ -1,6 +1,7 @@
 // Narrow Lucid imports avoid loading unused wallet and provider modules.
-import { type Credential, type Network } from "@lucid-evolution/core-types";
+import { type Credential } from "@lucid-evolution/core-types";
 import { credentialToAddress } from "@lucid-evolution/utils";
+import { lucidNetwork, type Network } from "../db/bech32";
 import { decodeDatumResult } from "./datum";
 import type { AssetMap, ValueView } from "./types";
 
@@ -63,7 +64,7 @@ const credential = (value: WithdrawalCredential): Credential =>
 
 export function decodeWithdrawalAddress(
   bytes: Uint8Array,
-  network: "preprod" | "mainnet",
+  network: Network,
 ): FieldDecode<string> {
   const result = decodeDatumResult<WithdrawalAddress>(
     Buffer.from(bytes).toString("hex"),
@@ -93,7 +94,7 @@ export function decodeWithdrawalAddress(
         : credential(decoded.stakeCredential.Inline[0]);
     return {
       value: credentialToAddress(
-        (network === "mainnet" ? "Mainnet" : "Preprod") as Network,
+        lucidNetwork(network),
         credential(decoded.paymentCredential),
         stake,
       ),

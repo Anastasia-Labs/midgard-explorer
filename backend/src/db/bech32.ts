@@ -5,10 +5,16 @@ import {
 } from "@lucid-evolution/utils";
 import { CANONICAL_HASH28 } from "../utils";
 
-/** Lucid names networks with a capital; the manifest uses lowercase. */
-const NETWORK = { preprod: "Preprod", mainnet: "Mainnet" } as const;
+/** Lucid names networks with a capital; the manifest uses lowercase. `custom`
+ * is a private network such as Midgard's devnet, with testnet addresses. */
+const NETWORK = { preprod: "Preprod", mainnet: "Mainnet", custom: "Custom" } as const;
 
 export type Network = keyof typeof NETWORK;
+
+/** Own keys only: `in` also accepts names every object inherits. */
+export const isNetwork = (value: string): value is Network => Object.hasOwn(NETWORK, value);
+
+export const lucidNetwork = (network: Network) => NETWORK[network];
 
 /** Lucid accepts short hashes, so validate the protocol width first. */
 function assertScriptHash(scriptHash: string): string {

@@ -8,6 +8,8 @@ const NETWORKS: Record<string, string> = {
   mainnet: "Mainnet",
   preprod: "Preprod",
   preview: "Preview",
+  // Midgard's devnet manifests name their network "Custom".
+  custom: "Devnet",
 };
 export const networkName = (n: string): string => NETWORKS[n] ?? n;
 

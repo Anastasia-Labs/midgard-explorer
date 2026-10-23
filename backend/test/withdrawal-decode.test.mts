@@ -33,6 +33,17 @@ describe("canonical withdrawal field decoding", () => {
     );
   });
 
+  it("encodes a devnet address as a testnet one", () => {
+    const result = decodeWithdrawalAddress(
+      Buffer.from(ADDRESS_CBOR, "hex"),
+      "custom",
+    );
+    expect(result.error).toBeNull();
+    expect(result.value).toBe(
+      "addr_test1qr3uhfdesx9y2uwc77n6ngsehfq45thtqyfr229g7llqawspaec4cgg268cha44uaf5drt8trds96nwexwpjtx93h3uqlc52rh",
+    );
+  });
+
   it("isolates malformed fields and returns a stable error", () => {
     expect(decodeWithdrawalValue(Buffer.from("deadbeef", "hex"))).toEqual({
       value: null,

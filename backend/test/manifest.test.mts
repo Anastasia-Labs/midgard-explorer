@@ -222,11 +222,32 @@ describe("manifest views", () => {
     expect(() => loadManifest(malformed)).toThrow(/contracts/);
   });
 
+  /** Midgard's devnet profile (`local-devnet-testing`) names its network
+   * "Custom": a private Cardano network, whose addresses are testnet ones. */
+  it("reads a devnet manifest and encodes testnet addresses", () => {
+    const path = join(tmpdir(), `midgard-manifest-custom-${process.pid}.json`);
+    writeFileSync(path, JSON.stringify({ ...LEGACY, network: "Custom" }));
+    const devnet = loadManifest(path);
+    expect(devnet.network).toBe("custom");
+    for (const v of devnet.validators) {
+      expect(v.address.startsWith("addr_test1w")).toBe(true);
+    }
+  });
+
   it("throws on unrecognized network value", () => {
     expect(() => write("bad-network", { ...LEGACY, network: "Mainnet2" })).toThrow(
       /unrecognized network value/,
     );
   });
+
+  it.each(["constructor", "__proto__"])(
+    "throws on %s, a name every object inherits",
+    (network) => {
+      expect(() => write(`inherited-${network}`, { ...LEGACY, network })).toThrow(
+        /unrecognized network value/,
+      );
+    },
+  );
 });
 
 /**

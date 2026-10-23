@@ -40,7 +40,9 @@ nvm use 22.22.2 >/dev/null
 echo "node $(node -v), pnpm $(pnpm -v)"
 
 pnpm install --frozen-lockfile >"$WORK/install.log" 2>&1 || { tail -30 "$WORK/install.log"; exit 1; }
-# Fails unless the committed generated profile module is this profile's.
+# Midgard commits the generated profile module for one profile only, so it is
+# regenerated for the requested one, then checked.
+node scripts/deployment-profiles.mjs generate "$PROFILE"
 node scripts/deployment-profiles.mjs check "$PROFILE"
 
 FILTERS=()
